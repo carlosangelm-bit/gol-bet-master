@@ -2023,11 +2023,37 @@ class _FinancialBreakdown extends StatelessWidget {
     return result;
   }
 
+  // Devuelve todos los BetModuleType configurados para el par p1/p2
+  List<BetModuleType> _allModuleTypes() {
+    final types = <BetModuleType>{};
+    for (final g in round.betGroups) {
+      final pids = g.playerIds;
+      if (!pids.contains(p1.id) || !pids.contains(p2.id)) continue;
+      for (final m in g.modules) {
+        types.add(m.type);
+      }
+    }
+    // Mantener orden canónico
+    final order = [
+      BetModuleType.skins,
+      BetModuleType.nassau,
+      BetModuleType.matchAutoPress,
+      BetModuleType.medal,
+      BetModuleType.putts,
+      BetModuleType.oyeses,
+      BetModuleType.units,
+    ];
+    return order.where((t) => types.contains(t)).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     context.watch<RoundProvider>(); // rebuilda al cambiar la ronda
     final breakdown = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
-    if (breakdown.isEmpty) return const SizedBox.shrink();
+
+    // Obtener todos los tipos de módulo configurados para este par
+    final allTypes = _allModuleTypes();
+    if (allTypes.isEmpty) return const SizedBox.shrink();
 
     final total = breakdown.values.fold<double>(0, (sum, v) => sum + v);
     final totalColor = total > 0.005 ? t.profit : total < -0.005 ? t.loss : t.sub;
@@ -2048,10 +2074,10 @@ class _FinancialBreakdown extends StatelessWidget {
         ]),
         const SizedBox(height: 10),
 
-        // Filas por tipo de apuesta
-        ...breakdown.entries.map((e) {
-          final betType = e.key;
-          final amount  = e.value;
+        // Filas por tipo de apuesta — se muestran TODOS los módulos configurados,
+        // incluso si el monto es 0 (empate / ronda en progreso)
+        ...allTypes.map((betType) {
+          final amount  = breakdown[betType] ?? 0.0;
           final color   = amount > 0.005 ? t.profit : amount < -0.005 ? t.loss : t.sub;
           final sign    = amount > 0.005 ? '+' : '';
           final absAmt  = amount.abs();
@@ -2176,7 +2202,7 @@ class _FinancialBreakdown extends StatelessWidget {
                     border: Border.all(color: color.withValues(alpha: 0.4)),
                   ),
                   child: Text(
-                    '$sign\$${absAmt.toStringAsFixed(0)}',
+                    absAmt < 0.005 ? 'AS' : '$sign\$${absAmt.toStringAsFixed(0)}',
                     style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
                   ),
                 ),

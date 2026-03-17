@@ -321,16 +321,43 @@ class _PlayerFaceToFace extends StatelessWidget {
                   Expanded(child: Text(opp.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w600, fontSize: 13))),
                   BalChip(amount: balance),
                 ]),
-                if (breakdown.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 36),
+                // ── Desglose por módulo: mostrar TODOS los módulos configurados ──
+                Builder(builder: (_) {
+                  // Obtener todos los tipos de módulo configurados para este par
+                  final order = [
+                    BetModuleType.skins,
+                    BetModuleType.nassau,
+                    BetModuleType.matchAutoPress,
+                    BetModuleType.medal,
+                    BetModuleType.putts,
+                    BetModuleType.oyeses,
+                    BetModuleType.units,
+                  ];
+                  final allTypes = order.where((type) {
+                    for (final g in round.betGroups) {
+                      final pids = g.playerIds;
+                      if (!pids.contains(player.id) || !pids.contains(opp.id)) continue;
+                      if (g.modules.any((m) => m.type == type)) return true;
+                    }
+                    return false;
+                  }).toList();
+
+                  if (allTypes.isEmpty) return const SizedBox.shrink();
+
+                  return Padding(
+                    padding: const EdgeInsets.only(left: 36, top: 6),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: breakdown.entries.map((e) {
-                        // Para Match+Press, agregar detalle de segmentos debajo
+                      children: allTypes.map((betType) {
+                        final amount = breakdown[betType] ?? 0.0;
+                        final amtColor = amount > 0 ? t.profit : amount < 0 ? t.loss : t.sub;
+                        final amtText = amount.abs() < 0.005
+                            ? 'AS'
+                            : '${amount >= 0 ? '+' : ''}\$${amount.toStringAsFixed(0)}';
+
+                        // Sub-filas para Match+Press
                         List<Widget> subRows = [];
-                        if (e.key == BetModuleType.matchAutoPress) {
+                        if (betType == BetModuleType.matchAutoPress) {
                           for (final g in round.betGroups) {
                             if (!g.playerIds.contains(player.id) || !g.playerIds.contains(opp.id)) continue;
                             for (final m in g.modules.where((m) => m.type == BetModuleType.matchAutoPress)) {
@@ -365,15 +392,16 @@ class _PlayerFaceToFace extends StatelessWidget {
                             }
                           }
                         }
+
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 3),
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Row(children: [
-                              Text('${e.key.icon}  ${e.key.label}', style: TextStyle(color: t.sub, fontSize: 11)),
+                              Text('${betType.icon}  ${betType.label}', style: TextStyle(color: t.sub, fontSize: 11)),
                               const Spacer(),
                               Text(
-                                '${e.value >= 0 ? '+' : ''}\$${e.value.toStringAsFixed(0)}',
-                                style: TextStyle(color: e.value >= 0 ? t.profit : t.loss, fontSize: 11, fontWeight: FontWeight.w600),
+                                amtText,
+                                style: TextStyle(color: amtColor, fontSize: 11, fontWeight: FontWeight.w600),
                               ),
                             ]),
                             ...subRows,
@@ -381,8 +409,8 @@ class _PlayerFaceToFace extends StatelessWidget {
                         );
                       }).toList(),
                     ),
-                  ),
-                ],
+                  );
+                }),
                 Divider(color: t.divider.withValues(alpha: 0.5)),
               ]),
             );
