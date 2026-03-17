@@ -348,6 +348,12 @@ class MatchAutoPressConfig {
   final TieRule tieRule;          // push por defecto
   final bool allowMultiplePresses;// permite más de una presión simultánea
   final int? maxPresses;          // máximo de presiones (null = ilimitado)
+  // ── Carry ────────────────────────────────────────────────────────────────────
+  // Cuando un jugador pide carry al terminar la primera vuelta:
+  // - el matchValue se multiplica por carryFactor (default 2×)
+  // - todas las presiones activas y futuras también se multiplican
+  final bool carryApplied;        // true cuando el carry fue aceptado
+  final double carryFactor;       // multiplicador del carry (default 2.0)
 
   const MatchAutoPressConfig({
     this.matchValue = 100,
@@ -357,12 +363,15 @@ class MatchAutoPressConfig {
     this.tieRule = TieRule.push,
     this.allowMultiplePresses = true,
     this.maxPresses,
+    this.carryApplied = false,
+    this.carryFactor = 2.0,
   });
 
   MatchAutoPressConfig copyWith({
     double? matchValue, double? pressValue, int? pressTriggerValue,
     GrossNetMode? mode, TieRule? tieRule,
     bool? allowMultiplePresses, int? maxPresses,
+    bool? carryApplied, double? carryFactor,
   }) => MatchAutoPressConfig(
     matchValue:          matchValue         ?? this.matchValue,
     pressValue:          pressValue         ?? this.pressValue,
@@ -371,6 +380,8 @@ class MatchAutoPressConfig {
     tieRule:             tieRule            ?? this.tieRule,
     allowMultiplePresses:allowMultiplePresses ?? this.allowMultiplePresses,
     maxPresses:          maxPresses         ?? this.maxPresses,
+    carryApplied:        carryApplied       ?? this.carryApplied,
+    carryFactor:         carryFactor        ?? this.carryFactor,
   );
 
   Map<String, dynamic> toJson() => {
@@ -381,6 +392,8 @@ class MatchAutoPressConfig {
     'tieRule':             tieRule.name,
     'allowMultiplePresses':allowMultiplePresses,
     if (maxPresses != null) 'maxPresses': maxPresses,
+    'carryApplied':        carryApplied,
+    'carryFactor':         carryFactor,
   };
 
   factory MatchAutoPressConfig.fromJson(Map<String, dynamic> j) => MatchAutoPressConfig(
@@ -393,6 +406,8 @@ class MatchAutoPressConfig {
       (e) => e.name == (j['tieRule'] ?? 'push'), orElse: () => TieRule.push),
     allowMultiplePresses: j['allowMultiplePresses'] as bool? ?? true,
     maxPresses:           j['maxPresses'] as int?,
+    carryApplied:         j['carryApplied'] as bool? ?? false,
+    carryFactor:          (j['carryFactor'] as num?)?.toDouble() ?? 2.0,
   );
 
   static const def = MatchAutoPressConfig();
@@ -476,6 +491,12 @@ class NassauConfig {
   final PressMode pressMode;    // manual | auto
   final int autoPressTrigger;   // activar press cuando vas X down
   final TieRule tieRule;
+  // ── Carry ────────────────────────────────────────────────────────────────────
+  // Cuando se activa carry al final de la primera vuelta:
+  // - backValue y totalValue se multiplican por carryFactor (default 2×)
+  // - NO aplica al frontValue (la primera vuelta ya se jugó)
+  final bool carryApplied;      // true cuando el carry fue aceptado
+  final double carryFactor;     // multiplicador (default 2.0)
 
   const NassauConfig({
     this.frontValue = 50,
@@ -486,12 +507,15 @@ class NassauConfig {
     this.pressMode = PressMode.auto,
     this.autoPressTrigger = 2,
     this.tieRule = TieRule.push,
+    this.carryApplied = false,
+    this.carryFactor = 2.0,
   });
 
   NassauConfig copyWith({
     double? frontValue, double? backValue, double? totalValue,
     GrossNetMode? mode, bool? pressEnabled, PressMode? pressMode,
     int? autoPressTrigger, TieRule? tieRule,
+    bool? carryApplied, double? carryFactor,
   }) => NassauConfig(
     frontValue: frontValue ?? this.frontValue,
     backValue: backValue ?? this.backValue,
@@ -501,13 +525,21 @@ class NassauConfig {
     pressMode: pressMode ?? this.pressMode,
     autoPressTrigger: autoPressTrigger ?? this.autoPressTrigger,
     tieRule: tieRule ?? this.tieRule,
+    carryApplied: carryApplied ?? this.carryApplied,
+    carryFactor: carryFactor ?? this.carryFactor,
   );
+
+  // Valores efectivos considerando carry
+  double get effectiveBackValue  => carryApplied ? backValue  * carryFactor : backValue;
+  double get effectiveTotalValue => carryApplied ? totalValue * carryFactor : totalValue;
 
   Map<String, dynamic> toJson() => {
     'frontValue': frontValue, 'backValue': backValue, 'totalValue': totalValue,
     'mode': mode.name, 'pressEnabled': pressEnabled,
     'pressMode': pressMode.name, 'autoPressTrigger': autoPressTrigger,
     'tieRule': tieRule.name,
+    'carryApplied': carryApplied,
+    'carryFactor': carryFactor,
   };
   factory NassauConfig.fromJson(Map<String, dynamic> j) => NassauConfig(
     frontValue: (j['frontValue'] as num?)?.toDouble() ?? 50,
@@ -518,6 +550,8 @@ class NassauConfig {
     pressMode: PressMode.values.firstWhere((e) => e.name == (j['pressMode'] ?? 'auto'), orElse: () => PressMode.auto),
     autoPressTrigger: j['autoPressTrigger'] as int? ?? 2,
     tieRule: TieRule.values.firstWhere((e) => e.name == (j['tieRule'] ?? 'push'), orElse: () => TieRule.push),
+    carryApplied: j['carryApplied'] as bool? ?? false,
+    carryFactor:  (j['carryFactor'] as num?)?.toDouble() ?? 2.0,
   );
   static const def = NassauConfig();
 }

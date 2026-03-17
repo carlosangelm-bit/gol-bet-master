@@ -311,26 +311,45 @@ class _ActiveRoundView extends StatelessWidget {
           child: GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(g.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 14)),
             const SizedBox(height: 8),
-            Wrap(spacing: 6, runSpacing: 6, children: g.modules.map((m) => GestureDetector(
-              onTap: () => _openBetEdit(context, prov, g, m, t),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: t.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              ...g.modules.map((m) => GestureDetector(
+                onTap: () => _openBetEdit(context, prov, g, m, t),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: t.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text(m.type.icon, style: const TextStyle(fontSize: 13)),
+                    const SizedBox(width: 5),
+                    Text(m.type.label, style: TextStyle(color: t.primary, fontWeight: FontWeight.w700, fontSize: 12)),
+                    const SizedBox(width: 4),
+                    Text('\$${m.value.toStringAsFixed(0)}', style: TextStyle(color: t.primary.withValues(alpha: 0.75), fontSize: 11)),
+                    const SizedBox(width: 4),
+                    Icon(Icons.edit_outlined, color: t.primary.withValues(alpha: 0.6), size: 11),
+                  ]),
                 ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text(m.type.icon, style: const TextStyle(fontSize: 13)),
-                  const SizedBox(width: 5),
-                  Text(m.type.label, style: TextStyle(color: t.primary, fontWeight: FontWeight.w700, fontSize: 12)),
-                  const SizedBox(width: 4),
-                  Text('\$${m.value.toStringAsFixed(0)}', style: TextStyle(color: t.primary.withValues(alpha: 0.75), fontSize: 11)),
-                  const SizedBox(width: 4),
-                  Icon(Icons.edit_outlined, color: t.primary.withValues(alpha: 0.6), size: 11),
-                ]),
+              )),
+              // ── Chip + Añadir apuesta ──────────────────────────────────
+              GestureDetector(
+                onTap: () => _openAddBet(context, prov, g, t),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: t.accent.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: t.accent.withValues(alpha: 0.35), style: BorderStyle.solid),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.add, color: t.accent, size: 13),
+                    const SizedBox(width: 4),
+                    Text('Añadir apuesta', style: TextStyle(color: t.accent, fontWeight: FontWeight.w700, fontSize: 12)),
+                  ]),
+                ),
               ),
-            )).toList()),
+            ]),
           ])),
         )),
 
@@ -558,6 +577,126 @@ class _ActiveRoundView extends StatelessWidget {
           final newGroups  = prov.round!.betGroups.map((g) => g.id == group.id ? newGroup : g).toList();
           prov.updateBetGroups(newGroups);
         },
+      ),
+    );
+  }
+
+  // ── Agregar apuesta a un grupo durante la ronda ──────────────────────────
+  void _openAddBet(BuildContext context, RoundProvider prov, BetGroup group, GolfTheme t) {
+    final selected = <BetModuleType>{};
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx2, setSt) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx2).viewInsets.bottom + 24,
+          left: 20, right: 20, top: 24,
+        ),
+        child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text('Agregar apuesta', style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
+            const Spacer(),
+            GestureDetector(onTap: () => Navigator.pop(ctx2), child: Icon(Icons.close, color: t.sub)),
+          ]),
+          const SizedBox(height: 4),
+          Text('${group.name}  ·  Se activa desde el hoyo actual', style: TextStyle(color: t.sub, fontSize: 12)),
+          const SizedBox(height: 16),
+
+          Text('MATCH PLAY', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+          const SizedBox(height: 8),
+          ...[BetModuleType.nassau, BetModuleType.matchAutoPress].map((bt) =>
+            _betTypeTileHome(bt, selected, setSt, t, group)),
+          const SizedBox(height: 16),
+          Text('OTRAS APUESTAS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+          const SizedBox(height: 8),
+          ...[BetModuleType.skins, BetModuleType.medal, BetModuleType.putts,
+              BetModuleType.oyeses, BetModuleType.units].map((bt) =>
+            _betTypeTileHome(bt, selected, setSt, t, group)),
+          const SizedBox(height: 16),
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: selected.isEmpty ? null : () {
+                // Añadir los módulos seleccionados al grupo y guardar
+                final newMods = List<BetModuleInstance>.from(group.modules);
+                final addedMods = <BetModuleInstance>[];
+                for (final bt in selected) {
+                  final newMod = BetModuleInstance.defaultFor(bt, group.playerIds);
+                  newMods.add(newMod);
+                  addedMods.add(newMod);
+                }
+                final newGroup  = BetGroup(id: group.id, name: group.name, format: group.format, playerIds: group.playerIds, modules: newMods);
+                final newGroups = prov.round!.betGroups.map((g) => g.id == group.id ? newGroup : g).toList();
+                prov.updateBetGroups(newGroups);
+                Navigator.pop(ctx2);
+                // Si solo se agregó uno, abrir el editor inmediatamente
+                if (addedMods.length == 1) {
+                  Future.delayed(const Duration(milliseconds: 250), () {
+                    if (context.mounted) {
+                      _openBetEdit(context, prov, newGroup, addedMods.first, t);
+                    }
+                  });
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: selected.isEmpty ? t.divider : t.accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text(
+                selected.isEmpty
+                    ? 'Selecciona al menos uno'
+                    : 'Agregar ${selected.length} apuesta${selected.length > 1 ? 's' : ''}',
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+              ),
+            ),
+          ),
+        ])),
+      )),
+    );
+  }
+
+  Widget _betTypeTileHome(BetModuleType bt, Set<BetModuleType> selected, StateSetter setSt, GolfTheme t, BetGroup group) {
+    final isSel = selected.contains(bt);
+    final isMatchType = bt == BetModuleType.nassau || bt == BetModuleType.matchAutoPress;
+    final accentColor = isMatchType ? t.accent : t.primary;
+    final alreadyAdded = group.modules.any((m) => m.type == bt);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: GestureDetector(
+        onTap: alreadyAdded ? null : () => setSt(() {
+          if (isSel) selected.remove(bt); else selected.add(bt);
+        }),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: alreadyAdded
+                ? t.divider.withValues(alpha: 0.3)
+                : isSel ? accentColor.withValues(alpha: 0.1) : t.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: isSel ? accentColor : t.divider),
+          ),
+          child: Row(children: [
+            Text(bt.icon, style: TextStyle(fontSize: 20, color: alreadyAdded ? t.sub : null)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(bt.label, style: TextStyle(color: alreadyAdded ? t.sub : t.text, fontWeight: FontWeight.w700, fontSize: 13)),
+              Text(bt.description, style: TextStyle(color: t.sub, fontSize: 10)),
+              if (alreadyAdded)
+                Text('Ya incluida en esta partida', style: TextStyle(color: t.sub.withValues(alpha: 0.6), fontSize: 9, fontStyle: FontStyle.italic)),
+            ])),
+            if (isSel && !alreadyAdded)
+              Icon(Icons.check_circle, color: accentColor, size: 20),
+            if (alreadyAdded)
+              Icon(Icons.check, color: t.sub, size: 16),
+          ]),
+        ),
       ),
     );
   }

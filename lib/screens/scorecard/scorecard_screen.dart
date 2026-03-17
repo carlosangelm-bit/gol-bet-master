@@ -476,10 +476,38 @@ class _OneVOneViewState extends State<_OneVOneView> {
         ),
         const SizedBox(height: 12),
 
+        // ── Botón Carry (al final de la primera vuelta) ────────────
+        _CarryPanel(
+          round: round, p1: p1, p2: p2, t: t,
+          nassauModules:     nassauModules,
+          matchPressModules: matchPressModules,
+          onApplyCarry: (factor) => _applyCarry(context, factor, nassauModules, matchPressModules),
+        ),
+
         // ── Desglose financiero ────────────────────────────────────
         _FinancialBreakdown(round: round, p1: p1, p2: p2, t: t),
       ]),
     );
+  }
+
+  // ── Aplica carry a todos los módulos Nassau y MatchAutoPress del par ──────
+  void _applyCarry(BuildContext context, double factor,
+      List<BetModuleInstance> nassauMods, List<BetModuleInstance> matchMods) {
+    final prov = context.read<RoundProvider>();
+    final round = prov.round!;
+    final newGroups = round.betGroups.map((g) {
+      final newModules = g.modules.map((m) {
+        if (nassauMods.any((nm) => nm.id == m.id)) {
+          return m.copyWith(nassauConfig: m.nassau.copyWith(carryApplied: true, carryFactor: factor));
+        }
+        if (matchMods.any((mm) => mm.id == m.id)) {
+          return m.copyWith(matchAutoPressConfig: m.matchAutoPress.copyWith(carryApplied: true, carryFactor: factor));
+        }
+        return m;
+      }).toList();
+      return BetGroup(id: g.id, name: g.name, format: g.format, playerIds: g.playerIds, modules: newModules);
+    }).toList();
+    prov.updateBetGroups(newGroups);
   }
 
   List<BetModuleInstance> _findModules(Round round, String p1Id, String p2Id, BetModuleType type) {
@@ -1493,6 +1521,213 @@ class _MatchPressLivePanel extends StatelessWidget {
         ),
       ],
     ]));
+  }
+}
+
+// ── Panel Carry ──────────────────────────────────────────────────────────────
+// Aparece al final de la primera vuelta cuando hay módulos Nassau o Match+Press.
+// Solo visible en rondas de 18 hoyos. Muestra botón para activar carry.
+class _CarryPanel extends StatefulWidget {
+  final Round round;
+  final Player p1, p2;
+  final GolfTheme t;
+  final List<BetModuleInstance> nassauModules;
+  final List<BetModuleInstance> matchPressModules;
+  final void Function(double factor) onApplyCarry;
+  const _CarryPanel({
+    required this.round, required this.p1, required this.p2, required this.t,
+    required this.nassauModules, required this.matchPressModules,
+    required this.onApplyCarry,
+  });
+  @override State<_CarryPanel> createState() => _CarryPanelState();
+}
+
+class _CarryPanelState extends State<_CarryPanel> {
+  // ── Determinar si mostrar el panel ──────────────────────────────────────────
+  // Condiciones:
+  // 1. Hay módulos Nassau o Match+Press
+  // 2. La ronda es de 18 hoyos
+  // 3. La primera vuelta está completada (los 9 hoyos del primer segmento)
+  // 4. El carry no ha sido aplicado aún
+
+  bool _firstNineComplete(Round round) {
+    final firstHoles = round.startingNine == StartingNine.back
+        ? List.generate(9, (i) => i + 10)   // hoyos 10-18
+        : List.generate(9, (i) => i + 1);   // hoyos 1-9
+    return firstHoles.every((h) =>
+        round.getScore(widget.p1.id, h).hasScore &&
+        round.getScore(widget.p2.id, h).hasScore);
+  }
+
+  bool get _carryAlreadyApplied {
+    return widget.nassauModules.any((m) => m.nassau.carryApplied) ||
+           widget.matchPressModules.any((m) => m.matchAutoPress.carryApplied);
+  }
+
+  bool get _hasCarryModules =>
+      widget.nassauModules.isNotEmpty || widget.matchPressModules.isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    final round = widget.round;
+    final t = widget.t;
+    if (round.totalHoles < 18) return const SizedBox.shrink();
+    if (!_hasCarryModules)     return const SizedBox.shrink();
+
+    final firstNineDone = _firstNineComplete(round);
+    if (!firstNineDone && !_carryAlreadyApplied) return const SizedBox.shrink();
+
+    final n1 = widget.p1.name.split(' ').first;
+    final n2 = widget.p2.name.split(' ').first;
+
+    // Calcular factor por defecto (×2) y qué apuestas se verían afectadas
+    final defaultFactor = 2.0;
+    final nassauDesc = widget.nassauModules.map((m) {
+      final cfg = m.nassau;
+      final b = cfg.effectiveBackValue;
+      final tot = cfg.effectiveTotalValue;
+      return 'Nassau B9: \$${b.toStringAsFixed(0)}  ·  18H: \$${tot.toStringAsFixed(0)}';
+    }).join('\n');
+    final matchDesc = widget.matchPressModules.map((m) {
+      final cfg = m.matchAutoPress;
+      final mv = cfg.carryApplied ? cfg.matchValue * cfg.carryFactor : cfg.matchValue * defaultFactor;
+      final pv = cfg.carryApplied ? cfg.pressValue * cfg.carryFactor : cfg.pressValue * defaultFactor;
+      return 'Match: \$${mv.toStringAsFixed(0)}  ·  Press: \$${pv.toStringAsFixed(0)}';
+    }).join('\n');
+
+    if (_carryAlreadyApplied) {
+      // Panel indicador: carry ya activo
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: GCard(child: Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: t.profit.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: t.profit.withValues(alpha: 0.4)),
+            ),
+            child: Text('×2', style: TextStyle(color: t.profit, fontWeight: FontWeight.w900, fontSize: 14)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('CARRY ACTIVO', style: TextStyle(color: t.profit, fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 0.8)),
+            const SizedBox(height: 2),
+            Text('Las apuestas de la 2ª vuelta están duplicadas', style: TextStyle(color: t.sub, fontSize: 11)),
+          ])),
+        ])),
+      );
+    }
+
+    // Panel con botón para activar carry
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.currency_exchange, color: t.accent, size: 16),
+          const SizedBox(width: 8),
+          Expanded(child: Text('CARRY', style: TextStyle(color: t.sub, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.8))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: t.accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: t.accent.withValues(alpha: 0.3)),
+            ),
+            child: Text('Al entrar la 2ª vuelta', style: TextStyle(color: t.accent, fontSize: 9, fontWeight: FontWeight.w700)),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        Text(
+          '$n1 o $n2 pueden pedir carry: las apuestas de la 2ª vuelta se duplican.',
+          style: TextStyle(color: t.sub, fontSize: 11),
+        ),
+        const SizedBox(height: 10),
+        // Preview de los nuevos valores
+        if (nassauDesc.isNotEmpty) ...[
+          Text(nassauDesc, style: TextStyle(color: t.text, fontSize: 11, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+        ],
+        if (matchDesc.isNotEmpty) ...[
+          Text(matchDesc, style: TextStyle(color: t.text, fontSize: 11, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 10),
+        ],
+        // Botón
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            icon: const Text('×2', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
+            label: const Text('Activar Carry', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+            onPressed: () => _showCarryDialog(context, defaultFactor, n1, n2),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: t.accent,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 11),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ),
+      ])),
+    );
+  }
+
+  void _showCarryDialog(BuildContext context, double defaultFactor, String n1, String n2) {
+    final t = widget.t;
+    final ctrl = TextEditingController(text: defaultFactor.toStringAsFixed(0));
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: t.card,
+        title: Row(children: [
+          Text('⚡', style: const TextStyle(fontSize: 20)),
+          const SizedBox(width: 8),
+          Text('Carry', style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 17)),
+        ]),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(
+            'Las apuestas de la 2ª vuelta (Back 9 y Match total) se multiplican por el factor indicado.',
+            style: TextStyle(color: t.sub, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          Text('FACTOR DE MULTIPLICACIÓN', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+          const SizedBox(height: 8),
+          TextField(
+            controller: ctrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textAlign: TextAlign.center,
+            style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 22),
+            decoration: InputDecoration(
+              prefixText: '×',
+              prefixStyle: TextStyle(color: t.accent, fontWeight: FontWeight.w800, fontSize: 18),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              fillColor: t.surface, filled: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.divider)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.divider)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.accent, width: 1.5)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text('Por defecto ×2 (dobla todas las apuestas de la 2ª vuelta)', style: TextStyle(color: t.sub, fontSize: 10)),
+        ]),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancelar', style: TextStyle(color: t.sub)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final factor = double.tryParse(ctrl.text) ?? defaultFactor;
+              if (factor > 0) {
+                widget.onApplyCarry(factor);
+                Navigator.pop(ctx);
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: t.accent, foregroundColor: Colors.white),
+            child: Text('Confirmar Carry ×${ctrl.text}', style: const TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
   }
 }
 

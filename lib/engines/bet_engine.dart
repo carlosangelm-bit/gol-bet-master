@@ -198,9 +198,9 @@ class BetEngine {
       // Ronda de 9: solo existe el segmento front con el valor frontValue
       _addNassauSegment(entries, p1Id, p2Id, front, cfg.frontValue, 'Nassau 9 hoyos');
     } else {
-      _addNassauSegment(entries, p1Id, p2Id, front, cfg.frontValue, 'Nassau Front 9');
-      _addNassauSegment(entries, p1Id, p2Id, back,  cfg.backValue,  'Nassau Back 9');
-      _addNassauSegment(entries, p1Id, p2Id, total, cfg.totalValue, 'Nassau Total 18');
+      _addNassauSegment(entries, p1Id, p2Id, front, cfg.frontValue,          'Nassau Front 9');
+      _addNassauSegment(entries, p1Id, p2Id, back,  cfg.effectiveBackValue,  'Nassau Back 9');
+      _addNassauSegment(entries, p1Id, p2Id, total, cfg.effectiveTotalValue, 'Nassau Total 18');
     }
     return entries;
   }
@@ -508,8 +508,10 @@ class BetEngine {
     // Segmento = (startHole, endHole, value, label)
     // El match principal siempre va de H1 a totalHoles.
     // Las presiones se construyen dinámicamente.
+    // Si hay carry, todos los valores se multiplican por carryFactor.
+    final double cf = cfg.carryApplied ? cfg.carryFactor : 1.0;
     final List<(int start, int end, double value, String label)> segments = [];
-    segments.add((1, round.totalHoles, cfg.matchValue, 'Match H1–${round.totalHoles}'));
+    segments.add((1, round.totalHoles, cfg.matchValue * cf, 'Match H1–${round.totalHoles}${cfg.carryApplied ? ' ×carry' : ''}'));
 
     // currentPressStart: desde qué hoyo empieza el segmento de presión activo
     int currentPressStart = 1;
@@ -527,7 +529,7 @@ class BetEngine {
         final segLabel = isFirstDigit
             ? 'Dígito H$currentPressStart–$h'
             : 'Press H$currentPressStart–$h';
-        segments.add((currentPressStart, h, cfg.pressValue, segLabel));
+        segments.add((currentPressStart, h, cfg.pressValue * cf, segLabel));
         pressCount++;
 
         // 2. Abrir nuevo segmento desde el siguiente hoyo
@@ -547,9 +549,9 @@ class BetEngine {
       // Solo si este segmento no fue ya agregado (el último trigger pudo
       // haberlo cerrado exactamente en totalHoles)
       final alreadyAdded = segments.any((s) => s.$1 == currentPressStart &&
-          s.$2 == round.totalHoles && s.$3 == cfg.pressValue);
+          s.$2 == round.totalHoles && s.$3 == cfg.pressValue * cf);
       if (!alreadyAdded) {
-        segments.add((currentPressStart, round.totalHoles, cfg.pressValue, lastLabel));
+        segments.add((currentPressStart, round.totalHoles, cfg.pressValue * cf, lastLabel));
       }
     }
 
@@ -630,8 +632,10 @@ class BetEngine {
 
     // ── Mismo algoritmo de construcción de segmentos que _matchAutoPress ──
     // (start, end, value, isPrimary, seq)
+    // Si hay carry, todos los valores se multiplican por carryFactor.
+    final double cfLive = cfg.carryApplied ? cfg.carryFactor : 1.0;
     final List<(int start, int end, double value, bool isPrimary, int seq)> segs = [];
-    segs.add((1, round.totalHoles, cfg.matchValue, true, 1));
+    segs.add((1, round.totalHoles, cfg.matchValue * cfLive, true, 1));
 
     int currentPressStart = 1;
     int pressSegScore = 0;
@@ -644,7 +648,7 @@ class BetEngine {
 
       final absDiff = pressSegScore.abs();
       if (absDiff == cfg.pressTriggerValue && pressCount < maxP) {
-        segs.add((currentPressStart, h, cfg.pressValue, false, seqN++));
+        segs.add((currentPressStart, h, cfg.pressValue * cfLive, false, seqN++));
         pressCount++;
 
         final nextHole = h + 1;
@@ -659,9 +663,9 @@ class BetEngine {
       final alreadyAdded = segs.any((s) =>
           s.$1 == currentPressStart &&
           s.$2 == round.totalHoles &&
-          s.$3 == cfg.pressValue);
+          s.$3 == cfg.pressValue * cfLive);
       if (!alreadyAdded) {
-        segs.add((currentPressStart, round.totalHoles, cfg.pressValue, false, seqN++));
+        segs.add((currentPressStart, round.totalHoles, cfg.pressValue * cfLive, false, seqN++));
       }
     }
 
@@ -872,8 +876,8 @@ class BetEngine {
       frontPlayed: frontPlayed, backPlayed: backPlayed,
       presses: presses,
       frontVal: cfg.frontValue,
-      backVal:  cfg.backValue,
-      totalVal: cfg.totalValue,
+      backVal:  cfg.effectiveBackValue,
+      totalVal: cfg.effectiveTotalValue,
     );
   }
 
