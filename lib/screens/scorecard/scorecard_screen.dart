@@ -1336,14 +1336,32 @@ class _MatchPressLivePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final presses = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
-    final cfg     = mod.matchAutoPress;
-    final n1      = p1.name.split(' ').first;
-    final n2      = p2.name.split(' ').first;
+    final cfg = mod.matchAutoPress;
+    final n1  = p1.name.split(' ').first;
+    final n2  = p2.name.split(' ').first;
 
-    // Balance real desde LedgerEngine (match+press completo, perspectiva p1)
-    final totalBal = LedgerEngine.balanceBetween(round, p1.id, p2.id);
-    final balColor = totalBal > 0 ? t.profit : totalBal < 0 ? t.loss : t.sub;
+    // Balance SOLO de Match+Press (no de todos los módulos)
+    final breakdown = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
+    final mpBal     = breakdown[BetModuleType.matchAutoPress] ?? 0.0;
+    final balColor  = mpBal > 0.005 ? t.profit : mpBal < -0.005 ? t.loss : t.sub;
+
+    // Estado general: quién va ganando el match (score global H1-totalHoles)
+    final presses  = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
+    final primary  = presses.isNotEmpty ? presses.first : null; // siempre el Match principal
+    final matchScore   = primary?.score ?? 0;
+    final pressesWon1  = presses.skip(1).where((pr) => pr.leadingPlayerId == p1.id && pr.played > 0).length;
+    final pressesWon2  = presses.skip(1).where((pr) => pr.leadingPlayerId == p2.id && pr.played > 0).length;
+    final activePresses = presses.skip(1).length;
+
+    String matchLabel;
+    Color  matchColor;
+    if (matchScore == 0) {
+      matchLabel = 'AS';  matchColor = const Color(0xFF1565C0);
+    } else if (matchScore > 0) {
+      matchLabel = '$n1  ${matchScore}UP';  matchColor = t.profit;
+    } else {
+      matchLabel = '$n2  ${matchScore.abs()}UP';  matchColor = t.loss;
+    }
 
     return GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       // ── Cabecera ────────────────────────────────────────────────────────
@@ -1351,7 +1369,7 @@ class _MatchPressLivePanel extends StatelessWidget {
         Text('⚔️', style: const TextStyle(fontSize: 16)),
         const SizedBox(width: 8),
         Expanded(child: Text('MATCH + PRESS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8))),
-        // Balance total
+        // Balance solo Match+Press
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
@@ -1360,86 +1378,45 @@ class _MatchPressLivePanel extends StatelessWidget {
             border: Border.all(color: balColor.withValues(alpha: 0.4)),
           ),
           child: Text(
-            '${totalBal > 0 ? '+' : ''}\$${totalBal.abs().toStringAsFixed(0)}',
+            mpBal.abs() < 0.005 ? 'AS' : '${mpBal > 0 ? '+' : ''}\$${mpBal.abs().toStringAsFixed(0)}',
             style: TextStyle(color: balColor, fontSize: 11, fontWeight: FontWeight.w800),
           ),
         ),
       ]),
       const SizedBox(height: 12),
 
-      // ── Trigger info ────────────────────────────────────────────────────
+      // ── Estado del match ─────────────────────────────────────────────────
       Row(children: [
-        Icon(Icons.info_outline, color: t.sub, size: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(matchLabel,
+                style: TextStyle(color: matchColor, fontSize: 18, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 2),
+            Text(
+              activePresses == 0
+                  ? 'Match  •  \$${cfg.matchValue.toStringAsFixed(0)}'
+                  : 'Match  •  \$${cfg.matchValue.toStringAsFixed(0)}   +  $activePresses × \$${cfg.pressValue.toStringAsFixed(0)} press',
+              style: TextStyle(color: t.sub, fontSize: 10),
+            ),
+          ]),
+        ),
+        if (activePresses > 0)
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text('$n1  $pressesWon1 – $pressesWon2  $n2',
+                style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 2),
+            Text('Presiones', style: TextStyle(color: t.sub, fontSize: 9)),
+          ]),
+      ]),
+      const SizedBox(height: 6),
+      // Trigger info
+      Row(children: [
+        Icon(Icons.info_outline, color: t.sub, size: 11),
         const SizedBox(width: 4),
-        Text('Nueva presión al llegar a ${cfg.pressTriggerValue} up',
+        Text('Presión automática al llegar a ${cfg.pressTriggerValue} up',
             style: TextStyle(color: t.sub, fontSize: 10)),
       ]),
-      const SizedBox(height: 10),
-
-      // ── Lista de presiones ──────────────────────────────────────────────
-      ...presses.map((pr) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: _PressTile(pr: pr, p1: p1, p2: p2, n1: n1, n2: n2, t: t),
-      )),
     ]));
-  }
-}
-
-class _PressTile extends StatelessWidget {
-  final MatchPressLiveStatus pr;
-  final Player p1, p2;
-  final String n1, n2;
-  final GolfTheme t;
-  const _PressTile({required this.pr, required this.p1, required this.p2, required this.n1, required this.n2, required this.t});
-
-  @override
-  Widget build(BuildContext context) {
-    // Color según estado
-    Color statusColor;
-    String statusLabel;
-    if (pr.score == 0) {
-      statusColor = const Color(0xFF1565C0); // azul = empate
-      statusLabel = 'AS';
-    } else if (pr.score > 0) {
-      statusColor = const Color(0xFF2E7D32); // verde = p1 va arriba
-      statusLabel = '$n1  ${pr.score}UP';
-    } else {
-      statusColor = const Color(0xFFC62828); // rojo = p2 va arriba
-      statusLabel = '$n2  ${pr.score.abs()}UP';
-    }
-
-    final label  = pr.isPrimaryMatch
-        ? 'MATCH  H1–${pr.endHole}'
-        : pr.startHole == 1
-            ? '📌 DÍGITO  H1–${pr.endHole}'
-            : '🔄 PRESS  H${pr.startHole}–${pr.endHole}';
-    final played = pr.played;
-    final value  = pr.value;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: statusColor.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: statusColor.withValues(alpha: 0.3)),
-      ),
-      child: Row(children: [
-        // Banda de color
-        Container(width: 4, height: 36, decoration: BoxDecoration(color: statusColor, borderRadius: BorderRadius.circular(2))),
-        const SizedBox(width: 10),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-          const SizedBox(height: 2),
-          Text(statusLabel, style: TextStyle(color: statusColor, fontSize: 14, fontWeight: FontWeight.w900)),
-        ])),
-        // Hoyos jugados
-        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text('Thru $played', style: TextStyle(color: t.sub, fontSize: 10)),
-          const SizedBox(height: 2),
-          Text('\$${value.toStringAsFixed(0)}', style: TextStyle(color: t.text, fontSize: 13, fontWeight: FontWeight.w800)),
-        ]),
-      ]),
-    );
   }
 }
 
@@ -2130,61 +2107,8 @@ class _FinancialBreakdown extends StatelessWidget {
             }
           }
 
-          // Para Match+Press: mostrar el desglose de segmentos (match, dígito, presiones)
-          Widget? matchPressSubtitle;
-          if (betType == BetModuleType.matchAutoPress) {
-            final mpMods = _modsOf(BetModuleType.matchAutoPress);
-            if (mpMods.isNotEmpty) {
-              final mod = mpMods.first;
-              final statuses = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
-              if (statuses.isNotEmpty) {
-                matchPressSubtitle = Padding(
-                  padding: const EdgeInsets.only(top: 6, left: 22),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: statuses.map((pr) {
-                      final Color prColor;
-                      final String prResult;
-                      if (pr.score == 0) {
-                        prColor = const Color(0xFF1565C0);
-                        prResult = 'AS';
-                      } else if (pr.score > 0) {
-                        prColor = const Color(0xFF2E7D32);
-                        prResult = '$n1 +${pr.score}';
-                      } else {
-                        prColor = const Color(0xFFC62828);
-                        prResult = '$n2 +${pr.score.abs()}';
-                      }
-                      final prLabel = pr.isPrimaryMatch
-                          ? '⚔️ Match H1–${pr.endHole}'
-                          : pr.startHole == 1
-                              ? '📌 Dígito H1–${pr.endHole}'
-                              : '🔄 Press H${pr.startHole}–${pr.endHole}';
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Row(children: [
-                          Expanded(child: Text(prLabel, style: TextStyle(color: t.sub, fontSize: 10))),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: prColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: prColor.withValues(alpha: 0.3)),
-                            ),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Text(prResult, style: TextStyle(color: prColor, fontSize: 10, fontWeight: FontWeight.w700)),
-                              const SizedBox(width: 4),
-                              Text('\$${pr.value.toStringAsFixed(0)}', style: TextStyle(color: t.sub, fontSize: 9)),
-                            ]),
-                          ),
-                        ]),
-                      );
-                    }).toList(),
-                  ),
-                );
-              }
-            }
-          }
+          // Para Match+Press: sin sub-filas, solo encabezado
+          // (el detalle lo muestra el panel _MatchPressLivePanel)
 
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -2212,7 +2136,6 @@ class _FinancialBreakdown extends StatelessWidget {
                   padding: const EdgeInsets.only(left: 22),
                   child: skinsSubtitle,
                 ),
-              if (matchPressSubtitle != null) matchPressSubtitle,
             ]),
           );
         }),
