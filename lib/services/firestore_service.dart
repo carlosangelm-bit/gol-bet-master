@@ -29,6 +29,10 @@ class FirestoreService {
     final data = roundToJson(round);
     data['updatedAt'] = FieldValue.serverTimestamp();
     data['isFinished'] = round.isFinished;
+    // Si se está finalizando, agregar el timestamp de finalización
+    if (round.isFinished) {
+      data['finishedAt'] = FieldValue.serverTimestamp();
+    }
     await _rounds().doc(round.id).set(data, SetOptions(merge: true));
   }
 
@@ -72,6 +76,38 @@ class FirestoreService {
       'finishedAt': FieldValue.serverTimestamp(),
       'updatedAt':  FieldValue.serverTimestamp(),
     });
+  }
+
+  /// Recupera rondas huérfanas: documentos con isFinished:false que tienen
+  /// scores registrados (probablemente se concluyeron pero no quedaron en historial).
+  /// Las marca como finalizadas para que aparezcan en el historial.
+  /// Retorna el número de rondas recuperadas.
+  static Future<int> recoverOrphanRounds() async {
+    if (AuthService.uid == null) return 0;
+    try {
+      final snap = await _rounds()
+          .where('isFinished', isEqualTo: false)
+          .limit(20)
+          .get();
+      int recovered = 0;
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        // Solo recuperar si tiene jugadores y scores (ronda que tuvo actividad real)
+        final players = data['players'] as List? ?? [];
+        final scores  = data['scores'] as Map? ?? {};
+        if (players.isNotEmpty && scores.isNotEmpty) {
+          await doc.reference.update({
+            'isFinished': true,
+            'finishedAt': FieldValue.serverTimestamp(),
+            'updatedAt':  FieldValue.serverTimestamp(),
+          });
+          recovered++;
+        }
+      }
+      return recovered;
+    } catch (_) {
+      return 0;
+    }
   }
 
   /// Elimina una ronda activa

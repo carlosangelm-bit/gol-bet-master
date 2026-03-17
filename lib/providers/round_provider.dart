@@ -117,10 +117,12 @@ class RoundProvider extends ChangeNotifier {
 
   void finishRound() {
     if (_round == null) return;
-    final roundId = _round!.id;
-    // Sincronizar con Firestore primero (antes de limpiar la referencia)
+    // Marcar la ronda como finalizada en el modelo
+    final finishedRound = _round!.copyWith(isFinished: true);
+    // Guardar el documento COMPLETO en Firestore con isFinished:true
+    // (saveRound hace set+merge, así funciona aunque el doc no exista todavía)
     if (AuthService.uid != null) {
-      FirestoreService.finishRound(roundId);
+      FirestoreService.saveRound(finishedRound);
     }
     // Limpiar la ronda activa → va al historial automáticamente
     _round = null;

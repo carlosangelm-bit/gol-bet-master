@@ -11,8 +11,36 @@ import '../../services/firestore_service.dart';
 import '../../widgets/common_widgets.dart';
 import '../results/results_screen.dart';
 
-class HistoryScreen extends StatelessWidget {
+class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
+  @override State<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends State<HistoryScreen> {
+  bool _recovering = false;
+
+  /// Busca rondas no finalizadas en Firestore y las marca como finalizadas
+  /// (recuperación de rondas "huérfanas" que se concluyeron pero no quedaron en historial)
+  Future<void> _recoverOrphanRounds(GolfTheme t) async {
+    setState(() => _recovering = true);
+    try {
+      final recovered = await FirestoreService.recoverOrphanRounds();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(recovered == 0
+            ? 'No se encontraron rondas para recuperar'
+            : '$recovered ronda${recovered > 1 ? 's recuperadas' : ' recuperada'} ✅'),
+        backgroundColor: recovered > 0 ? t.profit : t.sub,
+        duration: const Duration(seconds: 3),
+      ));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error al recuperar rondas')));
+    } finally {
+      if (mounted) setState(() => _recovering = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,6 +52,19 @@ class HistoryScreen extends StatelessWidget {
         elevation: 0,
         title: Text('Historial', style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
         iconTheme: IconThemeData(color: t.text),
+        actions: [
+          _recovering
+              ? Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: SizedBox(width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: t.primary)),
+                )
+              : IconButton(
+                  icon: Icon(Icons.restore_outlined, color: t.sub),
+                  tooltip: 'Recuperar rondas',
+                  onPressed: () => _recoverOrphanRounds(t),
+                ),
+        ],
       ),
       body: StreamBuilder<List<RoundSummary>>(
         stream: FirestoreService.historyStream(),
@@ -33,7 +74,7 @@ class HistoryScreen extends StatelessWidget {
           }
           final history = snap.data ?? [];
           if (history.isEmpty) {
-            return _EmptyHistory(t: t);
+            return _EmptyHistory(t: t, onRecover: () => _recoverOrphanRounds(t));
           }
           return ListView.builder(
             padding: const EdgeInsets.all(16),
@@ -48,7 +89,8 @@ class HistoryScreen extends StatelessWidget {
 
 class _EmptyHistory extends StatelessWidget {
   final GolfTheme t;
-  const _EmptyHistory({required this.t});
+  final VoidCallback onRecover;
+  const _EmptyHistory({required this.t, required this.onRecover});
   @override
   Widget build(BuildContext context) {
     return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -57,6 +99,12 @@ class _EmptyHistory extends StatelessWidget {
       Text('Sin rondas finalizadas', style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w700)),
       const SizedBox(height: 8),
       Text('Aquí aparecerán tus rondas\nterminadas con sus resultados.', style: TextStyle(color: t.sub, fontSize: 13), textAlign: TextAlign.center),
+      const SizedBox(height: 20),
+      TextButton.icon(
+        onPressed: onRecover,
+        icon: Icon(Icons.restore_outlined, size: 16, color: t.primary),
+        label: Text('Buscar rondas no guardadas', style: TextStyle(color: t.primary, fontSize: 13)),
+      ),
     ]));
   }
 }
