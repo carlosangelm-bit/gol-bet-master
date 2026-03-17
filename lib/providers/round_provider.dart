@@ -183,6 +183,14 @@ class RoundProvider extends ChangeNotifier {
     _persist();
   }
 
+  // ── Round players (ventajas manuales) ──────────────────────────────────────
+  void updateRoundPlayers(List<RoundPlayer> roundPlayers) {
+    if (_round == null) return;
+    _round = _round!.copyWith(roundPlayers: roundPlayers);
+    notifyListeners();
+    _persist();
+  }
+
   void setCurrentHole(int h) {
     if (_round == null) return;
     _round = _round!.copyWith(currentHole: h);

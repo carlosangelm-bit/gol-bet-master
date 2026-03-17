@@ -1409,8 +1409,10 @@ class _PressTile extends StatelessWidget {
     }
 
     final label  = pr.isPrimaryMatch
-        ? 'MATCH  H1–18'
-        : 'Press #${pr.sequenceNumber}  H${pr.startHole}–18';
+        ? 'MATCH  H1–${pr.endHole}'
+        : pr.startHole == 1
+            ? '📌 DÍGITO  H1–${pr.endHole}'
+            : '🔄 PRESS  H${pr.startHole}–${pr.endHole}';
     final played = pr.played;
     final value  = pr.value;
 
@@ -2102,6 +2104,62 @@ class _FinancialBreakdown extends StatelessWidget {
             }
           }
 
+          // Para Match+Press: mostrar el desglose de segmentos (match, dígito, presiones)
+          Widget? matchPressSubtitle;
+          if (betType == BetModuleType.matchAutoPress) {
+            final mpMods = _modsOf(BetModuleType.matchAutoPress);
+            if (mpMods.isNotEmpty) {
+              final mod = mpMods.first;
+              final statuses = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
+              if (statuses.isNotEmpty) {
+                matchPressSubtitle = Padding(
+                  padding: const EdgeInsets.only(top: 6, left: 22),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: statuses.map((pr) {
+                      final Color prColor;
+                      final String prResult;
+                      if (pr.score == 0) {
+                        prColor = const Color(0xFF1565C0);
+                        prResult = 'AS';
+                      } else if (pr.score > 0) {
+                        prColor = const Color(0xFF2E7D32);
+                        prResult = '$n1 +${pr.score}';
+                      } else {
+                        prColor = const Color(0xFFC62828);
+                        prResult = '$n2 +${pr.score.abs()}';
+                      }
+                      final prLabel = pr.isPrimaryMatch
+                          ? '⚔️ Match H1–${pr.endHole}'
+                          : pr.startHole == 1
+                              ? '📌 Dígito H1–${pr.endHole}'
+                              : '🔄 Press H${pr.startHole}–${pr.endHole}';
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(children: [
+                          Expanded(child: Text(prLabel, style: TextStyle(color: t.sub, fontSize: 10))),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: prColor.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: prColor.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Text(prResult, style: TextStyle(color: prColor, fontSize: 10, fontWeight: FontWeight.w700)),
+                              const SizedBox(width: 4),
+                              Text('\$${pr.value.toStringAsFixed(0)}', style: TextStyle(color: t.sub, fontSize: 9)),
+                            ]),
+                          ),
+                        ]),
+                      );
+                    }).toList(),
+                  ),
+                );
+              }
+            }
+          }
+
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2128,6 +2186,7 @@ class _FinancialBreakdown extends StatelessWidget {
                   padding: const EdgeInsets.only(left: 22),
                   child: skinsSubtitle,
                 ),
+              if (matchPressSubtitle != null) matchPressSubtitle,
             ]),
           );
         }),

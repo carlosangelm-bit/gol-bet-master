@@ -10,6 +10,7 @@ import '../../providers/player_provider.dart';
 import '../../services/golf_course_service.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/course_picker_sheet.dart';
+import '../../widgets/bet_module_edit_sheet.dart';
 import '../../services/firestore_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/player_service.dart';
@@ -2027,7 +2028,68 @@ class _SetupScreenState extends State<SetupScreen> {
           );
         }),
         const SizedBox(height: 16),
-        GSectionHeader(title: 'PARTIDAS'),
+        // ── VENTAJAS (editables) ──────────────────────────────────────────
+        if (_players.length >= 2) ...[
+          Row(children: [
+            Expanded(child: GSectionHeader(title: 'VENTAJAS')),
+            GestureDetector(
+              onTap: () => setState(() => _step = 1), // Ir al paso jugadores
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: t.accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: t.accent.withValues(alpha: 0.35)),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.edit_outlined, color: t.accent, size: 12),
+                  const SizedBox(width: 4),
+                  Text('Editar', style: TextStyle(color: t.accent, fontSize: 11, fontWeight: FontWeight.w700)),
+                ]),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          _HandicapMatrix(
+            players: _players,
+            playerTees: _playerTees,
+            manualHandicaps: _manualHandicaps,
+            playingHcp: _playingHcp,
+            onEdit: (p1, p2, val) => setState(() {
+              _manualHandicaps.putIfAbsent(p1, () => {});
+              _manualHandicaps.putIfAbsent(p2, () => {});
+              if (val == null) {
+                _manualHandicaps[p1]!.remove(p2);
+                _manualHandicaps[p2]!.remove(p1);
+              } else {
+                _manualHandicaps[p1]![p2] = val;
+                _manualHandicaps[p2]![p1] = -val;
+              }
+            }),
+            t: t,
+          ),
+          const SizedBox(height: 16),
+        ],
+        // ── PARTIDAS (editables) ──────────────────────────────────────────
+        Row(children: [
+          Expanded(child: GSectionHeader(title: 'PARTIDAS')),
+          GestureDetector(
+            onTap: () => setState(() => _step = 2), // Ir a paso Apuestas
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: t.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.add, color: t.primary, size: 12),
+                const SizedBox(width: 4),
+                Text('Agregar', style: TextStyle(color: t.primary, fontSize: 11, fontWeight: FontWeight.w700)),
+              ]),
+            ),
+          ),
+        ]),
         ...effectiveGroups.map((g) => Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2038,20 +2100,61 @@ class _SetupScreenState extends State<SetupScreen> {
               final fv = (m.extra['frontValue'] as num?)?.toDouble() ?? m.value;
               final bv = (m.extra['backValue']  as num?)?.toDouble() ?? m.value;
               final tv = (m.extra['totalValue'] as num?)?.toDouble() ?? m.value;
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: t.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                child: Text(
-                  isNassau
-                      ? 'Nassau  F\$${fv.toStringAsFixed(0)}·B\$${bv.toStringAsFixed(0)}·T\$${tv.toStringAsFixed(0)}'
-                      : '${m.type.label} \$${m.value.toStringAsFixed(0)}',
-                  style: TextStyle(color: t.primary, fontWeight: FontWeight.w600, fontSize: 12),
+              return GestureDetector(
+                onTap: () => _openModuleEdit(context, g, m, t),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: t.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text(m.type.icon, style: const TextStyle(fontSize: 12)),
+                    const SizedBox(width: 4),
+                    Text(
+                      isNassau
+                          ? 'Nassau  F\$${fv.toStringAsFixed(0)}·B\$${bv.toStringAsFixed(0)}·T\$${tv.toStringAsFixed(0)}'
+                          : '${m.type.label} \$${m.value.toStringAsFixed(0)}',
+                      style: TextStyle(color: t.primary, fontWeight: FontWeight.w600, fontSize: 12),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.edit_outlined, color: t.primary.withValues(alpha: 0.6), size: 11),
+                  ]),
                 ),
               );
             }).toList()),
           ])),
         )),
       ]),
+    );
+  }
+
+  void _openModuleEdit(BuildContext context, BetGroup group, BetModuleInstance mod, GolfTheme t) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => BetModuleEditSheet(
+        group: group,
+        mod: mod,
+        t: t,
+        courseInfo: _selectedCourse,
+        onSave: (updatedMod) {
+          setState(() {
+            final idx = _groups.indexWhere((g) => g.id == group.id);
+            if (idx >= 0) {
+              _groups[idx] = BetGroup(
+                id: group.id, name: group.name, format: group.format,
+                playerIds: group.playerIds,
+                modules: group.modules.map((m) => m.id == updatedMod.id ? updatedMod : m).toList(),
+              );
+            }
+          });
+        },
+      ),
     );
   }
 
@@ -2271,6 +2374,8 @@ class _StepBar extends StatelessWidget {
 }
 
 // ── Matriz de ventajas ───────────────────────────────────────────────────────
+/// Muestra un par (A vs B) por fila con selector +/- claro.
+/// La ventaja se expresa siempre como "A da X golpes a B" (positivo = A da, negativo = A recibe).
 class _HandicapMatrix extends StatelessWidget {
   final List<Player> players;
   final Map<String, TeeInfo> playerTees;
@@ -2291,86 +2396,256 @@ class _HandicapMatrix extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (players.length < 2) return const SizedBox.shrink();
+
+    // Generar todos los pares únicos (i < j)
+    final pairs = <(int, int)>[];
+    for (int i = 0; i < players.length; i++) {
+      for (int j = i + 1; j < players.length; j++) {
+        pairs.add((i, j));
+      }
+    }
+
     return Column(
-      children: List.generate(players.length, (i) {
-        final p1 = players[i];
+      children: pairs.map((pair) {
+        final pA = players[pair.$1];
+        final pB = players[pair.$2];
+        // Ventaja auto: cuántos golpes da pA a pB (positivo = pA da, negativo = pA recibe)
+        final autoVal = (playingHcp(pA) - playingHcp(pB)).round();
+        // Ventaja manual guardada (desde perspectiva pA→pB)
+        final manualVal = manualHandicaps[pA.id]?[pB.id];
+        final isManual  = manualVal != null;
+        final current   = isManual ? manualVal!.round() : autoVal;
+
+        // Quien da golpes y quién recibe
+        // CONVENIO: current > 0 → pA recibe golpes de pB (pA tiene mayor HCP)
+        //           current < 0 → pB recibe golpes de pA (pB tiene mayor HCP)
+        final String giverLabel;
+        final String receiverLabel;
+        final Color rowColor;
+        if (current > 0) {
+          // pA recibe strokes de pB
+          giverLabel    = '${pB.name.split(' ').first} da $current 🏌️ a ${pA.name.split(' ').first}';
+          receiverLabel = '';
+          rowColor      = t.profit;
+        } else if (current < 0) {
+          // pB recibe strokes de pA
+          giverLabel    = '${pA.name.split(' ').first} da ${current.abs()} 🏌️ a ${pB.name.split(' ').first}';
+          receiverLabel = '';
+          rowColor      = t.loss;
+        } else {
+          giverLabel    = '${pA.name.split(' ').first} vs ${pB.name.split(' ').first}  (igualdad)';
+          receiverLabel = '';
+          rowColor      = t.sub;
+        }
+
         return Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(children: [
-            SizedBox(width: 80, child: Text(p1.name, style: TextStyle(color: t.sub, fontSize: 11), overflow: TextOverflow.ellipsis)),
-            const SizedBox(width: 6),
-            ...List.generate(players.length, (j) {
-              if (i == j) return SizedBox(width: 54, child: Center(child: Text('—', style: TextStyle(color: t.divider))));
-              final p2 = players[j];
-              final manual = manualHandicaps[p1.id]?[p2.id];
-              final auto = (playingHcp(p1) - playingHcp(p2)).round();
-              final display = manual != null ? manual.round() : auto;
-              final isManual = manual != null;
-              return GestureDetector(
-                onTap: () => _showEditDialog(context, p1, p2, manual),
-                child: Container(
-                  width: 54, height: 32, margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    color: isManual ? t.accent.withValues(alpha: 0.1) : t.surface,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: isManual ? t.accent : t.divider, width: isManual ? 1.5 : 1),
-                  ),
-                  child: Center(child: Text(
-                    display >= 0 ? '+$display' : '$display',
-                    style: TextStyle(
-                      color: isManual ? t.accent : t.sub,
-                      fontWeight: isManual ? FontWeight.w700 : FontWeight.normal,
-                      fontSize: 12,
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: isManual ? t.accent.withValues(alpha: 0.06) : t.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isManual ? t.accent.withValues(alpha: 0.4) : t.divider,
+                width: isManual ? 1.5 : 1,
+              ),
+            ),
+            child: Row(children: [
+              // Descripción
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  GAvatar(name: pA.name, colorIndex: pA.colorIndex, size: 20),
+                  const SizedBox(width: 4),
+                  Text('vs', style: TextStyle(color: t.divider, fontSize: 11)),
+                  const SizedBox(width: 4),
+                  GAvatar(name: pB.name, colorIndex: pB.colorIndex, size: 20),
+                  if (isManual) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: t.accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text('Manual', style: TextStyle(color: t.accent, fontSize: 9, fontWeight: FontWeight.w700)),
                     ),
-                  )),
+                  ],
+                ]),
+                const SizedBox(height: 3),
+                Text(
+                  giverLabel + receiverLabel,
+                  style: TextStyle(
+                    color: current == 0 ? t.sub : rowColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              );
-            }),
-          ]),
+                if (!isManual)
+                  Text('Calculado por HCP automático', style: TextStyle(color: t.sub, fontSize: 10)),
+              ])),
+              // Controles +/-
+              Row(children: [
+                // Botón −
+                GestureDetector(
+                  onTap: () => onEdit(pA.id, pB.id, (current - 1).toDouble()),
+                  child: Container(
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(
+                      color: t.loss.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: t.loss.withValues(alpha: 0.3)),
+                    ),
+                    child: Icon(Icons.remove, color: t.loss, size: 16),
+                  ),
+                ),
+                // Valor central
+                GestureDetector(
+                  onTap: () => _showEditDialog(context, pA, pB, isManual ? manualVal : null, autoVal),
+                  child: Container(
+                    width: 44, height: 32,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: isManual ? t.accent.withValues(alpha: 0.1) : t.card,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: isManual ? t.accent : t.divider, width: isManual ? 1.5 : 1),
+                    ),
+                    child: Center(child: Text(
+                      current > 0 ? '+$current' : '$current',
+                      style: TextStyle(
+                        color: isManual ? t.accent : t.sub,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    )),
+                  ),
+                ),
+                // Botón +
+                GestureDetector(
+                  onTap: () => onEdit(pA.id, pB.id, (current + 1).toDouble()),
+                  child: Container(
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(
+                      color: t.profit.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: t.profit.withValues(alpha: 0.3)),
+                    ),
+                    child: Icon(Icons.add, color: t.profit, size: 16),
+                  ),
+                ),
+              ]),
+            ]),
+          ),
         );
-      }),
+      }).toList(),
     );
   }
 
-  void _showEditDialog(BuildContext ctx, Player p1, Player p2, double? current) {
-    final ctrl = TextEditingController(text: current?.toStringAsFixed(0) ?? '');
+  void _showEditDialog(BuildContext ctx, Player pA, Player pB, double? manualCurrent, int autoVal) {
+    // Valor editable: si hay manual lo usamos, si no el auto
+    int editVal = manualCurrent?.round() ?? autoVal;
     showDialog(
       context: ctx,
-      builder: (dCtx) => AlertDialog(
-        backgroundColor: t.card,
-        title: Text('Ventaja manual', style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('Strokes que ${p1.name} recibe de ${p2.name}', style: TextStyle(color: t.sub, fontSize: 13)),
-          const SizedBox(height: 12),
-          TextField(
-            controller: ctrl,
-            keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: false),
-            autofocus: true,
-            style: TextStyle(color: t.text),
-            decoration: InputDecoration(
-              hintText: 'Ej: 2 o -1',
-              fillColor: t.surface, filled: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: t.divider)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: t.primary, width: 2)),
-            ),
-          ),
-        ]),
-        actions: [
-          if (current != null)
-            TextButton(onPressed: () { Navigator.pop(dCtx); onEdit(p1.id, p2.id, null); },
-                child: Text('Restablecer auto', style: TextStyle(color: t.sub))),
-          TextButton(onPressed: () => Navigator.pop(dCtx), child: Text('Cancelar', style: TextStyle(color: t.sub))),
-          TextButton(
-            onPressed: () {
-              final v = double.tryParse(ctrl.text.trim());
-              if (v != null) { Navigator.pop(dCtx); onEdit(p1.id, p2.id, v); }
-            },
-            child: Text('Guardar', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700)),
-          ),
-        ],
+      barrierDismissible: true,
+      builder: (dCtx) => StatefulBuilder(
+        builder: (dCtx2, setSt) {
+          // CONVENIO: positivo → pB da strokes a pA (pA recibe de pB)
+          //            negativo → pA da strokes a pB (pB recibe de pA)
+          final String desc = editVal > 0
+              ? '${pB.name.split(' ').first} da $editVal golpe${editVal != 1 ? 's' : ''} a ${pA.name.split(' ').first}'
+              : editVal < 0
+                  ? '${pA.name.split(' ').first} da ${editVal.abs()} golpe${editVal.abs() != 1 ? 's' : ''} a ${pB.name.split(' ').first}'
+                  : 'Juegan en igualdad (0 golpes)';
+          return AlertDialog(
+            backgroundColor: t.card,
+            title: Row(children: [
+              GAvatar(name: pA.name, colorIndex: pA.colorIndex, size: 24),
+              const SizedBox(width: 6),
+              Text('vs', style: TextStyle(color: t.sub, fontSize: 13)),
+              const SizedBox(width: 6),
+              GAvatar(name: pB.name, colorIndex: pB.colorIndex, size: 24),
+              const SizedBox(width: 8),
+              Text('Ventaja', style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
+            ]),
+            content: Column(mainAxisSize: MainAxisSize.min, children: [
+              // Descripción dinámica
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: editVal == 0 ? t.surface : (editVal > 0 ? t.profit : t.loss).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: editVal == 0 ? t.divider : (editVal > 0 ? t.profit : t.loss).withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Text(desc, style: TextStyle(
+                  color: editVal == 0 ? t.sub : (editVal > 0 ? t.profit : t.loss),
+                  fontSize: 13, fontWeight: FontWeight.w700,
+                ), textAlign: TextAlign.center),
+              ),
+              const SizedBox(height: 16),
+              // Controles grandes
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                // −5
+                _bigBtn('−5', t.loss, () => setSt(() => editVal -= 5)),
+                const SizedBox(width: 6),
+                // −1
+                _bigBtn('−1', t.loss, () => setSt(() => editVal -= 1)),
+                const SizedBox(width: 12),
+                // Valor
+                Container(
+                  width: 56, height: 48,
+                  decoration: BoxDecoration(
+                    color: t.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: t.primary, width: 1.5),
+                  ),
+                  child: Center(child: Text(
+                    editVal > 0 ? '+$editVal' : '$editVal',
+                    style: TextStyle(color: t.primary, fontSize: 18, fontWeight: FontWeight.w900),
+                  )),
+                ),
+                const SizedBox(width: 12),
+                // +1
+                _bigBtn('+1', t.profit, () => setSt(() => editVal += 1)),
+                const SizedBox(width: 6),
+                // +5
+                _bigBtn('+5', t.profit, () => setSt(() => editVal += 5)),
+              ]),
+              const SizedBox(height: 8),
+              Text('(+) = ${pB.name.split(' ').first} da golpes a ${pA.name.split(' ').first}\n(−) = ${pA.name.split(' ').first} da golpes a ${pB.name.split(' ').first}',
+                  style: TextStyle(color: t.sub, fontSize: 10), textAlign: TextAlign.center),
+            ]),
+            actions: [
+              if (manualCurrent != null)
+                TextButton(
+                  onPressed: () { Navigator.pop(dCtx); onEdit(pA.id, pB.id, null); },
+                  child: Text('Restablecer auto (${autoVal >= 0 ? '+' : ''}$autoVal  = ${autoVal > 0 ? '${pB.name.split(' ').first} da $autoVal a ${pA.name.split(' ').first}' : autoVal < 0 ? '${pA.name.split(' ').first} da ${autoVal.abs()} a ${pB.name.split(' ').first}' : 'igualdad'})', style: TextStyle(color: t.sub, fontSize: 11)),
+                ),
+              TextButton(onPressed: () => Navigator.pop(dCtx), child: Text('Cancelar', style: TextStyle(color: t.sub))),
+              TextButton(
+                onPressed: () { Navigator.pop(dCtx); onEdit(pA.id, pB.id, editVal.toDouble()); },
+                child: Text('Guardar', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
+
+  Widget _bigBtn(String label, Color color, VoidCallback onTap) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 36, height: 36,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Center(child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 13))),
+    ),
+  );
 }
 
 // ── Sheet de lanzamiento de ronda ─────────────────────────────────────────────

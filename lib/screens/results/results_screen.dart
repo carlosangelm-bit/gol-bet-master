@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../engines/ledger_engine.dart';
+import '../../engines/bet_engine.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
 import '../../widgets/common_widgets.dart';
@@ -326,17 +327,59 @@ class _PlayerFaceToFace extends StatelessWidget {
                     padding: const EdgeInsets.only(left: 36),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: breakdown.entries.map((e) => Padding(
-                        padding: const EdgeInsets.only(bottom: 3),
-                        child: Row(children: [
-                          Text(e.key.label, style: TextStyle(color: t.sub, fontSize: 11)),
-                          const Spacer(),
-                          Text(
-                            '${e.value >= 0 ? '+' : ''}\$${e.value.toStringAsFixed(0)}',
-                            style: TextStyle(color: e.value >= 0 ? t.profit : t.loss, fontSize: 11, fontWeight: FontWeight.w600),
-                          ),
-                        ]),
-                      )).toList(),
+                      children: breakdown.entries.map((e) {
+                        // Para Match+Press, agregar detalle de segmentos debajo
+                        List<Widget> subRows = [];
+                        if (e.key == BetModuleType.matchAutoPress) {
+                          for (final g in round.betGroups) {
+                            if (!g.playerIds.contains(player.id) || !g.playerIds.contains(opp.id)) continue;
+                            for (final m in g.modules.where((m) => m.type == BetModuleType.matchAutoPress)) {
+                              final statuses = BetEngine.matchAutoPressLive(round, player.id, opp.id, m);
+                              for (final pr in statuses) {
+                                final prLabel = pr.isPrimaryMatch
+                                    ? '⚔️ Match H1–${pr.endHole}'
+                                    : pr.startHole == 1
+                                        ? '📌 Dígito H1–${pr.endHole}'
+                                        : '🔄 Press H${pr.startHole}–${pr.endHole}';
+                                final prColor = pr.score == 0
+                                    ? const Color(0xFF1565C0)
+                                    : pr.score > 0
+                                        ? const Color(0xFF2E7D32)
+                                        : const Color(0xFFC62828);
+                                final prResult = pr.score == 0
+                                    ? 'AS'
+                                    : pr.leadingPlayerId == player.id
+                                        ? '+${pr.score.abs()}'
+                                        : '−${pr.score.abs()}';
+                                subRows.add(Padding(
+                                  padding: const EdgeInsets.only(bottom: 2, left: 8),
+                                  child: Row(children: [
+                                    Text(prLabel, style: TextStyle(color: t.sub, fontSize: 10)),
+                                    const Spacer(),
+                                    Text(prResult, style: TextStyle(color: prColor, fontSize: 10, fontWeight: FontWeight.w600)),
+                                    const SizedBox(width: 6),
+                                    Text('\$${pr.value.toStringAsFixed(0)}', style: TextStyle(color: t.sub, fontSize: 9)),
+                                  ]),
+                                ));
+                              }
+                            }
+                          }
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 3),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Row(children: [
+                              Text('${e.key.icon}  ${e.key.label}', style: TextStyle(color: t.sub, fontSize: 11)),
+                              const Spacer(),
+                              Text(
+                                '${e.value >= 0 ? '+' : ''}\$${e.value.toStringAsFixed(0)}',
+                                style: TextStyle(color: e.value >= 0 ? t.profit : t.loss, fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ]),
+                            ...subRows,
+                          ]),
+                        );
+                      }).toList(),
                     ),
                   ),
                 ],
