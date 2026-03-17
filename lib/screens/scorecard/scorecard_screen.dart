@@ -1421,6 +1421,77 @@ class _MatchPressLivePanel extends StatelessWidget {
         Text('Presión automática al llegar a ${cfg.pressTriggerValue} up',
             style: TextStyle(color: t.sub, fontSize: 10)),
       ]),
+
+      // ── Panel visual de presiones ────────────────────────────────────────
+      if (presses.length > 1) ...[
+        const SizedBox(height: 10),
+        Divider(height: 1, color: t.sub.withValues(alpha: 0.15)),
+        const SizedBox(height: 10),
+        // Título
+        Text('PRESIONES ACTIVAS', style: TextStyle(color: t.sub, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.7)),
+        const SizedBox(height: 8),
+        // Fila de pastillas — una por segmento (excluye el match principal)
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: presses.skip(1).map((pr) {
+            // Color según estado: azul=AS, verde=p1 gana, rojo=p2 gana, gris=no jugado
+            final Color bgBase;
+            final String scoreLabel;
+            final String leadLabel;
+            if (pr.played == 0) {
+              bgBase = t.sub;
+              scoreLabel = '–';
+              leadLabel = 'Abierta';
+            } else if (pr.score == 0) {
+              bgBase = const Color(0xFF1565C0);
+              scoreLabel = 'AS';
+              leadLabel = 'Empate';
+            } else if (pr.leadingPlayerId == p1.id) {
+              bgBase = t.profit;
+              scoreLabel = '${pr.score.abs()}UP';
+              leadLabel = n1;
+            } else {
+              bgBase = t.loss;
+              scoreLabel = '${pr.score.abs()}UP';
+              leadLabel = n2;
+            }
+
+            // Etiqueta del segmento
+            final isDigit = pr.sequenceNumber == 2;
+            final segTag = isDigit ? 'DÍGITO' : 'PRESS ${pr.sequenceNumber - 1}';
+            final holeRange = 'H${pr.startHole}–${pr.endHole}';
+
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              decoration: BoxDecoration(
+                color: bgBase.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: bgBase.withValues(alpha: 0.35), width: 1),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Rango de hoyos + tag
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text(segTag, style: TextStyle(color: bgBase, fontSize: 8, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                    const SizedBox(width: 4),
+                    Text(holeRange, style: TextStyle(color: t.sub, fontSize: 8)),
+                  ]),
+                  const SizedBox(height: 3),
+                  // Score en grande
+                  Text(scoreLabel, style: TextStyle(color: bgBase, fontSize: 13, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 1),
+                  // Quién lidera + valor
+                  Text('$leadLabel  •  \$${pr.value.toStringAsFixed(0)}',
+                      style: TextStyle(color: t.sub, fontSize: 8)),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ],
     ]));
   }
 }

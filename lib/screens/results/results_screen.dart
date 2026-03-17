@@ -309,28 +309,28 @@ class _PlayerFaceToFace extends StatelessWidget {
         children: [
           // ── Sección cara a cara vs cada rival ──────────────────────────────
           ...opponents.map((opp) {
-            final balance   = LedgerEngine.balanceBetween(round, player.id, opp.id);
+            // Breakdown base desde el ledger
             final breakdown = LedgerEngine.breakdownBetween(round, player.id, opp.id);
 
             // Corregir Match+Press usando matchAutoPressLive (independiente del orden de pids del módulo)
-            double mpLiveBal = 0.0;
-            bool hasMatchPress = false;
             for (final g in round.betGroups) {
               if (!g.playerIds.contains(player.id) || !g.playerIds.contains(opp.id)) continue;
               for (final mod in g.modules) {
                 if (mod.type != BetModuleType.matchAutoPress) continue;
-                hasMatchPress = true;
+                double mpLiveBal = 0.0;
                 final presses = BetEngine.matchAutoPressLive(round, player.id, opp.id, mod);
                 for (final pr in presses) {
                   if (pr.played == 0) continue;
                   if (pr.leadingPlayerId == player.id) mpLiveBal += pr.value;
                   if (pr.leadingPlayerId == opp.id) mpLiveBal -= pr.value;
                 }
+                // Reemplazar el valor de M+P en el breakdown con el calculado en vivo
+                breakdown[BetModuleType.matchAutoPress] = mpLiveBal;
               }
             }
-            if (hasMatchPress) {
-              breakdown[BetModuleType.matchAutoPress] = mpLiveBal;
-            }
+
+            // Balance correcto = suma del breakdown ya corregido (no balanceBetween que usa entries crudos)
+            final balance = breakdown.values.fold<double>(0.0, (s, v) => s + v);
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
