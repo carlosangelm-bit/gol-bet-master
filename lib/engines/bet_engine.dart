@@ -223,12 +223,54 @@ class BetEngine {
     final entries = <LedgerEntry>[];
     final cfg = mod.medal;
 
+    // Helper: score neto de pA respecto a pB, respetando el manualHandicap bilateral (sliding).
+    // manualHandicaps[pA][pB] = strokes que pA recibe de pB (positivo = ventaja para pA).
+    // Aplica strokesReceivedVs hoyo a hoyo para distribuir correctamente los strokes.
+    int netFor(String pAId, String pBId) {
+      if (!mod.useHandicap) return GameEngine.grossTotal(round, pAId);
+      final rpA = round.roundPlayers.firstWhere(
+          (r) => r.playerId == pAId,
+          orElse: () => RoundPlayer(playerId: pAId, handicapEnRonda: 0));
+      final rpB = round.roundPlayers.firstWhere(
+          (r) => r.playerId == pBId,
+          orElse: () => RoundPlayer(playerId: pBId, handicapEnRonda: 0));
+
+      // ¿Hay manualHandicap entre este par?
+      final manualDiff = rpA.manualHandicaps[pBId];
+      if (manualDiff != null && manualDiff != 0) {
+        // manualDiff > 0: pA recibe strokes → pA tiene ventaja (su neto = gross - strokes recibidos)
+        // manualDiff < 0: pA da strokes   → pA en desventaja (su neto = gross, sin reducción)
+        int total = 0;
+        for (int h = 1; h <= round.totalHoles; h++) {
+          final s = round.getScore(pAId, h);
+          if (!s.hasScore) continue;
+          final ch = round.course.holes.firstWhere(
+              (c) => c.hole == h, orElse: () => round.course.holes.first);
+          int strokes = 0;
+          if (manualDiff > 0) {
+            // pA recibe: usar strokesReceivedVs con hcpHigher = hcpA + diff, hcpLower = hcpB
+            strokes = GameEngine.strokesReceivedVs(
+              hcpHigher: rpA.handicapEnRonda + manualDiff,
+              hcpLower:  rpB.handicapEnRonda,
+              ch: ch,
+              allHoles: round.course.holes,
+              startingNine: round.startingNine,
+            );
+          }
+          // manualDiff < 0: pA da strokes → strokes = 0 (pA juega en bruto respecto a pB)
+          total += s.grossScore! - strokes;
+        }
+        return total;
+      }
+      // Sin manualHandicap → usar handicap individual normal
+      return GameEngine.netTotal(round, pAId, mod.useHandicap);
+    }
+
     if (mod.isAllVsAll && pids.length > 2) {
-      // Cada par: quien tiene menor net score cobra al otro
       for (int i = 0; i < pids.length; i++) {
         for (int j = i + 1; j < pids.length; j++) {
-          final net1 = GameEngine.netTotal(round, pids[i], mod.useHandicap);
-          final net2 = GameEngine.netTotal(round, pids[j], mod.useHandicap);
+          final net1 = netFor(pids[i], pids[j]);
+          final net2 = netFor(pids[j], pids[i]);
           if (net1 < net2) {
             entries.add(LedgerEntry(fromPlayerId: pids[j], toPlayerId: pids[i], amount: cfg.value, betType: BetModuleType.medal, reason: 'Medal'));
           } else if (net2 < net1) {
@@ -241,8 +283,15 @@ class BetEngine {
 
     // onePot: winner toma de todos
     final nets = <String, int>{};
-    for (final pid in pids) {
-      nets[pid] = GameEngine.netTotal(round, pid, mod.useHandicap);
+    if (pids.length == 2) {
+      // Par exacto: respetar manualHandicap bilateral
+      nets[pids[0]] = netFor(pids[0], pids[1]);
+      nets[pids[1]] = netFor(pids[1], pids[0]);
+    } else {
+      // 3+ jugadores sin sliding bilateral: handicap individual normal
+      for (final pid in pids) {
+        nets[pid] = GameEngine.netTotal(round, pid, mod.useHandicap);
+      }
     }
     final sorted = pids.toList()..sort((a, b) => (nets[a] ?? 999).compareTo(nets[b] ?? 999));
     final winner = sorted.first;
