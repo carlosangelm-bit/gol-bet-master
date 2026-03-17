@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../engines/ledger_engine.dart';
+import '../../engines/bet_engine.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
 import '../../widgets/common_widgets.dart';
@@ -310,6 +311,26 @@ class _PlayerFaceToFace extends StatelessWidget {
           ...opponents.map((opp) {
             final balance   = LedgerEngine.balanceBetween(round, player.id, opp.id);
             final breakdown = LedgerEngine.breakdownBetween(round, player.id, opp.id);
+
+            // Corregir Match+Press usando matchAutoPressLive (independiente del orden de pids del módulo)
+            double mpLiveBal = 0.0;
+            bool hasMatchPress = false;
+            for (final g in round.betGroups) {
+              if (!g.playerIds.contains(player.id) || !g.playerIds.contains(opp.id)) continue;
+              for (final mod in g.modules) {
+                if (mod.type != BetModuleType.matchAutoPress) continue;
+                hasMatchPress = true;
+                final presses = BetEngine.matchAutoPressLive(round, player.id, opp.id, mod);
+                for (final pr in presses) {
+                  if (pr.played == 0) continue;
+                  if (pr.leadingPlayerId == player.id) mpLiveBal += pr.value;
+                  if (pr.leadingPlayerId == opp.id) mpLiveBal -= pr.value;
+                }
+              }
+            }
+            if (hasMatchPress) {
+              breakdown[BetModuleType.matchAutoPress] = mpLiveBal;
+            }
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),

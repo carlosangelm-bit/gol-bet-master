@@ -1340,13 +1340,18 @@ class _MatchPressLivePanel extends StatelessWidget {
     final n1  = p1.name.split(' ').first;
     final n2  = p2.name.split(' ').first;
 
-    // Balance SOLO de Match+Press (no de todos los módulos)
-    final breakdown = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
-    final mpBal     = breakdown[BetModuleType.matchAutoPress] ?? 0.0;
-    final balColor  = mpBal > 0.005 ? t.profit : mpBal < -0.005 ? t.loss : t.sub;
-
     // Estado general: quién va ganando el match (score global H1-totalHoles)
     final presses  = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
+
+    // Balance SOLO de Match+Press calculado desde live status (fiable, independiente de pids del módulo)
+    // Suma: para cada segmento con resultado, +value si p1 gana (leadingPlayerId == p1.id), -value si p2 gana
+    double mpBal = 0.0;
+    for (final pr in presses) {
+      if (pr.played == 0) continue;
+      if (pr.leadingPlayerId == p1.id) mpBal += pr.value;
+      if (pr.leadingPlayerId == p2.id) mpBal -= pr.value;
+    }
+    final balColor  = mpBal > 0.005 ? t.profit : mpBal < -0.005 ? t.loss : t.sub;
     final primary  = presses.isNotEmpty ? presses.first : null; // siempre el Match principal
     final matchScore   = primary?.score ?? 0;
     final pressesWon1  = presses.skip(1).where((pr) => pr.leadingPlayerId == p1.id && pr.played > 0).length;
@@ -2028,10 +2033,27 @@ class _FinancialBreakdown extends StatelessWidget {
     context.watch<RoundProvider>(); // rebuilda al cambiar la ronda
     final breakdown = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
 
+    // Para Match+Press: calcular balance desde matchAutoPressLive (siempre correcto, independiente
+    // del orden de pids en el módulo). Sobreescribir el valor del breakdown si hay módulos activos.
+    final mpMods = _modsOf(BetModuleType.matchAutoPress);
+    if (mpMods.isNotEmpty) {
+      double mpBal = 0.0;
+      for (final mod in mpMods) {
+        final presses = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
+        for (final pr in presses) {
+          if (pr.played == 0) continue;
+          if (pr.leadingPlayerId == p1.id) mpBal += pr.value;
+          if (pr.leadingPlayerId == p2.id) mpBal -= pr.value;
+        }
+      }
+      breakdown[BetModuleType.matchAutoPress] = mpBal;
+    }
+
     // Obtener todos los tipos de módulo configurados para este par
     final allTypes = _allModuleTypes();
     if (allTypes.isEmpty) return const SizedBox.shrink();
 
+    // El total neto es la suma del breakdown corregido (incluye match+press por liveStatus)
     final total = breakdown.values.fold<double>(0, (sum, v) => sum + v);
     final totalColor = total > 0.005 ? t.profit : total < -0.005 ? t.loss : t.sub;
 
