@@ -466,6 +466,13 @@ class BetEngine {
     final hcp2 = mod.useHandicap ? round.getHandicap(p2Id) : 0.0;
 
     // Delta hoyo a hoyo (positivo = p1 gana el hoyo)
+    // Usa strokesReceivedVs (bilateral) igual que skins 1v1 para consistencia.
+    final allHoles = round.course.holes;
+    final String baseId     = hcp1 <= hcp2 ? p1Id : p2Id;
+    final String receiverId = hcp1 <= hcp2 ? p2Id : p1Id;
+    final double hcpBase     = hcp1 <= hcp2 ? hcp1 : hcp2;
+    final double hcpReceiver = hcp1 <= hcp2 ? hcp2 : hcp1;
+
     final List<int> hd = List.filled(round.totalHoles + 1, 0);
     for (int h = 1; h <= round.totalHoles; h++) {
       final ch = round.course.holes.firstWhere(
@@ -473,9 +480,28 @@ class BetEngine {
       final s1 = round.getScore(p1Id, h);
       final s2 = round.getScore(p2Id, h);
       if (!s1.hasScore || !s2.hasScore) continue;
-      final net1 = s1.grossScore! - GameEngine.strokesReceived(hcp1, ch);
-      final net2 = s2.grossScore! - GameEngine.strokesReceived(hcp2, ch);
-      hd[h] = net1 < net2 ? 1 : net1 > net2 ? -1 : 0;
+
+      // Strokes bilaterales: el jugador de mayor hcp recibe strokes vs el de menor
+      final strokesHere = mod.useHandicap
+          ? GameEngine.strokesReceivedVs(
+              hcpHigher:    hcpReceiver,
+              hcpLower:     hcpBase,
+              ch:           ch,
+              allHoles:     allHoles,
+              startingNine: round.startingNine,
+            )
+          : 0;
+
+      final grossBase     = round.getScore(baseId,     h).grossScore!;
+      final grossReceiver = round.getScore(receiverId, h).grossScore!;
+      final netReceiver   = grossReceiver - strokesHere;
+
+      // Convertir resultado al orden p1/p2
+      final int delta;
+      if (grossBase < netReceiver)      delta = baseId == p1Id ? 1 : -1;
+      else if (grossBase > netReceiver) delta = baseId == p1Id ? -1 : 1;
+      else                              delta = 0;
+      hd[h] = delta;
     }
 
     // ── Construir segmentos ──────────────────────────────────────────────────
@@ -564,7 +590,13 @@ class BetEngine {
     final hcp1 = mod.useHandicap ? round.getHandicap(p1Id) : 0.0;
     final hcp2 = mod.useHandicap ? round.getHandicap(p2Id) : 0.0;
 
-    // Delta por hoyo
+    // Delta por hoyo — usa strokesReceivedVs (bilateral) para consistencia con skins 1v1
+    final allHolesLive = round.course.holes;
+    final String baseIdLive     = hcp1 <= hcp2 ? p1Id : p2Id;
+    final String receiverIdLive = hcp1 <= hcp2 ? p2Id : p1Id;
+    final double hcpBaseLive     = hcp1 <= hcp2 ? hcp1 : hcp2;
+    final double hcpReceiverLive = hcp1 <= hcp2 ? hcp2 : hcp1;
+
     final List<int> hd = List.filled(round.totalHoles + 1, 0);
     int lastPlayedHole = 0;
     for (int h = 1; h <= round.totalHoles; h++) {
@@ -574,9 +606,26 @@ class BetEngine {
       final s2 = round.getScore(p2Id, h);
       if (!s1.hasScore || !s2.hasScore) continue;
       lastPlayedHole = h;
-      final net1 = s1.grossScore! - GameEngine.strokesReceived(hcp1, ch);
-      final net2 = s2.grossScore! - GameEngine.strokesReceived(hcp2, ch);
-      hd[h] = net1 < net2 ? 1 : net1 > net2 ? -1 : 0;
+
+      final strokesHere = mod.useHandicap
+          ? GameEngine.strokesReceivedVs(
+              hcpHigher:    hcpReceiverLive,
+              hcpLower:     hcpBaseLive,
+              ch:           ch,
+              allHoles:     allHolesLive,
+              startingNine: round.startingNine,
+            )
+          : 0;
+
+      final grossBase     = round.getScore(baseIdLive,     h).grossScore!;
+      final grossReceiver = round.getScore(receiverIdLive, h).grossScore!;
+      final netReceiver   = grossReceiver - strokesHere;
+
+      final int delta;
+      if (grossBase < netReceiver)      delta = baseIdLive == p1Id ? 1 : -1;
+      else if (grossBase > netReceiver) delta = baseIdLive == p1Id ? -1 : 1;
+      else                              delta = 0;
+      hd[h] = delta;
     }
 
     // ── Mismo algoritmo de construcción de segmentos que _matchAutoPress ──
