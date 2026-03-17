@@ -13,6 +13,7 @@ import '../../widgets/course_picker_sheet.dart';
 import '../../services/firestore_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/player_service.dart';
+import '../../services/user_profile_service.dart';
 
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
@@ -216,31 +217,8 @@ class _SetupScreenState extends State<SetupScreen> {
                     });
                     return;
                   }
-                  if (fav.hasCachedData) {
-                    // Usar datos cacheados directamente
-                    final api = fav.cachedCourse!;
-                    // Construir CourseInfo a partir del primer tee o hoyos estándar
-                    CourseInfo courseInfo;
-                    if (api.allTees.isNotEmpty) {
-                      courseInfo = api.allTees.first.toCourseInfo(api.clubName, api.courseName);
-                    } else {
-                      courseInfo = CourseInfo(name: fav.fullName, holes: CourseInfo.standard.holes);
-                    }
-                    setState(() {
-                      _selectedApiCourse = api;
-                      _selectedCourse = courseInfo;
-                    });
-                  } else {
-                    // Sin cache: mostrar el campo con datos básicos
-                    setState(() {
-                      _selectedCourse = CourseInfo(
-                        name: fav.fullName,
-                        holes: CourseInfo.standard.holes,
-                      );
-                      _selectedApiCourse = null;
-                      _playerTees.clear();
-                    });
-                  }
+                  // Siempre intentar obtener datos frescos de la API
+                  _selectFavCourseWithFresh(fav);
                 },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
@@ -2135,6 +2113,46 @@ class _SetupScreenState extends State<SetupScreen> {
           backgroundColor: Colors.orange,
         ));
       }
+    }
+  }
+
+  /// Selecciona un campo favorito obteniendo datos frescos de la API.
+  /// Si la API falla, usa el caché disponible como respaldo.
+  Future<void> _selectFavCourseWithFresh(FavoriteCourse fav) async {
+    // 1. Usar caché inmediatamente para respuesta rápida
+    if (fav.hasCachedData) {
+      final api = fav.cachedCourse!;
+      if (api.allTees.isNotEmpty) {
+        setState(() {
+          _selectedApiCourse = api;
+          _selectedCourse = api.allTees.first.toCourseInfo(api.clubName, api.courseName);
+        });
+      }
+    } else {
+      // Sin caché: mostrar nombre mientras carga
+      setState(() {
+        _selectedCourse = CourseInfo(name: fav.fullName, holes: CourseInfo.standard.holes);
+        _selectedApiCourse = null;
+      });
+    }
+
+    // 2. Intentar obtener datos frescos de la API en background
+    final courseIdInt = int.tryParse(fav.courseId);
+    if (courseIdInt == null) return;
+
+    try {
+      final fresh = await GolfCourseService.getById(courseIdInt);
+      if (!mounted) return;
+      if (fresh.allTees.isNotEmpty) {
+        setState(() {
+          _selectedApiCourse = fresh;
+          _selectedCourse = fresh.allTees.first.toCourseInfo(fresh.clubName, fresh.courseName);
+        });
+        // 3. Actualizar caché en Firestore silenciosamente
+        UserProfileService.updateFavCourseCache(fav.courseId, fresh);
+      }
+    } catch (_) {
+      // Si falla la API, el caché ya fue aplicado en el paso 1
     }
   }
 

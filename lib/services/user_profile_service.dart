@@ -318,4 +318,18 @@ class UserProfileService {
       ).toFirestore());
     }
   }
+
+  /// Actualiza silenciosamente el caché de un campo favorito con datos frescos de la API.
+  static Future<void> updateFavCourseCache(String courseId, ApiCourse freshCourse) async {
+    if (AuthService.uid == null) return;
+    try {
+      final doc = _favCourses().doc(courseId);
+      final snap = await doc.get();
+      if (!snap.exists) return;
+      // Solo actualizar el campo cachedCourse, preservar el resto
+      await doc.update({'cachedCourse': freshCourse.toJson()});
+    } catch (_) {
+      // Fallar silenciosamente — no es crítico
+    }
+  }
 }
