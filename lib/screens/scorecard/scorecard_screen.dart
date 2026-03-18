@@ -637,17 +637,17 @@ class _MatchStatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasSkins       = skinsModules.isNotEmpty;
-    final hasNassau      = nassauModules.isNotEmpty;
-    final hasMatchPress  = matchPressModules.isNotEmpty;
-    // Skins sin otros módulos de match → panel de skins dedicado
-    if (hasSkins && !hasNassau && !hasMatchPress) {
+    // Si hay Skins (con o sin Match+Press / Nassau), el card principal
+    // SIEMPRE muestra _SkinsGlanceCard.
+    // El _MatchPressLivePanel y NassauLivePanel ya se renderizan debajo
+    // por separado, así que no duplicamos información aquí.
+    if (skinsModules.isNotEmpty) {
       return _SkinsGlanceCard(
           round: round, p1: p1, p2: p2, mod: skinsModules.first, t: t);
     }
-    // Match+Press sin otros módulos → se muestra en _MatchPressLivePanel, aquí mostramos match play genérico
-    return _buildMatchCard(context,
-        extraSkins: hasSkins ? skinsModules.first : null);
+
+    // Sin Skins: mostrar card de match play genérico (Nassau / Match+Press)
+    return _buildMatchCard(context, extraSkins: null);
   }
 
   // ── Panel de Match play (cuando hay Nassau o Match+Press) ──────────────────
@@ -777,8 +777,8 @@ class _SkinsGlanceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // \u2500\u2500 C\u00e1lculos \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    final _gpids    = _modGroupPids(round, mod);
-    final results  = BetEngine.skinsScorecard(round, p1.id, p2.id, mod, groupPids: _gpids);
+    // Siempre forzar path 1v1 bilateral (sin groupPids) para cumP1/cumP2 correctos
+    final results  = BetEngine.skinsScorecard(round, p1.id, p2.id, mod);
     final played   = results.where((r) => !r.isPending).toList();
     final last     = played.isNotEmpty ? played.last : null;
     final skins1   = last?.cumP1 ?? 0;
@@ -786,7 +786,8 @@ class _SkinsGlanceCard extends StatelessWidget {
     final tieCount = results.where((r) => r.isTie).length;
     final currentPot  = results.isNotEmpty ? results.last.pot : mod.skins.valuePerSkin;
     final skinsInPot  = (currentPot / mod.skins.valuePerSkin).round();
-    final playedCount = List.generate(18, (i) => i + 1)
+    // Usar totalHoles y hoyos reales de la ronda (no hardcodear 18)
+    final playedCount = List.generate(round.totalHoles, (i) => i + 1)
         .where((h) => round.getScore(p1.id, h).hasScore &&
                       round.getScore(p2.id, h).hasScore)
         .length;
@@ -1021,8 +1022,8 @@ class _SkinsMiniSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final _gpids2   = _modGroupPids(round, mod);
-    final results  = BetEngine.skinsScorecard(round, p1.id, p2.id, mod, groupPids: _gpids2);
+    // Path 1v1 bilateral: sin groupPids para cumP1/cumP2 correctos en duelo p1 vs p2
+    final results  = BetEngine.skinsScorecard(round, p1.id, p2.id, mod);
     final played   = results.where((r) => !r.isPending).toList();
     final last     = played.isNotEmpty ? played.last : null;
     final skins1   = last?.cumP1 ?? 0;
@@ -2445,8 +2446,8 @@ class _FinancialBreakdown extends StatelessWidget {
             final skinsMods = _modsOf(BetModuleType.skins);
             if (skinsMods.isNotEmpty) {
               final mod = skinsMods.first;
-              final results = BetEngine.skinsScorecard(round, p1.id, p2.id, mod,
-                  groupPids: _modGroupPids(round, mod));
+              // Path 1v1 bilateral (sin groupPids) para consistencia con la tarjeta de skins
+              final results = BetEngine.skinsScorecard(round, p1.id, p2.id, mod);
               final played  = results.where((r) => !r.isPending).toList();
               final last    = played.isNotEmpty ? played.last : null;
               final s1 = last?.cumP1 ?? 0;
