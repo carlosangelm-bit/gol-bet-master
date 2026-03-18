@@ -917,8 +917,9 @@ class _NetBalanceChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     context.watch<RoundProvider>(); // reconstruir al cambiar scores
-    // Usar balance 1v1 (p1 vs p2) para que sea correcto con 3+ jugadores
-    final bal1 = LedgerEngine.balanceBetween(round, p1.id, p2.id);
+    // Usar SOLO el balance de skins (no incluir nassau u otras apuestas)
+    final bd   = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
+    final bal1 = bd[BetModuleType.skins] ?? 0.0;
     // balance neto desde perspectiva de p1
     final label = bal1 == 0
         ? '\$0'
@@ -2258,8 +2259,9 @@ class _SkinsTotalsRow extends StatelessWidget {
     final last = results.last;
     final total1 = last.cumP1;
     final total2 = last.cumP2;
-    // Usar LedgerEngine para que los carry-overs y montos reales sean correctos
-    final gain1  = LedgerEngine.balanceBetween(round, p1.id, p2.id);
+    // Balance SOLO de skins (excluye nassau u otras apuestas del mismo grupo)
+    final _bd   = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
+    final gain1 = _bd[BetModuleType.skins] ?? 0.0;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -2279,7 +2281,7 @@ class _SkinsTotalsRow extends StatelessWidget {
         const SizedBox(width: 8),
         _skinChip(p2.name.split(' ').first, total2, t),
         const SizedBox(width: 12),
-        BalChip(amount: gain1),  // balance neto p1 (incluye carry-overs)
+        BalChip(amount: gain1),  // balance neto p1 SOLO skins (incluye carry-overs)
       ]),
     );
   }
