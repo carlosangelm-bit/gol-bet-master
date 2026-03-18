@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../core/app_theme.dart';
 import '../../models/models.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/round_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/common_widgets.dart';
@@ -18,6 +19,43 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   bool _recovering = false;
+  bool _syncing    = false;
+  int  _pendingCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPendingCount());
+  }
+
+  Future<void> _loadPendingCount() async {
+    if (!mounted) return;
+    final count = await context.read<RoundProvider>().pendingFinishedCount();
+    if (mounted) setState(() => _pendingCount = count);
+  }
+
+  /// Sincroniza rondas pendientes locales con Firestore
+  Future<void> _syncPending(GolfTheme t) async {
+    setState(() => _syncing = true);
+    try {
+      final synced = await context.read<RoundProvider>().syncPendingFinished();
+      await _loadPendingCount();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(synced == 0
+            ? 'No hay rondas pendientes de sincronizar'
+            : '$synced ronda${synced > 1 ? 's sincronizadas' : ' sincronizada'} ✅'),
+        backgroundColor: synced > 0 ? t.profit : t.sub,
+        duration: const Duration(seconds: 3),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al sincronizar: $e')));
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
 
   /// Busca rondas no finalizadas en Firestore y las marca como finalizadas
   /// (recuperación de rondas "huérfanas" que se concluyeron pero no quedaron en historial)
@@ -44,7 +82,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.watch<RoundProvider>().theme;
+    final t    = context.watch<RoundProvider>().theme;
+    final auth = context.watch<AuthProvider>();
+    final busy = _recovering || _syncing;
     return Scaffold(
       backgroundColor: t.bg,
       appBar: AppBar(
@@ -53,36 +93,129 @@ class _HistoryScreenState extends State<HistoryScreen> {
         title: Text('Historial', style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
         iconTheme: IconThemeData(color: t.text),
         actions: [
-          _recovering
-              ? Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: SizedBox(width: 20, height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: t.primary)),
-                )
-              : IconButton(
-                  icon: Icon(Icons.restore_outlined, color: t.sub),
-                  tooltip: 'Recuperar rondas',
-                  onPressed: () => _recoverOrphanRounds(t),
-                ),
+          if (busy)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: SizedBox(width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: t.primary)),
+            )
+          else ...[
+            if (_pendingCount > 0)
+              // Botón de sincronización — muestra badge con el conteo de pendientes
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.cloud_upload_outlined, color: Colors.orange.shade600),
+                    tooltip: 'Sincronizar $_pendingCount ronda${_pendingCount > 1 ? 's' : ''} pendiente${_pendingCount > 1 ? 's' : ''}',
+                    onPressed: () => _syncPending(t),
+                  ),
+                  Positioned(
+                    right: 6, top: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade600,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '$_pendingCount',
+                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            IconButton(
+              icon: Icon(Icons.restore_outlined, color: t.sub),
+              tooltip: 'Recuperar rondas',
+              onPressed: () => _recoverOrphanRounds(t),
+            ),
+          ],
         ],
       ),
-      body: StreamBuilder<List<RoundSummary>>(
-        stream: FirestoreService.historyStream(),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator(color: t.primary));
-          }
-          final history = snap.data ?? [];
-          if (history.isEmpty) {
-            return _EmptyHistory(t: t, onRecover: () => _recoverOrphanRounds(t));
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: history.length,
-            itemBuilder: (_, i) => _HistoryCard(summary: history[i], t: t),
-          );
-        },
+      // Si no está autenticado, mostrar mensaje
+      body: !auth.isAuth
+          ? Center(child: Text('Inicia sesión para ver el historial.',
+              style: TextStyle(color: t.sub)))
+          : Column(children: [
+              // Banner de rondas pendientes de sync
+              if (_pendingCount > 0)
+                _PendingSyncBanner(
+                  count: _pendingCount,
+                  t: t,
+                  onSync: () => _syncPending(t),
+                ),
+              Expanded(
+                child: StreamBuilder<List<RoundSummary>>(
+                  // Usar auth.user?.uid como key fuerza la recreación del StreamBuilder
+                  // cuando cambia el usuario (login/logout), evitando stream vacío cacheado.
+                  key: ValueKey(auth.user?.uid),
+                  stream: FirestoreService.historyStream(),
+                  builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return Center(child: CircularProgressIndicator(color: t.primary));
+                    }
+                    final history = snap.data ?? [];
+                    if (history.isEmpty) {
+                      return _EmptyHistory(t: t, onRecover: () => _recoverOrphanRounds(t));
+                    }
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: history.length,
+                      itemBuilder: (_, i) => _HistoryCard(summary: history[i], t: t),
+                    );
+                  },
+                ),
+              ),
+            ]),
+    );
+  }
+}
+
+// ── Banner de rondas pendientes de sincronización ─────────────────────────────
+class _PendingSyncBanner extends StatelessWidget {
+  final int count;
+  final GolfTheme t;
+  final VoidCallback onSync;
+  const _PendingSyncBanner({required this.count, required this.t, required this.onSync});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
       ),
+      child: Row(children: [
+        Icon(Icons.cloud_upload_outlined, color: Colors.orange.shade700, size: 20),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(
+            '$count ronda${count > 1 ? 's' : ''} pendiente${count > 1 ? 's' : ''} de sincronizar',
+            style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 12),
+          ),
+          Text(
+            'Se guardaron localmente. Toca para subir a la nube.',
+            style: TextStyle(color: t.sub, fontSize: 11),
+          ),
+        ])),
+        const SizedBox(width: 8),
+        TextButton(
+          onPressed: onSync,
+          style: TextButton.styleFrom(
+            backgroundColor: Colors.orange.withValues(alpha: 0.15),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text('Sincronizar', style: TextStyle(color: Colors.orange.shade700, fontWeight: FontWeight.w700, fontSize: 12)),
+        ),
+      ]),
     );
   }
 }

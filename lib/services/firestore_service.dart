@@ -294,10 +294,20 @@ class RoundSummary {
   factory RoundSummary.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data()!;
     final players = (d['players'] as List? ?? []);
+    // createdAt puede llegar como Timestamp (escritura nueva) o String ISO (escritura antigua)
+    final rawCreatedAt = d['createdAt'];
+    final DateTime parsedCreatedAt;
+    if (rawCreatedAt is Timestamp) {
+      parsedCreatedAt = rawCreatedAt.toDate();
+    } else if (rawCreatedAt is String) {
+      parsedCreatedAt = DateTime.tryParse(rawCreatedAt) ?? DateTime.now();
+    } else {
+      parsedCreatedAt = DateTime.now();
+    }
     return RoundSummary(
       id:          d['id'] as String? ?? doc.id,
       name:        d['name'] as String? ?? 'Ronda',
-      createdAt:   (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdAt:   parsedCreatedAt,
       finishedAt:  (d['finishedAt'] as Timestamp?)?.toDate(),
       playerNames: players.map((p) => (p as Map)['name'] as String? ?? '').toList(),
       isFinished:  d['isFinished'] as bool? ?? false,
