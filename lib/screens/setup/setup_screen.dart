@@ -59,6 +59,36 @@ class _SetupScreenState extends State<SetupScreen> {
   // Helper: calcular HCP de juego para un jugador dado su tee
   double _playingHcp(Player p) => _teeOf(p.id).playingHandicap(p.handicapBase);
 
+  /// Tee masculino por defecto del campo seleccionado (primer tee masculino).
+  /// Retorna null si no hay campo con tees disponibles.
+  TeeInfo? get _defaultMaleTee {
+    final t = _selectedApiCourse?.maleTees.firstOrNull;
+    if (t == null) return null;
+    return TeeInfo(name: t.teeName, courseRating: t.courseRating,
+        slopeRating: t.slopeRating, parTotal: t.parTotal, gender: 'M');
+  }
+
+  /// Auto-asigna el tee por defecto a todos los jugadores que aún no tienen
+  /// tee asignado (o que tienen el tee estándar). Llamar al seleccionar campo.
+  void _autoAssignDefaultTee() {
+    final def = _defaultMaleTee;
+    if (def == null) return;
+    for (final p in _players) {
+      // Solo asignar si el jugador no tiene tee propio o tiene el estándar
+      final current = _playerTees[p.id];
+      if (current == null || current.name == TeeInfo.standard.name) {
+        _playerTees[p.id] = def;
+      }
+    }
+  }
+
+  /// Asigna el tee por defecto a un jugador recién añadido.
+  void _assignDefaultTeeToPlayer(String pid) {
+    final def = _defaultMaleTee;
+    if (def == null) return;
+    _playerTees[pid] = def;
+  }
+
   @override void dispose() { _nameCtrl.dispose(); super.dispose(); }
 
   @override
@@ -499,6 +529,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 player = player.copyWith(handicapBase: pw.link!.defaultHandicapOverride!);
               }
               _players.add(player);
+              _assignDefaultTeeToPlayer(player.id); // ← asignar tee por defecto
             });
           }
         },
@@ -571,20 +602,29 @@ class _SetupScreenState extends State<SetupScreen> {
       const SizedBox(width: 12),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(p.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 3),
         Row(children: [
           Text('HCP ${p.handicapBase.toStringAsFixed(1)}', style: TextStyle(color: t.sub, fontSize: 12)),
           if (_selectedApiCourse != null) ...[
             const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-              decoration: BoxDecoration(
-                color: t.accent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: t.accent.withValues(alpha: 0.3)),
-              ),
-              child: Text(
-                _teeOf(p.id).name,
-                style: TextStyle(color: t.accent, fontSize: 10, fontWeight: FontWeight.w700),
+            // Chip de tee — tappable directamente para cambiar la salida
+            GestureDetector(
+              onTap: () => _pickTee(p, t),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: t.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: t.primary.withValues(alpha: 0.4)),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text(
+                    _teeOf(p.id).name,
+                    style: TextStyle(color: t.primary, fontSize: 10, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(width: 3),
+                  Icon(Icons.expand_more, color: t.primary, size: 12),
+                ]),
               ),
             ),
             const SizedBox(width: 4),
@@ -601,8 +641,149 @@ class _SetupScreenState extends State<SetupScreen> {
     ])),
   );
 
+  /// Bottom sheet compacto para elegir el tee de un jugador sin abrir el modal completo.
+  void _pickTee(Player p, GolfTheme t) {
+    if (_selectedApiCourse == null) return;
+    TeeInfo selected = _teeOf(p.id);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx2, setSt) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // Header
+            Row(children: [
+              GAvatar(name: p.name, colorIndex: p.colorIndex, size: 32),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(p.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 15)),
+                Text('HCP Index ${p.handicapBase.toStringAsFixed(1)}', style: TextStyle(color: t.sub, fontSize: 11)),
+              ])),
+              IconButton(
+                onPressed: () => Navigator.pop(ctx),
+                icon: Icon(Icons.close, color: t.sub, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ]),
+            const SizedBox(height: 16),
+
+            // Tees masculinos
+            if ((_selectedApiCourse?.maleTees ?? []).isNotEmpty) ...[
+              Text('SALIDAS MASCULINAS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+              const SizedBox(height: 8),
+              ..._selectedApiCourse!.maleTees.map((tee) {
+                final teeInfo = TeeInfo(name: tee.teeName, courseRating: tee.courseRating,
+                    slopeRating: tee.slopeRating, parTotal: tee.parTotal, gender: 'M');
+                final isSel = selected.key == teeInfo.key;
+                final phcp = teeInfo.playingHandicap(p.handicapBase);
+                return GestureDetector(
+                  onTap: () {
+                    setSt(() => selected = teeInfo);
+                    setState(() => _playerTees[p.id] = teeInfo);
+                    Navigator.pop(ctx);
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSel ? t.primary.withValues(alpha: 0.1) : t.surface,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: isSel ? t.primary : t.divider, width: isSel ? 1.5 : 1),
+                    ),
+                    child: Row(children: [
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(tee.teeName, style: TextStyle(color: isSel ? t.primary : t.text, fontWeight: FontWeight.w700, fontSize: 14)),
+                        Text('CR ${tee.courseRating.toStringAsFixed(1)}  ·  Slope ${tee.slopeRating}  ·  Par ${tee.parTotal}',
+                            style: TextStyle(color: isSel ? t.primary.withValues(alpha: 0.7) : t.sub, fontSize: 11)),
+                      ])),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isSel ? t.primary.withValues(alpha: 0.15) : t.card,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text('HCPj ${phcp.toStringAsFixed(0)}',
+                            style: TextStyle(color: isSel ? t.primary : t.sub,
+                                fontWeight: FontWeight.w800, fontSize: 13)),
+                      ),
+                      if (isSel) ...[
+                        const SizedBox(width: 8),
+                        Icon(Icons.check_circle, color: t.primary, size: 18),
+                      ],
+                    ]),
+                  ),
+                );
+              }),
+            ],
+
+            // Tees femeninos
+            if ((_selectedApiCourse?.femaleTees ?? []).isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text('SALIDAS FEMENINAS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+              const SizedBox(height: 8),
+              ..._selectedApiCourse!.femaleTees.map((tee) {
+                final teeInfo = TeeInfo(name: tee.teeName, courseRating: tee.courseRating,
+                    slopeRating: tee.slopeRating, parTotal: tee.parTotal, gender: 'F');
+                final isSel = selected.key == teeInfo.key;
+                final phcp = teeInfo.playingHandicap(p.handicapBase);
+                return GestureDetector(
+                  onTap: () {
+                    setSt(() => selected = teeInfo);
+                    setState(() => _playerTees[p.id] = teeInfo);
+                    Navigator.pop(ctx);
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSel ? t.accent.withValues(alpha: 0.1) : t.surface,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: isSel ? t.accent : t.divider, width: isSel ? 1.5 : 1),
+                    ),
+                    child: Row(children: [
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(tee.teeName, style: TextStyle(color: isSel ? t.accent : t.text, fontWeight: FontWeight.w700, fontSize: 14)),
+                        Text('CR ${tee.courseRating.toStringAsFixed(1)}  ·  Slope ${tee.slopeRating}  ·  Par ${tee.parTotal}',
+                            style: TextStyle(color: isSel ? t.accent.withValues(alpha: 0.7) : t.sub, fontSize: 11)),
+                      ])),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isSel ? t.accent.withValues(alpha: 0.15) : t.card,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text('HCPj ${phcp.toStringAsFixed(0)}',
+                            style: TextStyle(color: isSel ? t.accent : t.sub,
+                                fontWeight: FontWeight.w800, fontSize: 13)),
+                      ),
+                      if (isSel) ...[
+                        const SizedBox(width: 8),
+                        Icon(Icons.check_circle, color: t.accent, size: 18),
+                      ],
+                    ]),
+                  ),
+                );
+              }),
+            ],
+          ]),
+        ),
+      )),
+    );
+  }
+
   void _addPlayer() {
-    setState(() => _players.add(Player(id: _uuid.v4(), name: 'Jugador ${_players.length + 1}', colorIndex: _players.length)));
+    final newPlayer = Player(id: _uuid.v4(), name: 'Jugador ${_players.length + 1}', colorIndex: _players.length);
+    setState(() {
+      _players.add(newPlayer);
+      _assignDefaultTeeToPlayer(newPlayer.id); // ← asignar tee por defecto
+    });
     _editPlayer(_players.length - 1, _players.last, context.read<RoundProvider>().theme);
   }
 
@@ -2229,6 +2410,7 @@ class _SetupScreenState extends State<SetupScreen> {
         setState(() {
           _selectedApiCourse = api;
           _selectedCourse = api.allTees.first.toCourseInfo(api.clubName, api.courseName);
+          _autoAssignDefaultTee(); // ← auto-asignar tee por defecto
         });
       }
     } else {
@@ -2250,6 +2432,7 @@ class _SetupScreenState extends State<SetupScreen> {
         setState(() {
           _selectedApiCourse = fresh;
           _selectedCourse = fresh.allTees.first.toCourseInfo(fresh.clubName, fresh.courseName);
+          _autoAssignDefaultTee(); // ← re-asignar con datos frescos
         });
         // 3. Actualizar caché en Firestore silenciosamente
         UserProfileService.updateFavCourseCache(fav.courseId, fresh);
@@ -2273,6 +2456,7 @@ class _SetupScreenState extends State<SetupScreen> {
         onSelected: (courseInfo, apiCourse) => setState(() {
           _selectedCourse = courseInfo;
           _selectedApiCourse = apiCourse;
+          _autoAssignDefaultTee(); // ← auto-asignar tee por defecto
         }),
       ),
     );
@@ -2414,7 +2598,7 @@ class _HandicapMatrix extends StatelessWidget {
         // Ventaja manual guardada (desde perspectiva pA→pB)
         final manualVal = manualHandicaps[pA.id]?[pB.id];
         final isManual  = manualVal != null;
-        final current   = isManual ? manualVal!.round() : autoVal;
+        final current   = isManual ? manualVal.round() : autoVal;
 
         // Quien da golpes y quién recibe
         // CONVENIO: current > 0 → pA recibe golpes de pB (pA tiene mayor HCP)
