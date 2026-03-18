@@ -739,13 +739,10 @@ class _ActiveRoundView extends StatelessWidget {
           final ok = await prov.finishRound();
           if (!ok && context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: const Text('Error al guardar la ronda. Revisa tu conexión e intenta de nuevo.'),
-              backgroundColor: Colors.red.shade700,
-              action: SnackBarAction(
-                label: 'Reintentar',
-                textColor: Colors.white,
-                onPressed: () => _confirmFinish(context, prov, t),
-              ),
+              content: const Text(
+                '⚠️ Sin conexión a Firestore. La ronda se guardó localmente y se sincronizará automáticamente cuando haya conexión.'),
+              backgroundColor: Colors.orange.shade700,
+              duration: const Duration(seconds: 5),
             ));
           }
         }, child: Text('Finalizar', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700))),

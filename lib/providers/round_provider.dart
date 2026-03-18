@@ -127,41 +127,112 @@ class RoundProvider extends ChangeNotifier {
     _persist();
   }
 
-  /// Finaliza la ronda: guarda en Firestore primero (con await), luego limpia
-  /// el estado local. Retorna true si se guardó ok, false si hubo error de red.
-  /// La UI debe mostrar un SnackBar de error si retorna false.
+  // ── Clave para rondas finalizadas pendientes de sync ───────────────────────
+  static const _kPendingFinished = 'pending_finished_rounds';
+
+  /// Finaliza la ronda de forma segura:
+  /// 1. Intenta guardar en Firestore (await).
+  /// 2. Si falla (sin conexión / bloqueador de anuncios / sin sesión),
+  ///    encola la ronda en SharedPreferences para sincronizarla después.
+  /// 3. SIEMPRE limpia la ronda activa de la UI — nunca bloquea al usuario.
+  /// Retorna true si se guardó en Firestore, false si quedó pendiente local.
   Future<bool> finishRound() async {
     if (_round == null) return false;
 
-    // 1. Construir la ronda finalizada
     final finishedRound = _round!.copyWith(isFinished: true);
+    bool savedToFirestore = false;
 
-    // 2. Guardar PRIMERO en Firestore (await) antes de limpiar el estado local.
-    //    Si falla la escritura, devolver false sin limpiar → el usuario puede reintentar.
+    // 1. Intentar guardar en Firestore
     if (AuthService.uid != null) {
       try {
         await FirestoreService.saveRound(finishedRound);
-      } catch (_) {
-        // Error de red: la ronda sigue activa localmente para que el usuario
-        // pueda volver a intentarlo desde Home o Results.
-        return false;
+        savedToFirestore = true;
+      } catch (e) {
+        debugPrint('[finishRound] Firestore error (encolando local): $e');
+        await _enqueuePendingFinished(finishedRound);
       }
+    } else {
+      // Sin sesión: encolar localmente para cuando el usuario se autentique
+      debugPrint('[finishRound] Sin sesión: encolando local');
+      await _enqueuePendingFinished(finishedRound);
     }
 
-    // 3. Persistir localmente la versión finalizada (isFinished:true) antes de borrar
+    // 2. Limpiar caché de ronda activa
     try {
       final p = await _prefs();
-      await p.setString('round', jsonEncode(roundToJson(finishedRound)));
+      await p.remove('round');
     } catch (_) {}
 
-    // 4. Limpiar la ronda activa → pasa al historial automáticamente
+    // 3. Limpiar estado de UI — siempre, independiente del resultado de Firestore
     _round = null;
     _tabIndex = 0;
     notifyListeners();
 
-    // 5. Eliminar la caché local de ronda activa
-    _prefs().then((p) => p.remove('round'));
-    return true;
+    return savedToFirestore;
+  }
+
+  /// Encola una ronda finalizada en SharedPreferences para sync posterior.
+  Future<void> _enqueuePendingFinished(Round r) async {
+    try {
+      final p = await _prefs();
+      final existing = p.getStringList(_kPendingFinished) ?? [];
+      // Evitar duplicados por el mismo ID
+      existing.removeWhere((s) {
+        try { return (jsonDecode(s) as Map)['id'] == r.id; } catch (_) { return false; }
+      });
+      existing.add(jsonEncode(roundToJson(r)));
+      await p.setStringList(_kPendingFinished, existing);
+      debugPrint('[pendingSync] Ronda encolada: ${r.id} (total: ${existing.length})');
+    } catch (e) {
+      debugPrint('[pendingSync] Error al encolar: $e');
+    }
+  }
+
+  /// Sincroniza rondas finalizadas pendientes con Firestore.
+  /// Llamar después de login exitoso y al iniciar la app con sesión.
+  /// Retorna el número de rondas sincronizadas exitosamente.
+  Future<int> syncPendingFinished() async {
+    if (AuthService.uid == null) return 0;
+    try {
+      final p = await _prefs();
+      final pending = p.getStringList(_kPendingFinished) ?? [];
+      if (pending.isEmpty) return 0;
+
+      debugPrint('[pendingSync] Sincronizando ${pending.length} ronda(s) pendiente(s)...');
+      int synced = 0;
+      final remaining = <String>[];
+
+      for (final jsonStr in pending) {
+        try {
+          final round = roundFromJson(jsonDecode(jsonStr) as Map<String, dynamic>);
+          await FirestoreService.saveRound(round);
+          synced++;
+          debugPrint('[pendingSync] OK: ${round.id}');
+        } catch (e) {
+          debugPrint('[pendingSync] FAIL: $e');
+          remaining.add(jsonStr); // Reintentar la próxima vez
+        }
+      }
+
+      if (remaining.isEmpty) {
+        await p.remove(_kPendingFinished);
+      } else {
+        await p.setStringList(_kPendingFinished, remaining);
+      }
+      debugPrint('[pendingSync] Sincronizadas: $synced/${pending.length}');
+      return synced;
+    } catch (e) {
+      debugPrint('[pendingSync] Error general: $e');
+      return 0;
+    }
+  }
+
+  /// Cuenta las rondas finalizadas pendientes de sincronización.
+  Future<int> pendingFinishedCount() async {
+    try {
+      final p = await _prefs();
+      return (p.getStringList(_kPendingFinished) ?? []).length;
+    } catch (_) { return 0; }
   }
 
   void resetRound() {
@@ -251,9 +322,17 @@ class RoundProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Llamar tras login: intenta cargar ronda activa desde Firestore
+  /// Llamar tras login: carga ronda activa desde Firestore y sincroniza pendientes.
   Future<void> syncFromFirestore() async {
     if (AuthService.uid == null) return;
+
+    // 1. Sincronizar rondas finalizadas que quedaron pendientes localmente
+    final synced = await syncPendingFinished();
+    if (synced > 0 && kDebugMode) {
+      debugPrint('syncFromFirestore: \$synced ronda(s) pendiente(s) sincronizadas');
+    }
+
+    // 2. Cargar ronda activa remota
     try {
       final remote = await FirestoreService.loadActiveRound();
       if (remote != null) {

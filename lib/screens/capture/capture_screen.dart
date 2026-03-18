@@ -1445,18 +1445,16 @@ class _HoleNavButtons extends StatelessWidget {
     final ok = await prov.finishRound();
     if (!context.mounted) return;
 
-    if (ok) {
-      prov.setTab(3); // Ir a pestaña Resultados
-    } else {
+    // Siempre navegar a Inicio (tab 0) — la ronda ya terminó.
+    // Si ok==false, la ronda quedó encolada localmente y se sincronizará luego.
+    prov.setTab(0);
+
+    if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text(
-            'Error al guardar la ronda. Revisa tu conexión e intenta de nuevo.'),
-        backgroundColor: Colors.red.shade700,
-        action: SnackBarAction(
-          label: 'Reintentar',
-          textColor: Colors.white,
-          onPressed: () => _finishRound(context),
-        ),
+            '⚠️ Sin conexión a Firestore. La ronda se guardó localmente y se sincronizará automáticamente cuando haya conexión.'),
+        backgroundColor: Colors.orange.shade700,
+        duration: const Duration(seconds: 5),
       ));
     }
   }
