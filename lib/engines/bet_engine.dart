@@ -464,7 +464,7 @@ class BetEngine {
     final hcp1 = mod.useHandicap ? round.getHandicap(p1Id) : 0.0;
     final hcp2 = mod.useHandicap ? round.getHandicap(p2Id) : 0.0;
 
-    // Delta hoyo a hoyo (positivo = p1 gana el hoyo)
+    // Delta hoyo a hoyo en ORDEN REAL DE JUEGO (respeta startingNine)
     // Usa strokesReceivedVs (bilateral) igual que skins 1v1 para consistencia.
     final allHoles = round.course.holes;
     final String baseId     = hcp1 <= hcp2 ? p1Id : p2Id;
@@ -472,15 +472,25 @@ class BetEngine {
     final double hcpBase     = hcp1 <= hcp2 ? hcp1 : hcp2;
     final double hcpReceiver = hcp1 <= hcp2 ? hcp2 : hcp1;
 
-    final List<int> hd = List.filled(round.totalHoles + 1, 0);
-    for (int h = 1; h <= round.totalHoles; h++) {
-      final ch = round.course.holes.firstWhere(
-          (c) => c.hole == h, orElse: () => round.course.holes.first);
+    // Orden real de juego: si empieza en B9, primero hoyos 10-18 luego 1-9
+    final holeOrder = round.startingNine == StartingNine.back
+        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
+        : List.generate(round.totalHoles, (i) => i + 1);
+    final holeMap = { for (final ch in allHoles) ch.hole: ch };
+
+    // hd[posición] = delta en esa posición del orden real (1-based index)
+    final List<int> hdPos = List.filled(holeOrder.length + 1, 0);
+    // Para el match principal necesitamos hd por número de hoyo
+    final List<int> hdByHole = List.filled(round.totalHoles + 1, 0);
+
+    for (int pos = 0; pos < holeOrder.length; pos++) {
+      final h  = holeOrder[pos];
+      final ch = holeMap[h] ?? allHoles.first;
       final s1 = round.getScore(p1Id, h);
       final s2 = round.getScore(p2Id, h);
       if (!s1.hasScore || !s2.hasScore) continue;
 
-      // Strokes bilaterales: el jugador de mayor hcp recibe strokes vs el de menor
+      // Strokes bilaterales
       final strokesHere = mod.useHandicap
           ? GameEngine.strokesReceivedVs(
               hcpHigher:    hcpReceiver,
@@ -500,67 +510,75 @@ class BetEngine {
       if (grossBase < netReceiver)      delta = baseId == p1Id ? 1 : -1;
       else if (grossBase > netReceiver) delta = baseId == p1Id ? -1 : 1;
       else                              delta = 0;
-      hd[h] = delta;
+
+      hdPos[pos + 1] = delta;       // posición 1-based en el orden de juego
+      hdByHole[h] = delta;          // por número de hoyo (para el match principal)
     }
 
-    // ── Construir segmentos ──────────────────────────────────────────────────
-    // Segmento = (startHole, endHole, value, label)
-    // El match principal siempre va de H1 a totalHoles.
-    // Las presiones se construyen dinámicamente.
-    // Si hay carry, todos los valores se multiplican por carryFactor.
-    final double cf = cfg.carryApplied ? cfg.carryFactor : 1.0;
-    final List<(int start, int end, double value, String label)> segments = [];
-    segments.add((1, round.totalHoles, cfg.matchValue * cf, 'Match H1–${round.totalHoles}${cfg.carryApplied ? ' ×carry' : ''}'));
+    // ── Construir segmentos en orden real de juego ───────────────────────────
+    // Los segmentos almacenan (startPos, endPos, value, label, startHoleNum, endHoleNum)
+    // donde posX es posición en holeOrder (1-based), holeNum es el número real del hoyo.
+    final double cf = cfg.carryFactorForPair(p1Id, p2Id);
+    final bool carryActiveForPair = cfg.carryAppliedForPair(p1Id, p2Id);
 
-    // currentPressStart: desde qué hoyo empieza el segmento de presión activo
+    // Formato label del hoyo: si ronda empieza en back, mostrar el número real
+    String holeLabel(int pos) => 'H${holeOrder[pos - 1]}';
+
+    // Segmentos: (startPos, endPos, value, label)
+    final List<(int start, int end, double value, String label)> segments = [];
+    // Match principal: cubre todos los hoyos en el orden real de juego
+    segments.add((1, holeOrder.length, cfg.matchValue * cf,
+        'Match ${holeLabel(1)}–${holeLabel(holeOrder.length)}${carryActiveForPair ? ' ×carry' : ''}'));
+
+    // Presiones: basadas en posición de juego
     int currentPressStart = 1;
-    int pressSegScore = 0;      // marcador del segmento de presión activo
-    int pressCount = 0;         // cuántas presiones se han abierto ya
+    int pressSegScore = 0;
+    int pressCount = 0;
     final int maxP = cfg.maxPresses ?? 99;
 
-    for (int h = 1; h <= round.totalHoles; h++) {
-      pressSegScore += hd[h];   // acumular delta del segmento activo
+    for (int pos = 1; pos <= holeOrder.length; pos++) {
+      pressSegScore += hdPos[pos];
 
       final absDiff = pressSegScore.abs();
       if (absDiff == cfg.pressTriggerValue && pressCount < maxP) {
-        // 1. Cerrar el dígito/segmento que acaba de disparar
         final isFirstDigit = (pressCount == 0);
+        final startHole = holeOrder[currentPressStart - 1];
+        final endHole   = holeOrder[pos - 1];
         final segLabel = isFirstDigit
-            ? 'Dígito H$currentPressStart–$h'
-            : 'Press H$currentPressStart–$h';
-        segments.add((currentPressStart, h, cfg.pressValue * cf, segLabel));
+            ? 'Dígito H$startHole–H$endHole'
+            : 'Press H$startHole–H$endHole';
+        segments.add((currentPressStart, pos, cfg.pressValue * cf, segLabel));
         pressCount++;
 
-        // 2. Abrir nuevo segmento desde el siguiente hoyo
-        final nextHole = h + 1;
-        if (nextHole <= round.totalHoles && pressCount < maxP) {
-          currentPressStart = nextHole;
-          pressSegScore = 0; // el nuevo segmento arranca en 0
+        final nextPos = pos + 1;
+        if (nextPos <= holeOrder.length && pressCount < maxP) {
+          currentPressStart = nextPos;
+          pressSegScore = 0;
         }
       }
     }
-    // Si aún hay un segmento de presión activo abierto que no se cerró
-    // (no llegó al trigger), se agrega como presión abierta/pendiente.
-    // Solo se agrega si hubo al menos una presión previa (para no duplicar
-    // el dígito cuando no se activó ningún trigger).
-    if (pressCount > 0 && currentPressStart <= round.totalHoles) {
-      final lastLabel = 'Press H$currentPressStart–${round.totalHoles}';
-      // Solo si este segmento no fue ya agregado (el último trigger pudo
-      // haberlo cerrado exactamente en totalHoles)
-      final alreadyAdded = segments.any((s) => s.$1 == currentPressStart &&
-          s.$2 == round.totalHoles && s.$3 == cfg.pressValue * cf);
+    // Segmento de presión activo aún abierto
+    if (pressCount > 0 && currentPressStart <= holeOrder.length) {
+      final startHole = holeOrder[currentPressStart - 1];
+      final endHole   = holeOrder.last;
+      final lastLabel = 'Press H$startHole–H$endHole';
+      final alreadyAdded = segments.any((s) =>
+          s.$1 == currentPressStart &&
+          s.$2 == holeOrder.length &&
+          s.$3 == cfg.pressValue * cf);
       if (!alreadyAdded) {
-        segments.add((currentPressStart, round.totalHoles, cfg.pressValue * cf, lastLabel));
+        segments.add((currentPressStart, holeOrder.length, cfg.pressValue * cf, lastLabel));
       }
     }
 
     // ── Liquidar cada segmento ───────────────────────────────────────────────
+    // Iterar en posiciones del orden real de juego
     for (final (start, end, value, label) in segments) {
       int score = 0;
       int played = 0;
-      for (int h = start; h <= end; h++) {
-        score += hd[h];
-        if (hd[h] != 0) played++;
+      for (int pos = start; pos <= end; pos++) {
+        score += hdPos[pos];
+        if (hdPos[pos] != 0) played++;
       }
       if (played == 0) continue;
 
@@ -568,7 +586,6 @@ class BetEngine {
       String? to;
       if (score > 0)      { from = p2Id; to = p1Id; }
       else if (score < 0) { from = p1Id; to = p2Id; }
-      // score == 0 → empate → push (no cobra)
 
       if (from != null && to != null) {
         entries.add(LedgerEntry(
@@ -584,6 +601,7 @@ class BetEngine {
   // ── MATCH AUTO PRESS — ESTADO EN VIVO ────────────────────────────────────
   // Mismo algoritmo que _matchAutoPress pero devuelve MatchPressLiveStatus
   // para mostrar en tiempo real en la tarjeta de scoring.
+  // Respeta startingNine para calcular los segmentos en el orden real de juego.
   static List<MatchPressLiveStatus> matchAutoPressLive(
     Round round, String p1Id, String p2Id, BetModuleInstance mod,
   ) {
@@ -591,22 +609,30 @@ class BetEngine {
     final hcp1 = mod.useHandicap ? round.getHandicap(p1Id) : 0.0;
     final hcp2 = mod.useHandicap ? round.getHandicap(p2Id) : 0.0;
 
-    // Delta por hoyo — usa strokesReceivedVs (bilateral) para consistencia con skins 1v1
+    // Delta por hoyo — en ORDEN REAL DE JUEGO (respeta startingNine)
     final allHolesLive = round.course.holes;
     final String baseIdLive     = hcp1 <= hcp2 ? p1Id : p2Id;
     final String receiverIdLive = hcp1 <= hcp2 ? p2Id : p1Id;
     final double hcpBaseLive     = hcp1 <= hcp2 ? hcp1 : hcp2;
     final double hcpReceiverLive = hcp1 <= hcp2 ? hcp2 : hcp1;
 
-    final List<int> hd = List.filled(round.totalHoles + 1, 0);
-    int lastPlayedHole = 0;
-    for (int h = 1; h <= round.totalHoles; h++) {
-      final ch = round.course.holes.firstWhere(
-          (c) => c.hole == h, orElse: () => round.course.holes.first);
+    // Orden real de juego
+    final holeOrder = round.startingNine == StartingNine.back
+        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
+        : List.generate(round.totalHoles, (i) => i + 1);
+    final holeMap = { for (final ch in allHolesLive) ch.hole: ch };
+
+    // hdPos[pos] = delta en esa posición del orden de juego (1-based)
+    final List<int> hdPos = List.filled(holeOrder.length + 1, 0);
+    int lastPlayedPos = 0;
+
+    for (int pos = 0; pos < holeOrder.length; pos++) {
+      final h  = holeOrder[pos];
+      final ch = holeMap[h] ?? allHolesLive.first;
       final s1 = round.getScore(p1Id, h);
       final s2 = round.getScore(p2Id, h);
       if (!s1.hasScore || !s2.hasScore) continue;
-      lastPlayedHole = h;
+      lastPlayedPos = pos + 1;
 
       final strokesHere = mod.useHandicap
           ? GameEngine.strokesReceivedVs(
@@ -626,15 +652,20 @@ class BetEngine {
       if (grossBase < netReceiver)      delta = baseIdLive == p1Id ? 1 : -1;
       else if (grossBase > netReceiver) delta = baseIdLive == p1Id ? -1 : 1;
       else                              delta = 0;
-      hd[h] = delta;
+      hdPos[pos + 1] = delta;
     }
 
+    // El "último hoyo jugado" para la UI se expresa como número de hoyo real
+    final lastPlayedHole = lastPlayedPos > 0 ? holeOrder[lastPlayedPos - 1] : 0;
+
     // ── Mismo algoritmo de construcción de segmentos que _matchAutoPress ──
-    // (start, end, value, isPrimary, seq)
-    // Si hay carry, todos los valores se multiplican por carryFactor.
-    final double cfLive = cfg.carryApplied ? cfg.carryFactor : 1.0;
-    final List<(int start, int end, double value, bool isPrimary, int seq)> segs = [];
-    segs.add((1, round.totalHoles, cfg.matchValue * cfLive, true, 1));
+    // Segmentos en posición de juego; startHole/endHole = número real del hoyo
+    final double cfLive = cfg.carryFactorForPair(p1Id, p2Id);
+
+    // (startPos, endPos, value, isPrimary, seq, startHoleNum, endHoleNum)
+    final List<(int, int, double, bool, int, int, int)> segs = [];
+    segs.add((1, holeOrder.length, cfg.matchValue * cfLive, true, 1,
+              holeOrder.first, holeOrder.last));
 
     int currentPressStart = 1;
     int pressSegScore = 0;
@@ -642,46 +673,52 @@ class BetEngine {
     int seqN = 2;
     final int maxP = cfg.maxPresses ?? 99;
 
-    for (int h = 1; h <= round.totalHoles; h++) {
-      pressSegScore += hd[h];
+    for (int pos = 1; pos <= holeOrder.length; pos++) {
+      pressSegScore += hdPos[pos];
 
       final absDiff = pressSegScore.abs();
       if (absDiff == cfg.pressTriggerValue && pressCount < maxP) {
-        segs.add((currentPressStart, h, cfg.pressValue * cfLive, false, seqN++));
+        final startHoleNum = holeOrder[currentPressStart - 1];
+        final endHoleNum   = holeOrder[pos - 1];
+        segs.add((currentPressStart, pos, cfg.pressValue * cfLive, false, seqN++,
+                  startHoleNum, endHoleNum));
         pressCount++;
 
-        final nextHole = h + 1;
-        if (nextHole <= round.totalHoles && pressCount < maxP) {
-          currentPressStart = nextHole;
+        final nextPos = pos + 1;
+        if (nextPos <= holeOrder.length && pressCount < maxP) {
+          currentPressStart = nextPos;
           pressSegScore = 0;
         }
       }
     }
     // Segmento de presión activo aún abierto
-    if (pressCount > 0 && currentPressStart <= round.totalHoles) {
+    if (pressCount > 0 && currentPressStart <= holeOrder.length) {
+      final startHoleNum = holeOrder[currentPressStart - 1];
+      final endHoleNum   = holeOrder.last;
       final alreadyAdded = segs.any((s) =>
           s.$1 == currentPressStart &&
-          s.$2 == round.totalHoles &&
+          s.$2 == holeOrder.length &&
           s.$3 == cfg.pressValue * cfLive);
       if (!alreadyAdded) {
-        segs.add((currentPressStart, round.totalHoles, cfg.pressValue * cfLive, false, seqN++));
+        segs.add((currentPressStart, holeOrder.length, cfg.pressValue * cfLive, false, seqN++,
+                  startHoleNum, endHoleNum));
       }
     }
 
     // ── Calcular estado de cada segmento ─────────────────────────────────────
     final results = <MatchPressLiveStatus>[];
-    for (final (start, end, value, isPrimary, seqNum) in segs) {
+    for (final (startPos, endPos, value, isPrimary, seqNum, startHoleNum, endHoleNum) in segs) {
       int score = 0;
       int played = 0;
-      for (int h = start; h <= end; h++) {
-        score += hd[h];
-        if (hd[h] != 0) played++;
+      for (int pos = startPos; pos <= endPos; pos++) {
+        score += hdPos[pos];
+        if (hdPos[pos] != 0) played++;
       }
       results.add(MatchPressLiveStatus(
         sequenceNumber: seqNum,
         isPrimaryMatch: isPrimary,
-        startHole: start,
-        endHole: end,
+        startHole: startHoleNum,    // número de hoyo real para la UI
+        endHole:   endHoleNum,      // número de hoyo real para la UI
         score: score,
         played: played,
         value: value,

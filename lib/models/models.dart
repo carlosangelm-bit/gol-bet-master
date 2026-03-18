@@ -352,8 +352,14 @@ class MatchAutoPressConfig {
   // Cuando un jugador pide carry al terminar la primera vuelta:
   // - el matchValue se multiplica por carryFactor (default 2×)
   // - todas las presiones activas y futuras también se multiplican
-  final bool carryApplied;        // true cuando el carry fue aceptado
-  final double carryFactor;       // multiplicador del carry (default 2.0)
+  // carryByPair: clave = pairKey(p1Id, p2Id), valor = factor aplicado
+  // Permite que cada duelo dentro de un grupo tenga su propio carry
+  // sin afectar a otros duelos que compartan el módulo.
+  final Map<String, double> carryByPair; // clave: pairKey(id1,id2) → carryFactor
+
+  // Deprecated fields kept for backwards-compat / migration
+  final bool carryApplied;        // legacy: true cuando el carry fue aceptado (grupo de 2)
+  final double carryFactor;       // legacy: multiplicador del carry (default 2.0)
 
   const MatchAutoPressConfig({
     this.matchValue = 100,
@@ -365,13 +371,36 @@ class MatchAutoPressConfig {
     this.maxPresses,
     this.carryApplied = false,
     this.carryFactor = 2.0,
+    this.carryByPair = const {},
   });
+
+  // Helper: clave canónica del par (IDs ordenados, separados por '|')
+  static String pairKey(String id1, String id2) {
+    final sorted = [id1, id2]..sort();
+    return '${sorted[0]}|${sorted[1]}';
+  }
+
+  // ¿Tiene carry activo para este par específico?
+  bool carryAppliedForPair(String id1, String id2) {
+    final key = pairKey(id1, id2);
+    if (carryByPair.containsKey(key)) return true;
+    // Retrocompatibilidad: si carryApplied global y no hay carryByPair, se aplica a todos los pares
+    if (carryApplied && carryByPair.isEmpty) return true;
+    return false;
+  }
+
+  // Factor de carry para este par específico
+  double carryFactorForPair(String id1, String id2) {
+    final key = pairKey(id1, id2);
+    return carryByPair[key] ?? (carryApplied && carryByPair.isEmpty ? carryFactor : 1.0);
+  }
 
   MatchAutoPressConfig copyWith({
     double? matchValue, double? pressValue, int? pressTriggerValue,
     GrossNetMode? mode, TieRule? tieRule,
     bool? allowMultiplePresses, int? maxPresses,
     bool? carryApplied, double? carryFactor,
+    Map<String, double>? carryByPair,
   }) => MatchAutoPressConfig(
     matchValue:          matchValue         ?? this.matchValue,
     pressValue:          pressValue         ?? this.pressValue,
@@ -382,6 +411,7 @@ class MatchAutoPressConfig {
     maxPresses:          maxPresses         ?? this.maxPresses,
     carryApplied:        carryApplied       ?? this.carryApplied,
     carryFactor:         carryFactor        ?? this.carryFactor,
+    carryByPair:         carryByPair        ?? this.carryByPair,
   );
 
   Map<String, dynamic> toJson() => {
@@ -394,21 +424,31 @@ class MatchAutoPressConfig {
     if (maxPresses != null) 'maxPresses': maxPresses,
     'carryApplied':        carryApplied,
     'carryFactor':         carryFactor,
+    if (carryByPair.isNotEmpty) 'carryByPair': carryByPair,
   };
 
-  factory MatchAutoPressConfig.fromJson(Map<String, dynamic> j) => MatchAutoPressConfig(
-    matchValue:          (j['matchValue']        as num?)?.toDouble() ?? 100,
-    pressValue:          (j['pressValue']        as num?)?.toDouble() ?? 50,
-    pressTriggerValue:   (j['pressTriggerValue'] as int?)              ?? 2,
-    mode: GrossNetMode.values.firstWhere(
-      (e) => e.name == (j['mode'] ?? 'net'), orElse: () => GrossNetMode.net),
-    tieRule: TieRule.values.firstWhere(
-      (e) => e.name == (j['tieRule'] ?? 'push'), orElse: () => TieRule.push),
-    allowMultiplePresses: j['allowMultiplePresses'] as bool? ?? true,
-    maxPresses:           j['maxPresses'] as int?,
-    carryApplied:         j['carryApplied'] as bool? ?? false,
-    carryFactor:          (j['carryFactor'] as num?)?.toDouble() ?? 2.0,
-  );
+  factory MatchAutoPressConfig.fromJson(Map<String, dynamic> j) {
+    // Migrar carryByPair desde JSON
+    Map<String, double> carryByPairParsed = {};
+    if (j['carryByPair'] != null) {
+      final raw = j['carryByPair'] as Map<String, dynamic>;
+      carryByPairParsed = raw.map((k, v) => MapEntry(k, (v as num).toDouble()));
+    }
+    return MatchAutoPressConfig(
+      matchValue:          (j['matchValue']        as num?)?.toDouble() ?? 100,
+      pressValue:          (j['pressValue']        as num?)?.toDouble() ?? 50,
+      pressTriggerValue:   (j['pressTriggerValue'] as int?)              ?? 2,
+      mode: GrossNetMode.values.firstWhere(
+        (e) => e.name == (j['mode'] ?? 'net'), orElse: () => GrossNetMode.net),
+      tieRule: TieRule.values.firstWhere(
+        (e) => e.name == (j['tieRule'] ?? 'push'), orElse: () => TieRule.push),
+      allowMultiplePresses: j['allowMultiplePresses'] as bool? ?? true,
+      maxPresses:           j['maxPresses'] as int?,
+      carryApplied:         j['carryApplied'] as bool? ?? false,
+      carryFactor:          (j['carryFactor'] as num?)?.toDouble() ?? 2.0,
+      carryByPair:          carryByPairParsed,
+    );
+  }
 
   static const def = MatchAutoPressConfig();
 }

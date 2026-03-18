@@ -490,18 +490,35 @@ class _OneVOneViewState extends State<_OneVOneView> {
     );
   }
 
-  // ── Aplica carry a todos los módulos Nassau y MatchAutoPress del par ──────
+  // ── Aplica carry SOLO a los módulos del par activo (p1, p2) ──────────────
+  // Usa carryByPair para que cada duelo tenga su propio carry independiente,
+  // incluso si varios duelos comparten el mismo módulo en un grupo grande.
   void _applyCarry(BuildContext context, double factor,
       List<BetModuleInstance> nassauMods, List<BetModuleInstance> matchMods) {
-    final prov = context.read<RoundProvider>();
+    final prov  = context.read<RoundProvider>();
     final round = prov.round!;
+    // p1 y p2 son los jugadores activos en la vista (obtenidos del estado)
+    final p1Id  = _p1Id ?? round.players[0].id;
+    final p2Id  = _p2Id ?? round.players[1].id;
+
     final newGroups = round.betGroups.map((g) {
       final newModules = g.modules.map((m) {
         if (nassauMods.any((nm) => nm.id == m.id)) {
+          // Nassau: carry global por módulo (cada grupo Nassau es típicamente 1v1)
           return m.copyWith(nassauConfig: m.nassau.copyWith(carryApplied: true, carryFactor: factor));
         }
         if (matchMods.any((mm) => mm.id == m.id)) {
-          return m.copyWith(matchAutoPressConfig: m.matchAutoPress.copyWith(carryApplied: true, carryFactor: factor));
+          // Match+Press: carry por par para soportar grupos con múltiples duelos
+          final existingByPair = Map<String, double>.from(m.matchAutoPress.carryByPair);
+          existingByPair[MatchAutoPressConfig.pairKey(p1Id, p2Id)] = factor;
+          return m.copyWith(
+            matchAutoPressConfig: m.matchAutoPress.copyWith(
+              carryByPair: existingByPair,
+              // También actualizar legacy fields por si algún código antiguo los usa
+              carryApplied: true,
+              carryFactor: factor,
+            ),
+          );
         }
         return m;
       }).toList();
@@ -1438,9 +1455,15 @@ class _MatchPressLivePanel extends StatelessWidget {
                 style: TextStyle(color: matchColor, fontSize: 18, fontWeight: FontWeight.w900)),
             const SizedBox(height: 2),
             Text(
-              activePresses == 0
-                  ? 'Match  •  \$${cfg.matchValue.toStringAsFixed(0)}'
-                  : 'Match  •  \$${cfg.matchValue.toStringAsFixed(0)}   +  $activePresses × \$${cfg.pressValue.toStringAsFixed(0)} press',
+              () {
+                final matchVal = (primary?.value ?? cfg.matchValue).toStringAsFixed(0);
+                if (activePresses == 0) return 'Match  •  \$$matchVal';
+                // Tomar el valor de presión de la primera presión activa (ya incluye carry)
+                final firstPressVal = presses.skip(1).isNotEmpty
+                    ? presses.skip(1).first.value.toStringAsFixed(0)
+                    : cfg.pressValue.toStringAsFixed(0);
+                return 'Match  •  \$$matchVal   +  $activePresses × \$$firstPressVal press';
+              }(),
               style: TextStyle(color: t.sub, fontSize: 10),
             ),
           ]),
@@ -1572,8 +1595,13 @@ class _CarryPanelState extends State<_CarryPanel> {
   }
 
   bool get _carryAlreadyApplied {
-    return widget.nassauModules.any((m) => m.nassau.carryApplied) ||
-           widget.matchPressModules.any((m) => m.matchAutoPress.carryApplied);
+    final p1Id = widget.p1.id;
+    final p2Id = widget.p2.id;
+    // Verificar carry por par (nuevo mecanismo) o legacy carry global
+    final matchCarry = widget.matchPressModules.any((m) =>
+        m.matchAutoPress.carryAppliedForPair(p1Id, p2Id));
+    final nassauCarry = widget.nassauModules.any((m) => m.nassau.carryApplied);
+    return nassauCarry || matchCarry;
   }
 
   bool get _hasCarryModules =>
@@ -1602,8 +1630,12 @@ class _CarryPanelState extends State<_CarryPanel> {
     }).join('\n');
     final matchDesc = widget.matchPressModules.map((m) {
       final cfg = m.matchAutoPress;
-      final mv = cfg.carryApplied ? cfg.matchValue * cfg.carryFactor : cfg.matchValue * defaultFactor;
-      final pv = cfg.carryApplied ? cfg.pressValue * cfg.carryFactor : cfg.pressValue * defaultFactor;
+      final p1Id = widget.p1.id;
+      final p2Id = widget.p2.id;
+      final alreadyApplied = cfg.carryAppliedForPair(p1Id, p2Id);
+      final currentFactor  = cfg.carryFactorForPair(p1Id, p2Id);
+      final mv = alreadyApplied ? cfg.matchValue * currentFactor : cfg.matchValue * defaultFactor;
+      final pv = alreadyApplied ? cfg.pressValue * currentFactor : cfg.pressValue * defaultFactor;
       return 'Match: \$${mv.toStringAsFixed(0)}  ·  Press: \$${pv.toStringAsFixed(0)}';
     }).join('\n');
 
