@@ -3,6 +3,7 @@
 // Recalcula el ledger automáticamente ante cualquier cambio.
 // ─────────────────────────────────────────────────────────────────────────────
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/app_theme.dart';
@@ -62,9 +63,20 @@ Round roundFromJson(Map<String, dynamic> j) {
 
   final sliding = (j['sliding'] as List).map((s) => SlidingRelation.fromJson(s as Map<String, dynamic>)).toList();
 
+  // Parsear createdAt de forma defensiva: puede ser String ISO o Timestamp de Firestore
+  final rawCreatedAt = j['createdAt'];
+  final DateTime parsedCreatedAt;
+  if (rawCreatedAt is Timestamp) {
+    parsedCreatedAt = rawCreatedAt.toDate();
+  } else if (rawCreatedAt is String) {
+    parsedCreatedAt = DateTime.tryParse(rawCreatedAt) ?? DateTime.now();
+  } else {
+    parsedCreatedAt = DateTime.now();
+  }
+
   return Round(
     id: j['id'] as String, name: j['name'] as String,
-    createdAt: DateTime.parse(j['createdAt'] as String),
+    createdAt: parsedCreatedAt,
     currentHole: j['currentHole'] as int? ?? 1,
     isFinished: j['isFinished'] as bool? ?? false,
     startingNine: j['startingNine'] == 'back' ? StartingNine.back : StartingNine.front,
@@ -115,20 +127,41 @@ class RoundProvider extends ChangeNotifier {
     _persist();
   }
 
-  void finishRound() {
-    if (_round == null) return;
-    // Marcar la ronda como finalizada en el modelo
+  /// Finaliza la ronda: guarda en Firestore primero (con await), luego limpia
+  /// el estado local. Retorna true si se guardó ok, false si hubo error de red.
+  /// La UI debe mostrar un SnackBar de error si retorna false.
+  Future<bool> finishRound() async {
+    if (_round == null) return false;
+
+    // 1. Construir la ronda finalizada
     final finishedRound = _round!.copyWith(isFinished: true);
-    // Guardar el documento COMPLETO en Firestore con isFinished:true
-    // (saveRound hace set+merge, así funciona aunque el doc no exista todavía)
+
+    // 2. Guardar PRIMERO en Firestore (await) antes de limpiar el estado local.
+    //    Si falla la escritura, devolver false sin limpiar → el usuario puede reintentar.
     if (AuthService.uid != null) {
-      FirestoreService.saveRound(finishedRound);
+      try {
+        await FirestoreService.saveRound(finishedRound);
+      } catch (_) {
+        // Error de red: la ronda sigue activa localmente para que el usuario
+        // pueda volver a intentarlo desde Home o Results.
+        return false;
+      }
     }
-    // Limpiar la ronda activa → va al historial automáticamente
+
+    // 3. Persistir localmente la versión finalizada (isFinished:true) antes de borrar
+    try {
+      final p = await _prefs();
+      await p.setString('round', jsonEncode(roundToJson(finishedRound)));
+    } catch (_) {}
+
+    // 4. Limpiar la ronda activa → pasa al historial automáticamente
     _round = null;
     _tabIndex = 0;
     notifyListeners();
+
+    // 5. Eliminar la caché local de ronda activa
     _prefs().then((p) => p.remove('round'));
+    return true;
   }
 
   void resetRound() {

@@ -734,9 +734,20 @@ class _ActiveRoundView extends StatelessWidget {
       ]),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancelar', style: TextStyle(color: t.sub))),
-        TextButton(onPressed: () {
+        TextButton(onPressed: () async {
           Navigator.pop(ctx);
-          prov.finishRound();
+          final ok = await prov.finishRound();
+          if (!ok && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: const Text('Error al guardar la ronda. Revisa tu conexión e intenta de nuevo.'),
+              backgroundColor: Colors.red.shade700,
+              action: SnackBarAction(
+                label: 'Reintentar',
+                textColor: Colors.white,
+                onPressed: () => _confirmFinish(context, prov, t),
+              ),
+            ));
+          }
         }, child: Text('Finalizar', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700))),
       ],
     ));

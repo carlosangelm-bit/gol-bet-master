@@ -1408,13 +1408,57 @@ class _HoleNavButtons extends StatelessWidget {
         enabled: nextEnabled,
         t: t,
         primary: true,
-        onTap: onNext ?? (isVeryLast ? () {
-          final prov = context.read<RoundProvider>();
-          prov.finishRound();
-          prov.setTab(3); // Home+Score+Tarjeta+Resultados
-        } : null),
+        onTap: onNext ?? (isVeryLast ? () => _finishRound(context) : null),
       )),
     ]);
+  }
+
+  Future<void> _finishRound(BuildContext context) async {
+    final prov = context.read<RoundProvider>();
+    final t    = prov.theme;
+    // Mostrar diálogo de confirmación (igual que en home_screen y results_screen)
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: t.card,
+        title: Text('Finalizar ronda',
+            style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
+        content: Text(
+          'Los resultados se guardarán en el historial y la ronda quedará cerrada.',
+          style: TextStyle(color: t.sub),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Cancelar', style: TextStyle(color: t.sub))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Finalizar',
+                  style: TextStyle(
+                      color: t.primary, fontWeight: FontWeight.w700))),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!context.mounted) return;
+
+    final ok = await prov.finishRound();
+    if (!context.mounted) return;
+
+    if (ok) {
+      prov.setTab(3); // Ir a pestaña Resultados
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text(
+            'Error al guardar la ronda. Revisa tu conexión e intenta de nuevo.'),
+        backgroundColor: Colors.red.shade700,
+        action: SnackBarAction(
+          label: 'Reintentar',
+          textColor: Colors.white,
+          onPressed: () => _finishRound(context),
+        ),
+      ));
+    }
   }
 }
 
