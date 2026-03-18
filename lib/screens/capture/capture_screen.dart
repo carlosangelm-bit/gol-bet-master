@@ -42,6 +42,15 @@ class _CaptureScreenState extends State<CaptureScreen> {
   // Primer hoyo del segundo segmento
   int _firstOfSecond(StartingNine sn) => sn == StartingNine.back ? 1 : 10;
 
+  /// Devuelve true si el hoyo actual pertenece al segundo segmento.
+  /// Usado para mostrar los 18 hoyos en el selector cuando la ronda
+  /// de 9 se extendió voluntariamente al segundo nine.
+  bool _isInSecondSegment(Round round) {
+    final sn = round.startingNine;
+    if (sn == StartingNine.front) return _currentHole >= 10;
+    return _currentHole <= 9;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -126,6 +135,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
             scrollCtrl: _holeScroll,
             t: t,
             onSelect: _jumpToHole,
+            showAll: _isInSecondSegment(round),
           ),
 
           // ── Info del hoyo ─────────────────────────────────────────────
@@ -154,30 +164,61 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 const SizedBox(height: 8),
                 // Navegación prev/next — respeta startingNine y segmentos
                 Builder(builder: (_) {
-                  final sn         = round.startingNine;
-                  final firstSeg   = _firstSegment(sn);
-                  final secondSeg  = _secondSegment(sn);
-                  final lastFirst  = _lastOfFirst(sn);
+                  final sn          = round.startingNine;
+                  final is9Holes    = round.totalHoles == 9;
+                  final firstSeg    = _firstSegment(sn);
+                  final secondSeg   = _secondSegment(sn);
+                  final lastFirst   = _lastOfFirst(sn);
                   final firstSecond = _firstOfSecond(sn);
-                  final allOrder   = [...firstSeg, ...secondSeg];
-                  final curIdx     = allOrder.indexOf(_currentHole);
-                  final hasPrev    = curIdx > 0;
-                  final hasNext    = curIdx < allOrder.length - 1;
+                  // En ronda de 9: el orden activo es solo el primer segmento
+                  // En ronda de 18: orden completo
+                  final activeOrder = is9Holes ? firstSeg : [...firstSeg, ...secondSeg];
+                  final allOrder    = [...firstSeg, ...secondSeg]; // siempre 18 para continuar
+                  final curIdx      = activeOrder.indexOf(_currentHole);
+                  // Si estamos en el segundo segmento (ronda extendida), usar allOrder
+                  final curIdxFull  = allOrder.indexOf(_currentHole);
+                  final inSecond    = secondSeg.contains(_currentHole);
+                  final hasPrev     = inSecond
+                      ? curIdxFull > 0
+                      : curIdx > 0;
+                  final hasNext     = inSecond
+                      ? curIdxFull < allOrder.length - 1
+                      : (!is9Holes && curIdx < activeOrder.length - 1);
                   // ¿Estamos en el último hoyo del primer segmento?
-                  final isLastOfFirst = _currentHole == lastFirst;
-                  // ¿Estamos en el último hoyo de toda la ronda?
-                  final isVeryLast = _currentHole == allOrder.last;
+                  final isLastOfFirst = _currentHole == lastFirst && !inSecond;
+                  // ¿Estamos en el último hoyo de toda la ronda (18)?
+                  final isVeryLast = _currentHole == allOrder.last && inSecond;
+                  // ¿Ronda de 9 y estamos en el último hoyo del segmento activo?
+                  final isLast9 = is9Holes && _currentHole == firstSeg.last && !inSecond;
                   return _HoleNavButtons(
                     current:    _currentHole,
                     startingNine: sn,
-                    prevHole:   hasPrev   ? allOrder[curIdx - 1] : null,
-                    nextHole:   hasNext   ? allOrder[curIdx + 1] : null,
-                    isLastOfFirstSegment: isLastOfFirst,
+                    is9HoleRound: is9Holes,
+                    inSecondSegment: inSecond,
+                    prevHole:   hasPrev
+                        ? (inSecond ? allOrder[curIdxFull - 1] : activeOrder[curIdx - 1])
+                        : null,
+                    nextHole:   hasNext
+                        ? (inSecond ? allOrder[curIdxFull + 1] : activeOrder[curIdx + 1])
+                        : null,
+                    isLastOfFirstSegment: isLastOfFirst && !is9Holes,
                     firstOfSecond: firstSecond,
                     isVeryLast: isVeryLast,
+                    isLast9: isLast9,
                     t: t,
-                    onPrev:  hasPrev  ? () => _jumpToHole(allOrder[curIdx - 1]) : null,
-                    onNext:  hasNext  ? () => _jumpToHole(allOrder[curIdx + 1]) : null,
+                    onPrev: hasPrev
+                        ? () => _jumpToHole(inSecond
+                            ? allOrder[curIdxFull - 1]
+                            : activeOrder[curIdx - 1])
+                        : null,
+                    onNext: hasNext
+                        ? () => _jumpToHole(inSecond
+                            ? allOrder[curIdxFull + 1]
+                            : activeOrder[curIdx + 1])
+                        : null,
+                    onContinueTo18: isLast9
+                        ? () => _jumpToHole(firstSecond)
+                        : null,
                   );
                 }),
               ]),
@@ -198,6 +239,10 @@ class _CaptureHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final completed = _countCompleted(round);
+    // Calcular el total real de hoyos jugados o programados
+    // Si la ronda es de 9 pero ya hay scores en hoyos del segundo nine,
+    // mostrar el total real jugado (hasta 18).
+    final effectiveTotal = _effectiveTotal(round);
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       decoration: BoxDecoration(color: t.bg, border: Border(bottom: BorderSide(color: t.divider))),
@@ -213,15 +258,28 @@ class _CaptureHeader extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: t.primary.withValues(alpha: 0.25)),
           ),
-          child: Text('$completed/18 hoyos', style: TextStyle(color: t.primary, fontSize: 12, fontWeight: FontWeight.w700)),
+          child: Text('$completed/$effectiveTotal hoyos', style: TextStyle(color: t.primary, fontSize: 12, fontWeight: FontWeight.w700)),
         ),
       ]),
     );
   }
 
+  /// Total efectivo: normalmente totalHoles, pero si el usuario de una ronda
+  /// de 9 ya registró scores en el segundo nine, mostrar 18.
+  int _effectiveTotal(Round round) {
+    if (round.totalHoles == 18) return 18;
+    // Ver si hay scores en el segundo segmento
+    final secondStart = round.startingNine == StartingNine.back ? 1 : 10;
+    final secondEnd   = round.startingNine == StartingNine.back ? 9 : 18;
+    final hasSecond   = round.scores.values.any((hmap) =>
+        hmap.keys.any((h) => h >= secondStart && h <= secondEnd));
+    return hasSecond ? 18 : round.totalHoles;
+  }
+
   int _countCompleted(Round round) {
+    final total = _effectiveTotal(round);
     int c = 0;
-    for (int h = 1; h <= round.totalHoles; h++) {
+    for (int h = 1; h <= total; h++) {
       if (round.players.every((p) => round.getScore(p.id, h).hasScore)) c++;
     }
     return c;
@@ -235,9 +293,13 @@ class _HoleSelector extends StatelessWidget {
   final ScrollController scrollCtrl;
   final GolfTheme t;
   final void Function(int) onSelect;
+  /// Si true, muestra los 18 hoyos aunque totalHoles sea 9
+  /// (el usuario extendió la ronda al segundo nine)
+  final bool showAll;
   const _HoleSelector({
     required this.round, required this.currentHole,
     required this.scrollCtrl, required this.t, required this.onSelect,
+    this.showAll = false,
   });
 
   @override
@@ -249,9 +311,14 @@ class _HoleSelector extends StatelessWidget {
         controller: scrollCtrl,
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-        itemCount: 18,
+        itemCount: (round.totalHoles == 9 && !showAll)
+            ? 9   // solo mostrar los hoyos del primer segmento
+            : 18, // mostrar todos los 18 hoyos
         itemBuilder: (_, i) {
-          final h       = i + 1;
+          // En ronda de 9 (sin extender), mapear índice al hoyo real del primer segmento
+          final h = (round.totalHoles == 9 && !showAll)
+              ? (round.startingNine == StartingNine.back ? i + 10 : i + 1)
+              : i + 1;
           final isSel   = h == currentHole;
           final allDone = round.players.isNotEmpty &&
               round.players.every((p) => round.getScore(p.id, h).hasScore);
@@ -1356,11 +1423,15 @@ class _HoleNavButtons extends StatelessWidget {
   final GolfTheme t;
   final VoidCallback? onPrev;
   final VoidCallback? onNext;
-  final int? prevHole;          // hoyo anterior según el orden del segmento
-  final int? nextHole;          // hoyo siguiente según el orden del segmento
-  final bool isLastOfFirstSegment; // estamos al final del primer 9
-  final bool isVeryLast;           // estamos al final de los 18
-  final int firstOfSecond;         // primer hoyo del segundo segmento
+  final VoidCallback? onContinueTo18; // solo para rondas de 9: ir al seg 2
+  final int? prevHole;
+  final int? nextHole;
+  final bool isLastOfFirstSegment; // fin del seg 1 en ronda de 18
+  final bool isVeryLast;           // fin del seg 2 (hoyo 18)
+  final bool isLast9;              // fin del seg 1 en ronda de 9 hoyos
+  final bool is9HoleRound;
+  final bool inSecondSegment;
+  final int firstOfSecond;
   final StartingNine startingNine;
 
   const _HoleNavButtons({
@@ -1370,23 +1441,59 @@ class _HoleNavButtons extends StatelessWidget {
     required this.firstOfSecond,
     this.onPrev,
     this.onNext,
+    this.onContinueTo18,
     this.prevHole,
     this.nextHole,
     this.isLastOfFirstSegment = false,
     this.isVeryLast = false,
+    this.isLast9 = false,
+    this.is9HoleRound = false,
+    this.inSecondSegment = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Etiqueta del botón izquierdo (anterior)
     final prevLabel = prevHole != null ? '← Hoyo $prevHole' : '←';
 
-    // Etiqueta del botón derecho (siguiente / continuar / terminar)
+    // Caso: ronda de 9 hoyos en el último hoyo del segmento activo
+    // → Mostrar fila especial: [← Anterior] [✓ Terminar] [→ Continuar 18]
+    if (isLast9) {
+      return Column(children: [
+        Row(children: [
+          Expanded(child: _NavBtn(
+            label: prevLabel,
+            enabled: onPrev != null,
+            t: t,
+            onTap: onPrev,
+          )),
+          const SizedBox(width: 8),
+          Expanded(child: _NavBtn(
+            label: '✓ Terminar',
+            enabled: true,
+            t: t,
+            primary: true,
+            onTap: () => _finishRound(context),
+          )),
+        ]),
+        const SizedBox(height: 6),
+        SizedBox(
+          width: double.infinity,
+          child: _NavBtn(
+            label: '⛳ Continuar ${startingNine == StartingNine.back ? "Front 9" : "Back 9"} →',
+            enabled: true,
+            t: t,
+            primary: false,
+            onTap: onContinueTo18,
+          ),
+        ),
+      ]);
+    }
+
+    // Caso normal: siguiente / segmento / terminar 18
     final String nextLabel;
     if (isVeryLast) {
       nextLabel = '✓ Terminar';
     } else if (isLastOfFirstSegment) {
-      // Al terminar el primer 9, se va al inicio del segundo 9
       final segName = startingNine == StartingNine.back ? 'Front 9 →' : 'Back 9 →';
       nextLabel = '⛳ $segName';
     } else {
