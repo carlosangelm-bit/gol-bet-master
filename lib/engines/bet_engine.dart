@@ -64,10 +64,8 @@ class BetEngine {
     double pot = cfg.valuePerSkin;
     for (final ch in round.course.holes) {
       final h = ch.hole;
-      if (!pids.every((pid) => round.getScore(pid, h).hasScore)) {
-        if (cfg.carryOver) pot += cfg.valuePerSkin;
-        continue;
-      }
+      // Hoyo no jugado aún: se salta sin acumular carry
+      if (!pids.every((pid) => round.getScore(pid, h).hasScore)) continue;
 
       final winner = GameEngine.holeWinner(round, pids, h, mod.useHandicap);
       if (winner != null) {
@@ -83,6 +81,7 @@ class BetEngine {
         }
         pot = cfg.valuePerSkin;
       } else {
+        // Empate en hoyo jugado → acumular carry
         if (cfg.carryOver) pot += cfg.valuePerSkin;
       }
     }
@@ -117,10 +116,9 @@ class BetEngine {
       final sBase     = round.getScore(baseId,     h);
       final sReceiver = round.getScore(receiverId, h);
 
-      if (!sBase.hasScore || !sReceiver.hasScore) {
-        if (cfg.carryOver) pot += cfg.valuePerSkin;
-        continue;
-      }
+      // Hoyo no jugado aún: se salta sin acumular carry
+      // (el carry solo se acumula cuando el hoyo es JUGADO y resulta en empate)
+      if (!sBase.hasScore || !sReceiver.hasScore) continue;
 
       final strokesHere = mod.useHandicap
           ? GameEngine.strokesReceivedVs(
@@ -138,7 +136,7 @@ class BetEngine {
       String? winner;
       if      (grossBase < netReceiver) winner = baseId;
       else if (grossBase > netReceiver) winner = receiverId;
-      // else tie
+      // else tie → pot lleva el carry
 
       if (winner != null) {
         final loser = winner == p1Id ? p2Id : p1Id;
@@ -149,6 +147,7 @@ class BetEngine {
         ));
         pot = cfg.valuePerSkin;
       } else {
+        // Empate en hoyo jugado → acumular carry
         if (cfg.carryOver) pot += cfg.valuePerSkin;
       }
     }
@@ -748,11 +747,11 @@ class BetEngine {
       if (isGroup) {
         // ── CAMINO GRUPAL: todos deben tener score ─────────────────────────
         if (!pids.every((pid) => round.getScore(pid, h).hasScore)) {
+          // Hoyo no jugado aún: pendiente, sin acumular carry
           orderedResults.add(SkinHoleResult(
             hole: h, winner: null, isPending: true,
             pot: pot, cumP1: cumP1, cumP2: cumP2,
           ));
-          if (cfg.carryOver) pot += cfg.valuePerSkin;
           continue;
         }
 
@@ -782,12 +781,12 @@ class BetEngine {
         final s1 = round.getScore(p1Id, h);
         final s2 = round.getScore(p2Id, h);
 
+        // Hoyo no jugado aún: pendiente, sin acumular carry
         if (!s1.hasScore || !s2.hasScore) {
           orderedResults.add(SkinHoleResult(
             hole: h, winner: null, isPending: true,
             pot: pot, cumP1: cumP1, cumP2: cumP2,
           ));
-          if (cfg.carryOver) pot += cfg.valuePerSkin;
           continue;
         }
 

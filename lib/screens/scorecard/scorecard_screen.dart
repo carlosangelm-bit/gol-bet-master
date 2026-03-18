@@ -512,9 +512,20 @@ class _OneVOneViewState extends State<_OneVOneView> {
 
   List<BetModuleInstance> _findModules(Round round, String p1Id, String p2Id, BetModuleType type) {
     final mods = <BetModuleInstance>[];
+    // Primero buscar en grupos 1v1 exactos (playerIds = exactamente esos 2 jugadores)
+    // para que el carry y otros controles sean individuales por partida.
     for (final g in round.betGroups) {
-      if (g.playerIds.contains(p1Id) && g.playerIds.contains(p2Id)) {
+      final ids = g.playerIds;
+      if (ids.length == 2 && ids.contains(p1Id) && ids.contains(p2Id)) {
         mods.addAll(g.modules.where((m) => m.type == type));
+      }
+    }
+    // Si no hay grupo exacto, ampliar búsqueda a grupos que contengan a ambos
+    if (mods.isEmpty) {
+      for (final g in round.betGroups) {
+        if (g.playerIds.contains(p1Id) && g.playerIds.contains(p2Id)) {
+          mods.addAll(g.modules.where((m) => m.type == type));
+        }
       }
     }
     return mods;
@@ -1747,9 +1758,12 @@ class _HoleByHoleMatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // En la vista 1v1 (_HoleByHoleMatch) siempre usar el camino bilateral (1v1),
+    // sin importar cuántos participantes tenga el módulo en el grupo.
+    // Esto garantiza que la columna SKINS muestre los ganadores del duelo
+    // entre los dos jugadores visibles, no de un tercer jugador del grupo.
     final List<SkinHoleResult>? skinsResults = skinsMod != null
-        ? BetEngine.skinsScorecard(round, p1.id, p2.id, skinsMod!,
-            groupPids: _modGroupPids(round, skinsMod!))
+        ? BetEngine.skinsScorecard(round, p1.id, p2.id, skinsMod!)
         : null;
     final hasSkins = skinsResults != null;
 
