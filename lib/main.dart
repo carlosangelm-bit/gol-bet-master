@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'core/firebase_options.dart';
 import 'providers/round_provider.dart';
 import 'providers/auth_provider.dart';
@@ -23,6 +24,9 @@ void main() {
   // Capturar errores no controlados en zonas
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+
+    // Inicializar datos de formato de fecha para el locale 'es'
+    await initializeDateFormatting('es', null);
 
     // Configurar el ErrorWidget antes de cualquier render
     ErrorWidget.builder = (FlutterErrorDetails details) {
