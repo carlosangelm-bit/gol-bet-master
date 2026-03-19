@@ -29,39 +29,64 @@ Map<String, dynamic> roundToJson(Round r) => {
 };
 
 Round roundFromJson(Map<String, dynamic> j) {
-  final players     = (j['players'] as List).map((p) => Player.fromJson(p as Map<String, dynamic>)).toList();
-  final roundPlayers = (j['roundPlayers'] as List).map((rp) => RoundPlayer.fromJson(rp as Map<String, dynamic>)).toList();
-  final betGroups   = (j['betGroups'] as List).map((g) => BetGroup.fromJson(g as Map<String, dynamic>)).toList();
+  // ── Helpers defensivos para evitar ClassCastException con datos de Firestore ──
+  List asList(dynamic v) => v is List ? v : [];
+  Map<String, dynamic> asMap(dynamic v) =>
+      v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
 
-  final scoresJson = j['scores'] as Map<String, dynamic>;
+  final players = asList(j['players'])
+      .map((p) => Player.fromJson(asMap(p))).toList();
+  final roundPlayers = asList(j['roundPlayers'])
+      .map((rp) => RoundPlayer.fromJson(asMap(rp))).toList();
+  final betGroups = asList(j['betGroups'])
+      .map((g) => BetGroup.fromJson(asMap(g))).toList();
+
+  final scoresJson = asMap(j['scores']);
   final scores = <String, Map<int, HoleScore>>{};
   scoresJson.forEach((pid, hmap) {
     final inner = <int, HoleScore>{};
-    (hmap as Map<String, dynamic>).forEach((hStr, sJson) {
-      inner[int.parse(hStr)] = HoleScore.fromJson(sJson as Map<String, dynamic>);
+    asMap(hmap).forEach((hStr, sJson) {
+      final h = int.tryParse(hStr);
+      if (h != null && sJson != null) {
+        try { inner[h] = HoleScore.fromJson(asMap(sJson)); } catch (_) {}
+      }
     });
     scores[pid] = inner;
   });
 
-  final eventsJson = j['events'] as Map<String, dynamic>;
+  final eventsJson = asMap(j['events']);
   final events = <String, Map<int, List<HoleEvent>>>{};
   eventsJson.forEach((pid, hmap) {
     final inner = <int, List<HoleEvent>>{};
-    (hmap as Map<String, dynamic>).forEach((hStr, list) {
-      inner[int.parse(hStr)] = (list as List)
-          .map((e) => HoleEvent.fromJson(e as Map<String, dynamic>))
-          .toList();
+    asMap(hmap).forEach((hStr, list) {
+      final h = int.tryParse(hStr);
+      if (h != null) {
+        try {
+          inner[h] = asList(list)
+              .map((e) => HoleEvent.fromJson(asMap(e)))
+              .toList();
+        } catch (_) { inner[h] = []; }
+      }
     });
     events[pid] = inner;
   });
 
-  final oyesesJson = j['oyeseRankings'] as Map<String, dynamic>;
+  final oyesesJson = asMap(j['oyeseRankings']);
   final oyeses = <int, OyeseRanking>{};
   oyesesJson.forEach((hStr, or_) {
-    oyeses[int.parse(hStr)] = OyeseRanking.fromJson(or_ as Map<String, dynamic>);
+    final h = int.tryParse(hStr);
+    if (h != null && or_ != null) {
+      try { oyeses[h] = OyeseRanking.fromJson(asMap(or_)); } catch (_) {}
+    }
   });
 
-  final sliding = (j['sliding'] as List).map((s) => SlidingRelation.fromJson(s as Map<String, dynamic>)).toList();
+  final sliding = asList(j["sliding"])
+      .map((s) {
+        try { return SlidingRelation.fromJson(asMap(s)); }
+        catch (_) { return null; }
+      })
+      .whereType<SlidingRelation>()
+      .toList();
 
   // Parsear createdAt de forma defensiva: puede ser String ISO o Timestamp de Firestore
   final rawCreatedAt = j['createdAt'];

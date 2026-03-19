@@ -249,9 +249,15 @@ class _HistoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateFmt = DateFormat('d MMM yyyy', 'es');
-    final timeFmt = DateFormat('HH:mm');
-    final date    = summary.finishedAt ?? summary.createdAt;
+    final date = summary.finishedAt ?? summary.createdAt;
+    String formattedDate;
+    try {
+      final dateFmt = DateFormat('d MMM yyyy', 'es');
+      final timeFmt = DateFormat('HH:mm');
+      formattedDate = '${dateFmt.format(date)} · ${timeFmt.format(date)}';
+    } catch (_) {
+      formattedDate = '${date.day}/${date.month}/${date.year}';
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -280,7 +286,7 @@ class _HistoryCard extends StatelessWidget {
                 Row(children: [
                   Icon(Icons.calendar_today, size: 11, color: t.sub),
                   const SizedBox(width: 4),
-                  Text('${dateFmt.format(date)} · ${timeFmt.format(date)}', style: TextStyle(color: t.sub, fontSize: 11)),
+                  Text(formattedDate, style: TextStyle(color: t.sub, fontSize: 11)),
                 ]),
               ])),
               Icon(Icons.chevron_right, color: t.sub, size: 20),

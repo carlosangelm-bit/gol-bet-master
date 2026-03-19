@@ -94,6 +94,7 @@ class GolfTheme {
 
   ThemeData toMaterial() => ThemeData(
     brightness: brightness,
+    fontFamily: 'Roboto',
     scaffoldBackgroundColor: bg,
     colorScheme: ColorScheme(
       brightness: brightness,

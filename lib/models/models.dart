@@ -100,9 +100,9 @@ class CourseHole {
   bool get isPar3 => par == 3;
   Map<String, dynamic> toJson() => {'hole': hole, 'par': par, 'strokeIndex': strokeIndex};
   factory CourseHole.fromJson(Map<String, dynamic> j) => CourseHole(
-    hole: (j['hole'] as num).toInt(),
-    par:  (j['par']  as num).toInt(),
-    strokeIndex: (j['strokeIndex'] as num).toInt(),
+    hole: (j['hole'] as num?)?.toInt() ?? 1,
+    par:  (j['par']  as num?)?.toInt() ?? 4,
+    strokeIndex: (j['strokeIndex'] as num?)?.toInt() ?? 1,
   );
 }
 
@@ -118,8 +118,11 @@ class CourseInfo {
     'holes': holes.map((h) => h.toJson()).toList(),
   };
   factory CourseInfo.fromJson(Map<String, dynamic> j) => CourseInfo(
-    name:  j['name'] as String,
-    holes: (j['holes'] as List).map((h) => CourseHole.fromJson(h as Map<String, dynamic>)).toList(),
+    name:  (j['name'] as String?) ?? 'Campo',
+    holes: ((j['holes'] as List?) ?? []).map((h) {
+      try { return CourseHole.fromJson(h is Map ? Map<String, dynamic>.from(h) : {}); }
+      catch (_) { return const CourseHole(hole: 1, par: 4, strokeIndex: 1); }
+    }).toList(),
   );
 
   static final standard = CourseInfo(name: 'Campo Estándar', holes: const [
@@ -161,8 +164,9 @@ class Player {
 
   Map<String, dynamic> toJson() => {'id': id, 'name': name, 'handicapBase': handicapBase, 'colorIndex': colorIndex};
   factory Player.fromJson(Map<String, dynamic> j) => Player(
-    id: j['id'] as String, name: j['name'] as String,
-    handicapBase: (j['handicapBase'] as num).toDouble(),
+    id: (j['id'] as String?) ?? '',
+    name: (j['name'] as String?) ?? 'Jugador',
+    handicapBase: (j['handicapBase'] as num?)?.toDouble() ?? 0.0,
     colorIndex: (j['colorIndex'] as int?) ?? 0,
   );
 }
@@ -233,13 +237,13 @@ class RoundPlayer {
     'manualHandicaps': manualHandicaps,
   };
   factory RoundPlayer.fromJson(Map<String, dynamic> j) => RoundPlayer(
-    playerId:        j['playerId'] as String,
-    handicapEnRonda: (j['handicapEnRonda'] as num).toDouble(),
-    tee: j['tee'] != null
-        ? TeeInfo.fromJson(j['tee'] as Map<String, dynamic>)
+    playerId:        (j['playerId'] as String?) ?? '',
+    handicapEnRonda: (j['handicapEnRonda'] as num?)?.toDouble() ?? 0.0,
+    tee: j['tee'] != null && j['tee'] is Map
+        ? TeeInfo.fromJson(Map<String, dynamic>.from(j['tee'] as Map))
         : TeeInfo.standard,
-    manualHandicaps: (j['manualHandicaps'] as Map<String, dynamic>?)
-        ?.map((k, v) => MapEntry(k, (v as num).toDouble())) ?? const {},
+    manualHandicaps: (j['manualHandicaps'] as Map?)
+        ?.map((k, v) => MapEntry(k.toString(), (v as num?)?.toDouble() ?? 0.0)) ?? const {},
   );
 }
 
@@ -261,7 +265,8 @@ class HoleScore {
 
   Map<String, dynamic> toJson() => {'playerId': playerId, 'hole': hole, 'grossScore': grossScore, 'putts': putts};
   factory HoleScore.fromJson(Map<String, dynamic> j) => HoleScore(
-    playerId: j['playerId'] as String, hole: j['hole'] as int,
+    playerId: (j['playerId'] as String?) ?? '',
+    hole: (j['hole'] as int?) ?? 1,
     grossScore: j['grossScore'] as int?,
     putts: (j['putts'] as int?) ?? 0,
   );
@@ -276,8 +281,12 @@ class HoleEvent {
 
   Map<String, dynamic> toJson() => {'playerId': playerId, 'hole': hole, 'type': type.name};
   factory HoleEvent.fromJson(Map<String, dynamic> j) => HoleEvent(
-    playerId: j['playerId'] as String, hole: j['hole'] as int,
-    type: UnitEventType.values.firstWhere((t) => t.name == j['type']),
+    playerId: (j['playerId'] as String?) ?? '',
+    hole: (j['hole'] as int?) ?? 1,
+    type: UnitEventType.values.firstWhere(
+      (t) => t.name == (j['type'] as String?),
+      orElse: () => UnitEventType.values.first,
+    ),
   );
 }
 
@@ -289,8 +298,8 @@ class OyeseRanking {
 
   Map<String, dynamic> toJson() => {'hole': hole, 'ranking': ranking};
   factory OyeseRanking.fromJson(Map<String, dynamic> j) => OyeseRanking(
-    hole: j['hole'] as int,
-    ranking: List<String>.from(j['ranking'] as List),
+    hole: (j['hole'] as int?) ?? 1,
+    ranking: List<String>.from((j['ranking'] as List?) ?? []),
   );
 }
 
@@ -507,13 +516,13 @@ class PressInstance {
   };
 
   factory PressInstance.fromJson(Map<String, dynamic> j) => PressInstance(
-    id:             j['id']             as String,
-    betModuleId:    j['betModuleId']    as String,
-    sequenceNumber: j['sequenceNumber'] as int,
-    isPrimaryMatch: j['isPrimaryMatch'] as bool? ?? false,
-    startHole:      j['startHole']      as int,
-    value:          (j['value']         as num).toDouble(),
-    endHole:        j['endHole']        as int?,
+    id:             (j['id']             as String?) ?? '',
+    betModuleId:    (j['betModuleId']    as String?) ?? '',
+    sequenceNumber: (j['sequenceNumber'] as int?)    ?? 1,
+    isPrimaryMatch: (j['isPrimaryMatch'] as bool?)   ?? false,
+    startHole:      (j['startHole']      as int?)    ?? 1,
+    value:          (j['value']          as num?)?.toDouble() ?? 0.0,
+    endHole:        j['endHole']         as int?,
     status: PressStatus.values.firstWhere(
       (s) => s.name == (j['status'] ?? 'open'), orElse: () => PressStatus.open),
     winnerPlayerId: j['winnerPlayerId'] as String?,
@@ -932,26 +941,31 @@ class BetModuleInstance {
       (t) => t.name == j['type'],
       orElse: () => BetModuleType.skins,
     );
+    Map<String, dynamic> asMap(dynamic v) =>
+        v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
     return BetModuleInstance(
-      id:   j['id']   as String,
+      id:   (j['id']   as String?) ?? 'mod_${DateTime.now().millisecondsSinceEpoch}',
       type: type,
       name: j['name'] as String? ?? type.label,
-      participantIds: List<String>.from(j['participantIds'] as List? ?? []),
+      participantIds: List<String>.from((j['participantIds'] as List?) ?? []),
       status: BetModuleStatus.values.firstWhere(
           (s) => s.name == (j['status'] ?? 'configured'),
           orElse: () => BetModuleStatus.configured),
       formatMode: BetFormatMode.values.firstWhere(
           (f) => f.name == (j['formatMode'] ?? 'onePot'),
           orElse: () => BetFormatMode.onePot),
-      skinsConfig:          j['skinsConfig']          != null ? SkinsConfig.fromJson(j['skinsConfig']          as Map<String, dynamic>) : null,
-      nassauConfig:         j['nassauConfig']         != null ? NassauConfig.fromJson(j['nassauConfig']         as Map<String, dynamic>) : null,
-      matchAutoPressConfig: j['matchAutoPressConfig'] != null ? MatchAutoPressConfig.fromJson(j['matchAutoPressConfig'] as Map<String, dynamic>) : null,
-      medalConfig:          j['medalConfig']          != null ? MedalConfig.fromJson(j['medalConfig']          as Map<String, dynamic>) : null,
-      puttsConfig:          j['puttsConfig']          != null ? PuttsConfig.fromJson(j['puttsConfig']          as Map<String, dynamic>) : null,
-      oyesesConfig:         j['oyesesConfig']         != null ? OyesesConfig.fromJson(j['oyesesConfig']        as Map<String, dynamic>) : null,
-      unitsConfig:          j['unitsConfig']          != null ? UnitsConfig.fromJson(j['unitsConfig']          as Map<String, dynamic>) : null,
+      skinsConfig:          j['skinsConfig']          != null ? SkinsConfig.fromJson(asMap(j['skinsConfig']))          : null,
+      nassauConfig:         j['nassauConfig']         != null ? NassauConfig.fromJson(asMap(j['nassauConfig']))         : null,
+      matchAutoPressConfig: j['matchAutoPressConfig'] != null ? MatchAutoPressConfig.fromJson(asMap(j['matchAutoPressConfig'])) : null,
+      medalConfig:          j['medalConfig']          != null ? MedalConfig.fromJson(asMap(j['medalConfig']))          : null,
+      puttsConfig:          j['puttsConfig']          != null ? PuttsConfig.fromJson(asMap(j['puttsConfig']))          : null,
+      oyesesConfig:         j['oyesesConfig']         != null ? OyesesConfig.fromJson(asMap(j['oyesesConfig']))        : null,
+      unitsConfig:          j['unitsConfig']          != null ? UnitsConfig.fromJson(asMap(j['unitsConfig']))          : null,
       presses: j['presses'] != null
-          ? (j['presses'] as List).map((p) => PressInstance.fromJson(p as Map<String, dynamic>)).toList()
+          ? ((j['presses'] as List?) ?? []).map((p) {
+              try { return PressInstance.fromJson(p is Map ? Map<String, dynamic>.from(p) : {}); }
+              catch (_) { return null; }
+            }).whereType<PressInstance>().toList()
           : const [],
     );
   }
@@ -997,25 +1011,34 @@ class BetGroup {
     'playerIds': playerIds,
     'modules': modules.map((m) => m.toJson()).toList(),
   };
-  factory BetGroup.fromJson(Map<String, dynamic> j) => BetGroup(
-    id: j['id'] as String, name: j['name'] as String,
-    format: PartidaFormat.values.firstWhere((f) => f.name == j['format'],
-        orElse: () => PartidaFormat.allInOnePot),
-    playerIds: List<String>.from(j['playerIds'] as List),
-    modules: (j['modules'] as List).map((m) {
-      final map = m as Map<String, dynamic>;
-      // Detectar si es formato legacy (BetModule antiguo) o nuevo (BetModuleInstance)
-      if (map.containsKey('skinsConfig') || map.containsKey('nassauConfig') ||
-          map.containsKey('medalConfig') || map.containsKey('puttsConfig') ||
-          map.containsKey('oyesesConfig') || map.containsKey('unitsConfig') ||
-          map.containsKey('participantIds')) {
-        return BetModuleInstance.fromJson(map);
-      } else {
-        // Migrar formato legacy
-        return _migrateLegacyModule(map, List<String>.from(j['playerIds'] as List));
-      }
-    }).toList(),
-  );
+  factory BetGroup.fromJson(Map<String, dynamic> j) {
+    final rawPids = j['playerIds'];
+    final pids = rawPids is List ? List<String>.from(rawPids) : <String>[];
+    return BetGroup(
+      id: (j['id'] as String?) ?? '',
+      name: (j['name'] as String?) ?? 'Partida',
+      format: PartidaFormat.values.firstWhere((f) => f.name == j['format'],
+          orElse: () => PartidaFormat.allInOnePot),
+      playerIds: pids,
+      modules: ((j['modules'] as List?) ?? []).map((m) {
+        final map = m is Map ? Map<String, dynamic>.from(m) : <String, dynamic>{};
+        // Detectar si es formato legacy (BetModule antiguo) o nuevo (BetModuleInstance)
+        try {
+          if (map.containsKey('skinsConfig') || map.containsKey('nassauConfig') ||
+              map.containsKey('medalConfig') || map.containsKey('puttsConfig') ||
+              map.containsKey('oyesesConfig') || map.containsKey('unitsConfig') ||
+              map.containsKey('participantIds')) {
+            return BetModuleInstance.fromJson(map);
+          } else {
+            // Migrar formato legacy
+            return _migrateLegacyModule(map, pids);
+          }
+        } catch (_) {
+          return null;
+        }
+      }).whereType<BetModuleInstance>().toList(),
+    );
+  }
 
   // Migración de BetModule antiguo → BetModuleInstance
   static BetModuleInstance _migrateLegacyModule(Map<String, dynamic> j, List<String> playerIds) {
@@ -1161,8 +1184,9 @@ class SlidingRelation {
 
   Map<String, dynamic> toJson() => {'playerAId': playerAId, 'playerBId': playerBId, 'adjustment': adjustment};
   factory SlidingRelation.fromJson(Map<String, dynamic> j) => SlidingRelation(
-    playerAId: j['playerAId'] as String, playerBId: j['playerBId'] as String,
-    adjustment: (j['adjustment'] as num).toDouble(),
+    playerAId:  (j['playerAId'] as String?) ?? '',
+    playerBId:  (j['playerBId'] as String?) ?? '',
+    adjustment: (j['adjustment'] as num?)?.toDouble() ?? 0.0,
   );
 }
 
