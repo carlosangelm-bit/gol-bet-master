@@ -401,9 +401,33 @@ class _SetupScreenState extends State<SetupScreen> {
         final favorites = directory.where((pw) => pw.isFavorite).toList();
         final others    = directory.where((pw) => !pw.isFavorite).toList();
 
+        final hasTees   = _selectedApiCourse != null && _selectedApiCourse!.allTees.isNotEmpty;
+
         return SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // ── Banner: recordatorio de salidas cuando hay campo con tees ──
+            if (hasTees && _players.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: t.primary.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: t.primary.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.sports_golf, color: t.primary, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(
+                      'Toca el chip de salida de cada jugador para cambiarla. '
+                      'El HCP de juego se recalcula automáticamente.',
+                      style: TextStyle(color: t.primary, fontSize: 12, fontWeight: FontWeight.w500),
+                    )),
+                  ]),
+                ),
+              ),
             // ── Jugadores en la ronda ──────────────────────────────────────
             GSectionHeader(title: 'EN ESTA RONDA (${_players.length}/8)'),
             if (_players.isEmpty)
@@ -595,51 +619,92 @@ class _SetupScreenState extends State<SetupScreen> {
       ),
     );
   }
-  Widget _playerRow(int i, Player p, GolfTheme t) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: GCard(child: Row(children: [
-      GAvatar(name: p.name, colorIndex: p.colorIndex),
-      const SizedBox(width: 12),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(p.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 3),
+  Widget _playerRow(int i, Player p, GolfTheme t) {
+    final hasTees    = _selectedApiCourse != null && _selectedApiCourse!.allTees.isNotEmpty;
+    final tee        = _teeOf(p.id);
+    final phcp       = _playingHcp(p);
+    final isStdTee   = tee.name == TeeInfo.standard.name;
+    final teeColor   = tee.gender == 'F' ? t.accent : t.primary;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Fila superior: avatar + nombre + acciones
         Row(children: [
-          Text('HCP ${p.handicapBase.toStringAsFixed(1)}', style: TextStyle(color: t.sub, fontSize: 12)),
-          if (_selectedApiCourse != null) ...[
-            const SizedBox(width: 6),
-            // Chip de tee — tappable directamente para cambiar la salida
-            GestureDetector(
-              onTap: () => _pickTee(p, t),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: t.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: t.primary.withValues(alpha: 0.4)),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text(
-                    _teeOf(p.id).name,
-                    style: TextStyle(color: t.primary, fontSize: 10, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(width: 3),
-                  Icon(Icons.expand_more, color: t.primary, size: 12),
-                ]),
-              ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              'HCPj ${_playingHcp(p).toStringAsFixed(0)}',
-              style: TextStyle(color: t.primary, fontSize: 11, fontWeight: FontWeight.w600),
-            ),
-          ],
+          GAvatar(name: p.name, colorIndex: p.colorIndex),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(p.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
+            Text('HCP Index ${p.handicapBase.toStringAsFixed(1)}', style: TextStyle(color: t.sub, fontSize: 12)),
+          ])),
+          GestureDetector(onTap: () => _editPlayer(i, p, t), child: Icon(Icons.edit_outlined, color: t.sub, size: 18)),
+          const SizedBox(width: 8),
+          GestureDetector(onTap: () => setState(() => _players.removeAt(i)), child: Icon(Icons.delete_outline, color: t.loss.withValues(alpha: 0.7), size: 18)),
         ]),
+        // Selector de tee prominente (solo cuando hay campo con tees)
+        if (hasTees) ...[
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () => _pickTee(p, t),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isStdTee
+                    ? t.accent.withValues(alpha: 0.06)
+                    : teeColor.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isStdTee
+                      ? t.accent.withValues(alpha: 0.3)
+                      : teeColor.withValues(alpha: 0.4),
+                  width: 1.2,
+                ),
+              ),
+              child: Row(children: [
+                Icon(Icons.flag, color: isStdTee ? t.accent : teeColor, size: 14),
+                const SizedBox(width: 6),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(
+                    'Salida: ${tee.name}${tee.gender == "F" ? " (F)" : tee.gender == "M" ? " (M)" : ""}',
+                    style: TextStyle(
+                      color: isStdTee ? t.accent : teeColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (!isStdTee)
+                    Text(
+                      'CR ${tee.courseRating.toStringAsFixed(1)}  ·  Slope ${tee.slopeRating}  ·  Par ${tee.parTotal}',
+                      style: TextStyle(color: t.sub, fontSize: 10),
+                    ),
+                ])),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isStdTee
+                        ? t.accent.withValues(alpha: 0.12)
+                        : teeColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'HCPj ${phcp.toStringAsFixed(0)}',
+                    style: TextStyle(
+                      color: isStdTee ? t.accent : teeColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Icon(Icons.expand_more, color: t.sub, size: 16),
+              ]),
+            ),
+          ),
+        ],
       ])),
-      GestureDetector(onTap: () => _editPlayer(i, p, t), child: Icon(Icons.edit_outlined, color: t.sub, size: 18)),
-      const SizedBox(width: 8),
-      GestureDetector(onTap: () => setState(() => _players.removeAt(i)), child: Icon(Icons.delete_outline, color: t.loss.withValues(alpha: 0.7), size: 18)),
-    ])),
-  );
+    );
+  }
 
   /// Bottom sheet compacto para elegir el tee de un jugador sin abrir el modal completo.
   void _pickTee(Player p, GolfTheme t) {
@@ -2176,35 +2241,83 @@ class _SetupScreenState extends State<SetupScreen> {
         ])),
         const SizedBox(height: 16),
         // Jugadores con tees y HCP de juego
+        if (_selectedApiCourse != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: t.primary.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: t.primary.withValues(alpha: 0.2)),
+              ),
+              child: Row(children: [
+                Icon(Icons.info_outline, color: t.primary, size: 14),
+                const SizedBox(width: 8),
+                Expanded(child: Text(
+                  'Toca el chip de salida para cambiarla antes de iniciar.',
+                  style: TextStyle(color: t.primary, fontSize: 11),
+                )),
+              ]),
+            ),
+          ),
         GSectionHeader(title: 'JUGADORES'),
         ..._players.map((p) {
           final tee = _teeOf(p.id);
           final phcp = _playingHcp(p);
-          final hasTee = _selectedApiCourse != null;
+          final hasTee = _selectedApiCourse != null && _selectedApiCourse!.allTees.isNotEmpty;
+          final teeColor = tee.gender == 'F' ? t.accent : t.primary;
+          final isStdTee = tee.name == TeeInfo.standard.name;
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: GCard(child: Row(children: [
-              GAvatar(name: p.name, colorIndex: p.colorIndex, size: 28),
-              const SizedBox(width: 10),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(p.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
-                Row(children: [
+            child: GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                GAvatar(name: p.name, colorIndex: p.colorIndex, size: 28),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(p.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
                   Text('HCP Index ${p.handicapBase.toStringAsFixed(1)}', style: TextStyle(color: t.sub, fontSize: 11)),
-                  if (hasTee) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: t.accent.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(4),
+                ])),
+              ]),
+              if (hasTee) ...[
+                const SizedBox(height: 6),
+                GestureDetector(
+                  onTap: () => _pickTee(p, t),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isStdTee
+                          ? t.accent.withValues(alpha: 0.07)
+                          : teeColor.withValues(alpha: 0.07),
+                      borderRadius: BorderRadius.circular(7),
+                      border: Border.all(
+                        color: isStdTee
+                            ? t.accent.withValues(alpha: 0.3)
+                            : teeColor.withValues(alpha: 0.35),
                       ),
-                      child: Text(tee.name, style: TextStyle(color: t.accent, fontSize: 10, fontWeight: FontWeight.w700)),
                     ),
-                    const SizedBox(width: 6),
-                    Text('→ HCPj ${phcp.toStringAsFixed(0)}', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700, fontSize: 12)),
-                  ],
-                ]),
-              ])),
+                    child: Row(children: [
+                      Icon(Icons.flag, color: isStdTee ? t.accent : teeColor, size: 12),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Salida ${tee.name}${tee.gender == "F" ? " (F)" : tee.gender == "M" ? " (M)" : ""}',
+                        style: TextStyle(
+                          color: isStdTee ? t.accent : teeColor,
+                          fontSize: 11, fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text('HCPj ${phcp.toStringAsFixed(0)}',
+                          style: TextStyle(color: t.sub, fontSize: 11, fontWeight: FontWeight.w600)),
+                      const Spacer(),
+                      Text('Cambiar', style: TextStyle(color: t.sub, fontSize: 10)),
+                      const SizedBox(width: 2),
+                      Icon(Icons.chevron_right, color: t.sub, size: 12),
+                    ]),
+                  ),
+                ),
+              ],
             ])),
           );
         }),
@@ -2408,9 +2521,11 @@ class _SetupScreenState extends State<SetupScreen> {
       final api = fav.cachedCourse!;
       if (api.allTees.isNotEmpty) {
         setState(() {
+          // Limpiar tees del campo anterior para evitar que queden tees incorrectos
+          _playerTees.clear();
           _selectedApiCourse = api;
           _selectedCourse = api.allTees.first.toCourseInfo(api.clubName, api.courseName);
-          _autoAssignDefaultTee(); // ← auto-asignar tee por defecto
+          _autoAssignDefaultTee(); // ← auto-asignar tee del nuevo campo
         });
       }
     } else {
@@ -2430,6 +2545,8 @@ class _SetupScreenState extends State<SetupScreen> {
       if (!mounted) return;
       if (fresh.allTees.isNotEmpty) {
         setState(() {
+          // Re-limpiar y asignar con datos frescos (pueden tener más tees que el caché)
+          _playerTees.clear();
           _selectedApiCourse = fresh;
           _selectedCourse = fresh.allTees.first.toCourseInfo(fresh.clubName, fresh.courseName);
           _autoAssignDefaultTee(); // ← re-asignar con datos frescos
@@ -2454,9 +2571,11 @@ class _SetupScreenState extends State<SetupScreen> {
       builder: (_) => CoursePickerSheet(
         t: t,
         onSelected: (courseInfo, apiCourse) => setState(() {
+          // Limpiar tees del campo anterior al seleccionar uno nuevo
+          _playerTees.clear();
           _selectedCourse = courseInfo;
           _selectedApiCourse = apiCourse;
-          _autoAssignDefaultTee(); // ← auto-asignar tee por defecto
+          _autoAssignDefaultTee(); // ← auto-asignar tee del nuevo campo
         }),
       ),
     );
