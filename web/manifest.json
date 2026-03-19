@@ -1,11 +1,11 @@
 {
-    "name": "golf_bet_master",
-    "short_name": "golf_bet_master",
+    "name": "Golf Bet Master",
+    "short_name": "Golf Bet",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0A1628",
+    "theme_color": "#0A1628",
+    "description": "Gestión de apuestas de golf",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
