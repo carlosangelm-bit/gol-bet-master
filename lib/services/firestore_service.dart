@@ -64,7 +64,11 @@ class FirestoreService {
     if (AuthService.uid == null) return Stream.value(null);
     return _rounds().doc(roundId).snapshots().map((snap) {
       if (!snap.exists) return null;
-      try { return roundFromJson(snap.data()!); } catch (_) { return null; }
+      try { 
+        final d = snap.data();
+        if (d == null) return null;
+        return roundFromJson(d); 
+      } catch (_) { return null; }
     });
   }
 
@@ -168,7 +172,9 @@ class FirestoreService {
     try {
       final snap = await _rounds().doc(roundId).get();
       if (!snap.exists) return null;
-      return roundFromJson(snap.data()!);
+      final d = snap.data();
+      if (d == null) return null;
+      return roundFromJson(d);
     } catch (_) {
       return null;
     }
@@ -292,7 +298,7 @@ class RoundSummary {
   });
 
   factory RoundSummary.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final d = doc.data()!;
+    final d = doc.data() ?? <String, dynamic>{};
     final players = (d['players'] as List? ?? []);
     // createdAt puede llegar como Timestamp (escritura nueva) o String ISO (escritura antigua)
     final rawCreatedAt = d['createdAt'];
@@ -369,7 +375,7 @@ class RoundTemplate {
   };
 
   factory RoundTemplate.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final d = doc.data()!;
+    final d = doc.data() ?? <String, dynamic>{};
     return RoundTemplate(
       id:          doc.id,
       name:        d['name'] as String? ?? '',
@@ -441,7 +447,7 @@ class GamePreset {
   };
 
   factory GamePreset.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final d = doc.data()!;
+    final d = doc.data() ?? <String, dynamic>{};
     return GamePreset(
       id:          doc.id,
       name:        d['name'] as String? ?? '',
