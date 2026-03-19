@@ -376,12 +376,18 @@ class RoundProvider extends ChangeNotifier {
   /// Persiste localmente Y en Firestore si hay sesión
   Future<void> _persist() async {
     if (_round == null) return;
-    // Local
-    final p = await _prefs();
-    await p.setString('round', jsonEncode(roundToJson(_round!)));
-    // Firestore (si autenticado)
+    // Local — siempre
+    try {
+      final p = await _prefs();
+      await p.setString('round', jsonEncode(roundToJson(_round!)));
+    } catch (e) {
+      debugPrint('[_persist] Error local: $e');
+    }
+    // Firestore — fire-and-forget con log de error
     if (AuthService.uid != null) {
-      FirestoreService.saveRound(_round!);
+      FirestoreService.saveRound(_round!).catchError((e) {
+        debugPrint('[_persist] Firestore error (ignorado): $e');
+      });
     }
   }
 

@@ -126,12 +126,12 @@ class FirestoreService {
 
   /// Obtiene el historial de rondas finalizadas (paginado)
   static Future<List<RoundSummary>> getHistory({
-    int limit = 20,
+    int limit = 100,
     DocumentSnapshot? startAfter,
   }) async {
     if (AuthService.uid == null) return [];
     try {
-      // Sin orderBy para evitar índice compuesto — ordenamos en memoria
+      // Traer suficientes docs para ordenar en memoria sin perder la más reciente
       final snap = await _rounds()
           .where('isFinished', isEqualTo: true)
           .limit(limit)
@@ -153,7 +153,7 @@ class FirestoreService {
     if (AuthService.uid == null) return Stream.value([]);
     return _rounds()
         .where('isFinished', isEqualTo: true)
-        .limit(50)
+        .limit(100)
         .snapshots()
         .map((snap) {
           final list = snap.docs.map((d) => RoundSummary.fromFirestore(d)).toList();
