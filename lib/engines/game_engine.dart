@@ -182,19 +182,50 @@ class GameEngine {
   // retorna: positivo = p1 up, 0 = all square, negativo = p1 down
   static int matchPlayStatus(Round round, String p1Id, String p2Id, bool useHandicap, {int throughHole = 18}) {
     int status = 0;
-    final p1 = round.players.firstWhere((p) => p.id == p1Id);
-    final p2 = round.players.firstWhere((p) => p.id == p2Id);
     for (int h = 1; h <= throughHole; h++) {
       final ch = round.course.holes.firstWhere((c) => c.hole == h);
       final s1 = round.getScore(p1Id, h);
       final s2 = round.getScore(p2Id, h);
       if (!s1.hasScore || !s2.hasScore) continue;
-      final hcp1 = useHandicap ? round.getHandicap(p1.id) : 0.0;
-      final hcp2 = useHandicap ? round.getHandicap(p2.id) : 0.0;
-      final net1 = s1.grossScore! - strokesReceived(hcp1, ch);
-      final net2 = s2.grossScore! - strokesReceived(hcp2, ch);
-      if (net1 < net2) status++;
-      else if (net1 > net2) status--;
+
+      // Usar HCPs efectivos respetando manualHandicaps (bilateral)
+      final hcp1 = useHandicap ? round.getHandicap(p1Id) : 0.0;
+      final hcp2 = useHandicap ? round.getHandicap(p2Id) : 0.0;
+      final rp1 = round.roundPlayers.firstWhere(
+        (r) => r.playerId == p1Id,
+        orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: hcp1),
+      );
+      final manual = useHandicap ? rp1.manualHandicaps[p2Id] : null;
+      final hcp1Eff = manual != null ? hcp1 + manual : hcp1;
+      final hcp2Eff = hcp2;
+
+      final p1IsBase = hcp1Eff <= hcp2Eff;
+      final hcpBase     = p1IsBase ? hcp1Eff : hcp2Eff;
+      final hcpReceiver = p1IsBase ? hcp2Eff : hcp1Eff;
+      final allHoles    = round.course.holes;
+
+      final strokesHere = useHandicap
+          ? strokesReceivedVs(
+              hcpHigher: hcpReceiver,
+              hcpLower:  hcpBase,
+              ch: ch,
+              allHoles: allHoles,
+              startingNine: round.startingNine,
+            )
+          : 0;
+
+      final grossBase     = round.getScore(p1IsBase ? p1Id : p2Id, h).grossScore!;
+      final grossReceiver = round.getScore(p1IsBase ? p2Id : p1Id, h).grossScore!;
+      final netReceiver   = grossReceiver - strokesHere;
+
+      // Resultado en perspectiva p1
+      if (p1IsBase) {
+        if (grossBase < netReceiver)      status++;
+        else if (grossBase > netReceiver) status--;
+      } else {
+        if (netReceiver < grossBase)      status++;
+        else if (netReceiver > grossBase) status--;
+      }
     }
     return status;
   }

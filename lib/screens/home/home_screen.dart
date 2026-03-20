@@ -265,9 +265,15 @@ class _ActiveRoundView extends StatelessWidget {
               final pB = players[j];
               final hcpA = round.getHandicap(pA.id);
               final hcpB = round.getHandicap(pB.id);
-              final diff = (hcpA - hcpB).round();
-              final rp = round.roundPlayers.firstWhere((r) => r.playerId == pA.id, orElse: () => RoundPlayer(playerId: pA.id, handicapEnRonda: hcpA, tee: TeeInfo.standard));
-              final isManual = rp.manualHandicaps.containsKey(pB.id);
+              final rpA = round.roundPlayers.firstWhere(
+                (r) => r.playerId == pA.id,
+                orElse: () => RoundPlayer(playerId: pA.id, handicapEnRonda: hcpA, tee: TeeInfo.standard),
+              );
+              final isManual = rpA.manualHandicaps.containsKey(pB.id);
+              // Usar manualHandicap si existe, si no la diferencia de HCPs
+              final int diff = isManual
+                  ? rpA.manualHandicaps[pB.id]!.round()
+                  : (hcpA - hcpB).round();
               final String label = diff > 0
                   ? '${pA.name.split(' ').first} recibe $diff de ${pB.name.split(' ').first}'
                   : diff < 0
@@ -406,8 +412,13 @@ class _ActiveRoundView extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx2, setSt) {
           double playingHcp(Player p) {
-            final rp = round.roundPlayers.firstWhere((r) => r.playerId == p.id, orElse: () => RoundPlayer(playerId: p.id, handicapEnRonda: p.handicapBase, tee: TeeInfo.standard));
-            return rp.tee.playingHandicap(p.handicapBase);
+            // Usar el HCP congelado en la ronda, NO recalcular con el tee
+            // (el tee puede haber cambiado; el HCP de la ronda es el correcto)
+            final rp = round.roundPlayers.firstWhere(
+              (r) => r.playerId == p.id,
+              orElse: () => RoundPlayer(playerId: p.id, handicapEnRonda: p.handicapBase, tee: TeeInfo.standard),
+            );
+            return rp.handicapEnRonda;
           }
 
           return DraggableScrollableSheet(

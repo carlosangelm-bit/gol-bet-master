@@ -1800,16 +1800,25 @@ class _HoleByHoleMatch extends StatelessWidget {
         : null;
     final hasSkins = skinsResults != null;
 
-    // Determinar quién es el jugador BASE (menor HCP → no recibe strokes)
-    // y quién es el RECEPTOR de ventaja (mayor HCP → recibe strokes de la diff)
+    // Determinar quién es el jugador BASE (menor HCP efectivo → no recibe strokes)
+    // y quién es el RECEPTOR de ventaja (mayor HCP efectivo → recibe strokes de la diff)
+    // Usar HCPs efectivos: si hay manualHandicap p1→p2, el manual ajusta el HCP efectivo
     final hcp1 = round.getHandicap(p1.id);
     final hcp2 = round.getHandicap(p2.id);
-    // base = menor HCP, receiver = mayor HCP
-    final p1IsBase = hcp1 <= hcp2;
+    final rp1 = round.roundPlayers.firstWhere(
+      (r) => r.playerId == p1.id,
+      orElse: () => RoundPlayer(playerId: p1.id, handicapEnRonda: hcp1),
+    );
+    // manualHandicaps[p2] > 0 → p1 recibe strokes (p1 tiene HCP efectivo mayor)
+    final manual = rp1.manualHandicaps[p2.id];
+    final hcp1Eff = manual != null ? hcp1 + manual : hcp1;
+    final hcp2Eff = hcp2; // El ajuste es simétrico, solo necesitamos la diferencia
+    // base = menor HCP efectivo, receiver = mayor HCP efectivo
+    final p1IsBase = hcp1Eff <= hcp2Eff;
     final basePlayer     = p1IsBase ? p1 : p2;
     final receiverPlayer = p1IsBase ? p2 : p1;
-    final hcpBase     = p1IsBase ? hcp1 : hcp2;
-    final hcpReceiver = p1IsBase ? hcp2 : hcp1;
+    final hcpBase     = p1IsBase ? hcp1Eff : hcp2Eff;
+    final hcpReceiver = p1IsBase ? hcp2Eff : hcp1Eff;
 
     final allHoles = round.course.holes;
 
