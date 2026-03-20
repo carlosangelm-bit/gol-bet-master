@@ -180,29 +180,55 @@ class GameEngine {
 
   // ── match play status entre dos jugadores (p1 perspectiva) ───────────────
   // retorna: positivo = p1 up, 0 = all square, negativo = p1 down
+  //
+  // NOTA SOBRE manualHandicaps:
+  // manual[p1][p2] ya ES la diferencia de strokes (no un ajuste al HCP).
+  //   > 0 → p1 recibe esos strokes de p2  → p2=base, p1=receptor, diff=manual
+  //   < 0 → p1 da esos strokes a p2       → p1=base, p2=receptor, diff=|manual|
+  //   null → diferencia de HCPs normales
   static int matchPlayStatus(Round round, String p1Id, String p2Id, bool useHandicap, {int throughHole = 18}) {
     int status = 0;
+
+    // Calcular base/receptor y diff UNA sola vez (no cambia por hoyo)
+    final hcp1 = useHandicap ? round.getHandicap(p1Id) : 0.0;
+    final hcp2 = useHandicap ? round.getHandicap(p2Id) : 0.0;
+    final rp1 = round.roundPlayers.firstWhere(
+      (r) => r.playerId == p1Id,
+      orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: hcp1),
+    );
+    final manual = useHandicap ? rp1.manualHandicaps[p2Id] : null;
+
+    final bool p1IsBase;
+    final double hcpBase;
+    final double hcpReceiver;
+
+    if (manual != null && manual != 0) {
+      // El manual ya ES la diferencia de strokes:
+      // manual > 0: p1 recibe → p2=base, p1=receptor, diff=manual
+      // manual < 0: p1 da     → p1=base, p2=receptor, diff=|manual|
+      if (manual > 0) {
+        p1IsBase    = false;          // p2 es base
+        hcpBase     = hcp2;
+        hcpReceiver = hcp2 + manual;  // diff = manual
+      } else {
+        p1IsBase    = true;           // p1 es base
+        hcpBase     = hcp1;
+        hcpReceiver = hcp1 + (-manual); // diff = |manual|
+      }
+    } else {
+      // Sin manual: diferencia de HCPs normales
+      p1IsBase    = hcp1 <= hcp2;
+      hcpBase     = p1IsBase ? hcp1 : hcp2;
+      hcpReceiver = p1IsBase ? hcp2 : hcp1;
+    }
+
+    final allHoles = round.course.holes;
+
     for (int h = 1; h <= throughHole; h++) {
       final ch = round.course.holes.firstWhere((c) => c.hole == h);
       final s1 = round.getScore(p1Id, h);
       final s2 = round.getScore(p2Id, h);
       if (!s1.hasScore || !s2.hasScore) continue;
-
-      // Usar HCPs efectivos respetando manualHandicaps (bilateral)
-      final hcp1 = useHandicap ? round.getHandicap(p1Id) : 0.0;
-      final hcp2 = useHandicap ? round.getHandicap(p2Id) : 0.0;
-      final rp1 = round.roundPlayers.firstWhere(
-        (r) => r.playerId == p1Id,
-        orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: hcp1),
-      );
-      final manual = useHandicap ? rp1.manualHandicaps[p2Id] : null;
-      final hcp1Eff = manual != null ? hcp1 + manual : hcp1;
-      final hcp2Eff = hcp2;
-
-      final p1IsBase = hcp1Eff <= hcp2Eff;
-      final hcpBase     = p1IsBase ? hcp1Eff : hcp2Eff;
-      final hcpReceiver = p1IsBase ? hcp2Eff : hcp1Eff;
-      final allHoles    = round.course.holes;
 
       final strokesHere = useHandicap
           ? strokesReceivedVs(

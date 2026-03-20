@@ -23,6 +23,13 @@ class _ScorecardScreenState extends State<ScorecardScreen> with SingleTickerProv
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 3, vsync: this);
+    // Sincronizar desde Firestore al abrir la tarjeta para reflejar
+    // cualquier cambio remoto (ej: ventajas editadas externamente).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<RoundProvider>().syncFromFirestore();
+      }
+    });
   }
 
   @override
@@ -1800,25 +1807,46 @@ class _HoleByHoleMatch extends StatelessWidget {
         : null;
     final hasSkins = skinsResults != null;
 
-    // Determinar quién es el jugador BASE (menor HCP efectivo → no recibe strokes)
-    // y quién es el RECEPTOR de ventaja (mayor HCP efectivo → recibe strokes de la diff)
-    // Usar HCPs efectivos: si hay manualHandicap p1→p2, el manual ajusta el HCP efectivo
+    // Determinar base/receptor y diff CORRECTOS usando manualHandicaps
+    // manual[p1][p2] ya ES la diferencia de strokes:
+    //   > 0 → p1 recibe esos strokes de p2  → p1 es receptor
+    //   < 0 → p1 da esos strokes a p2       → p2 es receptor
+    //   null → usar diferencia de HCPs normales
     final hcp1 = round.getHandicap(p1.id);
     final hcp2 = round.getHandicap(p2.id);
     final rp1 = round.roundPlayers.firstWhere(
       (r) => r.playerId == p1.id,
       orElse: () => RoundPlayer(playerId: p1.id, handicapEnRonda: hcp1),
     );
-    // manualHandicaps[p2] > 0 → p1 recibe strokes (p1 tiene HCP efectivo mayor)
     final manual = rp1.manualHandicaps[p2.id];
-    final hcp1Eff = manual != null ? hcp1 + manual : hcp1;
-    final hcp2Eff = hcp2; // El ajuste es simétrico, solo necesitamos la diferencia
-    // base = menor HCP efectivo, receiver = mayor HCP efectivo
-    final p1IsBase = hcp1Eff <= hcp2Eff;
-    final basePlayer     = p1IsBase ? p1 : p2;
-    final receiverPlayer = p1IsBase ? p2 : p1;
-    final hcpBase     = p1IsBase ? hcp1Eff : hcp2Eff;
-    final hcpReceiver = p1IsBase ? hcp2Eff : hcp1Eff;
+
+    final Player basePlayer;
+    final Player receiverPlayer;
+    final double hcpBase;
+    final double hcpReceiver;
+
+    if (manual != null && manual != 0) {
+      // manual > 0: p1 recibe de p2  → p2=base, p1=receptor, diff=manual
+      // manual < 0: p1 da a p2       → p1=base, p2=receptor, diff=|manual|
+      if (manual > 0) {
+        basePlayer     = p2;
+        receiverPlayer = p1;
+        hcpBase        = hcp2;
+        hcpReceiver    = hcp2 + manual; // diff = manual
+      } else {
+        basePlayer     = p1;
+        receiverPlayer = p2;
+        hcpBase        = hcp1;
+        hcpReceiver    = hcp1 + (-manual); // diff = |manual|
+      }
+    } else {
+      // Sin manual: usar diferencia de HCPs normales
+      final p1IsBase = hcp1 <= hcp2;
+      basePlayer     = p1IsBase ? p1 : p2;
+      receiverPlayer = p1IsBase ? p2 : p1;
+      hcpBase        = p1IsBase ? hcp1 : hcp2;
+      hcpReceiver    = p1IsBase ? hcp2 : hcp1;
+    }
 
     final allHoles = round.course.holes;
 
