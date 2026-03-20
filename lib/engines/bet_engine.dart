@@ -7,6 +7,33 @@ import '../models/models.dart';
 import 'game_engine.dart';
 
 class BetEngine {
+
+  // ── Helper: handicaps efectivos para un par 1v1, respetando manualHandicaps ──
+  // Si hay un manualHandicap entre p1 y p2, los HCPs se ajustan para que
+  // strokesReceivedVs y strokesReceived produzcan el resultado correcto.
+  //
+  // Devuelve (hcp1efectivo, hcp2efectivo) donde la diferencia refleja el sliding.
+  //
+  // Convención manualHandicaps[pA][pB]:
+  //   > 0 → pA recibe esos strokes de pB (ventaja para pA → hcp1 sube)
+  //   < 0 → pA da esos strokes a pB  (desventaja para pA → hcp1 baja)
+  static (double, double) _effectiveHcps(Round round, String p1Id, String p2Id, bool useHandicap) {
+    if (!useHandicap) return (0.0, 0.0);
+    final hcp1 = round.getHandicap(p1Id);
+    final hcp2 = round.getHandicap(p2Id);
+    // Buscar manualHandicap p1→p2
+    final rp1 = round.roundPlayers.firstWhere(
+        (r) => r.playerId == p1Id,
+        orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: hcp1));
+    final manual = rp1.manualHandicaps[p2Id];
+    if (manual == null || manual == 0) return (hcp1, hcp2);
+    // Ajustar: si manual > 0, p1 recibe esos strokes → aumentar hcp1 efectivo
+    // Si manual < 0, p1 da esos strokes → disminuir hcp1 efectivo
+    // Para que strokesReceivedVs calcule la diferencia correcta,
+    // sumamos el ajuste al HCP del receptor.
+    return (hcp1 + manual, hcp2);
+  }
+
   /// Genera todos los LedgerEntries para una BetGroup completa
   static List<LedgerEntry> computeGroup(Round round, BetGroup group) {
     final entries = <LedgerEntry>[];
@@ -96,8 +123,7 @@ class BetEngine {
     final cfg = mod.skins;
     double pot = cfg.valuePerSkin;
 
-    final hcp1 = round.getHandicap(p1Id);
-    final hcp2 = round.getHandicap(p2Id);
+    final (hcp1, hcp2) = _effectiveHcps(round, p1Id, p2Id, mod.useHandicap);
     final p1IsBase  = hcp1 <= hcp2;
     final hcpBase     = p1IsBase ? hcp1 : hcp2;
     final hcpReceiver = p1IsBase ? hcp2 : hcp1;
@@ -172,24 +198,50 @@ class BetEngine {
     final cfg = mod.nassau;
     int front = 0, back = 0;
 
-    for (int h = 1; h <= round.totalHoles; h++) {
-      final ch = round.course.holes.firstWhere((c) => c.hole == h);
-      final s1 = round.getScore(p1Id, h);
-      final s2 = round.getScore(p2Id, h);
-      if (!s1.hasScore || !s2.hasScore) continue;
+    // Calcular HCPs efectivos (con sliding) UNA vez fuera del loop
+    final (hcp1, hcp2) = _effectiveHcps(round, p1Id, p2Id, mod.useHandicap);
+    final allHoles = round.course.holes;
+    // Patrón bilateral igual que skins1v1 y matchAutoPress
+    final p1IsBase    = hcp1 <= hcp2;
+    final hcpBase     = p1IsBase ? hcp1 : hcp2;
+    final hcpReceiver = p1IsBase ? hcp2 : hcp1;
+    final baseId      = p1IsBase ? p1Id : p2Id;
+    final receiverId  = p1IsBase ? p2Id : p1Id;
 
-      final hcp1 = mod.useHandicap ? round.getHandicap(p1Id) : 0.0;
-      final hcp2 = mod.useHandicap ? round.getHandicap(p2Id) : 0.0;
-      final net1 = s1.grossScore! - GameEngine.strokesReceived(hcp1, ch);
-      final net2 = s2.grossScore! - GameEngine.strokesReceived(hcp2, ch);
+    // Iterar respetando startingNine para consistencia con skins/match
+    final holeOrder = round.startingNine == StartingNine.back
+        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
+        : List.generate(round.totalHoles, (i) => i + 1);
+    final holeMap = { for (final ch in allHoles) ch.hole: ch };
 
-      if (h <= 9) {
-        if (net1 < net2) front++;
-        else if (net1 > net2) front--;
-      } else {
-        if (net1 < net2) back++;
-        else if (net1 > net2) back--;
-      }
+    for (final h in holeOrder) {
+      final ch = holeMap[h]!;
+      final sBase     = round.getScore(baseId,     h);
+      final sReceiver = round.getScore(receiverId, h);
+      if (!sBase.hasScore || !sReceiver.hasScore) continue;
+
+      final strokesHere = mod.useHandicap
+          ? GameEngine.strokesReceivedVs(
+              hcpHigher:    hcpReceiver,
+              hcpLower:     hcpBase,
+              ch:           ch,
+              allHoles:     allHoles,
+              startingNine: round.startingNine,
+            )
+          : 0;
+
+      final grossBase     = sBase.grossScore!;
+      final netReceiver   = sReceiver.grossScore! - strokesHere;
+
+      // Convertir al sistema p1/p2 para el marcador
+      final int delta;
+      if      (grossBase < netReceiver) delta = p1IsBase ? 1 : -1;
+      else if (grossBase > netReceiver) delta = p1IsBase ? -1 : 1;
+      else                              delta = 0;
+
+      // Front = hoyos 1-9, Back = hoyos 10-18 (por número real, no por orden de juego)
+      if (h <= 9) front += delta;
+      else        back  += delta;
     }
 
     final total = front + back;
@@ -461,8 +513,7 @@ class BetEngine {
     final p1Id = pids[0];
     final p2Id = pids[1];
     final cfg  = mod.matchAutoPress;
-    final hcp1 = mod.useHandicap ? round.getHandicap(p1Id) : 0.0;
-    final hcp2 = mod.useHandicap ? round.getHandicap(p2Id) : 0.0;
+    final (hcp1, hcp2) = _effectiveHcps(round, p1Id, p2Id, mod.useHandicap);
 
     // Delta hoyo a hoyo en ORDEN REAL DE JUEGO (respeta startingNine)
     // Usa strokesReceivedVs (bilateral) igual que skins 1v1 para consistencia.

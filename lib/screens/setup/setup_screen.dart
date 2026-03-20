@@ -89,6 +89,33 @@ class _SetupScreenState extends State<SetupScreen> {
     _playerTees[pid] = def;
   }
 
+  /// Aplica el defaultSlidingAdjustment de un PlayerLink al mapa de
+  /// manualHandicaps. Se llama al agregar un jugador desde el directorio.
+  ///
+  /// Convención (misma que _HandicapMatrix):
+  ///   _manualHandicaps[pid][otherId]  =  strokes que pid recibe de other  (>0 ventaja para pid)
+  ///   _manualHandicaps[otherId][pid]  = -valor  (simétrico)
+  ///
+  /// defaultSlidingAdjustment en PlayerLink está expresado desde la perspectiva
+  /// del DUEÑO del link (el usuario):
+  ///   > 0 → el usuario da esos strokes al compañero  (compañero recibe)
+  ///   < 0 → el usuario recibe esos strokes del compañero (compañero da)
+  void _applyDefaultSliding(String newPlayerId, double slidingAdj) {
+    if (slidingAdj == 0) return;
+    // Aplicar contra todos los jugadores ya en la ronda (excepto el nuevo)
+    for (final other in _players) {
+      if (other.id == newPlayerId) continue;
+      _manualHandicaps.putIfAbsent(newPlayerId, () => {});
+      _manualHandicaps.putIfAbsent(other.id,    () => {});
+      // slidingAdj > 0: el usuario (newPlayer) da strokes al compañero
+      //   → compañero (other) recibe slidingAdj strokes de newPlayer
+      //   → newPlayer[other] = -slidingAdj  (newPlayer DA, no recibe)
+      //   → other[newPlayer] = +slidingAdj  (other RECIBE)
+      _manualHandicaps[newPlayerId]![other.id] = -slidingAdj;
+      _manualHandicaps[other.id]![newPlayerId] =  slidingAdj;
+    }
+  }
+
   @override void dispose() { _nameCtrl.dispose(); super.dispose(); }
 
   @override
@@ -133,6 +160,9 @@ class _SetupScreenState extends State<SetupScreen> {
     setState(() {
       // Insertar al inicio
       _players.insert(0, player);
+      // El usuario propio no suele tener sliding, pero por consistencia lo aplicamos
+      final slide = pwl.link?.defaultSlidingAdjustment ?? 0;
+      _applyDefaultSliding(player.id, slide);
     });
   }
 
@@ -553,7 +583,10 @@ class _SetupScreenState extends State<SetupScreen> {
                 player = player.copyWith(handicapBase: pw.link!.defaultHandicapOverride!);
               }
               _players.add(player);
-              _assignDefaultTeeToPlayer(player.id); // ← asignar tee por defecto
+              _assignDefaultTeeToPlayer(player.id);
+              // Aplicar el sliding predefinido del compañero
+              final slide = pw.link?.defaultSlidingAdjustment ?? 0;
+              _applyDefaultSliding(player.id, slide);
             });
           }
         },
