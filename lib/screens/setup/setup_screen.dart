@@ -534,8 +534,9 @@ class _SetupScreenState extends State<SetupScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  'Las ventajas se calculan automáticamente por HCP y salida. '
-                  'Toca una celda para ingresar una ventaja manual.',
+                  'El sliding guardado por jugador tiene prioridad. '  
+                  'Si no hay sliding, se calcula por HCP y salida. '
+                  'Toca una celda para ajustar manualmente.',
                   style: TextStyle(color: t.sub, fontSize: 11),
                 ),
               ),

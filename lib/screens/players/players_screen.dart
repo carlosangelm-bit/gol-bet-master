@@ -452,18 +452,20 @@ class _PlayerFormSheet extends StatefulWidget {
 }
 
 class _PlayerFormSheetState extends State<_PlayerFormSheet> {
-  late final _nameCtrl    = TextEditingController(
+  late final _nameCtrl  = TextEditingController(
       text: widget.existing?.player.name ?? '');
-  late final _hcpCtrl     = TextEditingController(
+  late final _hcpCtrl   = TextEditingController(
       text: widget.existing?.player.handicapBase.toStringAsFixed(1) ?? '0.0');
-  late final _aliasCtrl   = TextEditingController(
+  late final _aliasCtrl = TextEditingController(
       text: widget.existing?.link?.customDisplayName ?? '');
-  late final _slidingCtrl = TextEditingController(
-      text: (widget.existing?.link?.defaultSlidingAdjustment ?? 0).toStringAsFixed(0));
-  late final _notesCtrl   = TextEditingController(
+  late final _notesCtrl = TextEditingController(
       text: widget.existing?.link?.notes ?? '');
 
-  late bool _isFav = widget.existing?.isFavorite ?? false;
+  // Sliding como int, no como TextEditingController — evita el problema
+  // del teclado numérico móvil que no muestra el símbolo '−'.
+  late int _slidingVal = (widget.existing?.link?.defaultSlidingAdjustment ?? 0).round();
+
+  late bool _isFav    = widget.existing?.isFavorite ?? false;
   late int  _colorIdx = widget.existing?.player.colorIndex ?? 0;
   bool _saving = false;
 
@@ -475,10 +477,29 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
 
   @override
   void dispose() {
-    for (final c in [_nameCtrl, _hcpCtrl, _aliasCtrl, _slidingCtrl, _notesCtrl]) {
+    for (final c in [_nameCtrl, _hcpCtrl, _aliasCtrl, _notesCtrl]) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  // Botón auxiliar para el stepper de sliding
+  Widget _slidingBtn(String label, Color color, VoidCallback onTap, GolfTheme t) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40, height: 40,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Center(
+          child: Text(label,
+              style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 13)),
+        ),
+      ),
+    );
   }
 
   @override
@@ -550,13 +571,86 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
           const SizedBox(height: 12),
 
           // ── Sliding por defecto ─────────────────────────────────────────
-          _Field(
-            label: 'Sliding por defecto (strokes)',
-            ctrl: _slidingCtrl, t: t,
-            keyboardType: const TextInputType.numberWithOptions(
-                signed: true, decimal: false),
-            hint: '0 = sin ventaja, +2 = da 2 golpes',
-          ),
+          // Convención: positivo = el usuario DA golpes al compañero
+          //             negativo = el usuario RECIBE golpes del compañero
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('SLIDING POR DEFECTO',
+                style: TextStyle(color: t.sub, fontSize: 10,
+                    fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+            const SizedBox(height: 4),
+            Text(
+              _slidingVal == 0
+                  ? 'Sin ventaja — se calcula por HCP y tees'
+                  : _slidingVal > 0
+                      ? 'Tú das $_slidingVal golpe${_slidingVal != 1 ? "s" : ""} al compañero'
+                      : 'Recibes ${_slidingVal.abs()} golpe${_slidingVal.abs() != 1 ? "s" : ""} del compañero',
+              style: TextStyle(
+                color: _slidingVal == 0
+                    ? t.sub
+                    : _slidingVal > 0 ? t.loss : t.profit,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              // −5
+              _slidingBtn('−5', t.loss, () => setState(() => _slidingVal -= 5), t),
+              const SizedBox(width: 4),
+              // −1
+              _slidingBtn('−1', t.loss, () => setState(() => _slidingVal -= 1), t),
+              const SizedBox(width: 8),
+              // Valor central
+              Expanded(
+                child: Container(
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _slidingVal == 0
+                        ? t.surface
+                        : (_slidingVal > 0 ? t.loss : t.profit).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _slidingVal == 0
+                          ? t.divider
+                          : (_slidingVal > 0 ? t.loss : t.profit).withValues(alpha: 0.5),
+                      width: _slidingVal == 0 ? 1 : 1.5,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      _slidingVal > 0 ? '+$_slidingVal' : '$_slidingVal',
+                      style: TextStyle(
+                        color: _slidingVal == 0
+                            ? t.sub
+                            : (_slidingVal > 0 ? t.loss : t.profit),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // +1
+              _slidingBtn('+1', t.profit, () => setState(() => _slidingVal += 1), t),
+              const SizedBox(width: 4),
+              // +5
+              _slidingBtn('+5', t.profit, () => setState(() => _slidingVal += 5), t),
+            ]),
+            // Reset a 0
+            if (_slidingVal != 0) ...[  
+              const SizedBox(height: 6),
+              GestureDetector(
+                onTap: () => setState(() => _slidingVal = 0),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.restart_alt, color: t.sub, size: 14),
+                  const SizedBox(width: 4),
+                  Text('Restablecer a 0 (calcular por HCP)',
+                      style: TextStyle(color: t.sub, fontSize: 11)),
+                ]),
+              ),
+            ],
+          ]),
           const SizedBox(height: 12),
 
           // ── Notas ───────────────────────────────────────────────────────
@@ -601,12 +695,11 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
 
     setState(() => _saving = true);
     try {
-      final hcp     = double.tryParse(_hcpCtrl.text.replaceAll(',', '.')) ?? 0;
-      final sliding = double.tryParse(_slidingCtrl.text.replaceAll(',', '.')) ?? 0;
-      final alias   = _aliasCtrl.text.trim().isEmpty ? null : _aliasCtrl.text.trim();
-      final notes   = _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim();
+      final hcp   = double.tryParse(_hcpCtrl.text.replaceAll(',', '.')) ?? 0;
+      final alias = _aliasCtrl.text.trim().isEmpty ? null : _aliasCtrl.text.trim();
+      final notes = _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim();
 
-      await widget.onSave(name, hcp, _colorIdx, _isFav, alias, sliding, notes);
+      await widget.onSave(name, hcp, _colorIdx, _isFav, alias, _slidingVal.toDouble(), notes);
       if (ctx.mounted) Navigator.pop(ctx);
     } catch (e) {
       if (kDebugMode) debugPrint('Error saving player: $e');
