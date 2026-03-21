@@ -1103,7 +1103,7 @@ class PlayerLink {
   final String playerId;
   final bool isFavorite;
   final String? customDisplayName;   // apodo local del usuario
-  final double defaultSlidingAdjustment; // strokes que este jugador da/recibe por defecto
+  final double defaultSlidingAdjustment; // >0 = el dueño RECIBE strokes del compañero; <0 = el dueño DA strokes al compañero
   final double? defaultHandicapOverride; // HCP fijo si el usuario quiere sobrescribir
   final String? notes;
   final int sortOrder;

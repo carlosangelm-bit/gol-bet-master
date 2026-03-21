@@ -571,8 +571,9 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
           const SizedBox(height: 12),
 
           // ── Sliding por defecto ─────────────────────────────────────────
-          // Convención: positivo = el usuario DA golpes al compañero
-          //             negativo = el usuario RECIBE golpes del compañero
+          // Convención (igual que _HandicapMatrix y home_screen):
+          //   positivo = el usuario RECIBE golpes del compañero  (ventaja para ti)
+          //   negativo = el usuario DA golpes al compañero       (ventaja para el compañero)
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('SLIDING POR DEFECTO',
                 style: TextStyle(color: t.sub, fontSize: 10,
@@ -582,12 +583,12 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
               _slidingVal == 0
                   ? 'Sin ventaja — se calcula por HCP y tees'
                   : _slidingVal > 0
-                      ? 'Tú das $_slidingVal golpe${_slidingVal != 1 ? "s" : ""} al compañero'
-                      : 'Recibes ${_slidingVal.abs()} golpe${_slidingVal.abs() != 1 ? "s" : ""} del compañero',
+                      ? 'Recibes $_slidingVal golpe${_slidingVal != 1 ? "s" : ""} del compañero'
+                      : 'Das ${_slidingVal.abs()} golpe${_slidingVal.abs() != 1 ? "s" : ""} al compañero',
               style: TextStyle(
                 color: _slidingVal == 0
                     ? t.sub
-                    : _slidingVal > 0 ? t.loss : t.profit,
+                    : _slidingVal > 0 ? t.profit : t.loss,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
