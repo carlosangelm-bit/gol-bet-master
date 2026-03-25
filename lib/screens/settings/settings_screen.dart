@@ -743,10 +743,46 @@ class _FavCoursesSection extends StatelessWidget {
               if (fav.location.isNotEmpty)
                 Text(fav.location,
                     style: TextStyle(color: t.sub, fontSize: 11)),
+              const SizedBox(height: 4),
+              // ── Chip de salida preferida ─────────────────────
+              if (fav.hasCachedData && fav.cachedCourse!.allTees.isNotEmpty)
+                GestureDetector(
+                  onTap: () => _showTeeSheet(context, fav, profProv, t),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: t.surface,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: t.divider),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.flag_outlined, size: 11, color: t.sub),
+                      const SizedBox(width: 4),
+                      Text(
+                        fav.preferredTeeName != null
+                            ? 'Salida: ${fav.preferredTeeName}'
+                            : 'Elegir salida favorita',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: fav.preferredTeeName != null ? t.accent : t.sub,
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      Icon(Icons.edit_outlined, size: 10, color: t.sub),
+                    ]),
+                  ),
+                )
+              else if (!fav.hasCachedData)
+                Text('Selecciona este campo en una ronda para ver salidas',
+                    style: TextStyle(color: t.sub, fontSize: 10)),
             ])),
             GestureDetector(
               onTap: () => profProv.removeFavCourse(fav.courseId),
-              child: Icon(Icons.star_rounded, color: Colors.amber, size: 22),
+              child: const Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: Icon(Icons.star_rounded, color: Colors.amber, size: 22),
+              ),
             ),
           ])),
         )),
@@ -771,6 +807,91 @@ class _FavCoursesSection extends StatelessWidget {
         ),
       ),
     ]);
+  }
+
+  /// Muestra selector de salida preferida para un campo favorito.
+  void _showTeeSheet(BuildContext ctx, FavoriteCourse fav,
+      UserProfileProvider profProv, GolfTheme t) {
+    if (!fav.hasCachedData || fav.cachedCourse!.allTees.isEmpty) return;
+    final course = fav.cachedCourse!;
+    String? picked = fav.preferredTeeName;
+
+    showModalBottomSheet(
+      context: ctx,
+      backgroundColor: t.card,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => StatefulBuilder(builder: (ctx2, setSt) {
+        void saveTee(String name) {
+          setSt(() => picked = name);
+          profProv.updateFavCourseTee(fav.courseId, name);
+          Navigator.pop(ctx2);
+        }
+
+        Widget teeChip(ApiTeeBox tee, {bool female = false}) {
+          final isSelected = picked == tee.teeName;
+          final color = female ? t.accent : t.primary;
+          return GestureDetector(
+            onTap: () => saveTee(tee.teeName),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isSelected ? color.withValues(alpha: 0.12) : t.surface,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: isSelected ? color : t.divider, width: isSelected ? 2 : 1),
+              ),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (isSelected) ...[
+                    Icon(Icons.check_circle_rounded, color: color, size: 14),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(tee.teeName, style: TextStyle(color: isSelected ? color : t.text, fontWeight: FontWeight.w700, fontSize: 14)),
+                ]),
+                Text('CR ${tee.courseRating.toStringAsFixed(1)} / Slope ${tee.slopeRating}',
+                    style: TextStyle(color: isSelected ? color.withValues(alpha: 0.7) : t.sub, fontSize: 10)),
+              ]),
+            ),
+          );
+        }
+
+        return Padding(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx2).viewInsets.bottom + 24,
+              left: 20, right: 20, top: 24),
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Salida favorita', style: TextStyle(color: t.text, fontSize: 17, fontWeight: FontWeight.w800)),
+                Text(fav.displayName, style: TextStyle(color: t.sub, fontSize: 12)),
+              ])),
+              GestureDetector(onTap: () => Navigator.pop(ctx2), child: Icon(Icons.close, color: t.sub)),
+            ]),
+            const SizedBox(height: 6),
+            Text('Se usará como salida por defecto al elegir este campo en una ronda.',
+                style: TextStyle(color: t.sub, fontSize: 12)),
+            const SizedBox(height: 16),
+            if (course.maleTees.isNotEmpty) ...[
+              Align(alignment: Alignment.centerLeft,
+                  child: Text('TEEs MASCULINOS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8))),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: course.maleTees.map((tee) => teeChip(tee)).toList()),
+            ],
+            if (course.femaleTees.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Align(alignment: Alignment.centerLeft,
+                  child: Text('TEEs FEMENINOS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8))),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: course.femaleTees.map((tee) => teeChip(tee, female: true)).toList()),
+            ],
+            const SizedBox(height: 8),
+          ])),
+        );
+      }),
+    );
   }
 
   void _addCourse(BuildContext ctx) {

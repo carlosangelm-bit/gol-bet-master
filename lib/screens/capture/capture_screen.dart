@@ -568,6 +568,8 @@ class _PlayerTable extends StatelessWidget {
                 const Spacer(),
 
                 // Score del hoyo: − valor +
+                // Cuando no hay score, el par se muestra como placeholder.
+                // − desde par → guarda par-1 (birdie); + desde par → par+1 (bogey)
                 _ScoreStepper(
                   score: gross,
                   hasScore: score.hasScore,
@@ -575,14 +577,20 @@ class _PlayerTable extends StatelessWidget {
                   par: par,
                   t: t,
                   onDec: () {
-                    final newScore = gross > 1 ? gross - 1 : 1;
-                    prov.updateScore(player.id, currentHole,
-                        score.hasScore ? newScore : par - 1,
+                    // Base: score actual si ya registrado, o par si es placeholder
+                    final base = score.hasScore ? gross : par;
+                    final newScore = base > 1 ? base - 1 : 1;
+                    prov.updateScore(player.id, currentHole, newScore,
                         putts == 0 ? 2 : putts);
                   },
                   onInc: () {
-                    final newScore = score.hasScore ? gross + 1 : par + 1;
-                    prov.updateScore(player.id, currentHole, newScore,
+                    final base = score.hasScore ? gross : par;
+                    prov.updateScore(player.id, currentHole, base + 1,
+                        putts == 0 ? 2 : putts);
+                  },
+                  onTapPar: () {
+                    // Toque en el círculo sin score → registra exactamente el par
+                    prov.updateScore(player.id, currentHole, par,
                         putts == 0 ? 2 : putts);
                   },
                 ),
@@ -624,37 +632,50 @@ class _ScoreStepper extends StatelessWidget {
   final GolfTheme t;
   final VoidCallback onDec;
   final VoidCallback onInc;
+  /// Registra exactamente el par (toque al círculo cuando no hay score).
+  final VoidCallback onTapPar;
 
   const _ScoreStepper({
     required this.score, required this.hasScore, required this.scoreColor,
     required this.par, required this.t,
-    required this.onDec, required this.onInc,
+    required this.onDec, required this.onInc, required this.onTapPar,
   });
 
   @override
   Widget build(BuildContext context) {
+    // Cuando no hay score aún, mostramos el par como placeholder visual.
+    // El círculo tiene estilo atenuado para distinguirlo de un score real.
+    final displayScore = hasScore ? score : par;
+    final displayColor = hasScore ? scoreColor : t.sub;
+    final bgColor      = hasScore
+        ? scoreColor.withValues(alpha: 0.15)
+        : t.surface;
+    final borderColor  = hasScore
+        ? scoreColor.withValues(alpha: 0.5)
+        : t.divider;
+    final borderWidth  = hasScore ? 1.5 : 1.0;
+
     return Row(mainAxisSize: MainAxisSize.min, children: [
       _stepBtn(Icons.remove, t.loss, onDec, t),
       const SizedBox(width: 4),
-      Container(
-        width: 42, height: 42,
-        decoration: BoxDecoration(
-          color: hasScore
-              ? scoreColor.withValues(alpha: 0.15)
-              : t.surface,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: hasScore ? scoreColor.withValues(alpha: 0.5) : t.divider,
-            width: hasScore ? 1.5 : 1,
+      GestureDetector(
+        // Toque en el círculo cuando no hay score → registra el par
+        onTap: hasScore ? null : onTapPar,
+        child: Container(
+          width: 42, height: 42,
+          decoration: BoxDecoration(
+            color: bgColor,
+            shape: BoxShape.circle,
+            border: Border.all(color: borderColor, width: borderWidth),
           ),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          hasScore ? '$score' : '—',
-          style: TextStyle(
-            color: hasScore ? scoreColor : t.sub,
-            fontWeight: FontWeight.w900,
-            fontSize: hasScore ? 18 : 14,
+          alignment: Alignment.center,
+          child: Text(
+            '$displayScore',
+            style: TextStyle(
+              color: displayColor,
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+            ),
           ),
         ),
       ),

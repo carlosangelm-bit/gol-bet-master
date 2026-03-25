@@ -132,36 +132,68 @@ class _NetView extends StatelessWidget {
   }
 }
 
-// ── Scorecard grid compartido (bruto o neto) ──────────────────────────────────
+// ── Scorecard grid compartido (Bruto / Neto) ────────────────────────────────
 class _ScorecardGrid extends StatelessWidget {
   final Round round;
   final GolfTheme t;
   final bool useNet;
   const _ScorecardGrid({required this.round, required this.t, required this.useNet});
 
-  // Strokes recibidos por un jugador en un hoyo específico
-  int _strokes(Player p, CourseHole ch) {
-    final hcp = round.getHandicap(p.id);
-    return GameEngine.strokesReceived(hcp, ch);
-  }
+  String _first(String name) => name.split(' ').first;
+
+  int _strokes(Player p, CourseHole h) =>
+      GameEngine.strokesReceived(round.getHandicap(p.id), h);
 
   @override
   Widget build(BuildContext context) {
     final players = round.players;
+    const double colName = 92;
+    const double colHole = 34;
+    const double colSub  = 46;
+    const double tableW  = colName + 9 * colHole + colSub;
+
+    final isDark = t.brightness == Brightness.dark;
+
+    // Colores derivados del tema activo
+    final cCard    = t.card;
+    final cSurface = t.surface;
+    final cText    = t.text;
+    final cSub     = t.sub;
+    final cDiv     = t.divider;
+    final cPrim    = t.primary;
+    final cUnder   = t.scoreUnder;   // birdie / eagle
+    final cOver    = t.scoreOver;    // bogey / doble+
+    // Fila alternada: levemente más oscura/clara según modo
+    final cRowA = isDark
+        ? t.surface
+        : Color.alphaBlend(Colors.black.withValues(alpha: 0.03), t.card);
+    final cRowB = t.card;
 
     return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+        child: SizedBox(
+          width: tableW,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildSegment(players, 1, 9),
-              const SizedBox(height: 12),
-              _buildSegment(players, 10, 18),
-              const SizedBox(height: 12),
-              _buildTotalRow(players),
+              // ── Cabecera ───────────────────────────────────────────────
+              _header(tableW, cCard, cPrim, cText, cSub),
+              const SizedBox(height: 2),
+              // ── Front 9 ────────────────────────────────────────────────
+              _segment(players, 1, 9, colName, colHole, colSub, tableW,
+                  cCard, cSurface, cText, cSub, cDiv, cPrim, cUnder, cOver,
+                  cRowA, cRowB, 'F9'),
+              const SizedBox(height: 2),
+              // ── Back 9 ────────────────────────────────────────────────
+              _segment(players, 10, 18, colName, colHole, colSub, tableW,
+                  cCard, cSurface, cText, cSub, cDiv, cPrim, cUnder, cOver,
+                  cRowA, cRowB, 'B9'),
+              const SizedBox(height: 2),
+              // ── Fila TOTAL ─────────────────────────────────────────────
+              _totalRow(players, tableW, colName,
+                  cCard, cPrim, cText, cSub, cDiv, cUnder, cOver),
             ],
           ),
         ),
@@ -169,240 +201,509 @@ class _ScorecardGrid extends StatelessWidget {
     );
   }
 
-  Widget _buildSegment(List<Player> players, int from, int to) {
-    final holes = round.course.holes.where((h) => h.hole >= from && h.hole <= to).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Header row: Par row
-        _headerRow(holes, from, to),
-        const SizedBox(height: 4),
-        // Player rows
-        ...players.map((p) => Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: _playerRow(p, holes, from, to),
-        )),
-      ],
+  // ── Cabecera ────────────────────────────────────────────────────────────────
+  Widget _header(double w, Color cCard, Color cPrim, Color cText, Color cSub) {
+    return Container(
+      width: w,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: cCard,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+        border: Border.all(color: cPrim.withValues(alpha: 0.25), width: 1),
+      ),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: cPrim,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            useNet ? 'NETO' : 'BRUTO',
+            style: TextStyle(
+              color: t.onPrimary,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.4,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            round.course.name.toUpperCase(),
+            style: TextStyle(
+              color: cText,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        Text(
+          '${round.players.length} JUG',
+          style: TextStyle(color: cSub, fontSize: 9, fontWeight: FontWeight.w600),
+        ),
+      ]),
     );
   }
 
-  Widget _headerRow(List<CourseHole> holes, int from, int to) {
-    final parTotal = holes.fold(0, (s, h) => s + h.par);
-    return Row(children: [
-      // Name column
-      SizedBox(width: 80, child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(from == 1 ? 'Hoyo' : '', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700)),
-          Text('Par', style: TextStyle(color: t.sub, fontSize: 9)),
-          Text('SI', style: TextStyle(
-            color: t.accent.withValues(alpha: 0.8), fontSize: 9, fontWeight: FontWeight.w700)),
-        ],
-      )),
-      // Hole numbers + par + SI
-      ...holes.map((h) => SizedBox(
-        width: 30,
-        child: Column(children: [
-          Text('${h.hole}', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w600), textAlign: TextAlign.center),
-          Text('${h.par}', style: TextStyle(color: t.sub, fontSize: 9), textAlign: TextAlign.center),
-          Text('${h.strokeIndex}', style: TextStyle(
-            color: t.accent.withValues(alpha: 0.75), fontSize: 9, fontWeight: FontWeight.w700),
-            textAlign: TextAlign.center),
-        ]),
-      )),
-      // Subtotal
-      Container(
-        width: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Column(children: [
-          Text(from == 1 ? 'F9' : 'B9', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700), textAlign: TextAlign.center),
-          Text('$parTotal', style: TextStyle(color: t.sub, fontSize: 9), textAlign: TextAlign.center),
-          const SizedBox(height: 10), // espacio para alinear con la fila SI
-        ]),
+  // ── Segmento F9 / B9 ────────────────────────────────────────────────────────
+  Widget _segment(
+    List<Player> players, int from, int to,
+    double colName, double colHole, double colSub, double tableW,
+    Color cCard, Color cSurface, Color cText, Color cSub,
+    Color cDiv, Color cPrim, Color cUnder, Color cOver,
+    Color cRowA, Color cRowB, String label,
+  ) {
+    final holes = round.course.holes
+        .where((h) => h.hole >= from && h.hole <= to)
+        .toList();
+    final parSeg = holes.fold(0, (s, h) => s + h.par);
+
+    return Container(
+      width: tableW,
+      decoration: BoxDecoration(
+        color: cCard,
+        border: Border.all(color: cDiv, width: 0.5),
+        borderRadius: BorderRadius.circular(6),
       ),
-    ]);
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: [
+        // Fila encabezado (Hoyo / Par / SI)
+        Container(
+          color: cSurface,
+          child: Row(children: [
+            SizedBox(
+              width: colName,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 7, 4, 7),
+                child: Text('JUGADOR',
+                    style: TextStyle(
+                      color: cPrim,
+                      fontSize: 7,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.1,
+                    )),
+              ),
+            ),
+            ...holes.map((h) => SizedBox(
+              width: colHole,
+              child: Column(children: [
+                const SizedBox(height: 5),
+                Text('${h.hole}',
+                    style: TextStyle(
+                        color: cText,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800),
+                    textAlign: TextAlign.center),
+                Text('${h.par}',
+                    style: TextStyle(color: cSub, fontSize: 8),
+                    textAlign: TextAlign.center),
+                Text('${h.strokeIndex}',
+                    style: TextStyle(
+                        color: cPrim.withValues(alpha: 0.7),
+                        fontSize: 7,
+                        fontWeight: FontWeight.w700),
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 5),
+              ]),
+            )),
+            // Subtotal encabezado
+            Container(
+              width: colSub,
+              decoration: BoxDecoration(
+                color: cPrim.withValues(alpha: 0.08),
+                border: Border(
+                    left: BorderSide(color: cDiv, width: 1)),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 7),
+              child: Column(children: [
+                Text(label,
+                    style: TextStyle(
+                        color: cPrim,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900),
+                    textAlign: TextAlign.center),
+                Text('$parSeg',
+                    style: TextStyle(color: cSub, fontSize: 8),
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 4),
+              ]),
+            ),
+          ]),
+        ),
+        // Filas de jugadores
+        ...players.asMap().entries.map((e) => _playerRow(
+            e.value, holes, colName, colHole, colSub,
+            cText, cSub, cDiv, cPrim, cUnder, cOver,
+            e.key.isEven ? cRowA : cRowB)),
+      ]),
+    );
   }
 
-  Widget _playerRow(Player p, List<CourseHole> holes, int from, int to) {
+  // ── Fila de jugador ─────────────────────────────────────────────────────────
+  Widget _playerRow(
+    Player p, List<CourseHole> holes,
+    double colName, double colHole, double colSub,
+    Color cText, Color cSub, Color cDiv, Color cPrim,
+    Color cUnder, Color cOver, Color rowBg,
+  ) {
     int segTotal = 0;
-    int completedHoles = 0;
+    int played   = 0;
 
     final cells = holes.map((h) {
-      final score = round.getScore(p.id, h.hole);
-      int? displayScore;
-      int? relPar;
-      final strokesThisHole = _strokes(p, h); // strokes recibidos en este hoyo
-      if (score.hasScore) {
+      final sc = round.getScore(p.id, h.hole);
+      int? disp;
+      int? rel;
+      int putts = 0;
+      if (sc.hasScore) {
+        putts = sc.putts;
         if (useNet) {
           final ctx = GameEngine.contextForHole(round, p.id, h.hole, true);
-          displayScore = ctx?.netScore;
-          relPar = ctx?.relativeToPar;
+          disp = ctx?.netScore;
+          rel  = ctx?.relativeToPar;
           segTotal += ctx?.netScore ?? 0;
         } else {
-          displayScore = score.grossScore;
-          relPar = displayScore != null ? displayScore - h.par : null;
-          segTotal += displayScore ?? 0;
+          disp = sc.grossScore;
+          rel  = disp != null ? disp - h.par : null;
+          segTotal += disp ?? 0;
         }
-        completedHoles++;
+        played++;
       }
       return _ScoreGridCell(
-        score: displayScore,
-        relPar: relPar,
-        par: h.par,
-        t: t,
-        useNet: useNet,
-        strokesReceived: strokesThisHole,
+        score: disp, relPar: rel, par: h.par,
+        putts: putts,
+        strokesReceived: _strokes(p, h),
+        cUnder: cUnder, cOver: cOver, cSub: cSub,
       );
     }).toList();
 
-    final parTotal = holes.fold(0, (s, h) => s + h.par);
-    final diff = completedHoles == holes.length ? segTotal - parTotal : null;
-    // Handicap de juego del jugador para mostrarlo en el nombre
-    final hcpDisplay = round.getHandicap(p.id);
+    final parSeg = holes.fold(0, (s, h) => s + h.par);
+    final diff   = played == holes.length ? segTotal - parSeg : null;
+    final hcp    = round.getHandicap(p.id);
 
-    return Row(children: [
-      // Player name + hcp
-      SizedBox(width: 80, child: Row(children: [
-        GAvatar(name: p.name, colorIndex: p.colorIndex, size: 20),
-        const SizedBox(width: 4),
-        Expanded(child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(p.name.split(' ').first,
-                style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 12),
-                overflow: TextOverflow.ellipsis),
-            if (useNet)
-              Text('HCPj ${hcpDisplay.toStringAsFixed(0)}',
-                  style: TextStyle(color: t.sub, fontSize: 8)),
-          ],
+    return Container(
+      color: rowBg,
+      child: Row(children: [
+        // Nombre + avatar
+        SizedBox(
+          width: colName,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            child: Row(children: [
+              GAvatar(name: p.name, colorIndex: p.colorIndex, size: 22),
+              const SizedBox(width: 5),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_first(p.name),
+                      style: TextStyle(
+                          color: cText,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 11),
+                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    useNet
+                        ? 'HCP ${hcp.toStringAsFixed(0)}'
+                        : 'GROSS',
+                    style: TextStyle(
+                        color: cSub,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ],
+              )),
+            ]),
+          ),
+        ),
+        // Celdas de score
+        ...cells.map((c) => SizedBox(
+          width: colHole,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: c,
+            ),
+          ),
         )),
-      ])),
-      // Score cells
-      ...cells.map((c) => SizedBox(width: 30, child: Center(child: c))),
-      // Subtotal
-      SizedBox(width: 36, child: Center(child: completedHoles > 0
-          ? Column(mainAxisSize: MainAxisSize.min, children: [
-              Text('$segTotal', style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 12)),
-              if (diff != null)
-                Text(diff > 0 ? '+$diff' : '$diff', style: TextStyle(
-                  color: diff < 0 ? t.scoreUnder : diff > 0 ? t.scoreOver : t.sub,
-                  fontSize: 9, fontWeight: FontWeight.w700,
-                )),
-            ])
-          : Text('-', style: TextStyle(color: t.sub, fontSize: 12)),
-      )),
-    ]);
+        // Subtotal del segmento
+        Container(
+          width: colSub,
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          decoration: BoxDecoration(
+            color: cPrim.withValues(alpha: 0.06),
+            border: Border(left: BorderSide(color: cDiv, width: 1)),
+          ),
+          child: played > 0
+              ? Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text('$segTotal',
+                      style: TextStyle(
+                          color: cText,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14),
+                      textAlign: TextAlign.center),
+                  if (diff != null)
+                    Container(
+                      margin: const EdgeInsets.only(top: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: diff < 0
+                            ? cUnder.withValues(alpha: 0.15)
+                            : diff > 0
+                                ? cOver.withValues(alpha: 0.15)
+                                : Colors.transparent,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        diff > 0 ? '+$diff' : diff == 0 ? 'E' : '$diff',
+                        style: TextStyle(
+                            color: diff < 0
+                                ? cUnder
+                                : diff > 0
+                                    ? cOver
+                                    : cSub,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                ])
+              : Center(
+                  child: Text('—',
+                      style: TextStyle(color: cSub, fontSize: 12),
+                      textAlign: TextAlign.center),
+                ),
+        ),
+      ]),
+    );
   }
 
-  Widget _buildTotalRow(List<Player> players) {
-    return GCard(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  // ── Fila TOTAL ──────────────────────────────────────────────────────────────
+  Widget _totalRow(
+    List<Player> players, double tableW, double colName,
+    Color cCard, Color cPrim, Color cText, Color cSub,
+    Color cDiv, Color cUnder, Color cOver,
+  ) {
+    return Container(
+      width: tableW,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: cCard,
+        border: Border.all(color: cDiv, width: 0.5),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
+      ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        const SizedBox(width: 80),
-        Expanded(child: Wrap(spacing: 12, runSpacing: 4, children: players.map((p) {
-          final total = useNet
-              ? GameEngine.netTotal(round, p.id, true)
-              : GameEngine.grossTotal(round, p.id);
-          final parTotal = round.course.totalPar;
-          final hasAll = round.course.holes.every((h) => round.getScore(p.id, h.hole).hasScore);
-          if (!hasAll) return Row(mainAxisSize: MainAxisSize.min, children: [
-            GAvatar(name: p.name, colorIndex: p.colorIndex, size: 18),
-            const SizedBox(width: 4),
-            Text('-', style: TextStyle(color: t.sub, fontSize: 12)),
-          ]);
-          final diff = total - parTotal;
-          return Row(mainAxisSize: MainAxisSize.min, children: [
-            GAvatar(name: p.name, colorIndex: p.colorIndex, size: 18),
-            const SizedBox(width: 4),
-            Text('$total', style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 13)),
-            const SizedBox(width: 2),
-            Text(diff > 0 ? '+$diff' : '$diff', style: TextStyle(
-              color: diff < 0 ? t.scoreUnder : diff > 0 ? t.scoreOver : t.sub,
-              fontSize: 10, fontWeight: FontWeight.w700,
-            )),
-          ]);
-        }).toList())),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          margin: const EdgeInsets.only(right: 12),
+          decoration: BoxDecoration(
+            color: cPrim,
+            borderRadius: BorderRadius.circular(5),
+          ),
+          child: Text('TOTAL',
+              style: TextStyle(
+                  color: t.onPrimary,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2)),
+        ),
+        Expanded(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: players.map((p) {
+              final total = useNet
+                  ? GameEngine.netTotal(round, p.id, true)
+                  : GameEngine.grossTotal(round, p.id);
+              final parT  = round.course.totalPar;
+              final hasAll = round.course.holes
+                  .every((h) => round.getScore(p.id, h.hole).hasScore);
+
+              if (!hasAll) {
+                return Row(mainAxisSize: MainAxisSize.min, children: [
+                  GAvatar(name: p.name, colorIndex: p.colorIndex, size: 20),
+                  const SizedBox(width: 4),
+                  Text('—', style: TextStyle(color: cSub, fontSize: 14)),
+                ]);
+              }
+
+              final diff = total - parT;
+              final dc = diff < 0 ? cUnder : diff > 0 ? cOver : cSub;
+
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: cPrim.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: dc.withValues(alpha: 0.4), width: 1),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  GAvatar(name: p.name, colorIndex: p.colorIndex, size: 20),
+                  const SizedBox(width: 6),
+                  Text('$total',
+                      style: TextStyle(
+                          color: cText,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16)),
+                  const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: dc.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                    child: Text(
+                      diff > 0 ? '+$diff' : diff == 0 ? 'E' : '$diff',
+                      style: TextStyle(
+                          color: dc,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ]),
+              );
+            }).toList(),
+          ),
+        ),
       ]),
     );
   }
 }
 
+// ── Celda de score ─────────────────────────────────────────────────────────────
 class _ScoreGridCell extends StatelessWidget {
   final int? score;
   final int? relPar;
   final int par;
-  final GolfTheme t;
-  final bool useNet;
-  /// Strokes de ventaja que recibe este jugador en este hoyo (0, 1 o 2)
+  final int putts;
   final int strokesReceived;
+  final Color cUnder, cOver, cSub;
+
   const _ScoreGridCell({
     this.score, this.relPar, required this.par,
-    required this.t, required this.useNet,
-    this.strokesReceived = 0,
+    this.putts = 0, this.strokesReceived = 0,
+    required this.cUnder, required this.cOver, required this.cSub,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Indicador de ventaja: un pequeño punto por cada stroke recibido
-    final strokeDots = strokesReceived > 0
-        ? Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(strokesReceived, (_) => Container(
-              width: 4, height: 4,
-              margin: const EdgeInsets.only(left: 1),
-              decoration: BoxDecoration(
-                color: t.profit.withValues(alpha: 0.85),
-                shape: BoxShape.circle,
-              ),
-            )),
-          )
-        : const SizedBox(height: 4);
-
+    // Sin score: celda vacía
     if (score == null) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 26, height: 26,
-            alignment: Alignment.center,
-            child: Text('·', style: TextStyle(color: t.sub, fontSize: 14)),
+      return Column(mainAxisSize: MainAxisSize.min, children: [
+        SizedBox(
+          width: 26, height: 26,
+          child: Center(
+            child: Text('·', style: TextStyle(
+                color: cSub.withValues(alpha: 0.4), fontSize: 16)),
           ),
-          strokeDots,
-        ],
-      );
+        ),
+        const SizedBox(height: 6), // espacio donde irían los putts
+      ]);
     }
 
-    Color bg = Colors.transparent;
-    Color fg = t.text;
-    BoxShape shape = BoxShape.rectangle;
-    BoxBorder? border;
-
     final rel = relPar ?? (score! - par);
-    if (rel <= -2) { bg = t.scoreUnder; fg = Colors.white; shape = BoxShape.circle; }
-    else if (rel == -1) { bg = Colors.transparent; fg = t.scoreUnder; shape = BoxShape.circle; border = Border.all(color: t.scoreUnder, width: 1.5); }
-    else if (rel == 1)  { bg = Colors.transparent; fg = t.scoreOver; border = Border.all(color: t.scoreOver, width: 1.5); }
-    else if (rel >= 2)  { bg = t.scoreOver; fg = Colors.white; }
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 26, height: 26,
-          decoration: BoxDecoration(
-            color: bg, shape: shape,
-            borderRadius: shape == BoxShape.rectangle ? BorderRadius.circular(4) : null,
-            border: border,
-          ),
-          alignment: Alignment.center,
-          child: Text('$score', style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 12)),
-        ),
-        strokeDots,
-      ],
+    // ── Paleta según resultado vs par ──────────────────────────────────────
+    // Birdie / Eagle → color scoreUnder del tema
+    // Bogey / Doble+ → color scoreOver del tema
+    // Par             → neutro (sin color especial)
+    Color bg;
+    Color fg;
+    Color? borderColor;
+    double borderW = 0;
+    BoxShape shape = BoxShape.rectangle;
+    double sz = 26;
+    double rad = 4;
+
+    if (rel <= -2) {
+      // Eagle o mejor — círculo, color under sólido
+      bg = cUnder; fg = Colors.white;
+      shape = BoxShape.circle; sz = 27;
+    } else if (rel == -1) {
+      // Birdie — círculo, color under con borde
+      bg = cUnder.withValues(alpha: 0.15); fg = cUnder;
+      borderColor = cUnder; borderW = 1.5;
+      shape = BoxShape.circle;
+    } else if (rel == 0) {
+      // Par — cuadrado sin color destacado
+      bg = Colors.transparent; fg = cSub;
+    } else if (rel == 1) {
+      // Bogey — cuadrado con borde over
+      bg = cOver.withValues(alpha: 0.12); fg = cOver;
+      borderColor = cOver; borderW = 1.5;
+    } else {
+      // Doble bogey o peor — cuadrado, color over sólido
+      bg = cOver; fg = Colors.white;
+    }
+
+    final cell = Container(
+      width: sz, height: sz,
+      decoration: BoxDecoration(
+        color: bg,
+        shape: shape,
+        borderRadius: shape == BoxShape.rectangle
+            ? BorderRadius.circular(rad) : null,
+        border: borderColor != null
+            ? Border.all(color: borderColor, width: borderW) : null,
+      ),
+      alignment: Alignment.center,
+      child: Text('$score',
+          style: TextStyle(
+              color: fg,
+              fontWeight: FontWeight.w900,
+              fontSize: rel <= -2 ? 12 : 11)),
     );
+
+    // ── Indicador de putts (solo si se registraron) ──────────────────────
+    // Muestra el número de putts debajo de la celda, en pequeño.
+    // 1 putt → verde (excelente), 2 putts → neutro, 3+ putts → rojo.
+    Widget puttIndicator;
+    if (putts > 0) {
+      final puttColor = putts == 1
+          ? cUnder
+          : putts >= 3
+              ? cOver
+              : cSub;
+      puttIndicator = Text(
+        '$putts p',
+        style: TextStyle(
+          color: puttColor,
+          fontSize: 7,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.2,
+        ),
+        textAlign: TextAlign.center,
+      );
+    } else {
+      // Strokes de handicap (puntos) solo si no hay putts registrados
+      puttIndicator = strokesReceived > 0
+          ? Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(
+                strokesReceived.clamp(0, 2),
+                (_) => Container(
+                  width: 3, height: 3,
+                  margin: const EdgeInsets.only(left: 1),
+                  decoration: BoxDecoration(
+                    color: cSub.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            )
+          : const SizedBox(height: 8);
+    }
+
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      cell,
+      const SizedBox(height: 1),
+      puttIndicator,
+    ]);
   }
 }
 
@@ -1528,9 +1829,8 @@ class _MatchPressLivePanel extends StatelessWidget {
               leadLabel = n2;
             }
 
-            // Etiqueta del segmento
-            final isDigit = pr.sequenceNumber == 2;
-            final segTag = isDigit ? 'DÍGITO' : 'PRESS ${pr.sequenceNumber - 1}';
+            // Etiqueta del segmento — usa pressNumber del modelo (seq-1)
+            final segTag = 'PRESS ${pr.pressNumber}';
             final holeRange = 'H${pr.startHole}–${pr.endHole}';
 
             return Container(

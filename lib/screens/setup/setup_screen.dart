@@ -68,10 +68,27 @@ class _SetupScreenState extends State<SetupScreen> {
         slopeRating: t.slopeRating, parTotal: t.parTotal, gender: 'M');
   }
 
-  /// Auto-asigna el tee por defecto a todos los jugadores que aún no tienen
-  /// tee asignado (o que tienen el tee estándar). Llamar al seleccionar campo.
-  void _autoAssignDefaultTee() {
-    final def = _defaultMaleTee;
+  /// Busca un tee por nombre en el campo actual (cualquier género).
+  /// Retorna null si no existe o no hay campo seleccionado.
+  TeeInfo? _teeByName(String teeName) {
+    final course = _selectedApiCourse;
+    if (course == null) return null;
+    for (final t in course.allTees) {
+      if (t.teeName.toLowerCase() == teeName.toLowerCase()) {
+        final gender = course.femaleTees.any((f) => f.teeName == t.teeName) ? 'F' : 'M';
+        return TeeInfo(name: t.teeName, courseRating: t.courseRating,
+            slopeRating: t.slopeRating, parTotal: t.parTotal, gender: gender);
+      }
+    }
+    return null;
+  }
+
+  /// Auto-asigna el tee a todos los jugadores que aún no tienen tee asignado.
+  /// Si se pasa [preferredTeeName], intenta usarlo; si no existe en el campo,
+  /// cae al primer tee masculino disponible.
+  void _autoAssignDefaultTee({String? preferredTeeName}) {
+    final preferred = preferredTeeName != null ? _teeByName(preferredTeeName) : null;
+    final def = preferred ?? _defaultMaleTee;
     if (def == null) return;
     for (final p in _players) {
       // Solo asignar si el jugador no tiene tee propio o tiene el estándar
@@ -83,7 +100,16 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   /// Asigna el tee por defecto a un jugador recién añadido.
+  /// Usa el tee ya asignado a otros jugadores (si todos tienen el mismo) como referencia.
   void _assignDefaultTeeToPlayer(String pid) {
+    // Si ya hay jugadores con tee asignado, usar el mismo
+    final existing = _playerTees.values
+        .where((t) => t.name != TeeInfo.standard.name)
+        .toList();
+    if (existing.isNotEmpty) {
+      _playerTees[pid] = existing.first;
+      return;
+    }
     final def = _defaultMaleTee;
     if (def == null) return;
     _playerTees[pid] = def;
@@ -266,6 +292,8 @@ class _SetupScreenState extends State<SetupScreen> {
           ...favCourses.map((fav) {
             final isSelected = _selectedApiCourse?.id.toString() == fav.courseId ||
                 (_selectedCourse?.name == fav.fullName && _selectedApiCourse == null);
+            final hasTees = fav.hasCachedData && fav.cachedCourse!.allTees.isNotEmpty;
+            final teeName = fav.preferredTeeName;
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: GestureDetector(
@@ -320,10 +348,41 @@ class _SetupScreenState extends State<SetupScreen> {
                       ),
                       if (fav.location.isNotEmpty)
                         Text(fav.location, style: TextStyle(color: t.sub, fontSize: 12)),
-                      if (fav.hasCachedData)
-                        Text(
-                          '${fav.cachedCourse!.allTees.length} salidas disponibles',
-                          style: TextStyle(color: t.accent, fontSize: 11, fontWeight: FontWeight.w600),
+                      const SizedBox(height: 4),
+                      // ── Chip de salida preferida ─────────────────────
+                      if (hasTees)
+                        GestureDetector(
+                          onTap: () => _showFavTeeSelector(context, fav, t),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? t.primary.withValues(alpha: 0.12)
+                                  : t.surface,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: isSelected ? t.primary.withValues(alpha: 0.4) : t.divider,
+                              ),
+                            ),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.flag_outlined,
+                                  size: 12,
+                                  color: isSelected ? t.primary : t.sub),
+                              const SizedBox(width: 4),
+                              Text(
+                                teeName != null ? 'Salida: $teeName' : 'Elegir salida favorita',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSelected ? t.primary : (teeName != null ? t.accent : t.sub),
+                                ),
+                              ),
+                              const SizedBox(width: 3),
+                              Icon(Icons.edit_outlined,
+                                  size: 10,
+                                  color: isSelected ? t.primary.withValues(alpha: 0.6) : t.sub),
+                            ]),
+                          ),
                         )
                       else
                         Text('Sin datos de salidas', style: TextStyle(color: t.sub, fontSize: 11)),
@@ -2548,19 +2607,145 @@ class _SetupScreenState extends State<SetupScreen> {
     }
   }
 
+  /// Muestra un bottom-sheet para elegir la salida preferida de un campo favorito.
+  /// Guarda la preferencia en Firestore y actualiza localmente el tee asignado si
+  /// ese campo ya está seleccionado en la ronda actual.
+  void _showFavTeeSelector(BuildContext context, FavoriteCourse fav, GolfTheme t) {
+    if (!fav.hasCachedData || fav.cachedCourse!.allTees.isEmpty) return;
+    final course = fav.cachedCourse!;
+    String? pickedName = fav.preferredTeeName;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
+        void saveTee(String name) {
+          setSt(() => pickedName = name);
+          // Persistir en Firestore
+          context.read<UserProfileProvider>().updateFavCourseTee(fav.courseId, name);
+          // Si el campo ya está seleccionado, reasignar tees con la nueva preferencia
+          final isCurrentCourse =
+              _selectedApiCourse?.id.toString() == fav.courseId;
+          if (isCurrentCourse) {
+            setState(() {
+              for (final p in _players) {
+                _playerTees[p.id] = _teeByName(name) ?? _playerTees[p.id] ?? _defaultMaleTee ?? TeeInfo.standard;
+              }
+            });
+          }
+          Navigator.pop(ctx);
+        }
+
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            left: 20, right: 20, top: 24,
+          ),
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            // Título
+            Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Salida favorita', style: TextStyle(color: t.text, fontSize: 17, fontWeight: FontWeight.w800)),
+                Text(fav.displayName, style: TextStyle(color: t.sub, fontSize: 12)),
+              ])),
+              GestureDetector(onTap: () => Navigator.pop(ctx), child: Icon(Icons.close, color: t.sub)),
+            ]),
+            const SizedBox(height: 6),
+            Text('Elige tu salida preferida. Se usará cada vez que selecciones este campo.',
+                style: TextStyle(color: t.sub, fontSize: 12)),
+            const SizedBox(height: 16),
+
+            // Tees masculinos
+            if (course.maleTees.isNotEmpty) ...[
+              Align(alignment: Alignment.centerLeft,
+                child: Text('TEEs MASCULINOS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8))),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: course.maleTees.map((tee) {
+                final isSelected = pickedName == tee.teeName;
+                return GestureDetector(
+                  onTap: () => saveTee(tee.teeName),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isSelected ? t.primary.withValues(alpha: 0.12) : t.surface,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: isSelected ? t.primary : t.divider, width: isSelected ? 2 : 1),
+                    ),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (isSelected) ...[
+                          Icon(Icons.check_circle_rounded, color: t.primary, size: 14),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(tee.teeName, style: TextStyle(color: isSelected ? t.primary : t.text, fontWeight: FontWeight.w700, fontSize: 14)),
+                      ]),
+                      Text('CR ${tee.courseRating.toStringAsFixed(1)} / Slope ${tee.slopeRating}',
+                          style: TextStyle(color: isSelected ? t.primary.withValues(alpha: 0.7) : t.sub, fontSize: 10)),
+                    ]),
+                  ),
+                );
+              }).toList()),
+            ],
+
+            // Tees femeninos
+            if (course.femaleTees.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Align(alignment: Alignment.centerLeft,
+                child: Text('TEEs FEMENINOS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8))),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: course.femaleTees.map((tee) {
+                final isSelected = pickedName == tee.teeName;
+                return GestureDetector(
+                  onTap: () => saveTee(tee.teeName),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isSelected ? t.accent.withValues(alpha: 0.12) : t.surface,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: isSelected ? t.accent : t.divider, width: isSelected ? 2 : 1),
+                    ),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (isSelected) ...[
+                          Icon(Icons.check_circle_rounded, color: t.accent, size: 14),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(tee.teeName, style: TextStyle(color: isSelected ? t.accent : t.text, fontWeight: FontWeight.w700, fontSize: 14)),
+                      ]),
+                      Text('CR ${tee.courseRating.toStringAsFixed(1)} / Slope ${tee.slopeRating}',
+                          style: TextStyle(color: isSelected ? t.accent.withValues(alpha: 0.7) : t.sub, fontSize: 10)),
+                    ]),
+                  ),
+                );
+              }).toList()),
+            ],
+            const SizedBox(height: 8),
+          ])),
+        );
+      }),
+    );
+  }
+
   /// Selecciona un campo favorito obteniendo datos frescos de la API.
   /// Si la API falla, usa el caché disponible como respaldo.
+  /// Respeta el tee preferido guardado en [fav.preferredTeeName].
   Future<void> _selectFavCourseWithFresh(FavoriteCourse fav) async {
     // 1. Usar caché inmediatamente para respuesta rápida
     if (fav.hasCachedData) {
       final api = fav.cachedCourse!;
       if (api.allTees.isNotEmpty) {
         setState(() {
-          // Limpiar tees del campo anterior para evitar que queden tees incorrectos
           _playerTees.clear();
           _selectedApiCourse = api;
           _selectedCourse = api.allTees.first.toCourseInfo(api.clubName, api.courseName);
-          _autoAssignDefaultTee(); // ← auto-asignar tee del nuevo campo
+          // Usar tee preferido guardado; si no existe, cae al primer masculino
+          _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
         });
       }
     } else {
@@ -2580,11 +2765,11 @@ class _SetupScreenState extends State<SetupScreen> {
       if (!mounted) return;
       if (fresh.allTees.isNotEmpty) {
         setState(() {
-          // Re-limpiar y asignar con datos frescos (pueden tener más tees que el caché)
           _playerTees.clear();
           _selectedApiCourse = fresh;
           _selectedCourse = fresh.allTees.first.toCourseInfo(fresh.clubName, fresh.courseName);
-          _autoAssignDefaultTee(); // ← re-asignar con datos frescos
+          // Respetar tee preferido también con datos frescos
+          _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
         });
         // 3. Actualizar caché en Firestore silenciosamente
         UserProfileService.updateFavCourseCache(fav.courseId, fresh);
@@ -2747,7 +2932,9 @@ class _HandicapMatrix extends StatelessWidget {
       children: pairs.map((pair) {
         final pA = players[pair.$1];
         final pB = players[pair.$2];
-        // Ventaja auto: cuántos golpes da pA a pB (positivo = pA da, negativo = pA recibe)
+        // Ventaja auto (convención unificada con manualHandicaps):
+        //   positivo → pA RECIBE de pB (pA tiene mayor HCP)
+        //   negativo → pA DA a pB      (pB tiene mayor HCP)
         final autoVal = (playingHcp(pA) - playingHcp(pB)).round();
         // Ventaja manual guardada (desde perspectiva pA→pB)
         final manualVal = manualHandicaps[pA.id]?[pB.id];

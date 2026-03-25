@@ -200,14 +200,34 @@ class GCounter extends StatelessWidget {
   final int value;
   final VoidCallback onDec;
   final VoidCallback onInc;
-  const GCounter({super.key, required this.value, required this.onDec, required this.onInc});
+  /// Cuando true, el número se muestra en color atenuado para indicar
+  /// que es un valor de referencia (par) y no un score registrado.
+  final bool isPlaceholder;
+  const GCounter({
+    super.key,
+    required this.value,
+    required this.onDec,
+    required this.onInc,
+    this.isPlaceholder = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final t = GolfThemeExt.current;
     return Row(mainAxisSize: MainAxisSize.min, children: [
       _btn(Icons.remove, onDec, t),
-      SizedBox(width: 38, child: Text('$value', textAlign: TextAlign.center, style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 18))),
+      SizedBox(
+        width: 38,
+        child: Text(
+          '$value',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: isPlaceholder ? t.sub : t.text,
+            fontWeight: FontWeight.w800,
+            fontSize: 18,
+          ),
+        ),
+      ),
       _btn(Icons.add, onInc, t),
     ]);
   }

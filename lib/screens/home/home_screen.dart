@@ -961,9 +961,18 @@ class _PlayerEntryState extends State<_PlayerEntry> {
             Text('SCORE BRUTO', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
             const SizedBox(height: 6),
             GCounter(
-              value: gross,
-              onDec: () => prov.updateScore(widget.player.id, widget.hole, gross > 1 ? gross - 1 : null, putts),
-              onInc: () => prov.updateScore(widget.player.id, widget.hole, gross + 1, putts),
+              // Si no hay score, muestra el par como placeholder visual
+              value: score.hasScore ? gross : widget.ch.par,
+              isPlaceholder: !score.hasScore,
+              onDec: () {
+                // Base: gross si ya registrado, par si es placeholder
+                final base = score.hasScore ? gross : widget.ch.par;
+                prov.updateScore(widget.player.id, widget.hole, base > 1 ? base - 1 : null, putts);
+              },
+              onInc: () {
+                final base = score.hasScore ? gross : widget.ch.par;
+                prov.updateScore(widget.player.id, widget.hole, base + 1, putts);
+              },
             ),
           ])),
           const SizedBox(width: 20),

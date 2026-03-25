@@ -143,6 +143,9 @@ class FavoriteCourse {
   /// Datos completos del campo (tees + hoyos) para evitar llamadas a la API.
   /// Puede ser null si se guardó antes de esta versión (retrocompatibilidad).
   final ApiCourse? cachedCourse;
+  /// Nombre del tee preferido del usuario para este campo (ej. "DORADAS").
+  /// Null = usar el primer tee masculino disponible (comportamiento anterior).
+  final String? preferredTeeName;
 
   const FavoriteCourse({
     required this.courseId,
@@ -153,6 +156,7 @@ class FavoriteCourse {
     this.nickname,
     required this.createdAt,
     this.cachedCourse,
+    this.preferredTeeName,
   });
 
   /// Nombre completo del campo (mismo formato que en la tarjeta de ronda)
@@ -179,24 +183,26 @@ class FavoriteCourse {
     'courseId':   courseId,
     'clubName':   clubName,
     'courseName': courseName,
-    if (city != null)     'city':     city,
-    if (country != null)  'country':  country,
-    if (nickname != null) 'nickname': nickname,
+    if (city != null)           'city':            city,
+    if (country != null)        'country':         country,
+    if (nickname != null)       'nickname':        nickname,
+    if (preferredTeeName != null) 'preferredTeeName': preferredTeeName,
     'createdAt':  FieldValue.serverTimestamp(),
-    if (cachedCourse != null) 'cachedCourse': cachedCourse!.toJson(),
+    if (cachedCourse != null)   'cachedCourse':    cachedCourse!.toJson(),
   };
 
   factory FavoriteCourse.fromFirestore(Map<String, dynamic> d, String id) {
     final cached = d['cachedCourse'] as Map<String, dynamic>?;
     return FavoriteCourse(
-      courseId:    id,
-      clubName:    d['clubName']   as String? ?? d['name'] as String? ?? '',
-      courseName:  d['courseName'] as String? ?? '',
-      city:        d['city']       as String?,
-      country:     d['country']    as String?,
-      nickname:    d['nickname']   as String?,
-      createdAt:   _ts(d['createdAt']) ?? DateTime.now(),
-      cachedCourse: cached != null ? ApiCourse.fromCached(cached) : null,
+      courseId:        id,
+      clubName:        d['clubName']        as String? ?? d['name'] as String? ?? '',
+      courseName:      d['courseName']      as String? ?? '',
+      city:            d['city']            as String?,
+      country:         d['country']         as String?,
+      nickname:        d['nickname']        as String?,
+      preferredTeeName: d['preferredTeeName'] as String?,
+      createdAt:       _ts(d['createdAt']) ?? DateTime.now(),
+      cachedCourse:    cached != null ? ApiCourse.fromCached(cached) : null,
     );
   }
 
@@ -330,6 +336,16 @@ class UserProfileService {
       await doc.update({'cachedCourse': freshCourse.toJson()});
     } catch (_) {
       // Fallar silenciosamente — no es crítico
+    }
+  }
+
+  /// Persiste el tee preferido del usuario para un campo favorito.
+  static Future<void> updateFavCourseTee(String courseId, String teeName) async {
+    if (AuthService.uid == null) return;
+    try {
+      await _favCourses().doc(courseId).update({'preferredTeeName': teeName});
+    } catch (_) {
+      // Fallar silenciosamente
     }
   }
 }

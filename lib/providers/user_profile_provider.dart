@@ -120,4 +120,25 @@ class UserProfileProvider extends ChangeNotifier {
     notifyListeners();
     await UserProfileService.removeFavCourse(courseId);
   }
+
+  /// Guarda el tee preferido del usuario para un campo favorito.
+  /// Actualiza optimistamente la lista local y persiste en Firestore.
+  Future<void> updateFavCourseTee(String courseId, String teeName) async {
+    final idx = _favCourses.indexWhere((c) => c.courseId == courseId);
+    if (idx == -1) return;
+    final old = _favCourses[idx];
+    _favCourses[idx] = FavoriteCourse(
+      courseId:        old.courseId,
+      clubName:        old.clubName,
+      courseName:      old.courseName,
+      city:            old.city,
+      country:         old.country,
+      nickname:        old.nickname,
+      createdAt:       old.createdAt,
+      cachedCourse:    old.cachedCourse,
+      preferredTeeName: teeName,
+    );
+    notifyListeners();
+    await UserProfileService.updateFavCourseTee(courseId, teeName);
+  }
 }
