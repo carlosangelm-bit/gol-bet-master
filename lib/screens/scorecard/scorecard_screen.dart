@@ -147,10 +147,6 @@ class _ScorecardGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final players = round.players;
-    const double colName = 92;
-    const double colHole = 34;
-    const double colSub  = 46;
-    const double tableW  = colName + 9 * colHole + colSub;
 
     final isDark = t.brightness == Brightness.dark;
 
@@ -169,35 +165,45 @@ class _ScorecardGrid extends StatelessWidget {
         : Color.alphaBlend(Colors.black.withValues(alpha: 0.03), t.card);
     final cRowB = t.card;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(12),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SizedBox(
-          width: tableW,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Cabecera ───────────────────────────────────────────────
-              _header(tableW, cCard, cPrim, cText, cSub),
-              const SizedBox(height: 2),
-              // ── Front 9 ────────────────────────────────────────────────
-              _segment(players, 1, 9, colName, colHole, colSub, tableW,
-                  cCard, cSurface, cText, cSub, cDiv, cPrim, cUnder, cOver,
-                  cRowA, cRowB, 'F9'),
-              const SizedBox(height: 2),
-              // ── Back 9 ────────────────────────────────────────────────
-              _segment(players, 10, 18, colName, colHole, colSub, tableW,
-                  cCard, cSurface, cText, cSub, cDiv, cPrim, cUnder, cOver,
-                  cRowA, cRowB, 'B9'),
-              const SizedBox(height: 2),
-              // ── Fila TOTAL ─────────────────────────────────────────────
-              _totalRow(players, tableW, colName,
-                  cCard, cPrim, cText, cSub, cDiv, cUnder, cOver),
-            ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Calcular anchos dinámicamente para llenar el ancho disponible sin scroll
+        final double available = constraints.maxWidth - 24; // padding 12 a cada lado
+        const double colSub  = 44;
+        const double colName = 80;
+        // Los 9 hoyos + columna sub deben caber en el espacio restante
+        final double holesSpace = available - colName - colSub;
+        final double colHole = (holesSpace / 9).clamp(22.0, 36.0);
+        final double tableW  = colName + 9 * colHole + colSub;
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(12),
+          child: SizedBox(
+            width: tableW,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Cabecera ───────────────────────────────────────────────
+                _header(tableW, cCard, cPrim, cText, cSub),
+                const SizedBox(height: 2),
+                // ── Front 9 ────────────────────────────────────────────────
+                _segment(players, 1, 9, colName, colHole, colSub, tableW,
+                    cCard, cSurface, cText, cSub, cDiv, cPrim, cUnder, cOver,
+                    cRowA, cRowB, 'F9'),
+                const SizedBox(height: 2),
+                // ── Back 9 ────────────────────────────────────────────────
+                _segment(players, 10, 18, colName, colHole, colSub, tableW,
+                    cCard, cSurface, cText, cSub, cDiv, cPrim, cUnder, cOver,
+                    cRowA, cRowB, 'B9'),
+                const SizedBox(height: 2),
+                // ── Fila TOTAL ─────────────────────────────────────────────
+                _totalRow(players, tableW, colName,
+                    cCard, cPrim, cText, cSub, cDiv, cUnder, cOver),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -261,6 +267,10 @@ class _ScorecardGrid extends StatelessWidget {
         .where((h) => h.hole >= from && h.hole <= to)
         .toList();
     final parSeg = holes.fold(0, (s, h) => s + h.par);
+    // Solo mostrar si el segmento tiene hoyos jugados
+    final hasAnyScore = players.any((p) =>
+        holes.any((h) => round.getScore(p.id, h.hole).hasScore));
+    if (!hasAnyScore && holes.isEmpty) return const SizedBox.shrink();
 
     return Container(
       width: tableW,
@@ -278,36 +288,36 @@ class _ScorecardGrid extends StatelessWidget {
             SizedBox(
               width: colName,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 7, 4, 7),
+                padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
                 child: Text('JUGADOR',
                     style: TextStyle(
                       color: cPrim,
                       fontSize: 7,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 1.1,
+                      letterSpacing: 1.0,
                     )),
               ),
             ),
             ...holes.map((h) => SizedBox(
               width: colHole,
               child: Column(children: [
-                const SizedBox(height: 5),
+                const SizedBox(height: 4),
                 Text('${h.hole}',
                     style: TextStyle(
                         color: cText,
-                        fontSize: 11,
+                        fontSize: 10,
                         fontWeight: FontWeight.w800),
                     textAlign: TextAlign.center),
                 Text('${h.par}',
-                    style: TextStyle(color: cSub, fontSize: 8),
+                    style: TextStyle(color: cSub, fontSize: 7),
                     textAlign: TextAlign.center),
                 Text('${h.strokeIndex}',
                     style: TextStyle(
                         color: cPrim.withValues(alpha: 0.7),
-                        fontSize: 7,
+                        fontSize: 6,
                         fontWeight: FontWeight.w700),
                     textAlign: TextAlign.center),
-                const SizedBox(height: 5),
+                const SizedBox(height: 4),
               ]),
             )),
             // Subtotal encabezado
@@ -318,18 +328,20 @@ class _ScorecardGrid extends StatelessWidget {
                 border: Border(
                     left: BorderSide(color: cDiv, width: 1)),
               ),
-              padding: const EdgeInsets.symmetric(vertical: 7),
+              padding: const EdgeInsets.symmetric(vertical: 6),
               child: Column(children: [
                 Text(label,
                     style: TextStyle(
                         color: cPrim,
-                        fontSize: 10,
+                        fontSize: 9,
                         fontWeight: FontWeight.w900),
                     textAlign: TextAlign.center),
                 Text('$parSeg',
-                    style: TextStyle(color: cSub, fontSize: 8),
+                    style: TextStyle(color: cSub, fontSize: 7),
                     textAlign: TextAlign.center),
-                const SizedBox(height: 4),
+                Text('putts',
+                    style: TextStyle(color: cSub.withValues(alpha: 0.6), fontSize: 6),
+                    textAlign: TextAlign.center),
               ]),
             ),
           ]),
@@ -350,8 +362,9 @@ class _ScorecardGrid extends StatelessWidget {
     Color cText, Color cSub, Color cDiv, Color cPrim,
     Color cUnder, Color cOver, Color rowBg,
   ) {
-    int segTotal = 0;
-    int played   = 0;
+    int segTotal  = 0;
+    int played    = 0;
+    int segPutts  = 0;
 
     final cells = holes.map((h) {
       final sc = round.getScore(p.id, h.hole);
@@ -360,6 +373,7 @@ class _ScorecardGrid extends StatelessWidget {
       int putts = 0;
       if (sc.hasScore) {
         putts = sc.putts;
+        segPutts += putts;
         if (useNet) {
           final ctx = GameEngine.contextForHole(round, p.id, h.hole, true);
           disp = ctx?.netScore;
@@ -391,10 +405,10 @@ class _ScorecardGrid extends StatelessWidget {
         SizedBox(
           width: colName,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
             child: Row(children: [
-              GAvatar(name: p.name, colorIndex: p.colorIndex, size: 22),
-              const SizedBox(width: 5),
+              GAvatar(name: p.name, colorIndex: p.colorIndex, size: 20),
+              const SizedBox(width: 4),
               Expanded(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -403,7 +417,7 @@ class _ScorecardGrid extends StatelessWidget {
                       style: TextStyle(
                           color: cText,
                           fontWeight: FontWeight.w800,
-                          fontSize: 11),
+                          fontSize: 10),
                       overflow: TextOverflow.ellipsis),
                   Text(
                     useNet
@@ -411,7 +425,7 @@ class _ScorecardGrid extends StatelessWidget {
                         : 'GROSS',
                     style: TextStyle(
                         color: cSub,
-                        fontSize: 8,
+                        fontSize: 7,
                         fontWeight: FontWeight.w600),
                   ),
                 ],
@@ -424,15 +438,15 @@ class _ScorecardGrid extends StatelessWidget {
           width: colHole,
           child: Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
+              padding: const EdgeInsets.symmetric(vertical: 2),
               child: c,
             ),
           ),
         )),
-        // Subtotal del segmento
+        // Subtotal del segmento + putts
         Container(
           width: colSub,
-          padding: const EdgeInsets.symmetric(vertical: 5),
+          padding: const EdgeInsets.symmetric(vertical: 4),
           decoration: BoxDecoration(
             color: cPrim.withValues(alpha: 0.06),
             border: Border(left: BorderSide(color: cDiv, width: 1)),
@@ -443,13 +457,13 @@ class _ScorecardGrid extends StatelessWidget {
                       style: TextStyle(
                           color: cText,
                           fontWeight: FontWeight.w900,
-                          fontSize: 14),
+                          fontSize: 13),
                       textAlign: TextAlign.center),
                   if (diff != null)
                     Container(
-                      margin: const EdgeInsets.only(top: 2),
+                      margin: const EdgeInsets.only(top: 1),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 1),
+                          horizontal: 3, vertical: 1),
                       decoration: BoxDecoration(
                         color: diff < 0
                             ? cUnder.withValues(alpha: 0.15)
@@ -466,8 +480,26 @@ class _ScorecardGrid extends StatelessWidget {
                                 : diff > 0
                                     ? cOver
                                     : cSub,
-                            fontSize: 8,
+                            fontSize: 7,
                             fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  // ── Putts del segmento ──
+                  if (segPutts > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        '$segPutts p',
+                        style: TextStyle(
+                          color: segPutts <= played
+                              ? cUnder
+                              : segPutts >= played * 2
+                                  ? cOver
+                                  : cSub,
+                          fontSize: 7,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
                     ),
                 ])
@@ -519,10 +551,19 @@ class _ScorecardGrid extends StatelessWidget {
                   ? GameEngine.netTotal(round, p.id, true)
                   : GameEngine.grossTotal(round, p.id);
               final parT  = round.course.totalPar;
-              final hasAll = round.course.holes
-                  .every((h) => round.getScore(p.id, h.hole).hasScore);
+              final hasAny = round.course.holes
+                  .any((h) => round.getScore(p.id, h.hole).hasScore);
 
-              if (!hasAll) {
+              // Total de putts de toda la ronda
+              final totalPutts = round.course.holes.fold(0, (sum, h) {
+                final sc = round.getScore(p.id, h.hole);
+                return sum + (sc.hasScore ? sc.putts : 0);
+              });
+              final playedHoles = round.course.holes
+                  .where((h) => round.getScore(p.id, h.hole).hasScore)
+                  .length;
+
+              if (!hasAny || total == 0) {
                 return Row(mainAxisSize: MainAxisSize.min, children: [
                   GAvatar(name: p.name, colorIndex: p.colorIndex, size: 20),
                   const SizedBox(width: 4),
@@ -543,27 +584,47 @@ class _ScorecardGrid extends StatelessWidget {
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   GAvatar(name: p.name, colorIndex: p.colorIndex, size: 20),
                   const SizedBox(width: 6),
-                  Text('$total',
-                      style: TextStyle(
-                          color: cText,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16)),
-                  const SizedBox(width: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: dc.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                    child: Text(
-                      diff > 0 ? '+$diff' : diff == 0 ? 'E' : '$diff',
-                      style: TextStyle(
-                          color: dc,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900),
-                    ),
-                  ),
+                  Column(mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text('$total',
+                          style: TextStyle(
+                              color: cText,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15)),
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: dc.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Text(
+                          diff > 0 ? '+$diff' : diff == 0 ? 'E' : '$diff',
+                          style: TextStyle(
+                              color: dc,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ]),
+                    // Putts totales
+                    if (totalPutts > 0)
+                      Text(
+                        '$totalPutts putts',
+                        style: TextStyle(
+                          color: totalPutts <= playedHoles
+                              ? cUnder
+                              : totalPutts >= playedHoles * 2
+                                  ? cOver
+                                  : cSub,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ]),
                 ]),
               );
             }).toList(),
