@@ -441,4 +441,200 @@ void main() {
       expect(modGross.useHandicap, isFalse, reason: 'medal gross → useHandicap false');
     });
   });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  group('M8 – onePot 3+ jugadores con manualHandicaps (escenario 26 Mar)', () {
+    // Replica el escenario real: 5 jugadores en un grupo onePot con ventajas manuales
+    // CAM (hcp 6) es la base — da strokes a todos.
+    // KAWA recibe 7 de CAM, FRANK recibe 14, RICH recibe 9, ALEX recibe 9
+    // Gross: CAM=77, KAWA=81, FRANK=91, RICH=97, ALEX=86
+    // Net esperado (con base CAM):
+    //   CAM:  77 (base, juega en bruto)
+    //   KAWA: 81 - 7  = 74 ← GANADOR (menor net)
+    //   FRANK:91 - 14 = 77
+    //   RICH: 97 - 9  = 88
+    //   ALEX: 86 - 9  = 77
+    // Ganador: KAWA con net 74 (único)
+    final _sCam   = [4,4,5,4,5,4,4,4,4, 4,5,4,4,5,4,4,5,4]; // gross 77
+    final _sKawa  = [5,5,4,4,5,4,5,4,5, 5,5,4,4,5,4,5,4,4]; // gross 81
+    final _sFrank = [5,5,5,5,5,5,5,5,5, 5,5,5,5,5,5,5,5,6]; // gross 91
+    final _sRich  = [6,6,5,5,6,5,5,6,5, 6,6,5,5,6,5,5,6,6]; // gross 97
+    final _sAlex  = [5,5,5,4,5,5,5,5,5, 5,5,5,4,5,5,5,5,5]; // gross 86
+
+    Round _make26Mar() {
+      final rPlayers = [
+        RoundPlayer(
+          playerId: 'CAM',
+          handicapEnRonda: 6.0,
+          manualHandicaps: {}, // CAM es la base, no recibe de nadie
+        ),
+        RoundPlayer(
+          playerId: 'KAWA',
+          handicapEnRonda: 13.0,
+          manualHandicaps: {'CAM': 7}, // KAWA recibe 7 de CAM
+        ),
+        RoundPlayer(
+          playerId: 'FRANK',
+          handicapEnRonda: 20.0,
+          manualHandicaps: {'CAM': 14}, // FRANK recibe 14 de CAM
+        ),
+        RoundPlayer(
+          playerId: 'RICH',
+          handicapEnRonda: 15.0,
+          manualHandicaps: {'CAM': 9}, // RICH recibe 9 de CAM
+        ),
+        RoundPlayer(
+          playerId: 'ALEX',
+          handicapEnRonda: 15.0,
+          manualHandicaps: {'CAM': 9}, // ALEX recibe 9 de CAM
+        ),
+      ];
+
+      final pObjects = [
+        Player(id: 'CAM',   name: 'CAM',   handicapBase: 6.0),
+        Player(id: 'KAWA',  name: 'KAWA',  handicapBase: 13.0),
+        Player(id: 'FRANK', name: 'FRANK', handicapBase: 20.0),
+        Player(id: 'RICH',  name: 'RICH',  handicapBase: 15.0),
+        Player(id: 'ALEX',  name: 'ALEX',  handicapBase: 15.0),
+      ];
+
+      final scoresMap = <String, Map<int, HoleScore>>{};
+      final rawScores = {
+        'CAM': _sCam, 'KAWA': _sKawa, 'FRANK': _sFrank,
+        'RICH': _sRich, 'ALEX': _sAlex,
+      };
+      for (final entry in rawScores.entries) {
+        final pid = entry.key;
+        final holeMap = <int, HoleScore>{};
+        for (int h = 0; h < entry.value.length; h++) {
+          final s = entry.value[h];
+          if (s > 0) {
+            holeMap[h + 1] = HoleScore(playerId: pid, hole: h + 1, grossScore: s);
+          }
+        }
+        scoresMap[pid] = holeMap;
+      }
+
+      final pids = ['CAM', 'KAWA', 'FRANK', 'RICH', 'ALEX'];
+      final mod = BetModuleInstance.defaultFor(BetModuleType.medal, pids).copyWith(
+        medalConfig: const MedalConfig(value: 100, mode: GrossNetMode.net),
+      );
+
+      return Round(
+        id: 'test_26mar_real',
+        name: 'Ronda 26 Mar (real)',
+        course: _course,
+        players: pObjects,
+        roundPlayers: rPlayers,
+        betGroups: [
+          BetGroup(
+            id: 'g1',
+            name: 'Grupo Principal',
+            format: PartidaFormat.allInOnePot,
+            playerIds: pids,
+            modules: [mod],
+          ),
+        ],
+        scores: scoresMap,
+        events: const {},
+        oyeseRankings: const {},
+        sliding: const [],
+        createdAt: DateTime(2025, 3, 26),
+        totalHoles: 18,
+      );
+    }
+
+    test('M8a: onePot 5 jugadores con manualHandicaps — debe generar entries', () {
+      final round = _make26Mar();
+      final entries = BetEngine.computeAll(round);
+      final m = entries.where((e) => e.betType == BetModuleType.medal).toList();
+
+      print('[M8a] entries: ${m.length}');
+      for (final e in m) {
+        print('  ${e.fromPlayerId} → ${e.toPlayerId} \$${e.amount}');
+      }
+
+      // Debe haber entries (no vacío) — el bug anterior generaba 0
+      expect(m, isNotEmpty,
+          reason: 'Con 5 jugadores y manualHandicaps, debe haber entries de medal (bug: generaba 0)');
+
+      // Un único ganador — todos pagan al mismo jugador
+      final winners = m.map((e) => e.toPlayerId).toSet();
+      expect(winners.length, equals(1),
+          reason: 'Debe haber exactamente un ganador en onePot');
+
+      // Los 4 no-ganadores pagan al ganador
+      expect(m.length, equals(4),
+          reason: 'Los 4 jugadores no-ganadores deben pagar al ganador');
+
+      // KAWA debería ganar (menor net con manualHandicap vs base)
+      // El net exacto depende del SI hoyo a hoyo, pero KAWA debe ser el ganador
+      // dado que su gross - strokes es menor que el de la base (CAM)
+      final winner = winners.first;
+      print('[M8a] Ganador: $winner');
+      expect(winner, equals('KAWA'), reason: 'KAWA tiene menor net con manualHandicap aplicado');
+    });
+
+    test('M8b: diagnoseMedal muestra la base correcta', () {
+      final round = _make26Mar();
+      final diag = BetEngine.diagnoseMedal(round);
+
+      expect(diag, isNotEmpty);
+      final d = diag.first;
+      print('[M8b] reason: ${d['reason']}');
+      print('[M8b] nets: ${d['nets']}');
+      print('[M8b] entries: ${d['entries']}');
+
+      expect(d['entries'], greaterThan(0),
+          reason: 'diagnoseMedal debe reportar entries > 0');
+      expect((d['reason'] as String).contains('CAM'), isTrue,
+          reason: 'El reason debe mencionar a CAM como base');
+      expect((d['reason'] as String).contains('KAWA'), isTrue,
+          reason: 'El reason debe mencionar a KAWA como ganador');
+    });
+
+    test('M8c: gross mode — ignora manualHandicaps, gana quien menor gross', () {
+      final round = _make26Mar();
+      // Reemplazar módulo con gross mode
+      final pids = ['CAM', 'KAWA', 'FRANK', 'RICH', 'ALEX'];
+      final modGross = BetModuleInstance.defaultFor(BetModuleType.medal, pids).copyWith(
+        medalConfig: const MedalConfig(value: 100, mode: GrossNetMode.gross),
+      );
+      final roundGross = Round(
+        id: 'test_26mar_gross',
+        name: 'Ronda 26 Mar gross',
+        course: _course,
+        players: round.players,
+        roundPlayers: round.roundPlayers,
+        betGroups: [
+          BetGroup(
+            id: 'g1',
+            name: 'Grupo Principal',
+            format: PartidaFormat.allInOnePot,
+            playerIds: pids,
+            modules: [modGross],
+          ),
+        ],
+        scores: round.scores,
+        events: const {},
+        oyeseRankings: const {},
+        sliding: const [],
+        createdAt: DateTime(2025, 3, 26),
+        totalHoles: 18,
+      );
+
+      final entries = BetEngine.computeAll(roundGross);
+      final m = entries.where((e) => e.betType == BetModuleType.medal).toList();
+
+      print('[M8c] gross entries: ${m.length}');
+      for (final e in m) {
+        print('  ${e.fromPlayerId} → ${e.toPlayerId} \$${e.amount}');
+      }
+
+      // En gross, CAM tiene el menor score (75) → debe ganar
+      expect(m, isNotEmpty, reason: 'Gross mode también debe generar entries');
+      expect(m.every((e) => e.toPlayerId == 'CAM'), isTrue,
+          reason: 'CAM gana en gross (menor score bruto)');
+    });
+  });
 }

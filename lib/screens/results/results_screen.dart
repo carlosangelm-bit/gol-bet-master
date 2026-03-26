@@ -632,8 +632,11 @@ class _MedalDiagPanelState extends State<_MedalDiagPanel> {
   @override
   Widget build(BuildContext context) {
     final t    = widget.t;
-    final diag = BetEngine.diagnoseMedal(widget.round);
+    final round = widget.round;
+    final diag = BetEngine.diagnoseMedal(round);
     final hasZero = diag.any((d) => d['entries'] == 0);
+    // Mapa id → nombre para mostrar nombres legibles en el diagnóstico
+    final nameOf = {for (final p in round.players) p.id: p.name};
 
     return Container(
       decoration: BoxDecoration(
@@ -674,7 +677,10 @@ class _MedalDiagPanelState extends State<_MedalDiagPanel> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: diag.map((d) {
                 final entries  = d['entries'] as int;
-                final reason   = d['reason'] as String;
+                // Reemplazar IDs por nombres en el reason para legibilidad
+                final rawReason = d['reason'] as String;
+                final reason = nameOf.entries.fold(rawReason,
+                    (s, e) => s.replaceAll(e.key, e.value));
                 final pids     = d['pids'] as List;
                 final nets     = d['nets'] as Map;
                 final grosses  = d['grosses'] as Map;
@@ -734,8 +740,9 @@ class _MedalDiagPanelState extends State<_MedalDiagPanel> {
                           final g = grosses[pid] as int? ?? 0;
                           final n = nets[pid]    as int? ?? 0;
                           final h = hcps[pid]    as double? ?? 0.0;
+                          final name = nameOf[pid.toString()] ?? pid.toString();
                           return TableRow(children: [
-                            _cell(pid.toString(), t),
+                            _cell(name, t),
                             _cell(g > 0 ? g.toString() : '–', t),
                             _cell(n > 0 ? n.toString() : '–', t),
                             _cell(h.toStringAsFixed(1), t),

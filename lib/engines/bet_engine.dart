@@ -364,9 +364,28 @@ class BetEngine {
       nets[pids[0]] = netFor(pids[0], pids[1]);
       nets[pids[1]] = netFor(pids[1], pids[0]);
     } else {
-      // 3+ jugadores sin sliding bilateral: handicap individual normal
-      for (final pid in pids) {
-        nets[pid] = GameEngine.netTotal(round, pid, mod.useHandicap);
+      // 3+ jugadores: usar el jugador con menor HCP como referencia (base).
+      // Así se respetan los manualHandicaps bilaterales de cada jugador
+      // contra esa base, igual que en un duelo 1v1 real.
+      // Si no hay manualHandicaps, _effectiveHcps usa la diferencia de HCPs.
+      if (!mod.useHandicap) {
+        // Modo gross: net = gross (sin strokes)
+        for (final pid in pids) {
+          nets[pid] = GameEngine.grossTotal(round, pid);
+        }
+      } else {
+        // Encontrar la base: jugador con menor HCP en el grupo
+        final base = pids.reduce((a, b) =>
+            round.getHandicap(a) <= round.getHandicap(b) ? a : b);
+        for (final pid in pids) {
+          if (pid == base) {
+            // La base juega en bruto (no recibe strokes de sí misma)
+            nets[pid] = GameEngine.grossTotal(round, pid);
+          } else {
+            // Cada jugador recibe strokes respecto a la base
+            nets[pid] = netFor(pid, base);
+          }
+        }
       }
     }
     final sorted = pids.toList()..sort((a, b) => (nets[a] ?? 999).compareTo(nets[b] ?? 999));
@@ -1211,15 +1230,28 @@ class BetEngine {
           }
           reason = pairReasons.join(' | ');
         } else {
-          // onePot 3+: calcular nets individuales
-          for (final pid in pids) {
-            nets[pid] = GameEngine.netTotal(round, pid, mod.useHandicap);
+          // onePot 3+: misma lógica que _medal (base = menor HCP)
+          if (!mod.useHandicap) {
+            for (final pid in pids) {
+              nets[pid] = GameEngine.grossTotal(round, pid);
+            }
+          } else {
+            final base = pids.reduce((a, b) =>
+                round.getHandicap(a) <= round.getHandicap(b) ? a : b);
+            for (final pid in pids) {
+              if (pid == base) {
+                nets[pid] = GameEngine.grossTotal(round, pid);
+              } else {
+                nets[pid] = _computeNetForDiag(round, pid, base, mod);
+              }
+            }
           }
           final sorted = pids.toList()..sort((a, b) => (nets[a] ?? 999).compareTo(nets[b] ?? 999));
           if ((nets[sorted[0]] ?? 999) == (nets[sorted[1]] ?? 999)) {
             reason = 'EMPATE entre ${sorted[0]} y ${sorted[1]} (net=${nets[sorted[0]]}) → sin entry';
           } else {
-            reason = '${sorted[0]} gana (net=${nets[sorted[0]]}) sobre ${sorted.skip(1).join(', ')}';
+            reason = 'Base: ${pids.reduce((a, b) => round.getHandicap(a) <= round.getHandicap(b) ? a : b)} | '
+                '${sorted[0]} gana (net=${nets[sorted[0]]}) sobre ${sorted.skip(1).join(', ')}';
           }
         }
 

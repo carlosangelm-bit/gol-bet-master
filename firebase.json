@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "golf-bet-master",
     "public": "build/web",
     "ignore": [
       "firebase.json",
