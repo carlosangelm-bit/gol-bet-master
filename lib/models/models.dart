@@ -30,6 +30,92 @@ enum StartingNine {
   back,  // Se empieza por el hoyo 10 (B9 lleva el stroke extra)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// BetSide — un lado en un duelo (jugador individual o equipo de varios)
+//
+// Reglas:
+//   • Un lado tiene ≥1 jugador.
+//   • Dentro de un módulo, cada jugador pertenece a exactamente un lado.
+//   • Para módulos sin sides (campo null), el sistema opera en modo
+//     individual clásico usando participantIds directamente.
+//
+// Modo de scoring de equipo:
+//   • bestBall (default): el menor score del equipo en el hoyo representa al lado.
+//   • No se implementa aggregate en esta versión.
+// ─────────────────────────────────────────────────────────────────────────────
+class BetSide {
+  final String id;        // UUID único dentro del módulo
+  final String name;      // Nombre visible: "Team A", "CAM + RICH", etc.
+  final List<String> playerIds; // ≥1 player
+
+  const BetSide({
+    required this.id,
+    required this.name,
+    required this.playerIds,
+  });
+
+  /// Lado individual: un solo jugador (retrocompatibilidad).
+  bool get isIndividual => playerIds.length == 1;
+
+  /// Validar que el lado tiene al menos un jugador.
+  bool get isValid => playerIds.isNotEmpty;
+
+  Map<String, dynamic> toJson() => {
+    'id':        id,
+    'name':      name,
+    'playerIds': playerIds,
+  };
+
+  factory BetSide.fromJson(Map<String, dynamic> j) => BetSide(
+    id:        (j['id']   as String?) ?? 'side_${DateTime.now().millisecondsSinceEpoch}',
+    name:      (j['name'] as String?) ?? 'Lado',
+    playerIds: List<String>.from((j['playerIds'] as List?) ?? []),
+  );
+
+  /// Crea un lado individual a partir de un playerId (helper de migración).
+  factory BetSide.individual(String playerId, String playerName) => BetSide(
+    id:        'side_$playerId',
+    name:      playerName,
+    playerIds: [playerId],
+  );
+
+  // ── Validación de integridad para una lista de dos lados ──────────────────
+  //
+  // Regla: un jugador solo puede pertenecer a UN lado dentro del mismo módulo.
+  // Si se viola, devuelve el playerId duplicado en el String? (null = ok).
+  //
+  // Uso:
+  //   final err = BetSide.findDuplicatePlayer([sideA, sideB]);
+  //   if (err != null) showError('$err aparece en ambos lados');
+  static String? findDuplicatePlayer(List<BetSide> sides) {
+    final seen = <String>{};
+    for (final s in sides) {
+      for (final pid in s.playerIds) {
+        if (!seen.add(pid)) return pid;
+      }
+    }
+    return null;
+  }
+
+  /// Valida que dos lados son correctos para un duelo:
+  ///   • Exactamente 2 lados.
+  ///   • Cada lado tiene ≥1 jugador.
+  ///   • Ningún jugador aparece en ambos lados.
+  /// Devuelve null si todo está bien, o un mensaje de error si hay problema.
+  static String? validateDuel(List<BetSide> sides) {
+    if (sides.length != 2) return 'Se requieren exactamente 2 lados';
+    for (final s in sides) {
+      if (s.playerIds.isEmpty) return 'El lado "${s.name}" no tiene jugadores';
+    }
+    final dup = findDuplicatePlayer(sides);
+    if (dup != null) return 'El jugador $dup aparece en ambos lados';
+    return null;
+  }
+
+  @override
+  String toString() => 'BetSide($name: $playerIds)';
+}
+
 extension BetModuleLabel on BetModuleType {
   String get label => const {
     BetModuleType.skins:         'Skins',
@@ -793,8 +879,19 @@ class BetModuleInstance {
   final String id;
   final BetModuleType type;
   final String name;
-  final List<String> participantIds; // subconjunto de jugadores del grupo
+  final List<String> participantIds; // subconjunto de jugadores del grupo (retrocompat)
   final BetModuleStatus status;
+
+  // ── Lados del duelo (Opción A: campo nuevo opcional) ──────────────────────
+  //
+  // null  → modo individual clásico. El motor usa participantIds directamente
+  //         (exactamente igual que antes). Cero impacto en rondas existentes.
+  //
+  // List<BetSide> con exactamente 2 elementos → duelo lado A vs lado B.
+  //   • Cada lado puede tener 1+ jugadores.
+  //   • Un jugador pertenece a un solo lado dentro del módulo.
+  //   • Modo de equipo: best ball (menor score del equipo en el hoyo).
+  final List<BetSide>? sides;
 
   // Configs tipadas — solo una tendrá valor según el tipo
   final BetFormatMode          formatMode;
@@ -814,6 +911,7 @@ class BetModuleInstance {
     required this.type,
     required this.name,
     required this.participantIds,
+    this.sides,                          // null = modo individual clásico
     this.status = BetModuleStatus.configured,
     this.formatMode = BetFormatMode.onePot,
     this.skinsConfig,
@@ -825,6 +923,27 @@ class BetModuleInstance {
     this.unitsConfig,
     this.presses = const [],
   });
+
+  // ── Acceso a lados con validación rápida ─────────────────────────────────
+  /// true si este módulo opera en modo equipo (sides definidos y válidos).
+  bool get hasTeamSides =>
+      sides != null && sides!.length == 2 &&
+      sides!.every((s) => s.isValid);
+
+  /// Lado A (index 0) cuando hasTeamSides == true.
+  BetSide get sideA => sides![0];
+
+  /// Lado B (index 1) cuando hasTeamSides == true.
+  BetSide get sideB => sides![1];
+
+  /// Todos los playerIds involucrados en el duelo de equipo.
+  List<String> get allSidePlayerIds =>
+      hasTeamSides ? [...sideA.playerIds, ...sideB.playerIds] : participantIds;
+
+  /// Error de validación de lados (null = ok). Útil en UI antes de guardar.
+  /// Verifica: exactamente 2 lados, ≥1 jugador por lado, sin jugadores repetidos.
+  String? get sidesValidationError =>
+      sides != null ? BetSide.validateDuel(sides!) : null;
 
   // ── Acceso rápido a config efectiva ────────────────────────────────────────
   /// true si la apuesta corre en modo todos-contra-todos (pares)
@@ -891,9 +1010,12 @@ class BetModuleInstance {
   };
 
   // ── copyWith ──────────────────────────────────────────────────────────────
+  // clearSides: si true, pone sides=null (volver a modo individual).
   BetModuleInstance copyWith({
     String? name,
     List<String>? participantIds,
+    List<BetSide>? sides,
+    bool clearSides = false,
     BetModuleStatus? status,
     BetFormatMode?        formatMode,
     SkinsConfig?          skinsConfig,
@@ -908,6 +1030,7 @@ class BetModuleInstance {
     id: id, type: type,
     name: name ?? this.name,
     participantIds: participantIds ?? this.participantIds,
+    sides: clearSides ? null : (sides ?? this.sides),
     status: status ?? this.status,
     formatMode:           formatMode           ?? this.formatMode,
     skinsConfig:          skinsConfig          ?? this.skinsConfig,
@@ -926,6 +1049,8 @@ class BetModuleInstance {
     'participantIds': participantIds,
     'status': status.name,
     'formatMode': formatMode.name,
+    // sides: solo se serializa si existe. Rondas sin sides → no tienen clave (retrocompat).
+    if (sides != null) 'sides': sides!.map((s) => s.toJson()).toList(),
     if (skinsConfig          != null) 'skinsConfig':          skinsConfig!.toJson(),
     if (nassauConfig         != null) 'nassauConfig':         nassauConfig!.toJson(),
     if (matchAutoPressConfig != null) 'matchAutoPressConfig': matchAutoPressConfig!.toJson(),
@@ -943,11 +1068,22 @@ class BetModuleInstance {
     );
     Map<String, dynamic> asMap(dynamic v) =>
         v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
+
+    // sides: null si no existe la clave (modo individual clásico, retrocompat)
+    final rawSides = j['sides'] as List?;
+    final sides = rawSides != null
+        ? rawSides.map((s) {
+            try { return BetSide.fromJson(s is Map ? Map<String, dynamic>.from(s) : {}); }
+            catch (_) { return null; }
+          }).whereType<BetSide>().toList()
+        : null;
+
     return BetModuleInstance(
       id:   (j['id']   as String?) ?? 'mod_${DateTime.now().millisecondsSinceEpoch}',
       type: type,
       name: j['name'] as String? ?? type.label,
       participantIds: List<String>.from((j['participantIds'] as List?) ?? []),
+      sides: sides,
       status: BetModuleStatus.values.firstWhere(
           (s) => s.name == (j['status'] ?? 'configured'),
           orElse: () => BetModuleStatus.configured),
@@ -971,11 +1107,17 @@ class BetModuleInstance {
   }
 
   // ── Factory helpers para crear instancias por defecto ─────────────────────
-  static BetModuleInstance defaultFor(BetModuleType type, List<String> participantIds, {String? id}) {
+  static BetModuleInstance defaultFor(
+    BetModuleType type,
+    List<String> participantIds, {
+    String? id,
+    List<BetSide>? sides, // null = modo individual clásico
+  }) {
     final uuid = id ?? '${type.name}_${DateTime.now().millisecondsSinceEpoch}';
     return BetModuleInstance(
       id: uuid, type: type, name: type.label,
       participantIds: participantIds,
+      sides: sides,
       skinsConfig:          type == BetModuleType.skins         ? SkinsConfig.def          : null,
       nassauConfig:         type == BetModuleType.nassau        ? NassauConfig.def         : null,
       matchAutoPressConfig: type == BetModuleType.matchAutoPress? MatchAutoPressConfig.def : null,

@@ -46,32 +46,62 @@ class BetEngine {
   static List<LedgerEntry> computeGroup(Round round, BetGroup group) {
     final entries = <LedgerEntry>[];
     for (final mod in group.modules) {
-      final pids = mod.participantIds.isNotEmpty
-          ? mod.participantIds
-          : group.playerIds;
-      switch (mod.type) {
-        case BetModuleType.skins:
-          entries.addAll(_skins(round, pids, mod));
-          break;
-        case BetModuleType.nassau:
-          entries.addAll(_nassau(round, pids, mod));
-          break;
-        case BetModuleType.matchAutoPress:
-          entries.addAll(_matchAutoPress(round, pids, mod));
-          break;
-        case BetModuleType.medal:
-          entries.addAll(_medal(round, pids, mod));
-          break;
-        case BetModuleType.putts:
-          entries.addAll(_putts(round, pids, mod));
-          break;
-        case BetModuleType.oyeses:
-          entries.addAll(_oyeses(round, pids, mod));
-          break;
-        case BetModuleType.units:
-          entries.addAll(_units(round, pids, mod));
-          break;
+      // ── Modo equipo: sides definidos y válidos ────────────────────────────
+      if (mod.hasTeamSides) {
+        switch (mod.type) {
+          case BetModuleType.matchAutoPress:
+            entries.addAll(_matchAutoPressTeam(round, mod));
+            break;
+          case BetModuleType.nassau:
+            entries.addAll(_nassauTeam(round, mod));
+            break;
+          case BetModuleType.skins:
+            // Skins en modo equipo: cada hoyo best-ball entre lados
+            entries.addAll(_skinsTeam(round, mod));
+            break;
+          default:
+            // Medal, putts, oyeses, units: no tienen semántica de equipo aún.
+            // Fallback: usar todos los jugadores de ambos lados en modo individual.
+            entries.addAll(_computeModuleIndividual(round, group, mod));
+        }
+        continue;
       }
+
+      // ── Modo individual clásico ───────────────────────────────────────────
+      entries.addAll(_computeModuleIndividual(round, group, mod));
+    }
+    return entries;
+  }
+
+  /// Resuelve un módulo en modo individual (comportamiento previo, sin cambios).
+  static List<LedgerEntry> _computeModuleIndividual(
+      Round round, BetGroup group, BetModuleInstance mod) {
+    final entries = <LedgerEntry>[];
+    final pids = mod.participantIds.isNotEmpty
+        ? mod.participantIds
+        : group.playerIds;
+    switch (mod.type) {
+      case BetModuleType.skins:
+        entries.addAll(_skins(round, pids, mod));
+        break;
+      case BetModuleType.nassau:
+        entries.addAll(_nassau(round, pids, mod));
+        break;
+      case BetModuleType.matchAutoPress:
+        entries.addAll(_matchAutoPress(round, pids, mod));
+        break;
+      case BetModuleType.medal:
+        entries.addAll(_medal(round, pids, mod));
+        break;
+      case BetModuleType.putts:
+        entries.addAll(_putts(round, pids, mod));
+        break;
+      case BetModuleType.oyeses:
+        entries.addAll(_oyeses(round, pids, mod));
+        break;
+      case BetModuleType.units:
+        entries.addAll(_units(round, pids, mod));
+        break;
     }
     return entries;
   }
@@ -490,6 +520,326 @@ class BetEngine {
     return entries;
   }
 
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // MODO EQUIPO — lado A vs lado B (best-ball)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── Helper: deltas hoyo a hoyo entre dos lados (usa holeDeltaVs) ──────────
+  // Devuelve (holeOrder, deltas[1..n]) igual que _buildHoleDeltas.
+  // hcpMap: todos los jugadores de ambos lados, HCP de ronda directo.
+  // En modo gross puede pasarse un mapa vacío (todos 0.0).
+  static (List<int>, List<int>) _buildHoleDeltasTeam(
+      Round round, BetSide sideA, BetSide sideB, BetModuleInstance mod) {
+    final allPlayerIds = [...sideA.playerIds, ...sideB.playerIds];
+    final hcpMap = mod.useHandicap
+        ? GameEngine.buildTeamHcpMap(round, allPlayerIds)
+        : <String, double>{};
+
+    final holeOrder = round.startingNine == StartingNine.back
+        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
+        : List.generate(round.totalHoles, (i) => i + 1);
+
+    // deltas[0] no se usa; índice 1-based
+    final List<int> deltas = List.filled(holeOrder.length + 1, 0);
+
+    for (int pos = 0; pos < holeOrder.length; pos++) {
+      final h = holeOrder[pos];
+      final delta = GameEngine.holeDeltaVs(
+        round:        round,
+        sideA:        sideA,
+        sideB:        sideB,
+        holeNum:      h,
+        useHandicap:  mod.useHandicap,
+        hcpMap:       hcpMap,
+      );
+      // null → hoyo no completado → delta queda 0 (no jugado)
+      if (delta != null) deltas[pos + 1] = delta;
+    }
+    return (holeOrder, deltas);
+  }
+
+  // ── MATCH + AUTO PRESS (equipo) ───────────────────────────────────────────
+  static List<LedgerEntry> _matchAutoPressTeam(Round round, BetModuleInstance mod) {
+    final entries = <LedgerEntry>[];
+    final sideA = mod.sideA;
+    final sideB = mod.sideB;
+    final cfg   = mod.matchAutoPress;
+
+    // Carry factor: en equipo usamos valor de configuración directo (sin sliding bilateral)
+    final matchValue = cfg.matchValue;
+    final pressValue = cfg.pressValue;
+
+    final hd        = _buildHoleDeltasTeam(round, sideA, sideB, mod);
+    final holeOrder = hd.$1;
+    final deltas    = hd.$2;
+
+    final matches = _buildMatchTreeRoot(
+      holeOrder:  holeOrder,
+      deltas:     deltas,
+      trigger:    cfg.pressTriggerValue,
+      maxPresses: cfg.maxPresses ?? 99,
+      matchValue: matchValue,
+      pressValue: pressValue,
+    );
+
+    for (final m in matches) {
+      int score  = 0;
+      int played = 0;
+      for (int pos = m.startPos; pos <= m.endPos && pos <= holeOrder.length; pos++) {
+        score += deltas[pos];
+        // Contar como jugado si el delta fue calculado (hoyo completo en ambos lados)
+        if (deltas[pos] != 0) played++;
+        else {
+          // También contar hoyos empatados (delta=0) que sí se jugaron
+          final h = holeOrder[pos - 1];
+          final allPlayed = [...sideA.playerIds, ...sideB.playerIds]
+              .every((pid) => round.getScore(pid, h).hasScore);
+          if (allPlayed) played++;
+        }
+      }
+      if (played == 0) continue;
+      final label = '${m.businessLabel} H${holeOrder[m.startPos - 1]}–H${holeOrder[m.endPos.clamp(1, holeOrder.length) - 1]} (${sideA.name} vs ${sideB.name})';
+      if (score > 0) {
+        // sideA gana: sideB paga a sideA (cada jugador de B paga a cada jugador de A)
+        for (final pA in sideA.playerIds) {
+          for (final pB in sideB.playerIds) {
+            entries.add(LedgerEntry(
+              fromPlayerId: pB, toPlayerId: pA,
+              amount: m.value, betType: BetModuleType.matchAutoPress, reason: label,
+            ));
+          }
+        }
+      } else if (score < 0) {
+        // sideB gana
+        for (final pA in sideA.playerIds) {
+          for (final pB in sideB.playerIds) {
+            entries.add(LedgerEntry(
+              fromPlayerId: pA, toPlayerId: pB,
+              amount: m.value, betType: BetModuleType.matchAutoPress, reason: label,
+            ));
+          }
+        }
+      }
+    }
+    return entries;
+  }
+
+  // ── NASSAU (equipo) ───────────────────────────────────────────────────────
+  static List<LedgerEntry> _nassauTeam(Round round, BetModuleInstance mod) {
+    final entries = <LedgerEntry>[];
+    final sideA = mod.sideA;
+    final sideB = mod.sideB;
+    final cfg   = mod.nassau;
+
+    final allPlayerIds = [...sideA.playerIds, ...sideB.playerIds];
+    final hcpMap = mod.useHandicap
+        ? GameEngine.buildTeamHcpMap(round, allPlayerIds)
+        : <String, double>{};
+
+    final holeOrder = round.startingNine == StartingNine.back
+        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
+        : List.generate(round.totalHoles, (i) => i + 1);
+
+    int front = 0, back = 0;
+    for (final h in holeOrder) {
+      final delta = GameEngine.holeDeltaVs(
+        round: round, sideA: sideA, sideB: sideB,
+        holeNum: h, useHandicap: mod.useHandicap, hcpMap: hcpMap,
+      );
+      if (delta == null) continue;
+      if (h <= 9) front += delta;
+      else        back  += delta;
+    }
+    final total = front + back;
+
+    void addSegment(int margin, double value, String label) {
+      if (margin == 0) return;
+      // Si A gana (margin > 0): B paga a A — cruzado entre todos
+      for (final pA in sideA.playerIds) {
+        for (final pB in sideB.playerIds) {
+          if (margin > 0) {
+            entries.add(LedgerEntry(fromPlayerId: pB, toPlayerId: pA,
+                amount: value, betType: BetModuleType.nassau, reason: label));
+          } else {
+            entries.add(LedgerEntry(fromPlayerId: pA, toPlayerId: pB,
+                amount: value, betType: BetModuleType.nassau, reason: label));
+          }
+        }
+      }
+    }
+
+    if (round.totalHoles <= 9) {
+      addSegment(front, cfg.frontValue, 'Nassau 9 hoyos (${sideA.name} vs ${sideB.name})');
+    } else {
+      addSegment(front, cfg.frontValue,          'Nassau Front 9 (${sideA.name} vs ${sideB.name})');
+      addSegment(back,  cfg.effectiveBackValue,  'Nassau Back 9 (${sideA.name} vs ${sideB.name})');
+      addSegment(total, cfg.effectiveTotalValue, 'Nassau Total 18 (${sideA.name} vs ${sideB.name})');
+    }
+    return entries;
+  }
+
+  // ── SKINS (equipo best-ball por hoyo) ─────────────────────────────────────
+  static List<LedgerEntry> _skinsTeam(Round round, BetModuleInstance mod) {
+    final entries = <LedgerEntry>[];
+    final sideA = mod.sideA;
+    final sideB = mod.sideB;
+    final cfg   = mod.skins;
+    double pot  = cfg.valuePerSkin;
+
+    final allPlayerIds = [...sideA.playerIds, ...sideB.playerIds];
+    final hcpMap = mod.useHandicap
+        ? GameEngine.buildTeamHcpMap(round, allPlayerIds)
+        : <String, double>{};
+
+    final holeOrder = round.startingNine == StartingNine.back
+        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
+        : List.generate(round.totalHoles, (i) => i + 1);
+
+    for (final h in holeOrder) {
+      final delta = GameEngine.holeDeltaVs(
+        round: round, sideA: sideA, sideB: sideB,
+        holeNum: h, useHandicap: mod.useHandicap, hcpMap: hcpMap,
+      );
+      if (delta == null) continue; // hoyo no completado
+
+      if (delta != 0) {
+        final winners = delta > 0 ? sideA.playerIds : sideB.playerIds;
+        final losers  = delta > 0 ? sideB.playerIds : sideA.playerIds;
+        final share   = pot / losers.length;
+        for (final w in winners) {
+          for (final l in losers) {
+            entries.add(LedgerEntry(
+              fromPlayerId: l, toPlayerId: w,
+              amount: share, betType: BetModuleType.skins,
+              reason: 'Skins H$h (${sideA.name} vs ${sideB.name})', hole: h,
+            ));
+          }
+        }
+        pot = cfg.valuePerSkin;
+      } else {
+        // Empate — carry-over si está configurado
+        if (cfg.carryOver) pot += cfg.valuePerSkin;
+      }
+    }
+    return entries;
+  }
+
+  // ── MATCH AUTO PRESS LIVE (equipo) ────────────────────────────────────────
+  static List<MatchPressLiveStatus> matchAutoPressLiveTeam(
+      Round round, BetModuleInstance mod) {
+    final sideA = mod.sideA;
+    final sideB = mod.sideB;
+    final cfg   = mod.matchAutoPress;
+
+    final hd        = _buildHoleDeltasTeam(round, sideA, sideB, mod);
+    final holeOrder = hd.$1;
+    final deltas    = hd.$2;
+
+    // Último hoyo jugado
+    int lastPlayedPos = 0;
+    for (int pos = 1; pos <= holeOrder.length; pos++) {
+      final h = holeOrder[pos - 1];
+      final allPlayed = [...sideA.playerIds, ...sideB.playerIds]
+          .every((pid) => round.getScore(pid, h).hasScore);
+      if (allPlayed && pos > lastPlayedPos) lastPlayedPos = pos;
+    }
+    final lastPlayedHole = lastPlayedPos > 0 ? holeOrder[lastPlayedPos - 1] : 0;
+
+    final matches = _buildMatchTreeRoot(
+      holeOrder:  holeOrder,
+      deltas:     deltas,
+      trigger:    cfg.pressTriggerValue,
+      maxPresses: cfg.maxPresses ?? 99,
+      matchValue: cfg.matchValue,
+      pressValue: cfg.pressValue,
+    );
+
+    final idA = sideA.playerIds.first;
+    final idB = sideB.playerIds.first;
+
+    final results = <MatchPressLiveStatus>[];
+    for (final m in matches) {
+      int score = 0, played = 0;
+      for (int pos = m.startPos; pos <= m.endPos && pos <= holeOrder.length; pos++) {
+        score += deltas[pos];
+        if (deltas[pos] != 0) {
+          played++;
+        } else {
+          final h = holeOrder[pos - 1];
+          final allPlayed = [...sideA.playerIds, ...sideB.playerIds]
+              .every((pid) => round.getScore(pid, h).hasScore);
+          if (allPlayed) played++;
+        }
+      }
+      final startHole = holeOrder[m.startPos - 1];
+      final endIdx    = (m.endPos - 1).clamp(0, holeOrder.length - 1);
+      final endHole   = holeOrder[endIdx];
+      results.add(MatchPressLiveStatus(
+        sequenceNumber: m.seq,
+        isPrimaryMatch: m.isPrimary,
+        startHole:      startHole,
+        endHole:        endHole,
+        score:          score,
+        played:         played,
+        value:          m.value,
+        leadingPlayerId: score > 0 ? idA : score < 0 ? idB : null,
+        lastHole:       lastPlayedHole,
+      ));
+    }
+    return results;
+  }
+
+  // ── NASSAU LIVE STATUS (equipo) ───────────────────────────────────────────
+  static NassauLiveStatus nassauLiveStatusTeam(Round round, BetModuleInstance mod) {
+    final sideA = mod.sideA;
+    final sideB = mod.sideB;
+    final cfg   = mod.nassau;
+
+    final allPlayerIds = [...sideA.playerIds, ...sideB.playerIds];
+    final hcpMap = mod.useHandicap
+        ? GameEngine.buildTeamHcpMap(round, allPlayerIds)
+        : <String, double>{};
+
+    int front = 0, back = 0;
+    int frontPlayed = 0, backPlayed = 0;
+    final List<int> frontHistory = [];
+    final List<int> backHistory  = [];
+
+    for (int h = 1; h <= round.totalHoles; h++) {
+      final delta = GameEngine.holeDeltaVs(
+        round: round, sideA: sideA, sideB: sideB,
+        holeNum: h, useHandicap: mod.useHandicap, hcpMap: hcpMap,
+      );
+      if (delta == null) continue;
+
+      if (h <= 9) {
+        front += delta; frontPlayed++; frontHistory.add(front);
+      } else {
+        back += delta; backPlayed++; backHistory.add(back);
+      }
+    }
+
+    final idA = sideA.playerIds.first;
+    final idB = sideB.playerIds.first;
+
+    final List<NassauPress> presses = [];
+    if (cfg.pressEnabled) {
+      _detectPresses(presses, frontHistory, 1, 9, frontPlayed,
+          idA, idB, cfg.autoPressTrigger);
+      _detectPresses(presses, backHistory, 10, 18, backPlayed,
+          idA, idB, cfg.autoPressTrigger);
+    }
+
+    return NassauLiveStatus(
+      front: front, back: back, total: front + back,
+      frontPlayed: frontPlayed, backPlayed: backPlayed,
+      presses: presses,
+      frontVal: cfg.frontValue,
+      backVal:  cfg.effectiveBackValue,
+      totalVal: cfg.effectiveTotalValue,
+    );
+  }
 
   // ── MATCH + AUTO PRESS ────────────────────────────────────────────────────
   // Spec: cada match activo (principal o presión) se sigue por separado.

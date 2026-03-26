@@ -256,6 +256,84 @@ class GameEngine {
     return status;
   }
 
+  // ── Delta de un hoyo entre dos lados (best ball por defecto) ─────────────
+  //
+  // Reglas:
+  //   • Para cada lado se toma el mejor score válido de todos sus jugadores.
+  //     "Best ball" = el menor score neto (o bruto si !useHandicap).
+  //   • Si al menos un jugador del lado no tiene score en ese hoyo,
+  //     el lado se considera sin score y el resultado es null (hoyo no jugado).
+  //   • Para lados de 1 jugador el comportamiento es idéntico al actual.
+  //
+  // Retorna:
+  //   +1 si sideA gana el hoyo
+  //   -1 si sideB gana el hoyo
+  //    0 si empatan
+  //   null si el hoyo no está completo (algún jugador sin score)
+  //
+  // hcpMap: mapa playerId → HCP efectivo calculado con _effectiveHcps.
+  //   Se precalcula fuera del loop de hoyos para no repetirlo.
+  //   Para modo gross puede ser un mapa vacío (todos 0.0).
+  //
+  // Nota sobre handicap en equipo:
+  //   En modo net cada jugador recibe sus strokes individuales vs el hoyo.
+  //   La diferencia entre los jugadores del equipo NO genera strokes adicionales;
+  //   simplemente se toma el mejor score neto del equipo.
+  //   En un futuro versión podría añadirse un HCP de equipo ajustado.
+  static int? holeDeltaVs({
+    required Round round,
+    required BetSide sideA,
+    required BetSide sideB,
+    required int holeNum,
+    required bool useHandicap,
+    required Map<String, double> hcpMap, // playerId → HCP efectivo
+  }) {
+    final ch = round.course.holes.firstWhere(
+      (h) => h.hole == holeNum,
+      orElse: () => round.course.holes.first,
+    );
+
+    // ── Score válido de un jugador en el hoyo ─────────────────────────────
+    int? _playerScore(String pid) {
+      final s = round.getScore(pid, holeNum);
+      if (!s.hasScore) return null;
+      if (!useHandicap) return s.grossScore;
+      final hcp = hcpMap[pid] ?? round.getHandicap(pid);
+      final strokes = strokesReceived(hcp, ch);
+      return s.grossScore! - strokes;
+    }
+
+    // ── Best ball de un lado: menor score neto/bruto. null si falta score ──
+    int? _bestBall(BetSide side) {
+      int? best;
+      for (final pid in side.playerIds) {
+        final sc = _playerScore(pid);
+        if (sc == null) return null; // cualquier jugador sin score → lado incompleto
+        if (best == null || sc < best) best = sc;
+      }
+      return best;
+    }
+
+    final scoreA = _bestBall(sideA);
+    final scoreB = _bestBall(sideB);
+
+    // Si algún lado no tiene score completo, el hoyo no está listo
+    if (scoreA == null || scoreB == null) return null;
+
+    if (scoreA < scoreB) return  1;  // A gana
+    if (scoreA > scoreB) return -1;  // B gana
+    return 0;                         // empate
+  }
+
+  // ── HCP efectivo individual para modo equipo ──────────────────────────────
+  // En modo equipo, cada jugador usa su HCP individual vs par del hoyo.
+  // No hay sliding entre jugadores de equipos distintos en esta versión;
+  // el motor de equipo construye hcpMap con HCPs de ronda directos.
+  // (El sliding entre individuos se sigue usando en modo individual 1v1.)
+  static Map<String, double> buildTeamHcpMap(Round round, List<String> playerIds) {
+    return { for (final pid in playerIds) pid: round.getHandicap(pid) };
+  }
+
   // ── todos los hoyos completados por todos los jugadores ───────────────────
   // Retorna el último hoyo jugado según el orden de la ronda (startingNine).
   // Si startingNine == back: el orden es 10‑18, 1‑9.
