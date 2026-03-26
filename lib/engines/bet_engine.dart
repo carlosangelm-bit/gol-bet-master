@@ -312,44 +312,28 @@ class BetEngine {
     final entries = <LedgerEntry>[];
     final cfg = mod.medal;
 
-    // Helper: score neto de pA respecto a pB, respetando el manualHandicap bilateral (sliding).
-    // Usa _effectiveHcps como única fuente de verdad para el cálculo de strokes,
-    // igual que _skins1v1, _nassauPair y _buildHoleDeltas.
-    int netFor(String pAId, String pBId) {
-      if (!mod.useHandicap) return GameEngine.grossTotal(round, pAId);
-      final (hcpA, hcpB) = _effectiveHcps(round, pAId, pBId, true);
-      final allHoles = round.course.holes;
-      // pA es base si hcpA <= hcpB; si es receptor, recibe strokes
-      final pAIsBase    = hcpA <= hcpB;
-      final hcpBase     = pAIsBase ? hcpA : hcpB;
-      final hcpReceiver = pAIsBase ? hcpB : hcpA;
-      int total = 0;
-      for (int h = 1; h <= round.totalHoles; h++) {
-        final s = round.getScore(pAId, h);
-        if (!s.hasScore) continue;
-        final ch = allHoles.firstWhere(
-            (c) => c.hole == h, orElse: () => allHoles.first);
-        // Solo el receptor recibe strokes; la base juega en bruto
-        final strokesHere = pAIsBase ? 0 : GameEngine.strokesReceivedVs(
-          hcpHigher: hcpReceiver,
-          hcpLower:  hcpBase,
-          ch: ch,
-          allHoles: allHoles,
-          startingNine: round.startingNine,
-        );
-        total += s.grossScore! - strokesHere;
-      }
-      return total;
+    // Net de un jugador en un par concreto:
+    // net = gross − strokes_recibidos
+    // Los strokes se obtienen de strokesVs(pid, rival), que lee manualHandicaps
+    // directamente (un número fijo — no hoyo a hoyo).
+    // En modo gross los strokes son 0 para todos.
+    int netInPair(String pid, String rival) {
+      final gross = GameEngine.grossTotal(round, pid);
+      if (!mod.useHandicap) return gross;
+      final (s1, _) = round.strokesVs(pid, rival);
+      return gross - s1;
     }
 
     if (mod.isAllVsAll && pids.length > 2) {
+      // allVsAll: cada par es independiente.
+      // Para el par (A, B): net_A = gross_A − strokes_A_vs_B, net_B = gross_B − strokes_B_vs_A
       for (int i = 0; i < pids.length; i++) {
         for (int j = i + 1; j < pids.length; j++) {
-          final net1 = netFor(pids[i], pids[j]);
-          final net2 = netFor(pids[j], pids[i]);
-          if (net1 < net2) {
+          final netI = netInPair(pids[i], pids[j]);
+          final netJ = netInPair(pids[j], pids[i]);
+          if (netI < netJ) {
             entries.add(LedgerEntry(fromPlayerId: pids[j], toPlayerId: pids[i], amount: cfg.value, betType: BetModuleType.medal, reason: 'Medal'));
-          } else if (net2 < net1) {
+          } else if (netJ < netI) {
             entries.add(LedgerEntry(fromPlayerId: pids[i], toPlayerId: pids[j], amount: cfg.value, betType: BetModuleType.medal, reason: 'Medal'));
           }
         }
@@ -357,34 +341,24 @@ class BetEngine {
       return entries;
     }
 
-    // onePot: winner toma de todos
+    // onePot (2 jugadores o grupo con un solo ganador):
+    // Para 1v1: net = gross − strokes_recibidos del rival.
+    // Para 3+: cada jugador recibe sus strokes vs la base (menor HCP),
+    //          así todos los nets son comparables en la misma escala.
     final nets = <String, int>{};
     if (pids.length == 2) {
-      // Par exacto: respetar manualHandicap bilateral
-      nets[pids[0]] = netFor(pids[0], pids[1]);
-      nets[pids[1]] = netFor(pids[1], pids[0]);
+      nets[pids[0]] = netInPair(pids[0], pids[1]);
+      nets[pids[1]] = netInPair(pids[1], pids[0]);
     } else {
-      // 3+ jugadores: usar el jugador con menor HCP como referencia (base).
-      // Así se respetan los manualHandicaps bilaterales de cada jugador
-      // contra esa base, igual que en un duelo 1v1 real.
-      // Si no hay manualHandicaps, _effectiveHcps usa la diferencia de HCPs.
       if (!mod.useHandicap) {
-        // Modo gross: net = gross (sin strokes)
         for (final pid in pids) {
           nets[pid] = GameEngine.grossTotal(round, pid);
         }
       } else {
-        // Encontrar la base: jugador con menor HCP en el grupo
         final base = pids.reduce((a, b) =>
             round.getHandicap(a) <= round.getHandicap(b) ? a : b);
         for (final pid in pids) {
-          if (pid == base) {
-            // La base juega en bruto (no recibe strokes de sí misma)
-            nets[pid] = GameEngine.grossTotal(round, pid);
-          } else {
-            // Cada jugador recibe strokes respecto a la base
-            nets[pid] = netFor(pid, base);
-          }
+          nets[pid] = netInPair(pid, base);
         }
       }
     }
@@ -1180,123 +1154,130 @@ class BetEngine {
         final pids = mod.participantIds.isNotEmpty ? mod.participantIds : group.playerIds;
         final cfg  = mod.medal;
 
-        // Calcular gross, hcp y net para cada jugador
-        final grosses = <String, int>{};
-        final hcps    = <String, double>{};
-        final nets    = <String, int>{};
+        final grosses  = <String, int>{};
+        final hcps     = <String, double>{};
+        final nets     = <String, int>{};
+        final strokesMap = <String, int>{};  // strokes recibidos (contexto: par o base)
 
         for (final pid in pids) {
           grosses[pid] = GameEngine.grossTotal(round, pid);
           hcps[pid]    = round.getHandicap(pid);
         }
 
+        // Net = gross − strokes_recibidos_del_rival
+        // Los strokes se leen de manualHandicaps[pid][rival] (un número fijo, no por hoyo)
+        int strokesToward(String pid, String rival) {
+          if (!mod.useHandicap) return 0;
+          final (s1, _) = round.strokesVs(pid, rival);
+          return s1;
+        }
+
         String reason;
+        // Para allVsAll: detalle de cada par {p1,p2,gross1,strokes1,net1,gross2,strokes2,net2,winner}
+        final pairDetails = <Map<String, dynamic>>[];
 
         if (pids.length < 2) {
-          reason = 'ERROR: Solo ${pids.length} jugador(es) en el módulo — se necesitan ≥2';
+          reason = 'ERROR: Solo ${pids.length} jugador(es) — se necesitan ≥2';
         } else if (pids.length == 2) {
-          // Par: calcular nets bilaterales igual que _medal
-          final int net0 = _computeNetForDiag(round, pids[0], pids[1], mod);
-          final int net1 = _computeNetForDiag(round, pids[1], pids[0], mod);
-          nets[pids[0]] = net0;
-          nets[pids[1]] = net1;
-
-          if (net0 < net1) {
-            reason = '${pids[0]} gana (net $net0 < net $net1 de ${pids[1]})';
-          } else if (net1 < net0) {
-            reason = '${pids[1]} gana (net $net1 < net $net0 de ${pids[0]})';
+          final s0 = strokesToward(pids[0], pids[1]);
+          final s1 = strokesToward(pids[1], pids[0]);
+          final n0 = (grosses[pids[0]] ?? 0) - s0;
+          final n1 = (grosses[pids[1]] ?? 0) - s1;
+          nets[pids[0]] = n0;
+          nets[pids[1]] = n1;
+          strokesMap[pids[0]] = s0;
+          strokesMap[pids[1]] = s1;
+          if (n0 < n1) {
+            reason = '${pids[0]} gana: gross ${grosses[pids[0]]} - $s0 strokes = net $n0 '
+                '< ${pids[1]} gross ${grosses[pids[1]]} - $s1 strokes = net $n1';
+          } else if (n1 < n0) {
+            reason = '${pids[1]} gana: gross ${grosses[pids[1]]} - $s1 strokes = net $n1 '
+                '< ${pids[0]} gross ${grosses[pids[0]]} - $s0 strokes = net $n0';
           } else {
-            reason = 'EMPATE NET ($net0 = $net1) → sin entry. '
-                'Gross: ${pids[0]}=${grosses[pids[0]]}, ${pids[1]}=${grosses[pids[1]]}. '
-                'HCPs: ${pids[0]}=${hcps[pids[0]]}, ${pids[1]}=${hcps[pids[1]]}';
+            reason = 'EMPATE NET ($n0 = $n1) → sin entry. '
+                'Gross: ${pids[0]}=${grosses[pids[0]]}, ${pids[1]}=${grosses[pids[1]]}';
           }
         } else if (mod.isAllVsAll) {
-          // allVsAll: describir cada par
-          final pairReasons = <String>[];
+          // allVsAll: cada par tiene su propio duelo.
+          // Fórmula: net_A = gross_A - strokes_que_A_recibe_de_B
           for (int i = 0; i < pids.length; i++) {
             for (int j = i + 1; j < pids.length; j++) {
-              final n1 = _computeNetForDiag(round, pids[i], pids[j], mod);
-              final n2 = _computeNetForDiag(round, pids[j], pids[i], mod);
-              nets[pids[i]] = n1;
-              nets[pids[j]] = n2;
-              if (n1 < n2) {
-                pairReasons.add('${pids[i]} gana a ${pids[j]} (net $n1<$n2)');
-              } else if (n2 < n1) {
-                pairReasons.add('${pids[j]} gana a ${pids[i]} (net $n2<$n1)');
+              final si = strokesToward(pids[i], pids[j]);
+              final sj = strokesToward(pids[j], pids[i]);
+              final ni = (grosses[pids[i]] ?? 0) - si;
+              final nj = (grosses[pids[j]] ?? 0) - sj;
+              String pairWinner;
+              if (ni < nj) {
+                pairWinner = pids[i];
+              } else if (nj < ni) {
+                pairWinner = pids[j];
               } else {
-                pairReasons.add('EMPATE ${pids[i]} vs ${pids[j]} (net=$n1)');
+                pairWinner = 'EMPATE';
               }
+              pairDetails.add({
+                'p1': pids[i], 'gross1': grosses[pids[i]] ?? 0, 'strokes1': si, 'net1': ni,
+                'p2': pids[j], 'gross2': grosses[pids[j]] ?? 0, 'strokes2': sj, 'net2': nj,
+                'winner': pairWinner,
+              });
             }
           }
-          reason = pairReasons.join(' | ');
+          final wins    = pairDetails.where((p) => p['winner'] != 'EMPATE').length;
+          final empates = pairDetails.where((p) => p['winner'] == 'EMPATE').length;
+          reason = '${pids.length} jugadores · ${pairDetails.length} pares · $wins con ganador · $empates empates';
         } else {
-          // onePot 3+: misma lógica que _medal (base = menor HCP)
+          // onePot 3+: base = jugador con menor HCP, todos los nets se calculan vs esa base.
+          // Fórmula: net_X = gross_X - strokes_que_X_recibe_de_BASE
           if (!mod.useHandicap) {
             for (final pid in pids) {
-              nets[pid] = GameEngine.grossTotal(round, pid);
+              nets[pid] = grosses[pid]!;
+              strokesMap[pid] = 0;
             }
           } else {
             final base = pids.reduce((a, b) =>
                 round.getHandicap(a) <= round.getHandicap(b) ? a : b);
             for (final pid in pids) {
-              if (pid == base) {
-                nets[pid] = GameEngine.grossTotal(round, pid);
-              } else {
-                nets[pid] = _computeNetForDiag(round, pid, base, mod);
-              }
+              final s = strokesToward(pid, base);
+              nets[pid] = (grosses[pid] ?? 0) - s;
+              strokesMap[pid] = s;
             }
+            // Incluir la base en el reason para transparencia
+            reason = '';  // se sobreescribe abajo
           }
           final sorted = pids.toList()..sort((a, b) => (nets[a] ?? 999).compareTo(nets[b] ?? 999));
           if ((nets[sorted[0]] ?? 999) == (nets[sorted[1]] ?? 999)) {
             reason = 'EMPATE entre ${sorted[0]} y ${sorted[1]} (net=${nets[sorted[0]]}) → sin entry';
           } else {
-            reason = 'Base: ${pids.reduce((a, b) => round.getHandicap(a) <= round.getHandicap(b) ? a : b)} | '
-                '${sorted[0]} gana (net=${nets[sorted[0]]}) sobre ${sorted.skip(1).join(', ')}';
+            final base = mod.useHandicap
+                ? pids.reduce((a, b) => round.getHandicap(a) <= round.getHandicap(b) ? a : b)
+                : pids.first;
+            final winNetStr = pids.map((pid) =>
+                '${pid} gross${grosses[pid]}-${strokesMap[pid]}=net${nets[pid]}').join(', ');
+            reason = 'Base: $base | ${sorted[0]} gana (net=${nets[sorted[0]]}) | $winNetStr';
           }
         }
 
         final entries = _medal(round, pids, mod);
         result.add({
-          'groupId':    group.id,
-          'groupName':  group.name,
-          'moduleId':   mod.id,
-          'pids':       pids,
-          'pidsCount':  pids.length,
-          'isAllVsAll': mod.isAllVsAll,
+          'groupId':     group.id,
+          'groupName':   group.name,
+          'moduleId':    mod.id,
+          'pids':        pids,
+          'pidsCount':   pids.length,
+          'isAllVsAll':  mod.isAllVsAll,
           'useHandicap': mod.useHandicap,
-          'mode':       cfg.mode.name,
-          'value':      cfg.value,
-          'nets':       nets,
-          'grosses':    grosses,
-          'hcps':       hcps,
-          'entries':    entries.length,
-          'reason':     reason,
+          'mode':        cfg.mode.name,
+          'value':       cfg.value,
+          'nets':        nets,
+          'grosses':     grosses,
+          'hcps':        hcps,
+          'strokes':     strokesMap,
+          'pairDetails': pairDetails,  // solo para allVsAll
+          'entries':     entries.length,
+          'reason':      reason,
         });
       }
     }
     return result;
-  }
-
-  /// Helper para calcular el net bilateral (mismo cálculo que _medal.netFor).
-  static int _computeNetForDiag(Round round, String pAId, String pBId, BetModuleInstance mod) {
-    if (!mod.useHandicap) return GameEngine.grossTotal(round, pAId);
-    final (hcpA, hcpB) = _effectiveHcps(round, pAId, pBId, true);
-    final allHoles = round.course.holes;
-    final pAIsBase     = hcpA <= hcpB;
-    final hcpBase      = pAIsBase ? hcpA : hcpB;
-    final hcpReceiver  = pAIsBase ? hcpB : hcpA;
-    int total = 0;
-    for (int h = 1; h <= round.totalHoles; h++) {
-      final s = round.getScore(pAId, h);
-      if (!s.hasScore) continue;
-      final ch = allHoles.firstWhere((c) => c.hole == h, orElse: () => allHoles.first);
-      final strokesHere = pAIsBase ? 0 : GameEngine.strokesReceivedVs(
-        hcpHigher: hcpReceiver, hcpLower: hcpBase, ch: ch,
-        allHoles: allHoles, startingNine: round.startingNine,
-      );
-      total += s.grossScore! - strokesHere;
-    }
-    return total;
   }
 
   // ── SKINS LIVE SCORECARD ──────────────────────────────────────────────────

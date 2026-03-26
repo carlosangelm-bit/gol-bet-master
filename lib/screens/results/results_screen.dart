@@ -676,18 +676,19 @@ class _MedalDiagPanelState extends State<_MedalDiagPanel> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: diag.map((d) {
-                final entries  = d['entries'] as int;
-                // Reemplazar IDs por nombres en el reason para legibilidad
-                final rawReason = d['reason'] as String;
-                final reason = nameOf.entries.fold(rawReason,
+                final entries    = d['entries'] as int;
+                final rawReason  = d['reason'] as String;
+                final reason     = nameOf.entries.fold(rawReason,
                     (s, e) => s.replaceAll(e.key, e.value));
-                final pids     = d['pids'] as List;
-                final nets     = d['nets'] as Map;
-                final grosses  = d['grosses'] as Map;
-                final hcps     = d['hcps'] as Map;
-                final mode     = d['mode'] as String;
-                final groupN   = d['groupName'] as String;
-                final ok       = entries > 0;
+                final pids       = d['pids'] as List;
+                final nets       = d['nets'] as Map;
+                final grosses    = d['grosses'] as Map;
+                final strokesD   = d['strokes'] as Map? ?? {};
+                final mode       = d['mode'] as String;
+                final groupN     = d['groupName'] as String;
+                final isAvA      = d['isAllVsAll'] as bool? ?? false;
+                final pairDets   = (d['pairDetails'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+                final ok         = entries > 0;
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 10),
@@ -698,12 +699,13 @@ class _MedalDiagPanelState extends State<_MedalDiagPanel> {
                     border: Border.all(color: ok ? t.profit.withValues(alpha: 0.25) : t.loss.withValues(alpha: 0.25)),
                   ),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    // Header del módulo
                     Row(children: [
                       Icon(ok ? Icons.check : Icons.close_rounded,
                           size: 14, color: ok ? t.profit : t.loss),
                       const SizedBox(width: 6),
                       Expanded(child: Text(
-                        '$groupN · ${mode.toUpperCase()} · \$${d['value']}',
+                        '$groupN · ${mode.toUpperCase()} · \$${d['value']} · ${isAvA ? "Todos vs Todos" : "1 Pot"}',
                         style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 12),
                       )),
                       Container(
@@ -713,7 +715,7 @@ class _MedalDiagPanelState extends State<_MedalDiagPanel> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
-                          ok ? '$entries entry(s)' : 'EMPATE / SIN DATOS',
+                          ok ? '$entries pago(s)' : 'EMPATE / SIN DATOS',
                           style: TextStyle(
                             color: ok ? t.profit : t.loss,
                             fontSize: 10, fontWeight: FontWeight.w800,
@@ -721,35 +723,94 @@ class _MedalDiagPanelState extends State<_MedalDiagPanel> {
                         ),
                       ),
                     ]),
-                    const SizedBox(height: 6),
-                    Table(
-                      columnWidths: const {
-                        0: FlexColumnWidth(3),
-                        1: FlexColumnWidth(2),
-                        2: FlexColumnWidth(2),
-                        3: FlexColumnWidth(2),
-                      },
-                      children: [
-                        TableRow(children: [
-                          _cell('JUGADOR', t, header: true),
-                          _cell('GROSS', t, header: true),
-                          _cell('NET', t, header: true),
-                          _cell('HCP', t, header: true),
-                        ]),
-                        ...pids.map((pid) {
-                          final g = grosses[pid] as int? ?? 0;
-                          final n = nets[pid]    as int? ?? 0;
-                          final h = hcps[pid]    as double? ?? 0.0;
-                          final name = nameOf[pid.toString()] ?? pid.toString();
-                          return TableRow(children: [
-                            _cell(name, t),
-                            _cell(g > 0 ? g.toString() : '–', t),
-                            _cell(n > 0 ? n.toString() : '–', t),
-                            _cell(h.toStringAsFixed(1), t),
-                          ]);
-                        }),
-                      ],
-                    ),
+                    const SizedBox(height: 8),
+
+                    // Para allVsAll: tabla por pares con fórmula explícita
+                    if (isAvA && pairDets.isNotEmpty) ...[
+                      Text('Net = Gross − strokes recibidos',
+                          style: TextStyle(color: t.sub, fontSize: 9, fontStyle: FontStyle.italic)),
+                      const SizedBox(height: 4),
+                      Table(
+                        columnWidths: const {
+                          0: FlexColumnWidth(2.5),  // Jugador A
+                          1: FlexColumnWidth(3.5),  // gross-strokes=net
+                          2: FlexColumnWidth(3.5),  // gross-strokes=net
+                          3: FlexColumnWidth(2),    // winner
+                        },
+                        children: [
+                          TableRow(children: [
+                            _cell('PAR', t, header: true),
+                            _cell('JUGADOR A', t, header: true),
+                            _cell('JUGADOR B', t, header: true),
+                            _cell('GANA', t, header: true),
+                          ]),
+                          ...pairDets.map((pair) {
+                            final p1 = pair['p1'] as String;
+                            final p2 = pair['p2'] as String;
+                            final g1 = pair['gross1'] as int;
+                            final s1 = pair['strokes1'] as int;
+                            final net1 = pair['net1'] as int;
+                            final g2 = pair['gross2'] as int;
+                            final s2 = pair['strokes2'] as int;
+                            final net2 = pair['net2'] as int;
+                            final winner = pair['winner'] as String;
+                            final winName = winner == 'EMPATE' ? 'EMPATE' : (nameOf[winner] ?? winner);
+                            final isWinner1 = winner == p1;
+                            final isWinner2 = winner == p2;
+                            return TableRow(children: [
+                              _cell('${nameOf[p1] ?? p1}\nvs', t),
+                              _cell(
+                                s1 > 0 ? '$g1-$s1=$net1' : '$g1',
+                                t,
+                                highlight: isWinner1 ? t.profit : null,
+                                bold: isWinner1,
+                              ),
+                              _cell(
+                                s2 > 0 ? '$g2-$s2=$net2' : '$g2',
+                                t,
+                                highlight: isWinner2 ? t.profit : null,
+                                bold: isWinner2,
+                              ),
+                              _cell(winName, t,
+                                highlight: winner == 'EMPATE' ? null : t.profit,
+                                bold: winner != 'EMPATE',
+                              ),
+                            ]);
+                          }),
+                        ],
+                      ),
+                    ] else ...[
+                      // Para onePot: tabla simple con gross, strokes, net
+                      Table(
+                        columnWidths: const {
+                          0: FlexColumnWidth(3),
+                          1: FlexColumnWidth(2),
+                          2: FlexColumnWidth(2),
+                          3: FlexColumnWidth(2),
+                        },
+                        children: [
+                          TableRow(children: [
+                            _cell('JUGADOR', t, header: true),
+                            _cell('GROSS', t, header: true),
+                            _cell('−STR', t, header: true),
+                            _cell('NET', t, header: true),
+                          ]),
+                          ...pids.map((pid) {
+                            final g = grosses[pid] as int? ?? 0;
+                            final n = nets[pid]    as int? ?? 0;
+                            final s = strokesD[pid] as int? ?? 0;
+                            final name = nameOf[pid.toString()] ?? pid.toString();
+                            return TableRow(children: [
+                              _cell(name, t),
+                              _cell(g > 0 ? g.toString() : '–', t),
+                              _cell(s > 0 ? s.toString() : '–', t),
+                              _cell(n > 0 ? n.toString() : '–', t),
+                            ]);
+                          }),
+                        ],
+                      ),
+                    ],
+
                     const SizedBox(height: 6),
                     Text(reason, style: TextStyle(color: t.sub, fontSize: 10)),
                   ]),
@@ -762,14 +823,14 @@ class _MedalDiagPanelState extends State<_MedalDiagPanel> {
     );
   }
 
-  Widget _cell(String text, GolfTheme t, {bool header = false}) => Padding(
+  Widget _cell(String text, GolfTheme t, {bool header = false, Color? highlight, bool bold = false}) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 3),
     child: Text(
       text,
       style: TextStyle(
-        color: header ? t.sub : t.text,
+        color: header ? t.sub : (highlight ?? t.text),
         fontSize: header ? 9 : 11,
-        fontWeight: header ? FontWeight.w800 : FontWeight.w500,
+        fontWeight: header ? FontWeight.w800 : (bold ? FontWeight.w700 : FontWeight.w500),
         letterSpacing: header ? 0.6 : 0,
       ),
     ),
