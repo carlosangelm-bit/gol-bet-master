@@ -2530,6 +2530,7 @@ class _SetupScreenState extends State<SetupScreen> {
         mod: mod,
         t: t,
         courseInfo: _selectedCourse,
+        players: _players,
         onSave: (updatedMod) {
           setState(() {
             final idx = _groups.indexWhere((g) => g.id == group.id);

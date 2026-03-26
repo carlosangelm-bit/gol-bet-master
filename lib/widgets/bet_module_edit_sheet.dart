@@ -5,12 +5,23 @@ import 'package:flutter/material.dart';
 import '../core/app_theme.dart';
 import '../models/models.dart';
 
+// Tipos de módulo que admiten configuración de lados (equipo vs equipo).
+const _teamSupportedTypes = {
+  BetModuleType.matchAutoPress,
+  BetModuleType.nassau,
+  BetModuleType.skins,
+};
+
 class BetModuleEditSheet extends StatefulWidget {
   final BetGroup group;
   final BetModuleInstance mod;
   final GolfTheme t;
   final CourseInfo? courseInfo;
   final void Function(BetModuleInstance) onSave;
+  /// Jugadores disponibles para asignar a lados. Si es null o vacío,
+  /// se usa group.playerIds como IDs pero sin nombres (se muestra el ID).
+  final List<Player>? players;
+
   const BetModuleEditSheet({
     super.key,
     required this.group,
@@ -18,6 +29,7 @@ class BetModuleEditSheet extends StatefulWidget {
     required this.t,
     required this.onSave,
     this.courseInfo,
+    this.players,
   });
   @override
   State<BetModuleEditSheet> createState() => _BetModuleEditSheetState();
@@ -33,6 +45,17 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   late final TextEditingController _puttsCtrl;
   late final TextEditingController _oyesCtrl, _zapatoCtrl;
   late final Map<UnitEventType, TextEditingController> _unitCtrls;
+
+  // ── Estado de configuración de lados ──────────────────────────────────────
+  // _sidesEnabled: si el usuario activó el modo equipo en este módulo.
+  // _sideAIds / _sideBIds: jugadores asignados a cada lado (mutable en UI).
+  late bool _sidesEnabled;
+  late List<String> _sideAIds;
+  late List<String> _sideBIds;
+
+  // Nombre editable de cada lado
+  final _nameACtrl = TextEditingController();
+  final _nameBCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -54,6 +77,21 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       for (final e in UnitEventType.values)
         e: TextEditingController(text: m.units.valueFor(e).toStringAsFixed(0)),
     };
+
+    // ── Inicializar estado de lados ─────────────────────────────────────────
+    if (m.hasTeamSides) {
+      _sidesEnabled = true;
+      _sideAIds = List<String>.from(m.sideA.playerIds);
+      _sideBIds = List<String>.from(m.sideB.playerIds);
+      _nameACtrl.text = m.sideA.name;
+      _nameBCtrl.text = m.sideB.name;
+    } else {
+      _sidesEnabled = false;
+      _sideAIds = [];
+      _sideBIds = [];
+      _nameACtrl.text = 'Lado A';
+      _nameBCtrl.text = 'Lado B';
+    }
   }
 
   @override
@@ -65,16 +103,79 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _puttsCtrl.dispose();
     _oyesCtrl.dispose(); _zapatoCtrl.dispose();
     for (final c in _unitCtrls.values) c.dispose();
+    _nameACtrl.dispose();
+    _nameBCtrl.dispose();
     super.dispose();
   }
 
   void _update(BetModuleInstance updated) => setState(() => _current = updated);
 
+  // ── Construir BetSide actualizados desde el estado de UI ──────────────────
+  List<BetSide>? _buildSides() {
+    if (!_sidesEnabled) return null;
+    final nameA = _nameACtrl.text.trim().isEmpty ? 'Lado A' : _nameACtrl.text.trim();
+    final nameB = _nameBCtrl.text.trim().isEmpty ? 'Lado B' : _nameBCtrl.text.trim();
+    return [
+      BetSide(id: 'sideA_${_current.id}', name: nameA, playerIds: List.from(_sideAIds)),
+      BetSide(id: 'sideB_${_current.id}', name: nameB, playerIds: List.from(_sideBIds)),
+    ];
+  }
+
+  // ── Error de validación de lados en tiempo real ───────────────────────────
+  String? get _sidesError {
+    if (!_sidesEnabled) return null;
+    final sides = _buildSides();
+    if (sides == null) return null;
+    return BetSide.validateDuel(sides);
+  }
+
+  // ── Guardar: inyecta sides y actualiza participantIds ─────────────────────
+  void _save() {
+    final sides = _buildSides();
+    // Participantes = unión de todos los jugadores de ambos lados (retrocompat)
+    final newParticipants = sides != null
+        ? {for (final s in sides) ...s.playerIds}.toList()
+        : _current.participantIds;
+
+    final saved = _current.copyWith(
+      participantIds: newParticipants,
+      sides: sides,
+      clearSides: !_sidesEnabled,
+    );
+    widget.onSave(saved);
+    Navigator.pop(context);
+  }
+
+  // ── Jugadores disponibles del grupo ───────────────────────────────────────
+  List<Player> get _availablePlayers {
+    final ps = widget.players;
+    if (ps != null && ps.isNotEmpty) {
+      // Solo mostrar jugadores que pertenecen al grupo
+      final groupIds = widget.group.playerIds.toSet();
+      return ps.where((p) => groupIds.contains(p.id)).toList();
+    }
+    // Fallback: construir Player mínimo desde los IDs del grupo
+    return widget.group.playerIds
+        .map((id) => Player(id: id, name: id))
+        .toList();
+  }
+
+  String _playerName(String id) {
+    final p = _availablePlayers.firstWhere(
+      (p) => p.id == id,
+      orElse: () => Player(id: id, name: id),
+    );
+    return p.name;
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = widget.t;
+    final error = _sidesError;
+    final canSave = error == null;
+
     return DraggableScrollableSheet(
-      initialChildSize: 0.7,
+      initialChildSize: 0.75,
       minChildSize: 0.4,
       maxChildSize: 0.95,
       expand: false,
@@ -102,23 +203,46 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: _buildFields(t),
+              children: [
+                ..._buildFields(t),
+                // ── Sección de equipos (solo para tipos compatibles) ────────
+                if (_teamSupportedTypes.contains(_current.type)) ...[
+                  const SizedBox(height: 24),
+                  _buildSidesSection(t),
+                ],
+              ],
             ),
           ),
         ),
+        // ── Banner de error de validación ───────────────────────────────────
+        if (_sidesEnabled && error != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            color: t.loss.withValues(alpha: 0.12),
+            child: Row(children: [
+              Icon(Icons.warning_amber_rounded, color: t.loss, size: 16),
+              const SizedBox(width: 8),
+              Expanded(child: Text(error, style: TextStyle(color: t.loss, fontSize: 12, fontWeight: FontWeight.w600))),
+            ]),
+          ),
+        // ── Botón Guardar ────────────────────────────────────────────────────
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
           child: SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () { widget.onSave(_current); Navigator.pop(context); },
+              onPressed: canSave ? _save : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: t.primary,
+                backgroundColor: canSave ? t.primary : t.divider,
                 foregroundColor: t.onPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              child: const Text('Guardar cambios', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              child: Text(
+                canSave ? 'Guardar cambios' : 'Corrige los equipos para guardar',
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+              ),
             ),
           ),
         ),
@@ -135,6 +259,302 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       case BetModuleType.putts:         return _puttsFields(t);
       case BetModuleType.oyeses:        return _oyesesFields(t);
       case BetModuleType.units:         return _unitsFields(t);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SECCIÓN DE EQUIPOS
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildSidesSection(GolfTheme t) {
+    final players = _availablePlayers;
+    // Jugadores sin asignar
+    final assignedIds = {..._sideAIds, ..._sideBIds};
+    final unassigned = players.where((p) => !assignedIds.contains(p.id)).toList();
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      // ── Header con toggle ─────────────────────────────────────────────────
+      Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: t.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _sidesEnabled ? t.primary.withValues(alpha: 0.5) : t.divider),
+        ),
+        child: Row(children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: _sidesEnabled ? t.primary.withValues(alpha: 0.15) : t.divider.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.group_outlined,
+              color: _sidesEnabled ? t.primary : t.sub, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Juego por equipos', style: TextStyle(
+              color: t.text, fontWeight: FontWeight.w700, fontSize: 14)),
+            const SizedBox(height: 2),
+            Text(
+              _sidesEnabled
+                  ? 'Lado A vs Lado B — best ball'
+                  : 'Activar para definir Lado A y Lado B',
+              style: TextStyle(color: t.sub, fontSize: 11),
+            ),
+          ])),
+          Switch(
+            value: _sidesEnabled,
+            onChanged: (v) => setState(() {
+              _sidesEnabled = v;
+              if (v && _sideAIds.isEmpty && _sideBIds.isEmpty) {
+                // Auto-asignar: primera mitad a A, segunda a B (helper)
+                _autoAssignSides(players);
+              }
+            }),
+            activeThumbColor: t.primary,
+            activeTrackColor: t.primary.withValues(alpha: 0.35),
+            inactiveTrackColor: t.divider,
+          ),
+        ]),
+      ),
+
+      if (_sidesEnabled) ...[
+        const SizedBox(height: 16),
+
+        // ── Instrucción ──────────────────────────────────────────────────────
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: t.primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(children: [
+            Icon(Icons.touch_app_outlined, color: t.primary, size: 14),
+            const SizedBox(width: 6),
+            Expanded(child: Text(
+              'Toca un jugador para moverlo entre Lado A, Lado B o Sin asignar.',
+              style: TextStyle(color: t.primary, fontSize: 11, fontWeight: FontWeight.w500),
+            )),
+          ]),
+        ),
+
+        const SizedBox(height: 14),
+
+        // ── Lado A y Lado B en fila ───────────────────────────────────────
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: _sidePanel(
+            t,
+            label: 'LADO A',
+            nameCtrl: _nameACtrl,
+            playerIds: _sideAIds,
+            color: t.primary,
+            onAdd: (pid) => setState(() { _sideBIds.remove(pid); _sideAIds.add(pid); }),
+            onRemove: (pid) => setState(() => _sideAIds.remove(pid)),
+          )),
+          const SizedBox(width: 10),
+          Expanded(child: _sidePanel(
+            t,
+            label: 'LADO B',
+            nameCtrl: _nameBCtrl,
+            playerIds: _sideBIds,
+            color: t.accent,
+            onAdd: (pid) => setState(() { _sideAIds.remove(pid); _sideBIds.add(pid); }),
+            onRemove: (pid) => setState(() => _sideBIds.remove(pid)),
+          )),
+        ]),
+
+        // ── Sin asignar ──────────────────────────────────────────────────
+        if (unassigned.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _label('SIN ASIGNAR', t),
+          Wrap(
+            spacing: 8, runSpacing: 8,
+            children: unassigned.map((p) =>
+              _playerChip(t, p, color: t.sub, onTap: () {
+                // Tapping unassigned → va a A si A tiene menos, sino a B
+                setState(() {
+                  if (_sideAIds.length <= _sideBIds.length) {
+                    _sideAIds.add(p.id);
+                  } else {
+                    _sideBIds.add(p.id);
+                  }
+                });
+              })
+            ).toList(),
+          ),
+        ],
+
+        // ── Botón para limpiar todos ──────────────────────────────────────
+        const SizedBox(height: 12),
+        Center(child: TextButton.icon(
+          onPressed: () => setState(() { _sideAIds.clear(); _sideBIds.clear(); }),
+          icon: Icon(Icons.refresh, size: 14, color: t.sub),
+          label: Text('Reiniciar asignación', style: TextStyle(color: t.sub, fontSize: 12)),
+          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6)),
+        )),
+      ],
+    ]);
+  }
+
+  // ── Panel de un lado (A o B) ──────────────────────────────────────────────
+  Widget _sidePanel(
+    GolfTheme t, {
+    required String label,
+    required TextEditingController nameCtrl,
+    required List<String> playerIds,
+    required Color color,
+    required void Function(String) onAdd,
+    required void Function(String) onRemove,
+  }) {
+    // Jugadores no asignados a este lado (para el menú de agregar)
+    final assignedIds = {..._sideAIds, ..._sideBIds};
+    final available = _availablePlayers.where((p) => !assignedIds.contains(p.id)).toList();
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 1.5),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Etiqueta del lado
+        Row(children: [
+          Container(width: 10, height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.8)),
+        ]),
+        const SizedBox(height: 6),
+        // Nombre editable
+        TextField(
+          controller: nameCtrl,
+          onChanged: (_) => setState(() {}),
+          style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 13),
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            fillColor: color.withValues(alpha: 0.08),
+            filled: true,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: color.withValues(alpha: 0.3)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: color.withValues(alpha: 0.3)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: color, width: 1.5),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Chips de jugadores asignados
+        if (playerIds.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Text('Sin jugadores', style: TextStyle(color: t.sub, fontSize: 11)),
+          )
+        else
+          Wrap(
+            spacing: 6, runSpacing: 6,
+            children: playerIds.map((pid) =>
+              _playerChip(t, Player(id: pid, name: _playerName(pid)), color: color,
+                onTap: () => onRemove(pid),
+                trailing: Icon(Icons.close, size: 12, color: color),
+              )
+            ).toList(),
+          ),
+        // Botón agregar (si hay jugadores sin asignar)
+        if (available.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          _addPlayerButton(t, available, color, onAdd),
+        ],
+      ]),
+    );
+  }
+
+  // ── Chip de jugador ───────────────────────────────────────────────────────
+  Widget _playerChip(GolfTheme t, Player p, {
+    required Color color,
+    required VoidCallback onTap,
+    Widget? trailing,
+  }) =>
+    GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(p.name, style: TextStyle(
+            color: color, fontWeight: FontWeight.w700, fontSize: 12,
+          )),
+          if (trailing != null) ...[const SizedBox(width: 4), trailing],
+        ]),
+      ),
+    );
+
+  // ── Botón "+" para agregar jugador sin asignar ─────────────────────────
+  Widget _addPlayerButton(GolfTheme t, List<Player> available, Color color, void Function(String) onAdd) {
+    if (available.length == 1) {
+      // Un solo disponible: acción directa
+      return GestureDetector(
+        onTap: () => onAdd(available.first.id),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            border: Border.all(color: color.withValues(alpha: 0.4), style: BorderStyle.solid),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.add, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(available.first.name, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+          ]),
+        ),
+      );
+    }
+    // Varios disponibles: popup menu
+    return PopupMenuButton<String>(
+      onSelected: onAdd,
+      color: t.card,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      itemBuilder: (_) => available.map((p) => PopupMenuItem(
+        value: p.id,
+        child: Text(p.name, style: TextStyle(color: t.text, fontSize: 13)),
+      )).toList(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          border: Border.all(color: color.withValues(alpha: 0.4), style: BorderStyle.solid),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.add, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text('Agregar jugador', style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+        ]),
+      ),
+    );
+  }
+
+  // ── Auto-asignar primera vez: mitad a A, mitad a B ──────────────────────
+  void _autoAssignSides(List<Player> players) {
+    _sideAIds.clear();
+    _sideBIds.clear();
+    for (int i = 0; i < players.length; i++) {
+      if (i.isEven) {
+        _sideAIds.add(players[i].id);
+      } else {
+        _sideBIds.add(players[i].id);
+      }
     }
   }
 

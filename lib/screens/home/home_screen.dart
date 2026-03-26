@@ -582,6 +582,7 @@ class _ActiveRoundView extends StatelessWidget {
         mod: mod,
         t: t,
         courseInfo: prov.round!.course,
+        players: prov.round!.players,
         onSave: (updatedMod) {
           final newModules = group.modules.map((m) => m.id == updatedMod.id ? updatedMod : m).toList();
           final newGroup   = BetGroup(id: group.id, name: group.name, format: group.format, playerIds: group.playerIds, modules: newModules);
