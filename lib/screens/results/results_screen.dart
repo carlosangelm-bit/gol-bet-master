@@ -77,6 +77,12 @@ class _ResultsScreenState extends State<ResultsScreen> {
                     onToggle: () => setState(() =>
                       _expandedPlayerId = _expandedPlayerId == p.id ? null : p.id),
                   )),
+
+                  // ── Diagnóstico de Medal (solo si hay módulos medal) ──────────
+                  if (round.betGroups.any((g) => g.modules.any((m) => m.type == BetModuleType.medal))) ...[
+                    const SizedBox(height: 20),
+                    _MedalDiagPanel(round: round, t: t),
+                  ],
                 ],
               ),
             ),
@@ -610,4 +616,155 @@ class _ResultsBodyState extends State<ResultsBody> {
       ]),
     );
   }
+}
+
+// ── Panel de diagnóstico de Medal ─────────────────────────────────────────────
+class _MedalDiagPanel extends StatefulWidget {
+  final Round round;
+  final GolfTheme t;
+  const _MedalDiagPanel({required this.round, required this.t});
+  @override State<_MedalDiagPanel> createState() => _MedalDiagPanelState();
+}
+
+class _MedalDiagPanelState extends State<_MedalDiagPanel> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t    = widget.t;
+    final diag = BetEngine.diagnoseMedal(widget.round);
+    final hasZero = diag.any((d) => d['entries'] == 0);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: hasZero ? t.loss.withValues(alpha: 0.4) : t.divider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Header colapsable
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(children: [
+              Icon(hasZero ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+                  color: hasZero ? t.loss : t.profit, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text(
+                hasZero
+                    ? 'Medal: hay duelo(s) sin resultado — toca para ver detalle'
+                    : 'Medal: todos los duelos calculados correctamente',
+                style: TextStyle(
+                  color: hasZero ? t.loss : t.profit,
+                  fontWeight: FontWeight.w700, fontSize: 12,
+                ),
+              )),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more, color: t.sub, size: 16),
+            ]),
+          ),
+        ),
+
+        if (_expanded) ...[
+          Divider(height: 1, color: t.divider),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: diag.map((d) {
+                final entries  = d['entries'] as int;
+                final reason   = d['reason'] as String;
+                final pids     = d['pids'] as List;
+                final nets     = d['nets'] as Map;
+                final grosses  = d['grosses'] as Map;
+                final hcps     = d['hcps'] as Map;
+                final mode     = d['mode'] as String;
+                final groupN   = d['groupName'] as String;
+                final ok       = entries > 0;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: ok ? t.profit.withValues(alpha: 0.07) : t.loss.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: ok ? t.profit.withValues(alpha: 0.25) : t.loss.withValues(alpha: 0.25)),
+                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Icon(ok ? Icons.check : Icons.close_rounded,
+                          size: 14, color: ok ? t.profit : t.loss),
+                      const SizedBox(width: 6),
+                      Expanded(child: Text(
+                        '$groupN · ${mode.toUpperCase()} · \$${d['value']}',
+                        style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 12),
+                      )),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: ok ? t.profit.withValues(alpha: 0.2) : t.loss.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          ok ? '$entries entry(s)' : 'EMPATE / SIN DATOS',
+                          style: TextStyle(
+                            color: ok ? t.profit : t.loss,
+                            fontSize: 10, fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 6),
+                    Table(
+                      columnWidths: const {
+                        0: FlexColumnWidth(3),
+                        1: FlexColumnWidth(2),
+                        2: FlexColumnWidth(2),
+                        3: FlexColumnWidth(2),
+                      },
+                      children: [
+                        TableRow(children: [
+                          _cell('JUGADOR', t, header: true),
+                          _cell('GROSS', t, header: true),
+                          _cell('NET', t, header: true),
+                          _cell('HCP', t, header: true),
+                        ]),
+                        ...pids.map((pid) {
+                          final g = grosses[pid] as int? ?? 0;
+                          final n = nets[pid]    as int? ?? 0;
+                          final h = hcps[pid]    as double? ?? 0.0;
+                          return TableRow(children: [
+                            _cell(pid.toString(), t),
+                            _cell(g > 0 ? g.toString() : '–', t),
+                            _cell(n > 0 ? n.toString() : '–', t),
+                            _cell(h.toStringAsFixed(1), t),
+                          ]);
+                        }),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(reason, style: TextStyle(color: t.sub, fontSize: 10)),
+                  ]),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  Widget _cell(String text, GolfTheme t, {bool header = false}) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Text(
+      text,
+      style: TextStyle(
+        color: header ? t.sub : t.text,
+        fontSize: header ? 9 : 11,
+        fontWeight: header ? FontWeight.w800 : FontWeight.w500,
+        letterSpacing: header ? 0.6 : 0,
+      ),
+    ),
+  );
 }
