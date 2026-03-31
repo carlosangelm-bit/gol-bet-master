@@ -229,6 +229,7 @@ class PlayerService {
       name:         d['name'] as String? ?? '',
       handicapBase: (d['handicapBase'] as num?)?.toDouble() ?? 0,
       colorIndex:   (d['colorIndex'] as int?) ?? 0,
+      linkedUserId: d['linkedUserId'] as String?,
     );
   }
 }

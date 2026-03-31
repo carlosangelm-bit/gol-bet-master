@@ -15,6 +15,7 @@ import '../../services/firestore_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/player_service.dart';
 import '../../services/user_profile_service.dart';
+import '../../services/live_round_service.dart';
 
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
@@ -686,7 +687,8 @@ class _SetupScreenState extends State<SetupScreen> {
               ]),
               Text(
                 'HCP ${pw.player.handicapBase.toStringAsFixed(1)}'
-                '${pw.link?.defaultSlidingAdjustment != 0 && pw.link != null ? "  ·  slide ${pw.link!.defaultSlidingAdjustment > 0 ? "+" : ""}${pw.link!.defaultSlidingAdjustment.toStringAsFixed(0)}" : ""}',
+                '${pw.link?.defaultSlidingAdjustment != 0 && pw.link != null ? "  ·  slide ${pw.link!.defaultSlidingAdjustment > 0 ? "+" : ""}${pw.link!.defaultSlidingAdjustment.toStringAsFixed(0)}" : ""}'
+                '${pw.player.hasLinkedAccount ? "  ·  📲 cuenta" : ""}',
                 style: TextStyle(color: t.sub, fontSize: 11),
               ),
             ])),
@@ -708,6 +710,126 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
                 child: Icon(Icons.add, color: t.sub, size: 14),
               ),
+            // Botón vincular cuenta (si no tiene linkedUserId)
+            if (!pw.player.hasLinkedAccount) ...[
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => _showLinkAccountDialog(pw.player, t),
+                child: Container(
+                  width: 24, height: 24,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: t.surface,
+                    border: Border.all(color: t.divider),
+                  ),
+                  child: Icon(Icons.link_rounded, color: t.sub, size: 13),
+                ),
+              ),
+            ] else ...[
+              const SizedBox(width: 6),
+              Icon(Icons.verified_user_rounded, color: t.primary, size: 16),
+            ],
+          ]),
+        ),
+      ),
+    );
+  }
+
+  /// Diálogo para vincular un jugador a una cuenta de usuario
+  void _showLinkAccountDialog(Player player, GolfTheme t) {
+    final searchCtrl = TextEditingController();
+    List<Map<String, dynamic>> results = [];
+    bool loading = false;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setSt) => Padding(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx2).viewInsets.bottom + 24,
+              left: 20, right: 20, top: 24),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Vincular cuenta', style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text('Busca la cuenta del jugador "${player.name}" para que pueda unirse a rondas en vivo',
+                style: TextStyle(color: t.sub, fontSize: 12)),
+            const SizedBox(height: 16),
+            // Buscador
+            TextField(
+              controller: searchCtrl,
+              style: TextStyle(color: t.text),
+              decoration: InputDecoration(
+                hintText: 'Email o nombre del jugador',
+                hintStyle: TextStyle(color: t.sub),
+                fillColor: t.surface, filled: true,
+                prefixIcon: Icon(Icons.search, color: t.sub, size: 20),
+                suffixIcon: loading
+                    ? Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: SizedBox(width: 16, height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: t.primary)))
+                    : null,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.divider)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.divider)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.primary, width: 2)),
+              ),
+              onChanged: (val) async {
+                if (val.length < 3) { setSt(() => results = []); return; }
+                setSt(() => loading = true);
+                final byEmail = await LiveRoundService.searchUsersByEmail(val);
+                final byName  = await LiveRoundService.searchUsersByName(val);
+                // Combinar sin duplicados
+                final map = <String, Map<String, dynamic>>{};
+                for (final u in [...byEmail, ...byName]) {
+                  map[u['uid'] as String] = u;
+                }
+                setSt(() { results = map.values.toList(); loading = false; });
+              },
+            ),
+            const SizedBox(height: 12),
+            // Resultados
+            ...results.map((user) {
+              final uid  = user['uid'] as String;
+              final name = user['displayName'] as String? ?? '';
+              final email = user['email'] as String? ?? '';
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: GAvatar(name: name.isEmpty ? email : name, colorIndex: 0, size: 36),
+                title: Text(name, style: TextStyle(color: t.text, fontWeight: FontWeight.w600)),
+                subtitle: Text(email, style: TextStyle(color: t.sub, fontSize: 11)),
+                trailing: TextButton(
+                  onPressed: () async {
+                    await LiveRoundService.linkPlayerToUser(
+                        playerId: player.id, targetUid: uid);
+                    // Actualizar el jugador en la lista local
+                    setState(() {
+                      final idx = _players.indexWhere((p) => p.id == player.id);
+                      if (idx >= 0) {
+                        _players[idx] = _players[idx].copyWith(linkedUserId: uid);
+                      }
+                    });
+                    if (ctx2.mounted) Navigator.pop(ctx2);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text('${player.name} vinculado a $name'),
+                        backgroundColor: t.primary,
+                      ));
+                    }
+                  },
+                  child: Text('Vincular', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700)),
+                ),
+              );
+            }),
+            if (results.isEmpty && searchCtrl.text.length >= 3 && !loading)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Center(child: Text('No se encontraron usuarios', style: TextStyle(color: t.sub))),
+              ),
+            const SizedBox(height: 8),
           ]),
         ),
       ),
@@ -2562,13 +2684,13 @@ class _SetupScreenState extends State<SetupScreen> {
         isAuth: auth.isAuth,
         players: _players,
         groups: _groups,
-        onStart: (startingNine) {
+        onStart: (startingNine, {bool startLive = false}) {
           Navigator.pop(sheetCtx);
-          _createAndStartRound(startingNine);
+          _createAndStartRound(startingNine, startLive: startLive);
         },
-        onStartWithTemplate: (startingNine, name, emoji, desc) {
+        onStartWithTemplate: (startingNine, name, emoji, desc, {bool startLive = false}) {
           Navigator.pop(sheetCtx);
-          _createAndStartRound(startingNine);
+          _createAndStartRound(startingNine, startLive: startLive);
           // Guardar plantilla tras iniciar ronda
           _saveTemplateNow(name: name, emoji: emoji, desc: desc);
         },
@@ -2802,7 +2924,7 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
-  void _createAndStartRound(StartingNine startingNine) {
+  void _createAndStartRound(StartingNine startingNine, {bool startLive = false}) {
     final allPidsLaunch = _players.map((p) => p.id).toList();
     final effectiveGroups = _groups.isEmpty
         ? [BetGroup(
@@ -2841,8 +2963,31 @@ class _SetupScreenState extends State<SetupScreen> {
       totalHoles: _totalHoles,
     );
 
-    context.read<RoundProvider>().startRound(round);
-    Navigator.of(context).pop();
+    if (startLive) {
+      // Primero iniciar la ronda localmente, luego publicar en vivo
+      final prov = context.read<RoundProvider>();
+      prov.startRound(round);
+      Navigator.of(context).pop();
+      // Publicar como ronda en vivo (async, sin bloquear UI)
+      prov.publishAsLive().then((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('¡Ronda en vivo activada! Código: ${prov.round?.liveCode ?? ''}'),
+            backgroundColor: prov.theme.primary,
+            duration: const Duration(seconds: 4),
+          ));
+        }
+      }).catchError((e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error al activar en vivo: $e'),
+          ));
+        }
+      });
+    } else {
+      context.read<RoundProvider>().startRound(round);
+      Navigator.of(context).pop();
+    }
   }
 }
 
@@ -3180,8 +3325,8 @@ class _LaunchSheet extends StatefulWidget {
   final bool isAuth;
   final List<Player> players;
   final List<BetGroup> groups;
-  final void Function(StartingNine) onStart;
-  final void Function(StartingNine, String name, String emoji, String desc) onStartWithTemplate;
+  final void Function(StartingNine, {bool startLive}) onStart;
+  final void Function(StartingNine, String name, String emoji, String desc, {bool startLive}) onStartWithTemplate;
 
   const _LaunchSheet({
     required this.t,
@@ -3198,6 +3343,7 @@ class _LaunchSheet extends StatefulWidget {
 
 class _LaunchSheetState extends State<_LaunchSheet> {
   bool _saveTemplate = false;
+  bool _startLive    = false;
   final _nameCtrl  = TextEditingController();
   final _emojiCtrl = TextEditingController(text: '⛳️');
   final _descCtrl  = TextEditingController();
@@ -3218,9 +3364,10 @@ class _LaunchSheetState extends State<_LaunchSheet> {
         ));
         return;
       }
-      widget.onStartWithTemplate(nine, name, _emojiCtrl.text.trim(), _descCtrl.text.trim());
+      widget.onStartWithTemplate(nine, name, _emojiCtrl.text.trim(), _descCtrl.text.trim(),
+          startLive: _startLive);
     } else {
-      widget.onStart(nine);
+      widget.onStart(nine, startLive: _startLive);
     }
   }
 
@@ -3256,47 +3403,86 @@ class _LaunchSheetState extends State<_LaunchSheet> {
           const SizedBox(height: 16),
 
           // Guardar como plantilla
-          if (widget.isAuth) ...[
+          // Opción En Vivo
+          if (widget.isAuth && _hasLinkedPlayers) ...[
+            const SizedBox(height: 8),
             GestureDetector(
-              onTap: () => setState(() => _saveTemplate = !_saveTemplate),
-              child: Row(children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: 20, height: 20,
-                  decoration: BoxDecoration(
-                    color: _saveTemplate ? t.accent : Colors.transparent,
-                    borderRadius: BorderRadius.circular(5),
-                    border: Border.all(color: _saveTemplate ? t.accent : t.sub),
+              onTap: () => setState(() => _startLive = !_startLive),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: _startLive
+                      ? Colors.red.withValues(alpha: 0.08)
+                      : widget.t.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _startLive ? Colors.red : widget.t.divider,
+                    width: _startLive ? 1.5 : 1,
                   ),
-                  child: _saveTemplate ? Icon(Icons.check, color: t.onPrimary, size: 13) : null,
                 ),
-                const SizedBox(width: 8),
-                Text('Guardar como plantilla', style: TextStyle(color: t.sub, fontSize: 13)),
-              ]),
+                child: Row(children: [
+                  Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      color: _startLive
+                          ? Colors.red.withValues(alpha: 0.15)
+                          : widget.t.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.wifi_tethering_rounded,
+                      color: _startLive ? Colors.red : widget.t.sub,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Text('Activar en Vivo',
+                          style: TextStyle(
+                            color: _startLive ? Colors.red : widget.t.text,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          )),
+                      if (_startLive) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(4)),
+                          child: const Text('EN VIVO',
+                              style: TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+                        ),
+                      ],
+                    ]),
+                    Text(
+                      'Los jugadores invitados verán y editarán scores en tiempo real',
+                      style: TextStyle(color: widget.t.sub, fontSize: 11),
+                    ),
+                  ])),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 22, height: 22,
+                    decoration: BoxDecoration(
+                      color: _startLive ? Colors.red : Colors.transparent,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: _startLive ? Colors.red : widget.t.sub),
+                    ),
+                    child: _startLive
+                        ? const Icon(Icons.check, color: Colors.white, size: 14)
+                        : null,
+                  ),
+                ]),
+              ),
             ),
-            if (_saveTemplate) ...[
-              const SizedBox(height: 12),
-              TextField(controller: _nameCtrl, style: TextStyle(color: t.text),
-                decoration: InputDecoration(
-                  labelText: 'Nombre de la plantilla', labelStyle: TextStyle(color: t.sub),
-                  fillColor: t.surface, filled: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.divider)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.primary, width: 2)),
-                )),
-              const SizedBox(height: 8),
-              TextField(controller: _descCtrl, style: TextStyle(color: t.text),
-                decoration: InputDecoration(
-                  labelText: 'Descripción (opcional)', labelStyle: TextStyle(color: t.sub),
-                  fillColor: t.surface, filled: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.divider)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.primary, width: 2)),
-                )),
-            ],
           ],
         ]),
       ),
     );
   }
+
+  bool get _hasLinkedPlayers =>
+      widget.players.any((p) => p.hasLinkedAccount);
 
   Widget _startBtn(GolfTheme t, String icon, String title, String subtitle, VoidCallback onTap) {
     return GestureDetector(

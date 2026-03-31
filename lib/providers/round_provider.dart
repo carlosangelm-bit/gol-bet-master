@@ -2,6 +2,7 @@
 // ROUND PROVIDER — State management central
 // Recalcula el ledger automáticamente ante cualquier cambio.
 // ─────────────────────────────────────────────────────────────────────────────
+import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import '../core/app_theme.dart';
 import '../engines/ledger_engine.dart';
 import '../models/models.dart';
 import '../services/firestore_service.dart';
+import '../services/live_round_service.dart';
 import '../services/auth_service.dart';
 
 // ── Funciones top-level para serialización (usadas también por FirestoreService)
@@ -18,6 +20,9 @@ Map<String, dynamic> roundToJson(Round r) => {
   'currentHole': r.currentHole, 'isFinished': r.isFinished,
   'startingNine': r.startingNine.name,
   'totalHoles': r.totalHoles,
+  'isLive': r.isLive,
+  if (r.ownerUid != null) 'ownerUid': r.ownerUid,
+  if (r.liveCode != null) 'liveCode': r.liveCode,
   'course': r.course.toJson(),
   'players': r.players.map((p) => p.toJson()).toList(),
   'roundPlayers': r.roundPlayers.map((rp) => rp.toJson()).toList(),
@@ -106,6 +111,9 @@ Round roundFromJson(Map<String, dynamic> j) {
     isFinished: j['isFinished'] as bool? ?? false,
     startingNine: j['startingNine'] == 'back' ? StartingNine.back : StartingNine.front,
     totalHoles: j['totalHoles'] as int? ?? 18,
+    isLive: j['isLive'] as bool? ?? false,
+    ownerUid: j['ownerUid'] as String?,
+    liveCode: j['liveCode'] as String?,
     players: players, roundPlayers: roundPlayers,
     betGroups: betGroups,
     course: j['course'] != null
@@ -121,10 +129,17 @@ class RoundProvider extends ChangeNotifier {
   AppThemeMode _themeMode = AppThemeMode.light;
   int _tabIndex = 0;
 
+  // Stream de ronda en vivo
+  StreamSubscription<Round?>? _liveRoundSub;
+  // Flag para ignorar el próximo evento del stream (evitar eco)
+  bool _ignoringLiveUpdate = false;
+
   Round? get round => _round;
   AppThemeMode get themeMode => _themeMode;
   int get tabIndex => _tabIndex;
   bool get hasRound => _round != null;
+  bool get isLiveRound => _round?.isLive ?? false;
+  bool get isLiveOwner => _round?.isLive == true && _round?.ownerUid == AuthService.uid;
 
   GolfTheme get theme {
     switch (_themeMode) {
@@ -150,6 +165,60 @@ class RoundProvider extends ChangeNotifier {
     _tabIndex = 1;
     notifyListeners();
     _persist();
+    // Si es ronda en vivo, iniciar listener
+    if (r.isLive) _startLiveListener(r.id);
+  }
+
+  /// Activa una ronda en vivo (invitado que acepta) sin escribir en Firestore
+  void joinLiveRound(Round r) {
+    _cancelLiveListener();
+    _round = r;
+    _tabIndex = 1;
+    notifyListeners();
+    _startLiveListener(r.id);
+    // Guardar ref local
+    _prefs().then((p) => p.setString('round', jsonEncode(roundToJson(r))));
+  }
+
+  /// Convierte la ronda actual en vivo y la publica
+  Future<Round> publishAsLive() async {
+    if (_round == null) throw Exception('Sin ronda activa');
+    final liveRound = await LiveRoundService.publishRound(_round!);
+    _round = liveRound;
+    notifyListeners();
+    _persist();
+    _startLiveListener(liveRound.id);
+    return liveRound;
+  }
+
+  // ── Listener en tiempo real para rondas en vivo ────────────────────────────
+  void _startLiveListener(String roundId) {
+    _cancelLiveListener();
+    _liveRoundSub = LiveRoundService.liveRoundStream(roundId).listen((remote) {
+      if (remote == null) return;
+      if (_ignoringLiveUpdate) {
+        _ignoringLiveUpdate = false;
+        return;
+      }
+      // Solo actualizar si hay cambio real (evitar rebuilds innecesarios)
+      if (_round == null) return;
+      _round = remote;
+      notifyListeners();
+      // Actualizar caché local también
+      _prefs().then((p) => p.setString('round', jsonEncode(roundToJson(remote))));
+    });
+    if (kDebugMode) debugPrint('[LiveRound] Listener iniciado: $roundId');
+  }
+
+  void _cancelLiveListener() {
+    _liveRoundSub?.cancel();
+    _liveRoundSub = null;
+  }
+
+  @override
+  void dispose() {
+    _cancelLiveListener();
+    super.dispose();
   }
 
   // ── Clave para rondas finalizadas pendientes de sync ───────────────────────
@@ -163,6 +232,7 @@ class RoundProvider extends ChangeNotifier {
   /// Retorna true si se guardó en Firestore, false si quedó pendiente local.
   Future<bool> finishRound() async {
     if (_round == null) return false;
+    _cancelLiveListener();
 
     final finishedRound = _round!.copyWith(isFinished: true);
     bool savedToFirestore = false;
@@ -170,6 +240,10 @@ class RoundProvider extends ChangeNotifier {
     // 1. Intentar guardar en Firestore
     if (AuthService.uid != null) {
       try {
+        // Si era ronda en vivo, finalizar en liveRounds también
+        if (finishedRound.isLive) {
+          await LiveRoundService.finishLiveRound(finishedRound.id);
+        }
         await FirestoreService.saveRound(finishedRound);
         savedToFirestore = true;
       } catch (e) {
@@ -177,7 +251,6 @@ class RoundProvider extends ChangeNotifier {
         await _enqueuePendingFinished(finishedRound);
       }
     } else {
-      // Sin sesión: encolar localmente para cuando el usuario se autentique
       debugPrint('[finishRound] Sin sesión: encolando local');
       await _enqueuePendingFinished(finishedRound);
     }
@@ -261,6 +334,7 @@ class RoundProvider extends ChangeNotifier {
   }
 
   void resetRound() {
+    _cancelLiveListener();
     _round = null;
     _tabIndex = 0;
     notifyListeners();
@@ -342,7 +416,13 @@ class RoundProvider extends ChangeNotifier {
     GolfThemeExt.setCurrent(theme);
     final json = p.getString('round');
     if (json != null) {
-      try { _round = roundFromJson(jsonDecode(json) as Map<String, dynamic>); } catch (_) {}
+      try {
+        _round = roundFromJson(jsonDecode(json) as Map<String, dynamic>);
+        // Si había una ronda en vivo activa, reactivar listener al reabrir app
+        if (_round!.isLive && !_round!.isFinished) {
+          _startLiveListener(_round!.id);
+        }
+      } catch (_) {}
     }
     notifyListeners();
   }
@@ -367,6 +447,10 @@ class RoundProvider extends ChangeNotifier {
         // Actualizar caché local
         final p = await _prefs();
         await p.setString('round', jsonEncode(roundToJson(_round!)));
+        // Si era ronda en vivo, reactivar listener
+        if (_round!.isLive && !_round!.isFinished) {
+          _startLiveListener(_round!.id);
+        }
       }
     } catch (_) {}
   }
@@ -385,9 +469,20 @@ class RoundProvider extends ChangeNotifier {
     }
     // Firestore — fire-and-forget con log de error
     if (AuthService.uid != null) {
-      FirestoreService.saveRound(_round!).catchError((e) {
-        debugPrint('[_persist] Firestore error (ignorado): $e');
-      });
+      if (_round!.isLive) {
+        // Ronda en vivo: escribir en liveRounds (compartida)
+        // Marcar que el próximo evento del stream es nuestro (eco)
+        _ignoringLiveUpdate = true;
+        LiveRoundService.saveRound(_round!).catchError((e) {
+          _ignoringLiveUpdate = false;
+          debugPrint('[_persist] LiveRound error: $e');
+        });
+      } else {
+        // Ronda normal: escribir en users/{uid}/rounds
+        FirestoreService.saveRound(_round!).catchError((e) {
+          debugPrint('[_persist] Firestore error (ignorado): $e');
+        });
+      }
     }
   }
 

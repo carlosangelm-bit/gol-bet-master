@@ -1,19 +1,46 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME SCREEN — Pantalla principal: iniciar ronda, estado de ronda activa
 // ─────────────────────────────────────────────────────────────────────────────
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/live_round_service.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/bet_module_edit_sheet.dart';
 import '../setup/setup_screen.dart';
 import '../templates/templates_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+  @override State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  List<LiveRoundInvitation> _pendingInvitations = [];
+  StreamSubscription<List<LiveRoundInvitation>>? _invSub;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _listenInvitations());
+  }
+
+  void _listenInvitations() {
+    _invSub?.cancel();
+    _invSub = LiveRoundService.pendingInvitationsStream().listen((list) {
+      if (mounted) setState(() => _pendingInvitations = list);
+    });
+  }
+
+  @override
+  void dispose() {
+    _invSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +54,13 @@ class HomeScreen extends StatelessWidget {
         child: Column(
           children: [
             _buildHeader(context, t, prov),
+            // Banner de invitaciones pendientes
+            if (_pendingInvitations.isNotEmpty)
+              _InvitationsBanner(
+                invitations: _pendingInvitations,
+                t: t,
+                onAccepted: () => setState(() {}),
+              ),
             Expanded(
               child: prov.hasRound
                   ? _ActiveRoundView(prov: prov, t: t)
@@ -62,10 +96,215 @@ class HomeScreen extends StatelessWidget {
                 Text(prov.round!.name, style: TextStyle(color: t.sub, fontSize: 12)),
             ]),
           ),
+          // Indicador de ronda en vivo
+          if (prov.isLiveRound) _LiveIndicator(t: t),
+          const SizedBox(width: 8),
           // Theme selector
           _ThemeToggle(t: t),
         ],
       ),
+    );
+  }
+}
+
+// ── Indicador de ronda en vivo ─────────────────────────────────────────────
+class _LiveIndicator extends StatefulWidget {
+  final GolfTheme t;
+  const _LiveIndicator({required this.t});
+  @override State<_LiveIndicator> createState() => _LiveIndicatorState();
+}
+
+class _LiveIndicatorState extends State<_LiveIndicator>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 1))
+      ..repeat(reverse: true);
+    _anim = Tween(begin: 0.4, end: 1.0).animate(_ctrl);
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.red.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.red.withValues(alpha: _anim.value * 0.6)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 6, height: 6,
+            decoration: BoxDecoration(
+              color: Colors.red.withValues(alpha: _anim.value),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text('EN VIVO',
+            style: TextStyle(
+              color: Colors.red.withValues(alpha: _anim.value),
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
+            )),
+        ]),
+      ),
+    );
+  }
+}
+
+// ── Banner de invitaciones pendientes ──────────────────────────────────────
+class _InvitationsBanner extends StatelessWidget {
+  final List<LiveRoundInvitation> invitations;
+  final GolfTheme t;
+  final VoidCallback onAccepted;
+  const _InvitationsBanner({
+    required this.invitations,
+    required this.t,
+    required this.onAccepted,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Column(
+        children: invitations.map((inv) => _InvitationCard(
+          inv: inv, t: t, onAccepted: onAccepted,
+        )).toList(),
+      ),
+    );
+  }
+}
+
+class _InvitationCard extends StatefulWidget {
+  final LiveRoundInvitation inv;
+  final GolfTheme t;
+  final VoidCallback onAccepted;
+  const _InvitationCard({required this.inv, required this.t, required this.onAccepted});
+  @override State<_InvitationCard> createState() => _InvitationCardState();
+}
+
+class _InvitationCardState extends State<_InvitationCard> {
+  bool _loading = false;
+
+  Future<void> _accept() async {
+    setState(() => _loading = true);
+    try {
+      final round = await LiveRoundService.acceptInvitation(widget.inv);
+      if (!mounted) return;
+      if (round != null) {
+        context.read<RoundProvider>().joinLiveRound(round);
+        widget.onAccepted();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('¡Te uniste a la ronda ${round.name}!'),
+          backgroundColor: widget.t.primary,
+        ));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo cargar la ronda. Intenta de nuevo.'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _decline() async {
+    await LiveRoundService.declineInvitation(widget.inv);
+    widget.onAccepted(); // refresca lista
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    final inv = widget.inv;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.primary.withValues(alpha: 0.4), width: 1.5),
+        boxShadow: [BoxShadow(color: t.primary.withValues(alpha: 0.08), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Row(children: [
+        // Ícono
+        Container(
+          width: 42, height: 42,
+          decoration: BoxDecoration(
+            color: t.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(Icons.wifi_tethering_rounded, color: t.primary, size: 22),
+        ),
+        const SizedBox(width: 12),
+        // Info
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(4)),
+              child: Text('EN VIVO', style: TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+            ),
+            const SizedBox(width: 6),
+            Text(inv.liveCode,
+              style: TextStyle(color: t.primary, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
+          ]),
+          const SizedBox(height: 3),
+          Text(inv.roundName,
+            style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 13),
+            overflow: TextOverflow.ellipsis),
+          Text('${inv.ownerName} · ${inv.courseName}',
+            style: TextStyle(color: t.sub, fontSize: 11),
+            overflow: TextOverflow.ellipsis),
+        ])),
+        const SizedBox(width: 8),
+        // Botones
+        if (_loading)
+          SizedBox(width: 22, height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2, color: t.primary))
+        else
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            // Rechazar
+            GestureDetector(
+              onTap: _decline,
+              child: Container(
+                width: 34, height: 34,
+                decoration: BoxDecoration(
+                  color: t.surface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: t.divider),
+                ),
+                child: Icon(Icons.close_rounded, color: t.sub, size: 18),
+              ),
+            ),
+            const SizedBox(width: 6),
+            // Aceptar
+            GestureDetector(
+              onTap: _accept,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: t.primary,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text('Unirse',
+                  style: TextStyle(color: t.onPrimary, fontSize: 12, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+      ]),
     );
   }
 }

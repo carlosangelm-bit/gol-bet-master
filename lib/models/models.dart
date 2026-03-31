@@ -239,21 +239,37 @@ class Player {
   String name;
   double handicapBase;
   int colorIndex;
+  /// UID de Firebase Auth del jugador si tiene cuenta vinculada (null si no tiene)
+  final String? linkedUserId;
 
-  Player({required this.id, required this.name, this.handicapBase = 0, this.colorIndex = 0});
+  Player({
+    required this.id,
+    required this.name,
+    this.handicapBase = 0,
+    this.colorIndex = 0,
+    this.linkedUserId,
+  });
 
-  Player copyWith({String? name, double? handicapBase, int? colorIndex}) => Player(
-    id: id, name: name ?? this.name,
+  bool get hasLinkedAccount => linkedUserId != null && linkedUserId!.isNotEmpty;
+
+  Player copyWith({String? name, double? handicapBase, int? colorIndex, String? linkedUserId}) => Player(
+    id: id,
+    name: name ?? this.name,
     handicapBase: handicapBase ?? this.handicapBase,
     colorIndex: colorIndex ?? this.colorIndex,
+    linkedUserId: linkedUserId ?? this.linkedUserId,
   );
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'handicapBase': handicapBase, 'colorIndex': colorIndex};
+  Map<String, dynamic> toJson() => {
+    'id': id, 'name': name, 'handicapBase': handicapBase, 'colorIndex': colorIndex,
+    if (linkedUserId != null && linkedUserId!.isNotEmpty) 'linkedUserId': linkedUserId,
+  };
   factory Player.fromJson(Map<String, dynamic> j) => Player(
     id: (j['id'] as String?) ?? '',
     name: (j['name'] as String?) ?? 'Jugador',
     handicapBase: (j['handicapBase'] as num?)?.toDouble() ?? 0.0,
     colorIndex: (j['colorIndex'] as int?) ?? 0,
+    linkedUserId: j['linkedUserId'] as String?,
   );
 }
 
@@ -1351,6 +1367,12 @@ class Round {
   final StartingNine startingNine;
   /// Total de hoyos de la ronda: 9 o 18 (por defecto 18).
   final int totalHoles;
+  /// true = ronda en vivo compartida (todos los jugadores ven/editan en tiempo real)
+  final bool isLive;
+  /// UID del usuario que creó/organiza la ronda en vivo
+  final String? ownerUid;
+  /// Código de 6 chars para identificar la ronda (ej: "GOLF42")
+  final String? liveCode;
 
   Round({
     required this.id, required this.name, required this.course,
@@ -1361,6 +1383,9 @@ class Round {
     this.currentHole = 1, this.isFinished = false,
     this.startingNine = StartingNine.front,
     this.totalHoles = 18,
+    this.isLive = false,
+    this.ownerUid,
+    this.liveCode,
   });
 
   HoleScore getScore(String playerId, int hole) =>
@@ -1395,11 +1420,16 @@ class Round {
     Map<int, OyeseRanking>? oyeseRankings,
     List<BetGroup>? betGroups,
     List<RoundPlayer>? roundPlayers,
+    List<Player>? players,
     int? currentHole, bool? isFinished,
     StartingNine? startingNine,
     int? totalHoles,
+    bool? isLive,
+    String? ownerUid,
+    String? liveCode,
   }) => Round(
-    id: id, name: name, course: course, players: players,
+    id: id, name: name, course: course,
+    players: players ?? this.players,
     roundPlayers: roundPlayers ?? this.roundPlayers,
     betGroups: betGroups ?? this.betGroups,
     scores: scores ?? this.scores,
@@ -1410,5 +1440,8 @@ class Round {
     isFinished: isFinished ?? this.isFinished,
     startingNine: startingNine ?? this.startingNine,
     totalHoles: totalHoles ?? this.totalHoles,
+    isLive: isLive ?? this.isLive,
+    ownerUid: ownerUid ?? this.ownerUid,
+    liveCode: liveCode ?? this.liveCode,
   );
 }
