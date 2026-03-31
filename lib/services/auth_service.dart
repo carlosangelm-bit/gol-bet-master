@@ -44,12 +44,10 @@ class AuthService {
     final provider = GoogleAuthProvider()
       ..addScope('email')
       ..addScope('profile')
-      // Client ID necesario para que el popup de Google funcione en Web
       ..setCustomParameters({
         'client_id': DefaultFirebaseOptions.googleWebClientId,
       });
 
-    // signInWithPopup funciona en Flutter Web sin paquetes extra
     final cred = await _auth.signInWithPopup(provider);
     await _upsertProfile(cred.user!);
     return cred;
@@ -71,35 +69,144 @@ class AuthService {
         .update({'displayName': name, 'updatedAt': FieldValue.serverTimestamp()});
   }
 
-  // ── Crear o actualizar perfil en Firestore ─────────────────────────────────
+  // ── Crear o actualizar perfil + Player automático al primer login ──────────
+  //
+  // Flujo:
+  //   1. Si el doc users/{uid} NO existe → usuario nuevo:
+  //      a. Crear doc users/{uid} con los datos del perfil
+  //      b. Crear Player global en players/{newId} con nombre + linkedUserId = uid
+  //      c. Crear PlayerLink en users/{uid}/playerLinks/{playerId}
+  //      d. Actualizar users/{uid}.myPlayerId = playerId
+  //   2. Si el doc ya existe → solo actualizar campos vacíos (no sobreescribir)
   static Future<void> _upsertProfile(User user, {String? name}) async {
     try {
-      final ref  = _db.collection('users').doc(user.uid);
-      final snap = await ref.get();
-      final data = <String, dynamic>{
-        'uid':         user.uid,
-        'email':       user.email ?? '',
-        'displayName': name ?? user.displayName ?? '',
-        'photoUrl':    user.photoURL ?? '',
-        'updatedAt':   FieldValue.serverTimestamp(),
-      };
+      final ref      = _db.collection('users').doc(user.uid);
+      final snap     = await ref.get();
+      final fullName = name ?? user.displayName ?? '';
+
       if (!snap.exists) {
-        data['createdAt'] = FieldValue.serverTimestamp();
-        await ref.set(data);
+        // ── Primer login: crear perfil + Player en una sola transacción ────
+        await _db.runTransaction((tx) async {
+          // 1. Crear Player global
+          final playerRef = _db.collection('players').doc();
+          final now       = DateTime.now().toIso8601String();
+          tx.set(playerRef, {
+            'id':           playerRef.id,
+            'name':         fullName,
+            'handicapBase': 0.0,
+            'colorIndex':   0,
+            'linkedUserId': user.uid,
+            'createdByUserId': user.uid,
+            'isShared':     false,
+            'createdAt':    now,
+            'updatedAt':    now,
+          });
+
+          // 2. Crear PlayerLink en directorio del usuario
+          final linkRef = _db
+              .collection('users').doc(user.uid)
+              .collection('playerLinks').doc(playerRef.id);
+          tx.set(linkRef, {
+            'playerId':                 playerRef.id,
+            'isFavorite':               false,
+            'defaultSlidingAdjustment': 0.0,
+            'sortOrder':                0,
+            'linkedUserId':             user.uid,
+            'createdAt':                now,
+            'updatedAt':                now,
+          });
+
+          // 3. Crear perfil de usuario con myPlayerId ya enlazado
+          tx.set(ref, {
+            'uid':         user.uid,
+            'email':       user.email ?? '',
+            'displayName': fullName,
+            'photoUrl':    user.photoURL ?? '',
+            'myPlayerId':  playerRef.id,
+            'createdAt':   FieldValue.serverTimestamp(),
+            'updatedAt':   FieldValue.serverTimestamp(),
+          });
+        });
+
+        if (kDebugMode) {
+          debugPrint('[AuthService] Nuevo usuario creado con Player automático: ${user.uid}');
+        }
       } else {
-        // Solo actualizar campos vacíos para no sobreescribir cambios del usuario
+        // ── Login subsecuente: actualizar solo campos vacíos ───────────────
         final existing = snap.data()!;
-        final patch = <String, dynamic>{'updatedAt': FieldValue.serverTimestamp()};
-        if ((existing['displayName'] as String? ?? '').isEmpty && data['displayName'] != '') {
-          patch['displayName'] = data['displayName'];
+        final patch    = <String, dynamic>{'updatedAt': FieldValue.serverTimestamp()};
+
+        if ((existing['displayName'] as String? ?? '').isEmpty && fullName.isNotEmpty) {
+          patch['displayName'] = fullName;
         }
-        if ((existing['photoUrl'] as String? ?? '').isEmpty && data['photoUrl'] != '') {
-          patch['photoUrl'] = data['photoUrl'];
+        if ((existing['photoUrl'] as String? ?? '').isEmpty &&
+            (user.photoURL ?? '').isNotEmpty) {
+          patch['photoUrl'] = user.photoURL;
         }
-        await ref.update(patch);
+        // Si por alguna razón no tiene myPlayerId (usuarios legacy), crearlo ahora
+        if ((existing['myPlayerId'] as String?) == null) {
+          await _createMissingPlayer(user, fullName, ref, existing);
+          return; // _createMissingPlayer ya hace el update completo
+        }
+
+        if (patch.length > 1) await ref.update(patch);
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('_upsertProfile error: $e');
+      if (kDebugMode) debugPrint('[AuthService] _upsertProfile error: $e');
+    }
+  }
+
+  // ── Crear Player para usuarios legacy que no tienen myPlayerId ─────────────
+  static Future<void> _createMissingPlayer(
+    User user,
+    String fullName,
+    DocumentReference<Map<String, dynamic>> userRef,
+    Map<String, dynamic> existingData,
+  ) async {
+    try {
+      await _db.runTransaction((tx) async {
+        final playerRef = _db.collection('players').doc();
+        final now       = DateTime.now().toIso8601String();
+        final name      = fullName.isNotEmpty
+            ? fullName
+            : (existingData['displayName'] as String? ?? 'Jugador');
+
+        tx.set(playerRef, {
+          'id':           playerRef.id,
+          'name':         name,
+          'handicapBase': 0.0,
+          'colorIndex':   0,
+          'linkedUserId': user.uid,
+          'createdByUserId': user.uid,
+          'isShared':     false,
+          'createdAt':    now,
+          'updatedAt':    now,
+        });
+
+        final linkRef = _db
+            .collection('users').doc(user.uid)
+            .collection('playerLinks').doc(playerRef.id);
+        tx.set(linkRef, {
+          'playerId':                 playerRef.id,
+          'isFavorite':               false,
+          'defaultSlidingAdjustment': 0.0,
+          'sortOrder':                0,
+          'linkedUserId':             user.uid,
+          'createdAt':                now,
+          'updatedAt':                now,
+        });
+
+        tx.update(userRef, {
+          'myPlayerId': playerRef.id,
+          'updatedAt':  FieldValue.serverTimestamp(),
+        });
+      });
+
+      if (kDebugMode) {
+        debugPrint('[AuthService] Player creado retroactivamente para: ${user.uid}');
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AuthService] _createMissingPlayer error: $e');
     }
   }
 
