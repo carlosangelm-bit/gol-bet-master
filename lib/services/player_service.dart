@@ -11,6 +11,7 @@
 //   - La app siempre trabaja con ambos juntos (PlayerWithLink).
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import '../models/models.dart';
 import 'auth_service.dart';
 
@@ -245,15 +246,13 @@ class PlayerService {
       if (currentLinked == targetUid) return LinkResult.alreadyLinked;
 
       // 3. Verificar que ese uid no esté ya vinculado a otro jugador del directorio
-      //    (evita que dos jugadores del mismo directorio apunten al mismo usuario)
-      final existingLinks = await _links()
-          .where('linkedUserId', isEqualTo: targetUid)
-          .limit(1)
-          .get();
-      if (existingLinks.docs.isNotEmpty &&
-          existingLinks.docs.first.id != playerId) {
-        return LinkResult.alreadyUsed;
-      }
+      //    Filtramos en memoria para evitar requerir un índice compuesto en Firestore.
+      final allLinks = await _links().get();
+      final duplicate = allLinks.docs.any((doc) {
+        final linked = doc.data()['linkedUserId'] as String?;
+        return linked == targetUid && doc.id != playerId;
+      });
+      if (duplicate) return LinkResult.alreadyUsed;
 
       // 4. Actualizar el Player global
       await _players.doc(playerId).update({
@@ -261,20 +260,20 @@ class PlayerService {
         'updatedAt':    DateTime.now().toIso8601String(),
       });
 
-      // 5. Actualizar el PlayerLink del usuario actual
-      await _links().doc(playerId).update({
+      // 5. Actualizar el PlayerLink del usuario actual (set+merge por si no tiene el campo)
+      await _links().doc(playerId).set({
         'linkedUserId': targetUid,
         'updatedAt':    DateTime.now().toIso8601String(),
-      });
+      }, SetOptions(merge: true));
 
-      // 6. Si el usuario objetivo aún no tiene ese jugador en su directorio,
-      //    actualizamos su myPlayerId SOLO si no tiene uno aún.
+      // 6. Si el usuario objetivo aún no tiene myPlayerId, asignarlo.
+      //    Usamos set+merge para que no falle si el documento no tiene ese campo.
       final targetMyPlayerId = targetData['myPlayerId'] as String?;
       if (targetMyPlayerId == null || targetMyPlayerId.isEmpty) {
-        await _db.collection('users').doc(targetUid).update({
+        await _db.collection('users').doc(targetUid).set({
           'myPlayerId': playerId,
           'updatedAt':  FieldValue.serverTimestamp(),
-        });
+        }, SetOptions(merge: true));
         // Crear PlayerLink en el directorio del usuario objetivo
         final now = DateTime.now();
         await _db
@@ -293,6 +292,7 @@ class PlayerService {
 
       return LinkResult.success;
     } catch (e) {
+      if (kDebugMode) debugPrint('[PlayerService.linkPlayerByEmail] Error: $e');
       return LinkResult.error;
     }
   }
