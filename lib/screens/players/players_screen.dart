@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // PLAYERS SCREEN — Directorio de compañeros de golf
 // ─────────────────────────────────────────────────────────────────────────────
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:provider/provider.dart';
@@ -321,17 +322,34 @@ class _PlayerTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final link   = pw.link;
+    final link          = pw.link;
     final hasCustomName = link?.customDisplayName?.isNotEmpty == true;
-    final sliding = link?.defaultSlidingAdjustment ?? 0;
+    final sliding       = link?.defaultSlidingAdjustment ?? 0;
+    final isLinked      = pw.player.linkedUserId != null &&
+                          pw.player.linkedUserId!.isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GCard(
         onTap: onTap,
         child: Row(children: [
-          // Avatar
-          GAvatar(name: pw.displayName, colorIndex: pw.player.colorIndex, size: 40),
+          // Avatar con indicador de vinculación
+          Stack(clipBehavior: Clip.none, children: [
+            GAvatar(name: pw.displayName, colorIndex: pw.player.colorIndex, size: 40),
+            if (isLinked)
+              Positioned(
+                right: -3, bottom: -3,
+                child: Container(
+                  width: 16, height: 16,
+                  decoration: BoxDecoration(
+                    color: t.profit,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: t.card, width: 1.5),
+                  ),
+                  child: const Icon(Icons.link, color: Colors.white, size: 9),
+                ),
+              ),
+          ]),
           const SizedBox(width: 12),
 
           // Datos
@@ -373,6 +391,16 @@ class _PlayerTile extends StatelessWidget {
               ],
               Text('HCP ${pw.player.handicapBase.toStringAsFixed(1)}',
                   style: TextStyle(color: t.sub, fontSize: 11)),
+              if (isLinked) ...[
+                const SizedBox(width: 6),
+                Container(width: 1, height: 10, color: t.divider),
+                const SizedBox(width: 6),
+                Icon(Icons.verified_user_outlined, color: t.profit, size: 11),
+                const SizedBox(width: 2),
+                Text('Cuenta vinculada',
+                    style: TextStyle(color: t.profit, fontSize: 10,
+                        fontWeight: FontWeight.w600)),
+              ],
             ]),
           ])),
 
@@ -460,6 +488,7 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
       text: widget.existing?.link?.customDisplayName ?? '');
   late final _notesCtrl = TextEditingController(
       text: widget.existing?.link?.notes ?? '');
+  late final _emailCtrl = TextEditingController();
 
   // Sliding como int, no como TextEditingController — evita el problema
   // del teclado numérico móvil que no muestra el símbolo '−'.
@@ -467,7 +496,18 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
 
   late bool _isFav    = widget.existing?.isFavorite ?? false;
   late int  _colorIdx = widget.existing?.player.colorIndex ?? 0;
-  bool _saving = false;
+  bool _saving        = false;
+
+  // ── Estado de vinculación ──────────────────────────────────────────────────
+  // linkedUserId actual del jugador (puede ser null)
+  String? _linkedUserId;
+  // Info del usuario vinculado (cargada al abrir el sheet si existe)
+  String? _linkedEmail;
+  String? _linkedName;
+  bool    _loadingLink   = false;
+  bool    _linkingEmail  = false;   // spinner al intentar vincular
+  String? _linkMsg;                 // mensaje resultado
+  bool    _linkSuccess   = false;
 
   // Colores de avatar disponibles
   static const _colors = [
@@ -476,8 +516,29 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _linkedUserId = widget.existing?.player.linkedUserId;
+    if (_linkedUserId != null && _linkedUserId!.isNotEmpty) {
+      _loadLinkedInfo();
+    }
+  }
+
+  Future<void> _loadLinkedInfo() async {
+    setState(() => _loadingLink = true);
+    final info = await PlayerService.getLinkedUserInfo(_linkedUserId!);
+    if (mounted) {
+      setState(() {
+        _linkedEmail  = info?['email'];
+        _linkedName   = info?['displayName'];
+        _loadingLink  = false;
+      });
+    }
+  }
+
+  @override
   void dispose() {
-    for (final c in [_nameCtrl, _hcpCtrl, _aliasCtrl, _notesCtrl]) {
+    for (final c in [_nameCtrl, _hcpCtrl, _aliasCtrl, _notesCtrl, _emailCtrl]) {
       c.dispose();
     }
     super.dispose();
@@ -571,9 +632,6 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
           const SizedBox(height: 12),
 
           // ── Sliding por defecto ─────────────────────────────────────────
-          // Convención (igual que _HandicapMatrix y home_screen):
-          //   positivo = el usuario RECIBE golpes del compañero  (ventaja para ti)
-          //   negativo = el usuario DA golpes al compañero       (ventaja para el compañero)
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('SLIDING POR DEFECTO',
                 style: TextStyle(color: t.sub, fontSize: 10,
@@ -595,13 +653,10 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
             ),
             const SizedBox(height: 8),
             Row(children: [
-              // −5
               _slidingBtn('−5', t.loss, () => setState(() => _slidingVal -= 5), t),
               const SizedBox(width: 4),
-              // −1
               _slidingBtn('−1', t.loss, () => setState(() => _slidingVal -= 1), t),
               const SizedBox(width: 8),
-              // Valor central
               Expanded(
                 child: Container(
                   height: 40,
@@ -632,14 +687,11 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
                 ),
               ),
               const SizedBox(width: 8),
-              // +1
               _slidingBtn('+1', t.profit, () => setState(() => _slidingVal += 1), t),
               const SizedBox(width: 4),
-              // +5
               _slidingBtn('+5', t.profit, () => setState(() => _slidingVal += 5), t),
             ]),
-            // Reset a 0
-            if (_slidingVal != 0) ...[  
+            if (_slidingVal != 0) ...[
               const SizedBox(height: 6),
               GestureDetector(
                 onTap: () => setState(() => _slidingVal = 0),
@@ -657,7 +709,14 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
           // ── Notas ───────────────────────────────────────────────────────
           _Field(label: 'Notas (opcional)', ctrl: _notesCtrl, t: t,
               maxLines: 2),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+
+          // ══════════════════════════════════════════════════════════════
+          // ── Sección: Cuenta vinculada ──────────────────────────────
+          // ══════════════════════════════════════════════════════════════
+          if (!isNew) _buildLinkedAccountSection(t, context),
+
+          const SizedBox(height: 12),
 
           // ── Favorito toggle ─────────────────────────────────────────────
           GestureDetector(
@@ -682,6 +741,297 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
         ],
       )),
     );
+  }
+
+  // ── Widget sección "Cuenta vinculada" ─────────────────────────────────────
+  Widget _buildLinkedAccountSection(GolfTheme t, BuildContext context) {
+    final isLinked = _linkedUserId != null && _linkedUserId!.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isLinked
+            ? t.profit.withValues(alpha: 0.06)
+            : t.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isLinked
+              ? t.profit.withValues(alpha: 0.3)
+              : t.divider,
+        ),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Header de la sección
+        Row(children: [
+          Icon(
+            isLinked ? Icons.link : Icons.link_off,
+            color: isLinked ? t.profit : t.sub,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'CUENTA VINCULADA',
+            style: TextStyle(
+              color: isLinked ? t.profit : t.sub,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ]),
+        const SizedBox(height: 8),
+
+        if (isLinked) ...[
+          // ── Estado: VINCULADO ─────────────────────────────────────────
+          if (_loadingLink)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(children: [
+                SizedBox(
+                  width: 14, height: 14,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: t.profit),
+                ),
+                const SizedBox(width: 8),
+                Text('Cargando info...', style: TextStyle(color: t.sub, fontSize: 12)),
+              ]),
+            )
+          else ...[
+            Row(children: [
+              Icon(Icons.verified_user_outlined, color: t.profit, size: 14),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  if (_linkedName != null && _linkedName!.isNotEmpty)
+                    Text(_linkedName!,
+                        style: TextStyle(color: t.text, fontSize: 13,
+                            fontWeight: FontWeight.w600)),
+                  if (_linkedEmail != null && _linkedEmail!.isNotEmpty)
+                    Text(_linkedEmail!,
+                        style: TextStyle(color: t.sub, fontSize: 11)),
+                ]),
+              ),
+            ]),
+            const SizedBox(height: 10),
+            // Botón desvincular
+            GestureDetector(
+              onTap: () => _confirmUnlink(context, t),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.link_off, color: t.loss, size: 14),
+                const SizedBox(width: 4),
+                Text('Desvincular cuenta',
+                    style: TextStyle(color: t.loss, fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ]),
+            ),
+          ],
+        ] else ...[
+          // ── Estado: SIN VINCULAR ─────────────────────────────────────
+          Text(
+            'Vincula este jugador a su cuenta de la app para que '
+            'reciba invitaciones de rondas en vivo.',
+            style: TextStyle(color: t.sub, fontSize: 12, height: 1.5),
+          ),
+          const SizedBox(height: 10),
+
+          // Campo email + botón
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                style: TextStyle(color: t.text, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'correo@ejemplo.com',
+                  hintStyle: TextStyle(color: t.sub.withValues(alpha: 0.6), fontSize: 12),
+                  prefixIcon: Icon(Icons.email_outlined, color: t.sub, size: 18),
+                  fillColor: t.bg,
+                  filled: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: t.divider)),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: t.divider)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: t.primary, width: 2)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Botón vincular
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: _linkingEmail
+                  ? SizedBox(
+                      key: const ValueKey('loading'),
+                      width: 36, height: 36,
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: t.primary),
+                      ),
+                    )
+                  : GestureDetector(
+                      key: const ValueKey('btn'),
+                      onTap: () => _doLinkByEmail(context, t),
+                      child: Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          color: t.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.person_search,
+                            color: t.onPrimary, size: 20),
+                      ),
+                    ),
+            ),
+          ]),
+
+          // Mensaje de resultado
+          if (_linkMsg != null) ...[
+            const SizedBox(height: 8),
+            Row(children: [
+              Icon(
+                _linkSuccess ? Icons.check_circle_outline : Icons.info_outline,
+                color: _linkSuccess ? t.profit : t.loss,
+                size: 14,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _linkMsg!,
+                  style: TextStyle(
+                    color: _linkSuccess ? t.profit : t.loss,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ]),
+          ],
+        ],
+      ]),
+    );
+  }
+
+  // ── Acción: vincular por email ─────────────────────────────────────────────
+  Future<void> _doLinkByEmail(BuildContext ctx, GolfTheme t) async {
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty) {
+      setState(() {
+        _linkMsg     = 'Ingresa un correo electrónico.';
+        _linkSuccess = false;
+      });
+      return;
+    }
+    if (!email.contains('@')) {
+      setState(() {
+        _linkMsg     = 'El correo no tiene un formato válido.';
+        _linkSuccess = false;
+      });
+      return;
+    }
+
+    final playerId = widget.existing?.player.id;
+    if (playerId == null) return;
+
+    setState(() {
+      _linkingEmail = true;
+      _linkMsg      = null;
+    });
+
+    final result = await PlayerService.linkPlayerByEmail(
+      playerId: playerId,
+      email:    email,
+    );
+
+    if (!mounted) return;
+
+    String msg     = 'Ocurrió un error. Intenta nuevamente.';
+    bool   success = false;
+
+    switch (result) {
+      case LinkResult.success:
+        msg     = '¡Vinculado con éxito! Ya puede recibir invitaciones.';
+        success = true;
+        // Recargar info del usuario vinculado
+        final info = await PlayerService.getLinkedUserInfo(
+          // Buscamos el uid que acabamos de vincular consultando el player
+          (await FirebaseFirestore.instance
+                  .collection('players').doc(playerId).get())
+              .data()?['linkedUserId'] as String? ?? '',
+        );
+        if (mounted) {
+          setState(() {
+            _linkedUserId = info != null ? email : null; // temporal hasta reload
+            _linkedEmail  = info?['email'] ?? email;
+            _linkedName   = info?['displayName'];
+          });
+          // Obtener el UID real
+          final pSnap = await FirebaseFirestore.instance
+              .collection('players').doc(playerId).get();
+          if (mounted) {
+            setState(() {
+              _linkedUserId = pSnap.data()?['linkedUserId'] as String?;
+            });
+          }
+        }
+      case LinkResult.userNotFound:
+        msg = 'No existe ninguna cuenta registrada con ese correo.';
+      case LinkResult.alreadyLinked:
+        msg = 'Este jugador ya está vinculado a esa cuenta.';
+      case LinkResult.alreadyUsed:
+        msg = 'Ese correo ya está vinculado a otro jugador de tu directorio.';
+      case LinkResult.error:
+        msg = 'Ocurrió un error. Intenta nuevamente.';
+    }
+
+    setState(() {
+      _linkMsg      = msg;
+      _linkSuccess  = success;
+      _linkingEmail = false;
+      if (success) _emailCtrl.clear();
+    });
+  }
+
+  // ── Confirmar desvinculación ───────────────────────────────────────────────
+  Future<void> _confirmUnlink(BuildContext ctx, GolfTheme t) async {
+    final confirm = await showDialog<bool>(
+      context: ctx,
+      builder: (d) => AlertDialog(
+        backgroundColor: t.card,
+        title: Text('Desvincular cuenta', style: TextStyle(color: t.text)),
+        content: Text(
+          'Se eliminará la vinculación con ${_linkedName ?? _linkedEmail ?? 'este usuario'}.\n'
+          'El jugador permanecerá en tu directorio.',
+          style: TextStyle(color: t.sub, fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false),
+              child: Text('Cancelar', style: TextStyle(color: t.sub))),
+          TextButton(onPressed: () => Navigator.pop(d, true),
+              child: Text('Desvincular', style: TextStyle(color: t.loss))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    if (!mounted) return;
+
+    final playerId = widget.existing?.player.id;
+    if (playerId == null) return;
+
+    await PlayerService.unlinkPlayer(playerId);
+    if (mounted) {
+      setState(() {
+        _linkedUserId = null;
+        _linkedEmail  = null;
+        _linkedName   = null;
+        _linkMsg      = null;
+      });
+    }
   }
 
   Future<void> _save(BuildContext ctx) async {

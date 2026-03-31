@@ -14,6 +14,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/models.dart';
 import 'auth_service.dart';
 
+/// Resultado de intentar vincular un jugador por email.
+enum LinkResult {
+  success,          // Vinculado correctamente
+  userNotFound,     // No existe ningún usuario con ese email
+  alreadyLinked,    // El jugador ya tiene ese mismo linkedUserId
+  alreadyUsed,      // Ese email ya está vinculado a otro jugador del directorio
+  error,            // Error inesperado
+}
+
 // ── DTO: jugador + su link (puede ser null si no es compañero aún) ────────────
 class PlayerWithLink {
   final Player player;
@@ -196,6 +205,127 @@ class PlayerService {
   static Future<void> removeFromDirectory(String playerId) async {
     if (AuthService.uid == null) return;
     await _links().doc(playerId).delete();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // VINCULACIÓN — Enlazar un Player a la cuenta Firebase de un usuario
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  /// Busca un usuario registrado por email y vincula el Player a su cuenta.
+  ///
+  /// Efectos:
+  ///   - players/{playerId}.linkedUserId = uid encontrado
+  ///   - users/{currentUid}/playerLinks/{playerId}.linkedUserId = uid encontrado
+  ///
+  /// El nombre del Player NO se modifica; el organizador conserva el suyo.
+  static Future<LinkResult> linkPlayerByEmail({
+    required String playerId,
+    required String email,
+  }) async {
+    if (AuthService.uid == null) return LinkResult.error;
+    try {
+      final trimmed = email.trim().toLowerCase();
+
+      // 1. Buscar el uid del usuario por email en la colección 'users'
+      final query = await _db
+          .collection('users')
+          .where('email', isEqualTo: trimmed)
+          .limit(1)
+          .get();
+
+      if (query.docs.isEmpty) return LinkResult.userNotFound;
+
+      final targetUid  = query.docs.first.id;
+      final targetData = query.docs.first.data();
+
+      // 2. Verificar que el Player no esté ya vinculado con ese mismo uid
+      final playerSnap = await _players.doc(playerId).get();
+      if (!playerSnap.exists) return LinkResult.error;
+      final currentLinked = playerSnap.data()?['linkedUserId'] as String?;
+      if (currentLinked == targetUid) return LinkResult.alreadyLinked;
+
+      // 3. Verificar que ese uid no esté ya vinculado a otro jugador del directorio
+      //    (evita que dos jugadores del mismo directorio apunten al mismo usuario)
+      final existingLinks = await _links()
+          .where('linkedUserId', isEqualTo: targetUid)
+          .limit(1)
+          .get();
+      if (existingLinks.docs.isNotEmpty &&
+          existingLinks.docs.first.id != playerId) {
+        return LinkResult.alreadyUsed;
+      }
+
+      // 4. Actualizar el Player global
+      await _players.doc(playerId).update({
+        'linkedUserId': targetUid,
+        'updatedAt':    DateTime.now().toIso8601String(),
+      });
+
+      // 5. Actualizar el PlayerLink del usuario actual
+      await _links().doc(playerId).update({
+        'linkedUserId': targetUid,
+        'updatedAt':    DateTime.now().toIso8601String(),
+      });
+
+      // 6. Si el usuario objetivo aún no tiene ese jugador en su directorio,
+      //    actualizamos su myPlayerId SOLO si no tiene uno aún.
+      final targetMyPlayerId = targetData['myPlayerId'] as String?;
+      if (targetMyPlayerId == null || targetMyPlayerId.isEmpty) {
+        await _db.collection('users').doc(targetUid).update({
+          'myPlayerId': playerId,
+          'updatedAt':  FieldValue.serverTimestamp(),
+        });
+        // Crear PlayerLink en el directorio del usuario objetivo
+        final now = DateTime.now();
+        await _db
+            .collection('users').doc(targetUid)
+            .collection('playerLinks').doc(playerId)
+            .set({
+          'playerId':                 playerId,
+          'isFavorite':               false,
+          'defaultSlidingAdjustment': 0.0,
+          'sortOrder':                0,
+          'linkedUserId':             targetUid,
+          'createdAt':                now.toIso8601String(),
+          'updatedAt':                now.toIso8601String(),
+        }, SetOptions(merge: true));
+      }
+
+      return LinkResult.success;
+    } catch (e) {
+      return LinkResult.error;
+    }
+  }
+
+  /// Elimina la vinculación de un jugador (borra linkedUserId).
+  static Future<void> unlinkPlayer(String playerId) async {
+    if (AuthService.uid == null) return;
+    try {
+      await _players.doc(playerId).update({
+        'linkedUserId': FieldValue.delete(),
+        'updatedAt':    DateTime.now().toIso8601String(),
+      });
+      await _links().doc(playerId).update({
+        'linkedUserId': FieldValue.delete(),
+        'updatedAt':    DateTime.now().toIso8601String(),
+      });
+    } catch (_) {}
+  }
+
+  /// Devuelve el email y displayName del usuario vinculado a un Player.
+  /// Retorna null si no hay vinculación o el usuario no existe.
+  static Future<Map<String, String>?> getLinkedUserInfo(String linkedUserId) async {
+    try {
+      final snap = await _db.collection('users').doc(linkedUserId).get();
+      if (!snap.exists) return null;
+      final d = snap.data()!;
+      return {
+        'email':       d['email']       as String? ?? '',
+        'displayName': d['displayName'] as String? ?? '',
+      };
+    } catch (_) {
+      return null;
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
