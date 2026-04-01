@@ -64,17 +64,25 @@ class PlayerService {
   static Stream<List<PlayerWithLink>> directoryStream() {
     if (AuthService.uid == null) return Stream.value([]);
 
+    // NOTA: no usamos orderBy('sortOrder') en la query para evitar requerir
+    // un índice de Firestore en producción web. Ordenamos en memoria.
     return _links()
-        .orderBy('sortOrder')
         .snapshots()
         .asyncMap((snap) async {
       if (snap.docs.isEmpty) return <PlayerWithLink>[];
 
       // Leer todos los Player globales referenciados de una vez (batch)
       final ids = snap.docs.map((d) => d.id).toList();
-      final playerDocs = await Future.wait(
-        ids.map((id) => _players.doc(id).get()),
-      );
+      List<DocumentSnapshot<Map<String, dynamic>>> playerDocs;
+      try {
+        playerDocs = await Future.wait(
+          ids.map((id) => _players.doc(id).get()),
+        );
+      } catch (e) {
+        if (kDebugMode) debugPrint('directoryStream: error al leer players: $e');
+        // Devolver lista vacía en lugar de propagar el error
+        return <PlayerWithLink>[];
+      }
 
       final results = <PlayerWithLink>[];
       for (int i = 0; i < snap.docs.length; i++) {
@@ -102,6 +110,9 @@ class PlayerService {
         final link = PlayerLink.fromFirestore(linkData, linkDoc.id);
         results.add(PlayerWithLink(player: player, link: link));
       }
+
+      // Ordenar por sortOrder en memoria (evita necesitar índice en Firestore)
+      results.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
       return results;
     });
   }
@@ -110,7 +121,8 @@ class PlayerService {
   static Future<List<PlayerWithLink>> getDirectory() async {
     if (AuthService.uid == null) return [];
     try {
-      final snap = await _links().orderBy('sortOrder').get();
+      // Sin orderBy para no requerir índice; ordenamos en memoria al final.
+      final snap = await _links().get();
       if (snap.docs.isEmpty) return [];
 
       final ids = snap.docs.map((d) => d.id).toList();
@@ -141,6 +153,8 @@ class PlayerService {
           link:   PlayerLink.fromFirestore(linkData, snap.docs[i].id),
         ));
       }
+      // Ordenar en memoria por sortOrder
+      results.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
       return results;
     } catch (_) {
       return [];
