@@ -219,11 +219,11 @@ class PlayerService {
   ///   - users/{currentUid}/playerLinks/{playerId}.linkedUserId = uid encontrado
   ///
   /// El nombre del Player NO se modifica; el organizador conserva el suyo.
-  static Future<LinkResult> linkPlayerByEmail({
+  static Future<(LinkResult, String?)> linkPlayerByEmail({
     required String playerId,
     required String email,
   }) async {
-    if (AuthService.uid == null) return LinkResult.error;
+    if (AuthService.uid == null) return (LinkResult.error, 'No autenticado');
     try {
       final trimmed = email.trim().toLowerCase();
 
@@ -234,16 +234,16 @@ class PlayerService {
           .limit(1)
           .get();
 
-      if (query.docs.isEmpty) return LinkResult.userNotFound;
+      if (query.docs.isEmpty) return (LinkResult.userNotFound, null);
 
       final targetUid  = query.docs.first.id;
       final targetData = query.docs.first.data();
 
       // 2. Verificar que el Player no esté ya vinculado con ese mismo uid
       final playerSnap = await _players.doc(playerId).get();
-      if (!playerSnap.exists) return LinkResult.error;
+      if (!playerSnap.exists) return (LinkResult.error, 'Jugador no encontrado');
       final currentLinked = playerSnap.data()?['linkedUserId'] as String?;
-      if (currentLinked == targetUid) return LinkResult.alreadyLinked;
+      if (currentLinked == targetUid) return (LinkResult.alreadyLinked, null);
 
       // 3. Verificar que ese uid no esté ya vinculado a otro jugador del directorio
       //    Filtramos en memoria para evitar requerir un índice compuesto en Firestore.
@@ -252,7 +252,7 @@ class PlayerService {
         final linked = doc.data()['linkedUserId'] as String?;
         return linked == targetUid && doc.id != playerId;
       });
-      if (duplicate) return LinkResult.alreadyUsed;
+      if (duplicate) return (LinkResult.alreadyUsed, null);
 
       // 4. Actualizar el Player global
       await _players.doc(playerId).update({
@@ -290,10 +290,18 @@ class PlayerService {
         }, SetOptions(merge: true));
       }
 
-      return LinkResult.success;
+      return (LinkResult.success, null);
     } catch (e) {
-      if (kDebugMode) debugPrint('[PlayerService.linkPlayerByEmail] Error: $e');
-      return LinkResult.error;
+      final msg = e.toString();
+      if (kDebugMode) debugPrint('[PlayerService.linkPlayerByEmail] Error: $msg');
+      // Detectar errores de permisos de Firestore
+      if (msg.contains('permission-denied') || msg.contains('PERMISSION_DENIED')) {
+        return (LinkResult.error, 'Sin permisos. Verifica las reglas de Firestore.');
+      }
+      if (msg.contains('unavailable') || msg.contains('network')) {
+        return (LinkResult.error, 'Sin conexión. Revisa tu internet.');
+      }
+      return (LinkResult.error, msg.length > 120 ? '${msg.substring(0,120)}...' : msg);
     }
   }
 

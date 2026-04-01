@@ -943,41 +943,31 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
       _linkMsg      = null;
     });
 
-    final result = await PlayerService.linkPlayerByEmail(
+    final (result, errorDetail) = await PlayerService.linkPlayerByEmail(
       playerId: playerId,
       email:    email,
     );
 
     if (!mounted) return;
 
-    String msg     = 'Ocurrió un error. Intenta nuevamente.';
+    String msg     = errorDetail ?? 'Ocurrió un error. Intenta nuevamente.';
     bool   success = false;
 
     switch (result) {
       case LinkResult.success:
         msg     = '¡Vinculado con éxito! Ya puede recibir invitaciones.';
         success = true;
-        // Recargar info del usuario vinculado
-        final info = await PlayerService.getLinkedUserInfo(
-          // Buscamos el uid que acabamos de vincular consultando el player
-          (await FirebaseFirestore.instance
-                  .collection('players').doc(playerId).get())
-              .data()?['linkedUserId'] as String? ?? '',
-        );
-        if (mounted) {
+        // Recargar el UID vinculado leyendo el player actualizado
+        final pSnap = await FirebaseFirestore.instance
+            .collection('players').doc(playerId).get();
+        final newLinkedUid = pSnap.data()?['linkedUserId'] as String?;
+        if (mounted && newLinkedUid != null) {
+          final info = await PlayerService.getLinkedUserInfo(newLinkedUid);
           setState(() {
-            _linkedUserId = info != null ? email : null; // temporal hasta reload
+            _linkedUserId = newLinkedUid;
             _linkedEmail  = info?['email'] ?? email;
             _linkedName   = info?['displayName'];
           });
-          // Obtener el UID real
-          final pSnap = await FirebaseFirestore.instance
-              .collection('players').doc(playerId).get();
-          if (mounted) {
-            setState(() {
-              _linkedUserId = pSnap.data()?['linkedUserId'] as String?;
-            });
-          }
         }
       case LinkResult.userNotFound:
         msg = 'No existe ninguna cuenta registrada con ese correo.';
@@ -986,7 +976,8 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
       case LinkResult.alreadyUsed:
         msg = 'Ese correo ya está vinculado a otro jugador de tu directorio.';
       case LinkResult.error:
-        msg = 'Ocurrió un error. Intenta nuevamente.';
+        // msg ya viene de errorDetail o el default
+        break;
     }
 
     setState(() {
