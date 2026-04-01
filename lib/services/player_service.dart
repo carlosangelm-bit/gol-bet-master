@@ -11,6 +11,7 @@
 //   - La app siempre trabaja con ambos juntos (PlayerWithLink).
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import '../models/models.dart';
 import 'auth_service.dart';
@@ -62,11 +63,25 @@ class PlayerService {
   /// ya que el cambio se escribe en el playerLink (que es lo que escucha
   /// este stream) además del player global.
   static Stream<List<PlayerWithLink>> directoryStream() {
-    if (AuthService.uid == null) return Stream.value([]);
+    // Si el uid todavía no está listo, esperar al primer cambio de authState
+    // en lugar de devolver un stream vacío que nunca se actualiza.
+    final uid = AuthService.uid;
+    if (uid == null) {
+      if (kDebugMode) debugPrint('directoryStream: uid null, esperando authState...');
+      return FirebaseAuth.instance.authStateChanges()
+          .where((u) => u != null)
+          .take(1)
+          .asyncExpand((_) => directoryStream());
+    }
 
-    // NOTA: no usamos orderBy('sortOrder') en la query para evitar requerir
-    // un índice de Firestore en producción web. Ordenamos en memoria.
-    return _links()
+    // Capturar el uid una sola vez y usarlo directamente (evita race conditions).
+    // No usamos orderBy('sortOrder') para no requerir índice en Firestore web.
+    final linksCol = _db
+        .collection('users')
+        .doc(uid)
+        .collection('playerLinks');
+
+    return linksCol
         .snapshots()
         .asyncMap((snap) async {
       if (snap.docs.isEmpty) return <PlayerWithLink>[];
