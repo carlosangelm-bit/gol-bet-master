@@ -55,6 +55,12 @@ class PlayerService {
 
   /// Stream en tiempo real del directorio completo del usuario.
   /// Combina playerLinks con sus Player globales.
+  ///
+  /// IMPORTANTE: linkedUserId se toma del playerLink cuando está disponible,
+  /// y como fallback del player global. Esto garantiza que el stream se
+  /// reactiva inmediatamente cuando se vincula un compañero por email,
+  /// ya que el cambio se escribe en el playerLink (que es lo que escucha
+  /// este stream) además del player global.
   static Stream<List<PlayerWithLink>> directoryStream() {
     if (AuthService.uid == null) return Stream.value([]);
 
@@ -76,8 +82,24 @@ class PlayerService {
         final playerDoc = playerDocs[i];
         if (!playerDoc.exists) continue;
 
-        final player = _playerFromDoc(playerDoc);
-        final link   = PlayerLink.fromFirestore(linkDoc.data(), linkDoc.id);
+        // Leer linkedUserId: primero del playerLink (se actualiza junto con
+        // la vinculación y dispara el stream), luego del player global.
+        final linkData          = linkDoc.data();
+        final linkedFromLink    = linkData['linkedUserId'] as String?;
+        final linkedFromPlayer  = playerDoc.data()?['linkedUserId'] as String?;
+        final resolvedLinkedUid = (linkedFromLink != null && linkedFromLink.isNotEmpty)
+            ? linkedFromLink
+            : linkedFromPlayer;
+
+        var player = _playerFromDoc(playerDoc);
+        // Si el player global aún no tiene linkedUserId pero el link sí,
+        // usamos el del link para que la UI lo muestre inmediatamente.
+        if (resolvedLinkedUid != null &&
+            (player.linkedUserId == null || player.linkedUserId!.isEmpty)) {
+          player = player.copyWith(linkedUserId: resolvedLinkedUid);
+        }
+
+        final link = PlayerLink.fromFirestore(linkData, linkDoc.id);
         results.add(PlayerWithLink(player: player, link: link));
       }
       return results;
