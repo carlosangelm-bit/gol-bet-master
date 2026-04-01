@@ -35,22 +35,8 @@ class PlayerProvider extends ChangeNotifier {
       },
       onError: (e) {
         if (kDebugMode) debugPrint('PlayerProvider stream error: $e');
-        final errStr = e.toString();
-        // Detectar bloqueador de anuncios / sin red
-        if (errStr.contains('unavailable') ||
-            errStr.contains('UNAVAILABLE') ||
-            errStr.contains('Failed to fetch') ||
-            errStr.contains('network') ||
-            errStr.contains('INTERNAL') ||
-            errStr.contains('XMLHttpRequest')) {
-          _error = 'unavailable: Firestore bloqueado o sin red. '
-              'Desactiva el bloqueador de anuncios o usa modo incógnito.';
-        } else if (errStr.contains('permission-denied') ||
-            errStr.contains('PERMISSION_DENIED')) {
-          _error = 'permission-denied: Sin permisos para acceder al directorio.';
-        } else {
-          _error = errStr;
-        }
+        // Guardar el error real completo para diagnóstico en pantalla
+        _error = e.toString();
         _loading = false;
         notifyListeners();
       },

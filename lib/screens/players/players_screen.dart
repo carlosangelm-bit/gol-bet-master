@@ -145,6 +145,20 @@ class _PlayersScreenState extends State<PlayersScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(color: t.sub, fontSize: 13, height: 1.5),
             ),
+            // Error técnico visible para diagnóstico
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: t.divider.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(
+                errStr,
+                textAlign: TextAlign.left,
+                style: TextStyle(color: t.sub, fontSize: 10, fontFamily: 'monospace'),
+              ),
+            ),
             const SizedBox(height: 24),
             GPrimaryButton(
               label: 'Reintentar',

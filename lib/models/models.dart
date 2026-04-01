@@ -5,6 +5,21 @@
 //            BetGroup, LedgerEntry, SlidingRelation
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Helper: parsear fecha desde String ISO o Timestamp de Firestore ───────────
+// Firestore puede devolver Timestamp (que tiene .toDate()) o String ISO.
+// Este helper maneja ambos casos sin necesitar importar cloud_firestore.
+DateTime _parseDate(dynamic value) {
+  if (value == null) return DateTime.now();
+  if (value is DateTime) return value;
+  if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+  // Firestore Timestamp: tiene método toDate()
+  try {
+    final dt = (value as dynamic).toDate();
+    if (dt is DateTime) return dt;
+  } catch (_) {}
+  return DateTime.now();
+}
+
 // ── Enums ─────────────────────────────────────────────────────────────────────
 enum BetModuleType { skins, nassau, matchAutoPress, medal, putts, oyeses, units }
 enum UnitEventType { birdie, eagle, sandyPar, parUnico, birdieUnico, holeOut }
@@ -1319,12 +1334,8 @@ class PlayerLink {
     defaultHandicapOverride:  (d['defaultHandicapOverride'] as num?)?.toDouble(),
     notes:                    d['notes'] as String?,
     sortOrder:                (d['sortOrder'] as int?) ?? 0,
-    createdAt: d['createdAt'] != null
-        ? DateTime.tryParse(d['createdAt'] as String) ?? DateTime.now()
-        : DateTime.now(),
-    updatedAt: d['updatedAt'] != null
-        ? DateTime.tryParse(d['updatedAt'] as String) ?? DateTime.now()
-        : DateTime.now(),
+    createdAt: _parseDate(d['createdAt']),
+    updatedAt: _parseDate(d['updatedAt']),
   );
 
   /// Nombre a mostrar: usa customDisplayName si está, sino el del Player global.
