@@ -176,32 +176,41 @@ class _ScorecardGrid extends StatelessWidget {
         final double colHole = (holesSpace / 9).clamp(22.0, 36.0);
         final double tableW  = colName + 9 * colHole + colSub;
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(12),
-          child: SizedBox(
-            width: tableW,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── Cabecera ───────────────────────────────────────────────
-                _header(tableW, cCard, cPrim, cText, cSub),
-                const SizedBox(height: 2),
-                // ── Front 9 ────────────────────────────────────────────────
-                _segment(players, 1, 9, colName, colHole, colSub, tableW,
-                    cCard, cSurface, cText, cSub, cDiv, cPrim, cUnder, cOver,
-                    cRowA, cRowB, 'F9'),
-                const SizedBox(height: 2),
-                // ── Back 9 ────────────────────────────────────────────────
-                _segment(players, 10, 18, colName, colHole, colSub, tableW,
-                    cCard, cSurface, cText, cSub, cDiv, cPrim, cUnder, cOver,
-                    cRowA, cRowB, 'B9'),
-                const SizedBox(height: 2),
-                // ── Fila TOTAL ─────────────────────────────────────────────
-                _totalRow(players, tableW, colName,
-                    cCard, cPrim, cText, cSub, cDiv, cUnder, cOver),
-              ],
+        return Column(
+          children: [
+            // ── Tabla de hoyos con scroll horizontal si es necesario ──────
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: tableW,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ── Cabecera ─────────────────────────────────────
+                        _header(tableW, cCard, cPrim, cText, cSub),
+                        const SizedBox(height: 2),
+                        // ── Front 9 ──────────────────────────────────────
+                        _segment(players, 1, 9, colName, colHole, colSub, tableW,
+                            cCard, cSurface, cText, cSub, cDiv, cPrim, cUnder, cOver,
+                            cRowA, cRowB, 'F9'),
+                        const SizedBox(height: 2),
+                        // ── Back 9 ───────────────────────────────────────
+                        _segment(players, 10, 18, colName, colHole, colSub, tableW,
+                            cCard, cSurface, cText, cSub, cDiv, cPrim, cUnder, cOver,
+                            cRowA, cRowB, 'B9'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
+            // ── PANEL RESULTADOS — siempre visible, sin scroll horizontal ─
+            _resultsPanel(players, constraints.maxWidth,
+                cCard, cPrim, cText, cSub, cDiv, cUnder, cOver),
+          ],
         );
       },
     );
@@ -513,124 +522,223 @@ class _ScorecardGrid extends StatelessWidget {
     );
   }
 
-  // ── Fila TOTAL ──────────────────────────────────────────────────────────────
-  Widget _totalRow(
-    List<Player> players, double tableW, double colName,
+  // ── Panel de resultados — fijo al fondo, ancho completo, sin scroll ─────────
+  Widget _resultsPanel(
+    List<Player> players, double panelW,
     Color cCard, Color cPrim, Color cText, Color cSub,
     Color cDiv, Color cUnder, Color cOver,
   ) {
+    final parT = round.course.totalPar;
+
+    // Calcular datos por jugador
+    final playerData = players.map((p) {
+      final total = useNet
+          ? GameEngine.netTotal(round, p.id, true)
+          : GameEngine.grossTotal(round, p.id);
+      final hasAny = round.course.holes
+          .any((h) => round.getScore(p.id, h.hole).hasScore);
+      final totalPutts = round.course.holes.fold(0, (sum, h) {
+        final sc = round.getScore(p.id, h.hole);
+        return sum + (sc.hasScore ? sc.putts : 0);
+      });
+      final playedHoles = round.course.holes
+          .where((h) => round.getScore(p.id, h.hole).hasScore)
+          .length;
+      final f9total = useNet
+          ? GameEngine.netTotal(round, p.id, true, from: 1, to: 9)
+          : GameEngine.grossTotal(round, p.id, from: 1, to: 9);
+      final b9total = useNet
+          ? GameEngine.netTotal(round, p.id, true, from: 10, to: 18)
+          : GameEngine.grossTotal(round, p.id, from: 10, to: 18);
+      return (
+        player: p,
+        total: total,
+        hasAny: hasAny,
+        totalPutts: totalPutts,
+        playedHoles: playedHoles,
+        f9: f9total,
+        b9: b9total,
+      );
+    }).toList();
+
     return Container(
-      width: tableW,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      width: panelW,
       decoration: BoxDecoration(
         color: cCard,
-        border: Border.all(color: cDiv, width: 0.5),
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
+        border: Border(top: BorderSide(color: cDiv, width: 1)),
       ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          margin: const EdgeInsets.only(right: 12),
-          decoration: BoxDecoration(
-            color: cPrim,
-            borderRadius: BorderRadius.circular(5),
-          ),
-          child: Text('TOTAL',
-              style: TextStyle(
-                  color: t.onPrimary,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.2)),
-        ),
-        Expanded(
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: players.map((p) {
-              final total = useNet
-                  ? GameEngine.netTotal(round, p.id, true)
-                  : GameEngine.grossTotal(round, p.id);
-              final parT  = round.course.totalPar;
-              final hasAny = round.course.holes
-                  .any((h) => round.getScore(p.id, h.hole).hasScore);
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Etiqueta ──────────────────────────────────────────────────────
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: cPrim,
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text(
+                useNet ? 'RESULTADO NETO' : 'RESULTADO BRUTO',
+                style: TextStyle(
+                    color: t.onPrimary,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text('Par $parT',
+                style: TextStyle(color: cSub, fontSize: 11,
+                    fontWeight: FontWeight.w600)),
+          ]),
+          const SizedBox(height: 10),
+          // ── Tarjetas de jugadores ─────────────────────────────────────────
+          Row(
+            children: playerData.asMap().entries.map((e) {
+              final d = e.value;
+              final isLast = e.key == playerData.length - 1;
 
-              // Total de putts de toda la ronda
-              final totalPutts = round.course.holes.fold(0, (sum, h) {
-                final sc = round.getScore(p.id, h.hole);
-                return sum + (sc.hasScore ? sc.putts : 0);
-              });
-              final playedHoles = round.course.holes
-                  .where((h) => round.getScore(p.id, h.hole).hasScore)
-                  .length;
-
-              if (!hasAny || total == 0) {
-                return Row(mainAxisSize: MainAxisSize.min, children: [
-                  GAvatar(name: p.name, colorIndex: p.colorIndex, size: 20),
-                  const SizedBox(width: 4),
-                  Text('—', style: TextStyle(color: cSub, fontSize: 14)),
-                ]);
+              if (!d.hasAny || d.total == 0) {
+                return Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(right: isLast ? 0 : 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: cSub.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: cDiv),
+                      ),
+                      child: Row(children: [
+                        GAvatar(name: d.player.name,
+                            colorIndex: d.player.colorIndex, size: 28),
+                        const SizedBox(width: 8),
+                        Text('—', style: TextStyle(color: cSub, fontSize: 20,
+                            fontWeight: FontWeight.w900)),
+                      ]),
+                    ),
+                  ),
+                );
               }
 
-              final diff = total - parT;
+              final diff = d.total - parT;
               final dc = diff < 0 ? cUnder : diff > 0 ? cOver : cSub;
+              final diffLabel = diff > 0 ? '+$diff' : diff == 0 ? 'E' : '$diff';
 
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                decoration: BoxDecoration(
-                  color: cPrim.withValues(alpha: 0.07),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: dc.withValues(alpha: 0.4), width: 1),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  GAvatar(name: p.name, colorIndex: p.colorIndex, size: 20),
-                  const SizedBox(width: 6),
-                  Column(mainAxisSize: MainAxisSize.min,
+              // Color putts
+              final puttColor = d.totalPutts == 0
+                  ? cSub
+                  : d.totalPutts <= d.playedHoles
+                      ? cUnder
+                      : d.totalPutts >= d.playedHoles * 2
+                          ? cOver
+                          : cSub;
+
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: isLast ? 0 : 8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: dc.withValues(alpha: 0.07),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: dc.withValues(alpha: 0.35), width: 1.5),
+                    ),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                    Row(mainAxisSize: MainAxisSize.min, children: [
-                      Text('$total',
-                          style: TextStyle(
-                              color: cText,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 15)),
-                      const SizedBox(width: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: dc.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(3),
+                        // ── Nombre + avatar ──────────────────────────────
+                        Row(children: [
+                          GAvatar(name: d.player.name,
+                              colorIndex: d.player.colorIndex, size: 24),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              d.player.name.split(' ').first,
+                              style: TextStyle(
+                                  color: cText,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ]),
+                        const SizedBox(height: 8),
+                        // ── Total golpes + vs par ────────────────────────
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text('${d.total}',
+                                style: TextStyle(
+                                    color: cText,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.0)),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: dc.withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Text(diffLabel,
+                                  style: TextStyle(
+                                      color: dc,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w900)),
+                            ),
+                          ],
                         ),
-                        child: Text(
-                          diff > 0 ? '+$diff' : diff == 0 ? 'E' : '$diff',
-                          style: TextStyle(
-                              color: dc,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900),
-                        ),
-                      ),
-                    ]),
-                    // Putts totales
-                    if (totalPutts > 0)
-                      Text(
-                        '$totalPutts putts',
-                        style: TextStyle(
-                          color: totalPutts <= playedHoles
-                              ? cUnder
-                              : totalPutts >= playedHoles * 2
-                                  ? cOver
-                                  : cSub,
-                          fontSize: 8,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                  ]),
-                ]),
+                        const SizedBox(height: 6),
+                        // ── F9 / B9 ──────────────────────────────────────
+                        Row(children: [
+                          _miniChip('F9', d.f9, cSub, cDiv),
+                          const SizedBox(width: 4),
+                          _miniChip('B9', d.b9, cSub, cDiv),
+                        ]),
+                        // ── Putts totales ─────────────────────────────────
+                        if (d.totalPutts > 0) ...[
+                          const SizedBox(height: 6),
+                          Row(children: [
+                            Icon(Icons.sports_golf_rounded,
+                                color: puttColor, size: 11),
+                            const SizedBox(width: 3),
+                            Text('${d.totalPutts} putts',
+                                style: TextStyle(
+                                    color: puttColor,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700)),
+                          ]),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
               );
             }).toList(),
           ),
-        ),
-      ]),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniChip(String label, int val, Color cSub, Color cDiv) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: cSub.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: cDiv),
+      ),
+      child: Text('$label $val',
+          style: TextStyle(
+              color: cSub, fontSize: 9, fontWeight: FontWeight.w700)),
     );
   }
 }
