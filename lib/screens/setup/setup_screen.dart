@@ -657,13 +657,19 @@ class _SetupScreenState extends State<SetupScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           decoration: BoxDecoration(
             color: inRound
-                ? t.primary.withValues(alpha: 0.08)
+                ? t.primary.withValues(alpha: 0.10)
                 : (!canAdd && !inRound)
                     ? t.surface.withValues(alpha: 0.5)
-                    : t.card,
+                    : pw.player.hasLinkedAccount
+                        ? t.primary.withValues(alpha: 0.04)
+                        : t.card,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: inRound ? t.primary : t.divider,
+              color: inRound
+                  ? t.primary
+                  : pw.player.hasLinkedAccount && !(!canAdd && !inRound)
+                      ? t.primary.withValues(alpha: 0.3)
+                      : t.divider,
               width: inRound ? 1.5 : 1,
             ),
           ),
@@ -685,12 +691,28 @@ class _SetupScreenState extends State<SetupScreen> {
                   Icon(Icons.star_rounded, color: Colors.amber, size: 14),
                 ],
               ]),
-              Text(
-                'HCP ${pw.player.handicapBase.toStringAsFixed(1)}'
-                '${pw.link?.defaultSlidingAdjustment != 0 && pw.link != null ? "  ·  slide ${pw.link!.defaultSlidingAdjustment > 0 ? "+" : ""}${pw.link!.defaultSlidingAdjustment.toStringAsFixed(0)}" : ""}'
-                '${pw.player.hasLinkedAccount ? "  ·  📲 cuenta" : ""}',
-                style: TextStyle(color: t.sub, fontSize: 11),
-              ),
+              Row(children: [
+                Text(
+                  'HCP ${pw.player.handicapBase.toStringAsFixed(1)}'
+                  '${pw.link?.defaultSlidingAdjustment != 0 && pw.link != null ? "  ·  slide ${pw.link!.defaultSlidingAdjustment > 0 ? "+" : ""}${pw.link!.defaultSlidingAdjustment.toStringAsFixed(0)}" : ""}',
+                  style: TextStyle(color: t.sub, fontSize: 11),
+                ),
+                if (pw.player.hasLinkedAccount) ...[
+                  const SizedBox(width: 5),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: t.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.smartphone_rounded, color: t.primary, size: 9),
+                      const SizedBox(width: 2),
+                      Text('App', style: TextStyle(color: t.primary, fontSize: 9, fontWeight: FontWeight.w800)),
+                    ]),
+                  ),
+                ],
+              ]),
             ])),
             // Indicador de estado
             if (inRound)
@@ -710,24 +732,32 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
                 child: Icon(Icons.add, color: t.sub, size: 14),
               ),
-            // Botón vincular cuenta (si no tiene linkedUserId)
+            // Indicador de vinculación
             if (!pw.player.hasLinkedAccount) ...[
               const SizedBox(width: 6),
               GestureDetector(
                 onTap: () => _showLinkAccountDialog(pw.player, t),
                 child: Container(
-                  width: 24, height: 24,
+                  width: 28, height: 28,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: t.surface,
                     border: Border.all(color: t.divider),
                   ),
-                  child: Icon(Icons.link_rounded, color: t.sub, size: 13),
+                  child: Icon(Icons.link_rounded, color: t.sub, size: 15),
                 ),
               ),
             ] else ...[
               const SizedBox(width: 6),
-              Icon(Icons.verified_user_rounded, color: t.primary, size: 16),
+              Container(
+                width: 28, height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: t.primary.withValues(alpha: 0.12),
+                  border: Border.all(color: t.primary.withValues(alpha: 0.5), width: 1.5),
+                ),
+                child: Icon(Icons.smartphone_rounded, color: t.primary, size: 15),
+              ),
             ],
           ]),
         ),

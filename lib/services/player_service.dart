@@ -119,9 +119,26 @@ class PlayerService {
       final results = <PlayerWithLink>[];
       for (int i = 0; i < snap.docs.length; i++) {
         if (!playerDocs[i].exists) continue;
+
+        // Aplicar la misma lógica de resolución que directoryStream():
+        // leer linkedUserId del playerLink primero (ya que es lo que se actualiza
+        // al vincular por email), y caer al player global si no está en el link.
+        final linkData         = snap.docs[i].data();
+        final linkedFromLink   = linkData['linkedUserId'] as String?;
+        final linkedFromPlayer = playerDocs[i].data()?['linkedUserId'] as String?;
+        final resolvedLinked   = (linkedFromLink != null && linkedFromLink.isNotEmpty)
+            ? linkedFromLink
+            : linkedFromPlayer;
+
+        var player = _playerFromDoc(playerDocs[i]);
+        if (resolvedLinked != null && resolvedLinked.isNotEmpty &&
+            (player.linkedUserId == null || player.linkedUserId!.isEmpty)) {
+          player = player.copyWith(linkedUserId: resolvedLinked);
+        }
+
         results.add(PlayerWithLink(
-          player: _playerFromDoc(playerDocs[i]),
-          link:   PlayerLink.fromFirestore(snap.docs[i].data(), snap.docs[i].id),
+          player: player,
+          link:   PlayerLink.fromFirestore(linkData, snap.docs[i].id),
         ));
       }
       return results;

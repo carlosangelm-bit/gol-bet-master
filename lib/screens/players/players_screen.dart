@@ -330,97 +330,128 @@ class _PlayerTile extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: GCard(
+      child: GestureDetector(
         onTap: onTap,
-        child: Row(children: [
-          // Avatar con indicador de vinculación
-          Stack(clipBehavior: Clip.none, children: [
-            GAvatar(name: pw.displayName, colorIndex: pw.player.colorIndex, size: 40),
-            if (isLinked)
-              Positioned(
-                right: -3, bottom: -3,
-                child: Container(
-                  width: 16, height: 16,
-                  decoration: BoxDecoration(
-                    color: t.profit,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: t.card, width: 1.5),
-                  ),
-                  child: const Icon(Icons.link, color: Colors.white, size: 9),
-                ),
-              ),
-          ]),
-          const SizedBox(width: 12),
-
-          // Datos
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(
-                child: Text(pw.displayName,
-                    style: TextStyle(color: t.text,
-                        fontWeight: FontWeight.w700, fontSize: 14)),
-              ),
-              // Chip sliding
-              if (sliding != 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: sliding > 0
-                        ? t.profit.withValues(alpha: 0.12)
-                        : t.loss.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '${sliding > 0 ? '+' : ''}${sliding.toStringAsFixed(0)} slide',
-                    style: TextStyle(
-                      color: sliding > 0 ? t.profit : t.loss,
-                      fontSize: 10, fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-            ]),
-            const SizedBox(height: 2),
-            Row(children: [
-              // Nombre real (si hay custom)
-              if (hasCustomName) ...[
-                Text(pw.player.name,
-                    style: TextStyle(color: t.sub, fontSize: 11)),
-                const SizedBox(width: 6),
-                Container(width: 1, height: 10, color: t.divider),
-                const SizedBox(width: 6),
-              ],
-              Text('HCP ${pw.player.handicapBase.toStringAsFixed(1)}',
-                  style: TextStyle(color: t.sub, fontSize: 11)),
-              if (isLinked) ...[
-                const SizedBox(width: 6),
-                Container(width: 1, height: 10, color: t.divider),
-                const SizedBox(width: 6),
-                Icon(Icons.verified_user_outlined, color: t.profit, size: 11),
-                const SizedBox(width: 2),
-                Text('Cuenta vinculada',
-                    style: TextStyle(color: t.profit, fontSize: 10,
-                        fontWeight: FontWeight.w600)),
-              ],
-            ]),
-          ])),
-
-          // Acciones
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: onFav,
-            child: Icon(
-              pw.isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
-              color: pw.isFavorite ? Colors.amber : t.sub,
-              size: 22,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isLinked
+                ? t.primary.withValues(alpha: 0.06)
+                : t.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isLinked ? t.primary.withValues(alpha: 0.45) : t.divider,
+              width: isLinked ? 1.5 : 1,
             ),
           ),
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: onDelete,
-            child: Icon(Icons.remove_circle_outline,
-                color: t.loss.withValues(alpha: 0.6), size: 20),
-          ),
-        ]),
+          child: Row(children: [
+            // Avatar con indicador de vinculación
+            Stack(clipBehavior: Clip.none, children: [
+              GAvatar(name: pw.displayName, colorIndex: pw.player.colorIndex, size: 40),
+              if (isLinked)
+                Positioned(
+                  right: -4, bottom: -4,
+                  child: Container(
+                    width: 18, height: 18,
+                    decoration: BoxDecoration(
+                      color: t.primary,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: t.card, width: 2),
+                    ),
+                    child: const Icon(Icons.link_rounded, color: Colors.white, size: 10),
+                  ),
+                ),
+            ]),
+            const SizedBox(width: 12),
+
+            // Datos
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(
+                  child: Text(pw.displayName,
+                      style: TextStyle(color: t.text,
+                          fontWeight: FontWeight.w700, fontSize: 14)),
+                ),
+                // Chip sliding
+                if (sliding != 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: sliding > 0
+                          ? t.profit.withValues(alpha: 0.12)
+                          : t.loss.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${sliding > 0 ? '+' : ''}${sliding.toStringAsFixed(0)} slide',
+                      style: TextStyle(
+                        color: sliding > 0 ? t.profit : t.loss,
+                        fontSize: 10, fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ]),
+              const SizedBox(height: 2),
+              Row(children: [
+                // Nombre real (si hay custom)
+                if (hasCustomName) ...[
+                  Text(pw.player.name,
+                      style: TextStyle(color: t.sub, fontSize: 11)),
+                  const SizedBox(width: 6),
+                  Container(width: 1, height: 10, color: t.divider),
+                  const SizedBox(width: 6),
+                ],
+                Text('HCP ${pw.player.handicapBase.toStringAsFixed(1)}',
+                    style: TextStyle(color: t.sub, fontSize: 11)),
+                if (isLinked) ...[
+                  const SizedBox(width: 6),
+                  Container(width: 1, height: 10, color: t.divider),
+                  const SizedBox(width: 6),
+                  Icon(Icons.verified_rounded, color: t.primary, size: 11),
+                  const SizedBox(width: 2),
+                  Text('Cuenta vinculada',
+                      style: TextStyle(color: t.primary, fontSize: 10,
+                          fontWeight: FontWeight.w700)),
+                ],
+              ]),
+            ])),
+
+            // Acciones
+            const SizedBox(width: 8),
+            // Badge de vinculado visible como chip en el lado derecho
+            if (isLinked) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: t.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.smartphone_rounded, color: t.primary, size: 10),
+                  const SizedBox(width: 3),
+                  Text('App', style: TextStyle(color: t.primary, fontSize: 9, fontWeight: FontWeight.w800)),
+                ]),
+              ),
+              const SizedBox(width: 6),
+            ],
+            GestureDetector(
+              onTap: onFav,
+              child: Icon(
+                pw.isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+                color: pw.isFavorite ? Colors.amber : t.sub,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: onDelete,
+              child: Icon(Icons.remove_circle_outline,
+                  color: t.loss.withValues(alpha: 0.6), size: 20),
+            ),
+          ]),
+        ),
       ),
     );
   }
