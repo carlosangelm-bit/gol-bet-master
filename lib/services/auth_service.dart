@@ -128,6 +128,17 @@ class AuthService {
           });
         });
 
+        // 4. Registrar email en /userLookup para permitir búsquedas por email
+        //    (necesario para que otros usuarios puedan vincular cuentas)
+        if ((user.email ?? '').isNotEmpty) {
+          await _db.collection('userLookup').doc(user.email!.toLowerCase()).set({
+            'uid':         user.uid,
+            'email':       user.email!.toLowerCase(),
+            'displayName': fullName,
+            'updatedAt':   FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
+
         if (kDebugMode) {
           debugPrint('[AuthService] Nuevo usuario creado con Player automático: ${user.uid}');
         }
@@ -150,6 +161,19 @@ class AuthService {
         }
 
         if (patch.length > 1) await ref.update(patch);
+
+        // Asegurarse de que /userLookup tenga la entrada para este usuario
+        // (por si se registró antes de que se implementara esta funcionalidad)
+        if ((user.email ?? '').isNotEmpty) {
+          await _db.collection('userLookup').doc(user.email!.toLowerCase()).set({
+            'uid':   user.uid,
+            'email': user.email!.toLowerCase(),
+            'displayName': fullName.isNotEmpty
+                ? fullName
+                : (existing['displayName'] as String? ?? ''),
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
       }
     } catch (e) {
       if (kDebugMode) debugPrint('[AuthService] _upsertProfile error: $e');

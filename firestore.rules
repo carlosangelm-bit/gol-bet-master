@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // CATÁLOGO GLOBAL DE JUGADORES
+    match /players/{playerId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+
+      // El creador puede modificar todo.
+      // Cualquier usuario autenticado puede añadir/quitar linkedUserId
+      // (necesario para vincular compañeros por email).
+      allow update: if request.auth != null
+                    && (resource.data.createdByUserId == request.auth.uid
+                        || !('createdByUserId' in resource.data)
+                        || (request.resource.data.diff(resource.data).affectedKeys()
+                            .hasOnly(['linkedUserId', 'updatedAt'])));
+
+      allow delete: if request.auth != null
+                    && resource.data.createdByUserId == request.auth.uid;
+    }
+
+    // DIRECTORIO PÚBLICO de emails -> uid
+    // Permite buscar un UID por email para vincular cuentas entre usuarios.
+    // Solo contiene uid y email, sin datos sensibles.
+    match /userLookup/{emailKey} {
+      allow read: if request.auth != null;
+      // Solo el propio usuario puede crear/actualizar su entrada
+      allow write: if request.auth != null
+                   && request.auth.uid == request.resource.data.uid;
+    }
+
+    // DATOS DE USUARIO + TODAS las subcolecciones
+    // rounds, templates, gamePresets, playerLinks, favoriteCourses
+    match /users/{userId} {
+      // Permitir leer el documento raíz a usuarios autenticados
+      // Necesario para buscar UID por email al vincular compañeros.
+      allow read: if request.auth != null;
+
+      // Solo el propio usuario puede escribir en sus datos
+      allow write: if request.auth != null
+                   && request.auth.uid == userId;
+
+      // Subcolecciones: solo el propio usuario
+      match /{document=**} {
+        allow read, write: if request.auth != null
+                           && request.auth.uid == userId;
+      }
+    }
+
+    // RONDAS EN VIVO (multijugador en tiempo real)
+    match /liveRounds/{roundId} {
+      allow read, update: if request.auth != null
+                          && request.auth.uid in resource.data.participantUids;
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.ownerUid;
+      allow delete: if request.auth != null
+                    && request.auth.uid == resource.data.ownerUid;
+
+      match /invitations/{uid} {
+        allow read, write: if request.auth != null
+                           && (request.auth.uid == uid
+                               || request.auth.uid == get(/databases/$(database)/documents/liveRounds/$(roundId)).data.ownerUid);
+      }
+    }
+
+  }
+}

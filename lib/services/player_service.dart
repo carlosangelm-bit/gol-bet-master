@@ -295,16 +295,18 @@ class PlayerService {
     try {
       final trimmed = email.trim().toLowerCase();
 
-      // 1. Buscar el uid del usuario por email en la colección 'users'
-      final query = await _db
-          .collection('users')
-          .where('email', isEqualTo: trimmed)
-          .limit(1)
+      // 1. Buscar el uid del usuario en la colección pública /userLookup/{email}
+      //    Esta colección evita hacer queries sobre /users (que requieren permisos
+      //    de leer datos de otros usuarios). Cada usuario registra su email aquí.
+      final lookupDoc = await _db
+          .collection('userLookup')
+          .doc(trimmed)
           .get();
 
-      if (query.docs.isEmpty) return (LinkResult.userNotFound, null);
+      if (!lookupDoc.exists) return (LinkResult.userNotFound, null);
 
-      final targetUid  = query.docs.first.id;
+      final targetUid = lookupDoc.data()?['uid'] as String?;
+      if (targetUid == null || targetUid.isEmpty) return (LinkResult.userNotFound, null);
 
       // 2. Verificar que el Player no esté ya vinculado con ese mismo uid
       final playerSnap = await _players.doc(playerId).get();
