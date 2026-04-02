@@ -15,7 +15,17 @@ import '../services/live_round_service.dart';
 import '../services/auth_service.dart';
 
 // ── Funciones top-level para serialización (usadas también por FirestoreService)
-Map<String, dynamic> roundToJson(Round r) => {
+Map<String, dynamic> roundToJson(Round r) {
+  // Construir participantUids: ownerUid + linkedUserId de todos los jugadores
+  // Este campo es necesario para las reglas de Firestore en liveRounds.
+  final participantUids = <String>{
+    if (r.ownerUid != null) r.ownerUid!,
+    ...r.players
+        .where((p) => p.linkedUserId != null && p.linkedUserId!.isNotEmpty)
+        .map((p) => p.linkedUserId!),
+  }.toList();
+
+  return {
   'id': r.id, 'name': r.name, 'createdAt': r.createdAt.toIso8601String(),
   'currentHole': r.currentHole, 'isFinished': r.isFinished,
   'startingNine': r.startingNine.name,
@@ -23,6 +33,7 @@ Map<String, dynamic> roundToJson(Round r) => {
   'isLive': r.isLive,
   if (r.ownerUid != null) 'ownerUid': r.ownerUid,
   if (r.liveCode != null) 'liveCode': r.liveCode,
+  if (participantUids.isNotEmpty) 'participantUids': participantUids,
   'course': r.course.toJson(),
   'players': r.players.map((p) => p.toJson()).toList(),
   'roundPlayers': r.roundPlayers.map((rp) => rp.toJson()).toList(),
@@ -31,7 +42,8 @@ Map<String, dynamic> roundToJson(Round r) => {
   'events': r.events.map((pid, hmap) => MapEntry(pid, hmap.map((h, list) => MapEntry(h.toString(), list.map((e) => e.toJson()).toList())))),
   'oyeseRankings': r.oyeseRankings.map((h, or_) => MapEntry(h.toString(), or_.toJson())),
   'sliding': r.sliding.map((s) => s.toJson()).toList(),
-};
+  };
+}
 
 Round roundFromJson(Map<String, dynamic> j) {
   // ── Helpers defensivos para evitar ClassCastException con datos de Firestore ──
