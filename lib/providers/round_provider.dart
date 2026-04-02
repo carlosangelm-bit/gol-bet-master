@@ -185,7 +185,7 @@ class RoundProvider extends ChangeNotifier {
   void joinLiveRound(Round r) {
     _cancelLiveListener();
     _round = r;
-    _tabIndex = 1;
+    _tabIndex = 0; // Ir a Inicio para mostrar la ronda activa
     notifyListeners();
     _startLiveListener(r.id);
     // Guardar ref local
@@ -415,8 +415,25 @@ class RoundProvider extends ChangeNotifier {
   }
 
   // ── Computed ───────────────────────────────────────────────────────────────
-  Map<String, double> get balances => _round != null ? LedgerEngine.playerBalances(_round!) : {};
-  List<NetDebt> get netDebts => _round != null ? LedgerEngine.compute(_round!) : [];
+  Map<String, double> get balances {
+    if (_round == null) return {};
+    try {
+      return LedgerEngine.playerBalances(_round!);
+    } catch (e, st) {
+      if (kDebugMode) debugPrint('[balances] Error: $e\n$st');
+      return {};
+    }
+  }
+
+  List<NetDebt> get netDebts {
+    if (_round == null) return [];
+    try {
+      return LedgerEngine.compute(_round!);
+    } catch (e, st) {
+      if (kDebugMode) debugPrint('[netDebts] Error: $e\n$st');
+      return [];
+    }
+  }
 
   // ── Persistence: local + Firestore ─────────────────────────────────────────
   Future<void> loadPrefs() async {
@@ -450,21 +467,43 @@ class RoundProvider extends ChangeNotifier {
     }
 
     // 2. Cargar ronda activa remota
+    // Si ya hay una ronda en vivo activa (invitado unido), NO sobreescribir con ronda personal
+    if (_round != null && _round!.isLive && !_round!.isFinished) {
+      if (kDebugMode) debugPrint('[syncFromFirestore] Ronda en vivo activa, omitiendo.');
+      return;
+    }
     try {
-      final remote = await FirestoreService.loadActiveRound();
+      // 2a. Primero buscar si el usuario es organizador de una ronda live activa
+      Round? remote;
+      final ownerLive = await LiveRoundService.loadOwnerActiveLiveRound();
+      if (ownerLive != null) {
+        remote = ownerLive;
+        if (kDebugMode) debugPrint('[syncFromFirestore] Cargando ronda live del organizador: ${ownerLive.id}');
+      } else {
+        // 2b. Si no, cargar ronda normal desde colección personal
+        remote = await FirestoreService.loadActiveRound();
+      }
+
       if (remote != null) {
+        // Verificación post-fetch: si mientras esperaba el usuario se unió a una ronda live, no sobreescribir
+        if (_round != null && _round!.isLive && !_round!.isFinished) {
+          if (kDebugMode) debugPrint('[syncFromFirestore] Ronda en vivo activa (post-fetch), omitiendo.');
+          return;
+        }
         _round = remote;
         _tabIndex = _round!.isFinished ? 0 : 1;
         notifyListeners();
         // Actualizar caché local
         final p = await _prefs();
         await p.setString('round', jsonEncode(roundToJson(_round!)));
-        // Si era ronda en vivo, reactivar listener
+        // Si es ronda en vivo, activar listener
         if (_round!.isLive && !_round!.isFinished) {
           _startLiveListener(_round!.id);
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) debugPrint('[syncFromFirestore] Error: $e');
+    }
   }
 
   Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();

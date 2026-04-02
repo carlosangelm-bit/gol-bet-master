@@ -2,6 +2,7 @@
 // HOME SCREEN — Pantalla principal: iniciar ronda, estado de ronda activa
 // ─────────────────────────────────────────────────────────────────────────────
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
@@ -198,31 +199,27 @@ class _InvitationCard extends StatefulWidget {
 class _InvitationCardState extends State<_InvitationCard> {
   bool _loading = false;
 
-  Future<void> _accept() async {
-    setState(() => _loading = true);
-    try {
-      final round = await LiveRoundService.acceptInvitation(widget.inv);
-      if (!mounted) return;
-      if (round != null) {
-        context.read<RoundProvider>().joinLiveRound(round);
-        widget.onAccepted();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('¡Te uniste a la ronda ${round.name}!'),
-          backgroundColor: widget.t.primary,
-        ));
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No se pudo cargar la ronda. Intenta de nuevo.'),
-        ));
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+  // Abre el diálogo de confirmación antes de unirse
+  void _showJoinDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _JoinRoundDialog(
+        inv: widget.inv,
+        t: widget.t,
+        parentContext: context,
+        onAccepted: widget.onAccepted,
+        onDecline: () {
+          Navigator.pop(ctx);
+          _decline();
+        },
+      ),
+    );
   }
 
   Future<void> _decline() async {
     await LiveRoundService.declineInvitation(widget.inv);
-    widget.onAccepted(); // refresca lista
+    widget.onAccepted();
   }
 
   @override
@@ -290,9 +287,9 @@ class _InvitationCardState extends State<_InvitationCard> {
               ),
             ),
             const SizedBox(width: 6),
-            // Aceptar
+            // Aceptar → abre diálogo de confirmación
             GestureDetector(
-              onTap: _accept,
+              onTap: _showJoinDialog,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
@@ -305,6 +302,179 @@ class _InvitationCardState extends State<_InvitationCard> {
             ),
           ]),
       ]),
+    );
+  }
+}
+
+// ── Diálogo de confirmación para unirse a ronda en vivo ──────────────────────
+class _JoinRoundDialog extends StatefulWidget {
+  final LiveRoundInvitation inv;
+  final GolfTheme t;
+  final BuildContext parentContext;   // contexto de HomeScreen para el provider
+  final VoidCallback onAccepted;
+  final VoidCallback onDecline;
+  const _JoinRoundDialog({
+    required this.inv,
+    required this.t,
+    required this.parentContext,
+    required this.onAccepted,
+    required this.onDecline,
+  });
+  @override State<_JoinRoundDialog> createState() => _JoinRoundDialogState();
+}
+
+class _JoinRoundDialogState extends State<_JoinRoundDialog> {
+  bool _joining = false;
+  String? _error;
+
+  Future<void> _doJoin() async {
+    setState(() { _joining = true; _error = null; });
+    try {
+      final round = await LiveRoundService.acceptInvitation(widget.inv);
+      if (!mounted) return;
+      if (round != null) {
+        // 1. Cerrar el diálogo PRIMERO, antes de modificar el provider
+        Navigator.of(context).pop();
+        // 2. Pequeña pausa para que el diálogo termine de cerrarse
+        await Future.delayed(const Duration(milliseconds: 150));
+        // 3. Cargar ronda en el provider (el contexto del padre debe seguir válido)
+        if (widget.parentContext.mounted) {
+          widget.parentContext.read<RoundProvider>().joinLiveRound(round);
+          widget.onAccepted();
+        }
+      } else {
+        setState(() {
+          _joining = false;
+          _error = 'No se pudo cargar la ronda. Intenta de nuevo.';
+        });
+      }
+    } catch (e, st) {
+      if (kDebugMode) debugPrint('[_doJoin] Error: $e\n$st');
+      if (mounted) {
+        setState(() {
+          _joining = false;
+          _error = 'Error al unirse: $e';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inv = widget.inv;
+    final t   = widget.t;
+    return Dialog(
+      backgroundColor: t.card,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Encabezado EN VIVO
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 8, height: 8,
+                  decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 6),
+                Text('EN VIVO · ${inv.liveCode}',
+                  style: const TextStyle(color: Colors.red, fontSize: 11,
+                      fontWeight: FontWeight.w800, letterSpacing: 1)),
+              ]),
+            ),
+            const SizedBox(height: 16),
+            // Nombre de la ronda
+            Text(inv.roundName,
+              style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w800),
+              textAlign: TextAlign.center),
+            const SizedBox(height: 6),
+            Text(inv.courseName,
+              style: TextStyle(color: t.sub, fontSize: 13),
+              textAlign: TextAlign.center),
+            const SizedBox(height: 4),
+            Text('Organiza: ${inv.ownerName}',
+              style: TextStyle(color: t.sub, fontSize: 12)),
+            const SizedBox(height: 12),
+            // Jugadores
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: t.surface,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Jugadores', style: TextStyle(color: t.sub, fontSize: 11,
+                    fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                ...inv.playerNames.map((name) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(children: [
+                    Icon(Icons.person_outline, color: t.primary, size: 14),
+                    const SizedBox(width: 6),
+                    Text(name, style: TextStyle(color: t.text, fontSize: 13)),
+                  ]),
+                )),
+              ]),
+            ),
+            const SizedBox(height: 20),
+            // Error
+            if (_error != null) ...[
+              Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+            ],
+            // Botones
+            if (_joining)
+              Column(children: [
+                SizedBox(
+                  width: 28, height: 28,
+                  child: CircularProgressIndicator(color: t.primary, strokeWidth: 2.5),
+                ),
+                const SizedBox(height: 8),
+                Text('Cargando ronda...', style: TextStyle(color: t.sub, fontSize: 12)),
+              ])
+            else
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: widget.onDecline,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: t.sub,
+                      side: BorderSide(color: t.divider),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: const Text('Rechazar'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: _doJoin,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: t.primary,
+                      foregroundColor: t.onPrimary,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: const Text('Entrar a la ronda',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ]),
+          ],
+        ),
+      ),
     );
   }
 }

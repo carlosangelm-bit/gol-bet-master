@@ -211,6 +211,39 @@ class LiveRoundService {
     });
   }
 
+  /// Carga la ronda en vivo activa donde el usuario es el organizador.
+  /// Revisa users/{uid}/liveRoundRefs con role='owner' y carga desde liveRounds.
+  static Future<Round?> loadOwnerActiveLiveRound() async {
+    final uid = AuthService.uid;
+    if (uid == null) return null;
+    try {
+      final refs = await _myRefs()
+          .where('role', isEqualTo: 'owner')
+          .limit(5)
+          .get();
+      if (refs.docs.isEmpty) return null;
+
+      // Buscar la primera ronda no finalizada
+      for (final ref in refs.docs) {
+        final roundId = ref.data()['roundId'] as String? ?? ref.id;
+        final snap = await _liveRounds.doc(roundId).get();
+        if (!snap.exists || snap.data() == null) continue;
+        final data = snap.data()!;
+        final isFinished = data['isFinished'] as bool? ?? false;
+        if (!isFinished) {
+          try {
+            return roundFromJson(data);
+          } catch (e) {
+            if (kDebugMode) debugPrint('[LiveRound] Error parseando ronda del dueño: $e');
+          }
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[LiveRound] Error buscando ronda del dueño: $e');
+    }
+    return null;
+  }
+
   /// Acepta una invitación: actualiza status y retorna la ronda cargada
   static Future<Round?> acceptInvitation(LiveRoundInvitation inv) async {
     final uid = AuthService.uid;
