@@ -305,7 +305,6 @@ class PlayerService {
       if (query.docs.isEmpty) return (LinkResult.userNotFound, null);
 
       final targetUid  = query.docs.first.id;
-      final targetData = query.docs.first.data();
 
       // 2. Verificar que el Player no esté ya vinculado con ese mismo uid
       final playerSnap = await _players.doc(playerId).get();
@@ -328,35 +327,17 @@ class PlayerService {
         'updatedAt':    DateTime.now().toIso8601String(),
       });
 
-      // 5. Actualizar el PlayerLink del usuario actual (set+merge por si no tiene el campo)
+      // 5. Actualizar el PlayerLink del usuario actual (set+merge)
       await _links().doc(playerId).set({
         'linkedUserId': targetUid,
         'updatedAt':    DateTime.now().toIso8601String(),
       }, SetOptions(merge: true));
 
-      // 6. Si el usuario objetivo aún no tiene myPlayerId, asignarlo.
-      //    Usamos set+merge para que no falle si el documento no tiene ese campo.
-      final targetMyPlayerId = targetData['myPlayerId'] as String?;
-      if (targetMyPlayerId == null || targetMyPlayerId.isEmpty) {
-        await _db.collection('users').doc(targetUid).set({
-          'myPlayerId': playerId,
-          'updatedAt':  FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-        // Crear PlayerLink en el directorio del usuario objetivo
-        final now = DateTime.now();
-        await _db
-            .collection('users').doc(targetUid)
-            .collection('playerLinks').doc(playerId)
-            .set({
-          'playerId':                 playerId,
-          'isFavorite':               false,
-          'defaultSlidingAdjustment': 0.0,
-          'sortOrder':                0,
-          'linkedUserId':             targetUid,
-          'createdAt':                now.toIso8601String(),
-          'updatedAt':                now.toIso8601String(),
-        }, SetOptions(merge: true));
-      }
+      // NOTA: NO escribimos en users/{targetUid} desde aquí porque las reglas
+      // de Firestore solo permiten a cada usuario escribir en su propio documento.
+      // El usuario objetivo (targetUid) ya tiene su propio myPlayerId asignado
+      // al registrarse. Si no lo tiene, lo actualizará la próxima vez que inicie
+      // sesión en su propia app.
 
       return (LinkResult.success, null);
     } catch (e) {
