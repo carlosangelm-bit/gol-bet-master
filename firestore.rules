@@ -41,10 +41,19 @@ service cloud.firestore {
       allow write: if request.auth != null
                    && request.auth.uid == userId;
 
-      // Subcolecciones: solo el propio usuario
+      // Subcolecciones: solo el propio usuario por defecto
       match /{document=**} {
         allow read, write: if request.auth != null
                            && request.auth.uid == userId;
+      }
+
+      // liveRoundRefs: también el organizador de una ronda en vivo puede escribir
+      // Necesario para que publishRound() entregue invitaciones a los jugadores
+      match /liveRoundRefs/{roundId} {
+        allow read, write: if request.auth != null
+                           && (request.auth.uid == userId
+                               || (exists(/databases/$(database)/documents/liveRounds/$(roundId))
+                                   && get(/databases/$(database)/documents/liveRounds/$(roundId)).data.ownerUid == request.auth.uid));
       }
     }
 
