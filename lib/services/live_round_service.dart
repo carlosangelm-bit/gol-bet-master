@@ -244,6 +244,70 @@ class LiveRoundService {
     return null;
   }
 
+  /// Carga la ronda en vivo activa donde el usuario es invitado con status='accepted'.
+  /// Revisa users/{uid}/liveRoundRefs con role='invited' y status='accepted'.
+  static Future<Round?> loadAcceptedLiveRound() async {
+    final uid = AuthService.uid;
+    if (uid == null) return null;
+    try {
+      // Query con dos filtros — si Firestore requiere índice, usamos fallback
+      QuerySnapshot<Map<String, dynamic>> refs;
+      try {
+        refs = await _myRefs()
+            .where('role', isEqualTo: 'invited')
+            .where('status', isEqualTo: 'accepted')
+            .limit(5)
+            .get();
+      } catch (_) {
+        // Fallback: filtrar solo por role y verificar status en memoria
+        final all = await _myRefs()
+            .where('role', isEqualTo: 'invited')
+            .limit(10)
+            .get();
+        final filtered = all.docs
+            .where((d) => (d.data()['status'] as String?) == 'accepted')
+            .toList();
+        // Procesar docs filtrados directamente
+        for (final ref in filtered) {
+          final roundId = ref.data()['roundId'] as String? ?? ref.id;
+          final snap = await _liveRounds.doc(roundId).get();
+          if (!snap.exists || snap.data() == null) continue;
+          final data = snap.data()!;
+          final isFinished = data['isFinished'] as bool? ?? false;
+          if (!isFinished) {
+            try {
+              return roundFromJson(data);
+            } catch (e) {
+              if (kDebugMode) debugPrint('[LiveRound] Error parseando ronda del invitado: $e');
+            }
+          }
+        }
+        return null;
+      }
+
+      if (refs.docs.isEmpty) return null;
+
+      // Buscar la primera ronda no finalizada
+      for (final ref in refs.docs) {
+        final roundId = ref.data()['roundId'] as String? ?? ref.id;
+        final snap = await _liveRounds.doc(roundId).get();
+        if (!snap.exists || snap.data() == null) continue;
+        final data = snap.data()!;
+        final isFinished = data['isFinished'] as bool? ?? false;
+        if (!isFinished) {
+          try {
+            return roundFromJson(data);
+          } catch (e) {
+            if (kDebugMode) debugPrint('[LiveRound] Error parseando ronda del invitado: $e');
+          }
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[LiveRound] Error buscando ronda aceptada del invitado: $e');
+    }
+    return null;
+  }
+
   /// Acepta una invitación: actualiza status y retorna la ronda cargada
   static Future<Round?> acceptInvitation(LiveRoundInvitation inv) async {
     final uid = AuthService.uid;

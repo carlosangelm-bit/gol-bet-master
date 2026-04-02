@@ -199,6 +199,11 @@ class RoundProvider extends ChangeNotifier {
     _round = liveRound;
     notifyListeners();
     _persist();
+    // También marcar la ronda personal como isLive=true para que loadPrefs
+    // active el listener correctamente al reabrir la app
+    FirestoreService.saveRound(liveRound).catchError((e) {
+      if (kDebugMode) debugPrint('[publishAsLive] Error actualizando ronda personal: $e');
+    });
     _startLiveListener(liveRound.id);
     return liveRound;
   }
@@ -480,8 +485,15 @@ class RoundProvider extends ChangeNotifier {
         remote = ownerLive;
         if (kDebugMode) debugPrint('[syncFromFirestore] Cargando ronda live del organizador: ${ownerLive.id}');
       } else {
-        // 2b. Si no, cargar ronda normal desde colección personal
-        remote = await FirestoreService.loadActiveRound();
+        // 2b. Buscar si el usuario es invitado aceptado en una ronda live activa
+        final acceptedLive = await LiveRoundService.loadAcceptedLiveRound();
+        if (acceptedLive != null) {
+          remote = acceptedLive;
+          if (kDebugMode) debugPrint('[syncFromFirestore] Cargando ronda live como invitado: ${acceptedLive.id}');
+        } else {
+          // 2c. Si no, cargar ronda normal desde colección personal
+          remote = await FirestoreService.loadActiveRound();
+        }
       }
 
       if (remote != null) {

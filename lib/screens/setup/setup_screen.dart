@@ -16,6 +16,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/player_service.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/live_round_service.dart';
+import '../../services/course_corrections_service.dart';
 
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
@@ -40,6 +41,8 @@ class _SetupScreenState extends State<SetupScreen> {
   // ── Campo de golf ──────────────────────────────────────────────────────────
   CourseInfo? _selectedCourse;           // CourseInfo final (con hoyos)
   ApiCourse?  _selectedApiCourse;        // curso API completo (para elegir tees)
+  // Corrección pendiente para el campo actualmente seleccionado
+  CourseCorrection? _pendingCorrection;
 
   // ── Configuración de duración de ronda ────────────────────────────────────
   int _totalHoles = 18;                  // 9 o 18 hoyos
@@ -153,7 +156,29 @@ class _SetupScreenState extends State<SetupScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _autoAddMyself();
       _loadPresetsCache();
+      _checkCorrectionsForFavCourses();
     });
+  }
+
+  /// Al abrir el setup, verifica si algún campo favorito tiene corrección pendiente.
+  /// Espera hasta 3 s a que los favoritos se carguen desde Firestore antes de verificar.
+  Future<void> _checkCorrectionsForFavCourses() async {
+    if (!mounted) return;
+    // Esperar hasta 3 s a que el provider cargue los favoritos
+    for (int i = 0; i < 6; i++) {
+      if (!mounted) return;
+      final profProv = context.read<UserProfileProvider>();
+      final favs = profProv.favCourses;
+      if (favs.isNotEmpty) {
+        for (final fav in favs) {
+          if (!mounted) return;
+          await _checkForCorrection(fav.courseId);
+          if (_pendingCorrection != null) return; // ya hay banner, no seguir
+        }
+        return;
+      }
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
   }
 
   /// Carga los presets de apuestas guardados para mostrarlos directamente en el paso 2.
@@ -401,6 +426,20 @@ class _SetupScreenState extends State<SetupScreen> {
               ),
             );
           }),
+          const SizedBox(height: 4),
+        ],
+
+        // ── Banner de corrección oficial disponible ───────────────────────
+        if (_pendingCorrection != null) ...[
+          const SizedBox(height: 4),
+          _CorrectionBanner(
+            correction: _pendingCorrection!,
+            onApply: _applyPendingCorrection,
+            onDismiss: () => setState(() {
+              _pendingCorrection = null;
+            }),
+            t: t,
+          ),
           const SizedBox(height: 4),
         ],
 
@@ -2886,9 +2925,14 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   /// Selecciona un campo favorito obteniendo datos frescos de la API.
-  /// Si la API falla, usa el caché disponible como respaldo.
+  /// Si el campo tiene [manuallyEdited=true], NO reemplaza datos con la API.
   /// Respeta el tee preferido guardado en [fav.preferredTeeName].
   Future<void> _selectFavCourseWithFresh(FavoriteCourse fav) async {
+    // Limpiar corrección pendiente anterior
+    setState(() {
+      _pendingCorrection = null;
+    });
+
     // 1. Usar caché inmediatamente para respuesta rápida
     if (fav.hasCachedData) {
       final api = fav.cachedCourse!;
@@ -2909,10 +2953,17 @@ class _SetupScreenState extends State<SetupScreen> {
       });
     }
 
-    // 2. Intentar obtener datos frescos de la API en background
     final courseIdInt = int.tryParse(fav.courseId);
     if (courseIdInt == null) return;
 
+    // 2. Si el campo fue editado manualmente, NO sobrescribir con API.
+    //    Solo verificar si hay corrección oficial disponible.
+    if (fav.manuallyEdited) {
+      _checkForCorrection(fav.courseId);
+      return;
+    }
+
+    // 3. Intentar obtener datos frescos de la API en background
     try {
       final fresh = await GolfCourseService.getById(courseIdInt);
       if (!mounted) return;
@@ -2924,11 +2975,69 @@ class _SetupScreenState extends State<SetupScreen> {
           // Respetar tee preferido también con datos frescos
           _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
         });
-        // 3. Actualizar caché en Firestore silenciosamente
+        // 4. Actualizar caché en Firestore silenciosamente
         UserProfileService.updateFavCourseCache(fav.courseId, fresh);
       }
     } catch (_) {
       // Si falla la API, el caché ya fue aplicado en el paso 1
+    }
+
+    // 5. Verificar si hay corrección oficial disponible (independientemente de la API)
+    _checkForCorrection(fav.courseId);
+  }
+
+  /// Verifica en background si hay una corrección oficial disponible para el campo.
+  Future<void> _checkForCorrection(String courseId) async {
+    try {
+      final correction = await CourseCorrectionsService.checkForCorrection(courseId);
+      if (!mounted) return;
+      if (correction != null) {
+        setState(() {
+          _pendingCorrection = correction;
+        });
+      }
+    } catch (_) {
+      // No crítico
+    }
+  }
+
+  /// Aplica la corrección pendiente al caché del usuario y actualiza la UI.
+  Future<void> _applyPendingCorrection() async {
+    final correction = _pendingCorrection;
+    if (correction == null) return;
+
+    try {
+      await CourseCorrectionsService.applyCorrection(correction);
+      if (!mounted) return;
+
+      final course = correction.correctedCourse;
+      setState(() {
+        _playerTees.clear();
+        _selectedApiCourse = course;
+        _selectedCourse = course.allTees.isNotEmpty
+            ? course.allTees.first.toCourseInfo(course.clubName, course.courseName)
+            : _selectedCourse;
+        _pendingCorrection = null;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('✅ Datos del campo actualizados correctamente'),
+            backgroundColor: Colors.green.shade700,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error al actualizar los datos. Intenta de nuevo.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -3583,6 +3692,89 @@ class _FormatModeCard extends StatelessWidget {
           Text(description, style: TextStyle(color: t.sub, fontSize: 11)),
         ]),
       ),
+    );
+  }
+}
+
+// ── Banner de corrección oficial disponible ───────────────────────────────────
+class _CorrectionBanner extends StatelessWidget {
+  final CourseCorrection correction;
+  final VoidCallback onApply;
+  final VoidCallback onDismiss;
+  final GolfTheme t;
+
+  const _CorrectionBanner({
+    required this.correction,
+    required this.onApply,
+    required this.onDismiss,
+    required this.t,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1B5E20).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.green.shade600.withValues(alpha: 0.5),
+          width: 1.5,
+        ),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 32, height: 32,
+            decoration: BoxDecoration(
+              color: Colors.green.shade700.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.verified_outlined, color: Colors.green.shade700, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Datos del campo actualizados',
+              style: TextStyle(
+                color: Colors.green.shade800,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: onDismiss,
+            child: Icon(Icons.close, color: Colors.green.shade700, size: 18),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Text(
+          correction.notes,
+          style: TextStyle(color: t.text, fontSize: 12, height: 1.4),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: onApply,
+            icon: const Icon(Icons.download_done_outlined, size: 16),
+            label: const Text('Aplicar corrección'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              textStyle: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ),
+      ]),
     );
   }
 }

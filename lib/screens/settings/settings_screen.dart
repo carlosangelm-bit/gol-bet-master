@@ -13,6 +13,7 @@ import '../../providers/player_provider.dart';
 import '../../services/golf_course_service.dart';
 import '../../services/firestore_service.dart';
 import '../presets/game_presets_screen.dart';
+import '../../services/course_corrections_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -1024,8 +1025,9 @@ class _FavCoursePickerSheetState extends State<_FavCoursePickerSheet> {
           padding: const EdgeInsets.only(bottom: 8),
           child: GCard(
             onTap: isFav ? null : () async {
+              final courseId = course.id.toString();
               await profProv.toggleFavCourse(
-                course.id.toString(),
+                courseId,
                 course.clubName,
                 courseName: course.courseName,
                 city: course.city.isNotEmpty ? course.city : null,
@@ -1038,11 +1040,40 @@ class _FavCoursePickerSheetState extends State<_FavCoursePickerSheet> {
                 final name = course.courseName.isNotEmpty && course.courseName != course.clubName
                     ? '${course.clubName} — ${course.courseName}'
                     : course.clubName;
-                ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                  backgroundColor: t.profit,
-                  content: Text('$name agregado a favoritos'),
-                  duration: const Duration(seconds: 2),
-                ));
+
+                // Verificar si hay corrección disponible para este campo
+                final correction = await CourseCorrectionsService.checkForCorrection(courseId);
+                if (ctx.mounted) {
+                  if (correction != null) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                      backgroundColor: t.profit,
+                      duration: const Duration(seconds: 5),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('$name agregado a favoritos',
+                              style: const TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          Row(children: [
+                            const Icon(Icons.info_outline, size: 14, color: Colors.white),
+                            const SizedBox(width: 6),
+                            Expanded(child: Text(
+                              'Hay datos corregidos disponibles. Ábrelo en Nueva Ronda para aplicarlos.',
+                              style: const TextStyle(fontSize: 12),
+                            )),
+                          ]),
+                        ],
+                      ),
+                    ));
+                  } else {
+                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                      backgroundColor: t.profit,
+                      content: Text('$name agregado a favoritos'),
+                      duration: const Duration(seconds: 2),
+                    ));
+                  }
+                }
               }
             },
             color: isFav ? t.primary.withValues(alpha: 0.05) : null,

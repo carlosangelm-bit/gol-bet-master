@@ -7,24 +7,17 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Golf Bet Master - Gestión de apuestas de golf">
 
-  <!-- NUNCA cachear index.html ni el bootstrap -->
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Golf Bet">
 
-  <!-- Apple touch icons — Safari usa estos al agregar a pantalla de inicio -->
-  <!-- El más específico que coincida con el dispositivo tiene prioridad    -->
+  <!-- Apple touch icons -->
   <link rel="apple-touch-icon" sizes="180x180" href="icons/Icon-180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="icons/Icon-167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="icons/Icon-152.png">
   <link rel="apple-touch-icon" sizes="120x120" href="icons/Icon-120.png">
-  <!-- Fallback genérico -->
   <link rel="apple-touch-icon" href="icons/Icon-180.png">
 
   <!-- Favicon -->
@@ -35,37 +28,6 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <script>
-    // 1. Desregistrar TODOS los service workers y limpiar TODA la caché
-    // 2. Si había service workers registrados, recargar la página para que
-    //    el nuevo index.html (sin SW interceptando) tome control.
-    (async function() {
-      let swWereActive = false;
-      if ('serviceWorker' in navigator) {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        for (const reg of registrations) {
-          await reg.unregister();
-          swWereActive = true;
-        }
-        try {
-          const cacheNames = await caches.keys();
-          for (const name of cacheNames) {
-            await caches.delete(name);
-          }
-        } catch(e) {}
-      }
-
-      // Si había SW activos, recargar para que esta versión limpia tome control
-      if (swWereActive) {
-        window.location.reload(true);
-        return;
-      }
-
-      // Sin SW — cargar Flutter normalmente
-      const script = document.createElement('script');
-      script.src = 'flutter_bootstrap.js?nocache=' + Date.now();
-      document.body.appendChild(script);
-    })();
-  </script>
+  <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

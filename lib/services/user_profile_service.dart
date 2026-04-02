@@ -146,6 +146,9 @@ class FavoriteCourse {
   /// Nombre del tee preferido del usuario para este campo (ej. "DORADAS").
   /// Null = usar el primer tee masculino disponible (comportamiento anterior).
   final String? preferredTeeName;
+  /// Si true, los datos del campo fueron corregidos manualmente y NO deben
+  /// sobreescribirse automáticamente con datos frescos de la API.
+  final bool manuallyEdited;
 
   const FavoriteCourse({
     required this.courseId,
@@ -157,6 +160,7 @@ class FavoriteCourse {
     required this.createdAt,
     this.cachedCourse,
     this.preferredTeeName,
+    this.manuallyEdited = false,
   });
 
   /// Nombre completo del campo (mismo formato que en la tarjeta de ronda)
@@ -183,12 +187,13 @@ class FavoriteCourse {
     'courseId':   courseId,
     'clubName':   clubName,
     'courseName': courseName,
-    if (city != null)           'city':            city,
-    if (country != null)        'country':         country,
-    if (nickname != null)       'nickname':        nickname,
-    if (preferredTeeName != null) 'preferredTeeName': preferredTeeName,
+    if (city != null)             'city':              city,
+    if (country != null)          'country':           country,
+    if (nickname != null)         'nickname':          nickname,
+    if (preferredTeeName != null) 'preferredTeeName':  preferredTeeName,
+    if (manuallyEdited)           'manuallyEdited':    true,
     'createdAt':  FieldValue.serverTimestamp(),
-    if (cachedCourse != null)   'cachedCourse':    cachedCourse!.toJson(),
+    if (cachedCourse != null)     'cachedCourse':      cachedCourse!.toJson(),
   };
 
   factory FavoriteCourse.fromFirestore(Map<String, dynamic> d, String id) {
@@ -203,6 +208,7 @@ class FavoriteCourse {
       preferredTeeName: d['preferredTeeName'] as String?,
       createdAt:       _ts(d['createdAt']) ?? DateTime.now(),
       cachedCourse:    cached != null ? ApiCourse.fromCached(cached) : null,
+      manuallyEdited:  d['manuallyEdited']  as bool? ?? false,
     );
   }
 
@@ -332,6 +338,9 @@ class UserProfileService {
       final doc = _favCourses().doc(courseId);
       final snap = await doc.get();
       if (!snap.exists) return;
+      // Si el campo fue editado manualmente, NO sobreescribir con datos de la API
+      final data = snap.data();
+      if (data != null && (data['manuallyEdited'] as bool? ?? false)) return;
       // Solo actualizar el campo cachedCourse, preservar el resto
       await doc.update({'cachedCourse': freshCourse.toJson()});
     } catch (_) {

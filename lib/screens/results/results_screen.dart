@@ -83,6 +83,10 @@ class _ResultsScreenState extends State<ResultsScreen> {
                     const SizedBox(height: 20),
                     _MedalDiagPanel(round: round, t: t),
                   ],
+
+                  // ── Panel de diagnóstico de scores ──────────────────────────
+                  const SizedBox(height: 20),
+                  _ScoresDiagPanel(round: round, balances: balances, t: t),
                 ],
               ),
             ),
@@ -835,4 +839,61 @@ class _MedalDiagPanelState extends State<_MedalDiagPanel> {
       ),
     ),
   );
+}
+
+// ── Panel de diagnóstico de scores (temporal) ─────────────────────────────────
+class _ScoresDiagPanel extends StatelessWidget {
+  final Round round;
+  final Map<String, double> balances;
+  final GolfTheme t;
+  const _ScoresDiagPanel({required this.round, required this.balances, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    // Contar scores por jugador
+    final scoreInfo = round.players.map((p) {
+      final holes = round.scores[p.id] ?? {};
+      final scored = holes.values.where((h) => h.hasScore).length;
+      final total = holes.values.fold(0, (s, h) => s + (h.grossScore ?? 0));
+      return '${p.name}: $scored hoyos, total=$total, bal=${balances[p.id]?.toStringAsFixed(0) ?? "0"}';
+    }).join('\n');
+
+    final betInfo = round.betGroups.expand((g) => g.modules).map((m) {
+      return '${m.type.name}: participants=${m.participantIds.length}, useHcp=${m.useHandicap}';
+    }).join('\n');
+
+    // Intentar computar entradas del motor
+    String engineInfo;
+    try {
+      final entries = BetEngine.computeAll(round);
+      engineInfo = 'Entradas del motor: ${entries.length}\n' +
+          entries.map((e) => '  ${e.betType.name} H${e.hole ?? "-"}: ${e.fromPlayerId.substring(0,6)}→${e.toPlayerId.substring(0,6)} \$${e.amount.toStringAsFixed(0)}').join('\n');
+    } catch (e) {
+      engineInfo = 'ERROR en motor: $e';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('🔍 DIAGNÓSTICO (temporal)', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w800, fontSize: 11)),
+        const SizedBox(height: 6),
+        Text('Scores:\n$scoreInfo', style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace')),
+        const SizedBox(height: 6),
+        Text('Módulos:\n$betInfo', style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace')),
+        const SizedBox(height: 6),
+        Text(engineInfo, style: TextStyle(color: entries_color(engineInfo), fontSize: 10, fontFamily: 'monospace')),
+      ]),
+    );
+  }
+
+  Color entries_color(String info) {
+    if (info.startsWith('ERROR')) return Colors.red;
+    if (info.contains('Entradas del motor: 0')) return Colors.orange;
+    return Colors.greenAccent;
+  }
 }
