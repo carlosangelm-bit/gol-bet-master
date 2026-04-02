@@ -81,7 +81,7 @@ class GolfBetApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final prov = context.watch<RoundProvider>();
     return MaterialApp(
-      title: 'Golf Bet Master',
+      title: 'Golf Bet Master', // v1.1.0+5
       debugShowCheckedModeBanner: false,
       theme: prov.theme.toMaterial(),
       // Mostrar errores de widget en pantalla (no pantalla en blanco)

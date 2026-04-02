@@ -1,7 +1,7 @@
 name: golf_bet_master
 description: Golf betting app with Nassau, Skins, Match Play and 30+ games
 publish_to: 'none'
-version: 1.1.0+4
+version: 1.1.0+5
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
