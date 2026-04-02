@@ -216,19 +216,32 @@ class LiveRoundService {
     final uid = AuthService.uid;
     if (uid == null) return null;
 
-    // 1. Actualizar status en ambos lugares
-    await Future.wait([
-      _invitations(inv.roundId).doc(uid).update({'status': 'accepted'}),
-      _myRefs().doc(inv.roundId).update({'status': 'accepted', 'acceptedAt': FieldValue.serverTimestamp()}),
-    ]);
+    // 1. Actualizar status (con manejo de errores individual para no bloquear el flujo)
+    try {
+      await _invitations(inv.roundId).doc(uid).update({'status': 'accepted'});
+    } catch (e) {
+      if (kDebugMode) debugPrint('[LiveRound] Error actualizando invitation status: $e');
+      // No bloqueamos: el usuario puede unirse aunque falle el update del status
+    }
+    try {
+      await _myRefs().doc(inv.roundId).update({
+        'status': 'accepted',
+        'acceptedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      if (kDebugMode) debugPrint('[LiveRound] Error actualizando liveRoundRef status: $e');
+    }
 
     // 2. Cargar la ronda desde liveRounds
-    final snap = await _liveRounds.doc(inv.roundId).get();
-    if (!snap.exists || snap.data() == null) return null;
     try {
+      final snap = await _liveRounds.doc(inv.roundId).get();
+      if (!snap.exists || snap.data() == null) {
+        if (kDebugMode) debugPrint('[LiveRound] Documento de ronda no encontrado: ${inv.roundId}');
+        return null;
+      }
       return roundFromJson(snap.data()!);
     } catch (e) {
-      if (kDebugMode) debugPrint('[LiveRound] Error parseando ronda: $e');
+      if (kDebugMode) debugPrint('[LiveRound] Error cargando/parseando ronda: $e');
       return null;
     }
   }

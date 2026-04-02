@@ -66,10 +66,18 @@ service cloud.firestore {
       allow delete: if request.auth != null
                     && request.auth.uid == resource.data.ownerUid;
 
+      // Invitaciones: el invitado puede leer/escribir su propio doc ({uid} == su uid)
+      // El organizador puede leer/escribir cualquier invitación de la ronda.
+      // IMPORTANTE: no usar get(liveRounds/...) aquí para evitar que el invitado
+      // necesite acceso previo al documento padre (chicken-and-egg).
       match /invitations/{uid} {
+        // El invitado puede leer y actualizar únicamente su propia invitación
+        allow read, update: if request.auth != null
+                            && request.auth.uid == uid;
+        // El organizador (en participantUids) puede crear y leer todas
         allow read, write: if request.auth != null
-                           && (request.auth.uid == uid
-                               || request.auth.uid == get(/databases/$(database)/documents/liveRounds/$(roundId)).data.ownerUid);
+                           && exists(/databases/$(database)/documents/liveRounds/$(roundId))
+                           && request.auth.uid == get(/databases/$(database)/documents/liveRounds/$(roundId)).data.ownerUid;
       }
     }
 
