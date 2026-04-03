@@ -207,7 +207,14 @@ class ApiTeeBox {
 
   /// Deserializar desde cache de Firestore (strokeIndex ya calculado, no recalcular)
   static ApiTeeBox fromCached(Map<String, dynamic> j) {
-    final rawHoles = (j['holes'] as List?) ?? [];
+    // Cast defensivo: Firestore puede devolver List<Object?> en web
+    final rawHoles = j['holes'];
+    final holeList = (rawHoles is List)
+        ? rawHoles
+            .whereType<Map>()
+            .map((h) => Map<String, dynamic>.from(h))
+            .toList()
+        : <Map<String, dynamic>>[];
     return ApiTeeBox(
       teeName:       j['tee_name']         as String? ?? 'Tee',
       courseRating:  (j['course_rating']   as num?)?.toDouble() ?? 72.0,
@@ -215,7 +222,7 @@ class ApiTeeBox {
       parTotal:      (j['par_total']       as num?)?.toInt() ?? 72,
       totalYards:    (j['total_yards']     as num?)?.toInt() ?? 0,
       numberOfHoles: (j['number_of_holes'] as num?)?.toInt() ?? 18,
-      holes: rawHoles.map((h) => ApiHole.fromCached(h as Map<String, dynamic>)).toList(),
+      holes: holeList.map((h) => ApiHole.fromCached(h)).toList(),
     );
   }
 }
@@ -284,8 +291,18 @@ class ApiCourse {
 
   /// Deserializar desde cache de Firestore
   factory ApiCourse.fromCached(Map<String, dynamic> j) {
-    final maleList   = (j['maleTees']   as List?) ?? [];
-    final femaleList = (j['femaleTees'] as List?) ?? [];
+    // Cast defensivo: Firestore puede devolver List<Object?> en web
+    List<Map<String, dynamic>> _toTeeList(dynamic raw) {
+      if (raw == null) return [];
+      if (raw is! List) return [];
+      return raw
+          .whereType<Map>()
+          .map((t) => Map<String, dynamic>.from(t))
+          .toList();
+    }
+
+    final maleList   = _toTeeList(j['maleTees']);
+    final femaleList = _toTeeList(j['femaleTees']);
     return ApiCourse(
       id:         (j['id'] as num?)?.toInt() ?? 0,
       clubName:   j['club_name']   as String? ?? '',
@@ -293,8 +310,8 @@ class ApiCourse {
       city:       j['city']        as String? ?? '',
       state:      j['state']       as String? ?? '',
       country:    j['country']     as String? ?? '',
-      maleTees:   maleList  .map((t) => ApiTeeBox.fromCached(t as Map<String, dynamic>)).toList(),
-      femaleTees: femaleList.map((t) => ApiTeeBox.fromCached(t as Map<String, dynamic>)).toList(),
+      maleTees:   maleList  .map((t) => ApiTeeBox.fromCached(t)).toList(),
+      femaleTees: femaleList.map((t) => ApiTeeBox.fromCached(t)).toList(),
     );
   }
 }
