@@ -17,6 +17,7 @@ import '../../core/app_theme.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
 import '../../widgets/common_widgets.dart';
+import '../../widgets/sliding_adjustment_dialog.dart';
 
 class CaptureScreen extends StatefulWidget {
   const CaptureScreen({super.key});
@@ -1554,6 +1555,10 @@ class _HoleNavButtons extends StatelessWidget {
     );
     if (confirmed != true) return;
     if (!context.mounted) return;
+
+    // Capturar la ronda ANTES de que finishRound limpie el estado
+    final round = prov.round;
+
     final ok = await prov.finishRound();
     if (!context.mounted) return;
     prov.setTab(0);
@@ -1563,6 +1568,11 @@ class _HoleNavButtons extends StatelessWidget {
         backgroundColor: Colors.orange.shade700,
         duration: const Duration(seconds: 5),
       ));
+    }
+
+    // Mostrar diálogo de ajuste de sliding
+    if (round != null && context.mounted) {
+      await showSlidingAdjustmentDialog(context, round);
     }
   }
 }

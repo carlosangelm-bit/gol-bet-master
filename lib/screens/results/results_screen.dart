@@ -12,6 +12,7 @@ import '../../engines/bet_engine.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
 import '../../widgets/common_widgets.dart';
+import '../../widgets/sliding_adjustment_dialog.dart';
 
 class ResultsScreen extends StatefulWidget {
   const ResultsScreen({super.key});
@@ -87,6 +88,16 @@ class _ResultsScreenState extends State<ResultsScreen> {
                   // ── Panel de diagnóstico de scores ──────────────────────────
                   const SizedBox(height: 20),
                   _ScoresDiagPanel(round: round, balances: balances, t: t),
+
+                  // ── Sliding de ronda ────────────────────────────────────────
+                  if (round.sliding.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    GSectionHeader(title: 'SLIDING'),
+                    const SizedBox(height: 8),
+                    SlidingSummaryCard(round: round, t: t),
+                  ],
+
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
@@ -129,6 +140,8 @@ class _ResultsScreenState extends State<ResultsScreen> {
         TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancelar', style: TextStyle(color: t.sub))),
         TextButton(onPressed: () async {
           Navigator.pop(ctx);
+          // Capturar la ronda ANTES de que finishRound limpie el estado
+          final roundSnapshot = prov.round;
           final ok = await prov.finishRound();
           if (!ok && context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -137,6 +150,10 @@ class _ResultsScreenState extends State<ResultsScreen> {
               backgroundColor: Colors.orange.shade700,
               duration: const Duration(seconds: 5),
             ));
+          }
+          // Mostrar diálogo de ajuste de sliding
+          if (roundSnapshot != null && context.mounted) {
+            await showSlidingAdjustmentDialog(context, roundSnapshot);
           }
         }, child: Text('Finalizar', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700))),
       ],
@@ -617,6 +634,16 @@ class _ResultsBodyState extends State<ResultsBody> {
           onToggle: () => setState(() =>
             _expandedPlayerId = _expandedPlayerId == p.id ? null : p.id),
         )),
+
+        // ── Sliding registrado en la ronda ──────────────────────────────────
+        if (round.sliding.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          GSectionHeader(title: 'SLIDING'),
+          const SizedBox(height: 8),
+          SlidingSummaryCard(round: round, t: t),
+        ],
+
+        const SizedBox(height: 20),
       ]),
     );
   }

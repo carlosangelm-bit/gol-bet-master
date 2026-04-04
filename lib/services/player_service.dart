@@ -276,6 +276,49 @@ class PlayerService {
     await _links().doc(playerId).delete();
   }
 
+  /// Retorna un mapa de playerId → PlayerLink para el usuario dado.
+  /// Útil para calcular sugerencias de sliding al finalizar ronda.
+  static Future<Map<String, PlayerLink>> getLinksForUser(String uid) async {
+    final snap = await _db
+        .collection('users')
+        .doc(uid)
+        .collection('playerLinks')
+        .get();
+    final result = <String, PlayerLink>{};
+    for (final doc in snap.docs) {
+      try {
+        result[doc.id] = PlayerLink.fromFirestore(doc.data(), doc.id);
+      } catch (_) {}
+    }
+    return result;
+  }
+
+  /// Retorna el PlayerLink existente para [playerId] o crea uno por defecto.
+  static Future<PlayerLink> getLinkOrDefault(String playerId) async {
+    final uid = AuthService.uid;
+    if (uid == null) {
+      return PlayerLink(
+        playerId:  playerId,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+    }
+    final doc = await _db
+        .collection('users')
+        .doc(uid)
+        .collection('playerLinks')
+        .doc(playerId)
+        .get();
+    if (doc.exists && doc.data() != null) {
+      return PlayerLink.fromFirestore(doc.data()!, doc.id);
+    }
+    return PlayerLink(
+      playerId:  playerId,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+  }
+
   // ══════════════════════════════════════════════════════════════════════════════
   // VINCULACIÓN — Enlazar un Player a la cuenta Firebase de un usuario
   // ══════════════════════════════════════════════════════════════════════════════

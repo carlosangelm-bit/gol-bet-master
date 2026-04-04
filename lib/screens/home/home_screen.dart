@@ -12,6 +12,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/live_round_service.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/bet_module_edit_sheet.dart';
+import '../../widgets/sliding_adjustment_dialog.dart';
 import '../setup/setup_screen.dart';
 import '../templates/templates_screen.dart';
 
@@ -1209,6 +1210,8 @@ class _ActiveRoundView extends StatelessWidget {
         TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancelar', style: TextStyle(color: t.sub))),
         TextButton(onPressed: () async {
           Navigator.pop(ctx);
+          // Capturar la ronda ANTES de que finishRound limpie el estado
+          final roundSnapshot = prov.round;
           final ok = await prov.finishRound();
           if (!ok && context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1217,6 +1220,10 @@ class _ActiveRoundView extends StatelessWidget {
               backgroundColor: Colors.orange.shade700,
               duration: const Duration(seconds: 5),
             ));
+          }
+          // Mostrar diálogo de ajuste de sliding
+          if (roundSnapshot != null && context.mounted) {
+            await showSlidingAdjustmentDialog(context, roundSnapshot);
           }
         }, child: Text('Finalizar', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700))),
       ],
