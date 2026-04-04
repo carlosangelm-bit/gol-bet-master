@@ -2,6 +2,7 @@
 // HOME SCREEN — Pantalla principal: iniciar ronda, estado de ronda activa
 // ─────────────────────────────────────────────────────────────────────────────
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -80,38 +81,198 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildHeader(BuildContext context, GolfTheme t, RoundProvider prov) {
+    return _HomeHeader(t: t, prov: prov);
+  }
+}
+
+// ── Header premium con fondo verde y logo ────────────────────────────────────
+class _HomeHeader extends StatelessWidget {
+  final GolfTheme t;
+  final RoundProvider prov;
+  const _HomeHeader({required this.t, required this.prov});
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final userName = auth.user?.displayName?.split(' ').first ?? '';
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-      decoration: BoxDecoration(
-        color: t.bg,
-        border: Border(bottom: BorderSide(color: t.divider)),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF0D2B0F),
+            Color(0xFF1A3A1C),
+            Color(0xFF1E4620),
+          ],
+        ),
       ),
-      child: Row(
+      child: Stack(
         children: [
-          // App icon / logo
-          Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(color: t.primary, borderRadius: BorderRadius.circular(10)),
-            alignment: Alignment.center,
-            child: Icon(Icons.golf_course, color: t.onPrimary, size: 20),
+          // Fondo decorativo
+          Positioned.fill(child: CustomPaint(painter: _HeaderBgPainter())),
+
+          // Contenido
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Fila logo + controles
+                Row(
+                  children: [
+                    // Logo
+                    Container(
+                      width: 42, height: 42,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.35),
+                            blurRadius: 12, offset: const Offset(0, 4),
+                          ),
+                          BoxShadow(
+                            color: const Color(0xFFD4A520).withValues(alpha: 0.20),
+                            blurRadius: 16, spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.asset('assets/icon/logo_main.png', fit: BoxFit.cover),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    // Nombre app
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Golf Bet Master',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 17,
+                              letterSpacing: -0.3,
+                              shadows: [Shadow(color: Colors.black26, blurRadius: 4)],
+                            ),
+                          ),
+                          if (userName.isNotEmpty)
+                            Text(
+                              'Hola, $userName',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.65),
+                                fontSize: 11,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    // Live indicator
+                    if (prov.isLiveRound) ...[_LiveIndicator(t: t), const SizedBox(width: 8)],
+                    // Theme selector
+                    _ThemeToggle(t: t),
+                  ],
+                ),
+
+                // Nombre de ronda activa
+                if (prov.hasRound) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.sports_golf_rounded,
+                            color: Colors.white.withValues(alpha: 0.8), size: 14),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            prov.round!.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          'EN CURSO',
+                          style: TextStyle(
+                            color: const Color(0xFF69F0AE).withValues(alpha: 0.9),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Golf Bet Master', style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 17, letterSpacing: -0.3)),
-              if (prov.hasRound)
-                Text(prov.round!.name, style: TextStyle(color: t.sub, fontSize: 12)),
-            ]),
-          ),
-          // Indicador de ronda en vivo
-          if (prov.isLiveRound) _LiveIndicator(t: t),
-          const SizedBox(width: 8),
-          // Theme selector
-          _ThemeToggle(t: t),
         ],
       ),
     );
   }
+}
+
+// Pintor del fondo del header
+class _HeaderBgPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Glow dorado detrás del logo (esquina superior izquierda)
+    final glowPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          const Color(0xFFD4A520).withValues(alpha: 0.15),
+          Colors.transparent,
+        ],
+      ).createShader(Rect.fromCircle(
+          center: Offset(size.width * 0.12, size.height * 0.3),
+          radius: size.width * 0.5));
+    canvas.drawCircle(
+        Offset(size.width * 0.12, size.height * 0.3),
+        size.width * 0.5,
+        glowPaint);
+
+    // Líneas decorativas tipo ondas de fairway
+    final linePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.04)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    for (int i = 0; i < 4; i++) {
+      final path = Path();
+      final y = size.height * (0.2 + i * 0.25);
+      path.moveTo(0, y);
+      for (double x = 0; x <= size.width; x += 24) {
+        path.quadraticBezierTo(x + 12, y - 6, x + 24, y);
+      }
+      canvas.drawPath(path, linePaint);
+    }
+
+    // Círculos decorativos (representan hoyos)
+    final dotPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.06)
+      ..style = PaintingStyle.fill;
+    final rng = math.Random(7);
+    for (int i = 0; i < 12; i++) {
+      final x = rng.nextDouble() * size.width;
+      final y = rng.nextDouble() * size.height;
+      canvas.drawCircle(Offset(x, y), 2.0, dotPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_) => false;
 }
 
 // ── Indicador de ronda en vivo ─────────────────────────────────────────────
@@ -540,38 +701,317 @@ class _EmptyView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
       child: Column(
         children: [
-          const SizedBox(height: 40),
+          // ── Hero section premium ────────────────────────────────────────
+          _HeroSection(t: t),
+
+          // ── Card de acciones ────────────────────────────────────────────
           Container(
-            width: 96, height: 96,
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
             decoration: BoxDecoration(
-              color: t.primary.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
+              color: t.card,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 24,
+                  offset: const Offset(0, -6),
+                ),
+              ],
             ),
-            child: Icon(Icons.golf_course, size: 48, color: t.primary),
+            child: Column(
+              children: [
+                Text(
+                  'Empieza a jugar',
+                  style: TextStyle(
+                    color: t.text,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Configura jugadores, apuestas y registra tus scores',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: t.sub,
+                    fontSize: 13,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Botón principal – Nueva Ronda
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SetupScreen())),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFD4A520),
+                      foregroundColor: const Color(0xFF0D2B0F),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      elevation: 4,
+                      shadowColor: const Color(0xFFD4A520).withValues(alpha: 0.4),
+                    ),
+                    icon: const Icon(Icons.add_circle_outline_rounded, size: 22),
+                    label: const Text(
+                      'Nueva Ronda',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Botón secundario – Usar plantilla
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const TemplatesScreen())),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: t.primary.withValues(alpha: 0.5)),
+                      foregroundColor: t.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                    ),
+                    icon: Icon(Icons.library_books_outlined, size: 18, color: t.primary),
+                    label: Text(
+                      'Usar plantilla',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: t.primary,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                // Sección de apuestas disponibles
+                _QuickInfoCards(t: t),
+              ],
+            ),
           ),
-          const SizedBox(height: 24),
-          Text('Bienvenido', style: TextStyle(color: t.text, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
-          const SizedBox(height: 8),
-          Text(
-            'Configura jugadores, apuestas y empieza a jugar',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: t.sub, fontSize: 15),
-          ),
-          const SizedBox(height: 40),
-          GPrimaryButton(
-            label: '⛳ Nueva Ronda',
-            icon: null,
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SetupScreen())),
-          ),
-          const SizedBox(height: 32),
-          _QuickInfoCards(t: t),
         ],
       ),
     );
   }
+}
+
+// ── Sección hero premium con logo y fondo verde ───────────────────────────────
+class _HeroSection extends StatelessWidget {
+  final GolfTheme t;
+  const _HeroSection({required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF0D2B0F),
+            Color(0xFF1A3A1C),
+            Color(0xFF1E4620),
+            Color(0xFF245527),
+          ],
+          stops: [0.0, 0.4, 0.75, 1.0],
+        ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
+      ),
+      child: Stack(
+        children: [
+          // Fondo decorativo completo
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(32)),
+              child: CustomPaint(painter: _HeroBgPainter()),
+            ),
+          ),
+
+          // Contenido centrado
+          Padding(
+            padding: const EdgeInsets.fromLTRB(32, 36, 32, 40),
+            child: Column(
+              children: [
+                // ── Logo con glow dorado ──────────────────────────────────
+                Container(
+                  width: 110, height: 110,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 24,
+                        offset: const Offset(0, 8),
+                      ),
+                      BoxShadow(
+                        color: const Color(0xFFD4A520).withValues(alpha: 0.35),
+                        blurRadius: 36,
+                        spreadRadius: 6,
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
+                    child: Image.asset('assets/icon/logo_main.png', fit: BoxFit.cover),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // ── Título ───────────────────────────────────────────────
+                const Text(
+                  'Golf Bet Master',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.5,
+                    shadows: [Shadow(color: Colors.black38, blurRadius: 8, offset: Offset(0, 3))],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'La forma inteligente de gestionar\ntus apuestas en el campo',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.70),
+                    fontSize: 13,
+                    height: 1.6,
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // ── Badges ───────────────────────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _badge('⛳', 'Golf'),
+                    const SizedBox(width: 10),
+                    _badge('💰', 'Apuestas'),
+                    const SizedBox(width: 10),
+                    _badge('🏆', 'Resultados'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _badge(String icon, String label) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(30),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+    ),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Text(icon, style: const TextStyle(fontSize: 14)),
+      const SizedBox(width: 5),
+      Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.2,
+        ),
+      ),
+    ]),
+  );
+}
+
+// ── Pintor del fondo del hero ─────────────────────────────────────────────────
+class _HeroBgPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Glow dorado central detrás del logo
+    final glowPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          const Color(0xFFD4A520).withValues(alpha: 0.18),
+          Colors.transparent,
+        ],
+      ).createShader(Rect.fromCircle(
+          center: Offset(size.width * 0.5, size.height * 0.28),
+          radius: size.width * 0.55));
+    canvas.drawCircle(
+        Offset(size.width * 0.5, size.height * 0.28),
+        size.width * 0.55,
+        glowPaint);
+
+    // Glow secundario esquina superior derecha
+    final glow2 = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          const Color(0xFF4CAF50).withValues(alpha: 0.12),
+          Colors.transparent,
+        ],
+      ).createShader(Rect.fromCircle(
+          center: Offset(size.width * 0.9, size.height * 0.1),
+          radius: size.width * 0.4));
+    canvas.drawCircle(
+        Offset(size.width * 0.9, size.height * 0.1),
+        size.width * 0.4,
+        glow2);
+
+    // Líneas decorativas tipo ondas de fairway
+    final linePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.045)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    for (int i = 0; i < 5; i++) {
+      final path = Path();
+      final y = size.height * (0.15 + i * 0.18);
+      path.moveTo(0, y);
+      for (double x = 0; x <= size.width; x += 30) {
+        path.quadraticBezierTo(x + 15, y - 8, x + 30, y);
+      }
+      canvas.drawPath(path, linePaint);
+    }
+
+    // Puntos decorativos (hoyos del campo)
+    final dotPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.07)
+      ..style = PaintingStyle.fill;
+    final rng = math.Random(42);
+    for (int i = 0; i < 18; i++) {
+      final x = rng.nextDouble() * size.width;
+      final y = rng.nextDouble() * size.height;
+      canvas.drawCircle(Offset(x, y), 2.2, dotPaint);
+    }
+
+    // Arco decorativo inferior (transición suave)
+    final arcPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.04)
+      ..style = PaintingStyle.fill;
+    final arcPath = Path()
+      ..moveTo(0, size.height * 0.85)
+      ..quadraticBezierTo(size.width * 0.5, size.height * 0.72, size.width, size.height * 0.85)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(arcPath, arcPaint);
+  }
+
+  @override
+  bool shouldRepaint(_) => false;
 }
 
 class _QuickInfoCards extends StatelessWidget {
@@ -591,28 +1031,51 @@ class _QuickInfoCards extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        GSectionHeader(title: 'APUESTAS DISPONIBLES'),
-        const SizedBox(height: 8),
+        // Separador
+        Divider(color: t.divider, height: 1),
+        const SizedBox(height: 20),
+        Text(
+          'APUESTAS DISPONIBLES',
+          style: TextStyle(
+            color: t.sub,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.8,
+          ),
+        ),
+        const SizedBox(height: 12),
         GridView.count(
           crossAxisCount: 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           crossAxisSpacing: 10,
           mainAxisSpacing: 10,
-          childAspectRatio: 2.6,
-          children: cards.map((c) => GCard(
+          childAspectRatio: 2.5,
+          children: cards.map((c) => Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: t.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.divider),
+            ),
             child: Row(children: [
               Container(
                 width: 32, height: 32,
-                decoration: BoxDecoration(color: t.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
+                decoration: BoxDecoration(
+                  color: t.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: Icon(c.$1, color: t.primary, size: 16),
               ),
               const SizedBox(width: 8),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-                Text(c.$2, style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 13)),
-                Text(c.$3, style: TextStyle(color: t.sub, fontSize: 10), overflow: TextOverflow.ellipsis),
-              ])),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(c.$2, style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 12)),
+                  Text(c.$3, style: TextStyle(color: t.sub, fontSize: 9), overflow: TextOverflow.ellipsis),
+                ],
+              )),
             ]),
           )).toList(),
         ),
