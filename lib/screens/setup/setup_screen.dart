@@ -161,6 +161,7 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   /// Al abrir el setup, verifica si algún campo favorito tiene corrección pendiente.
+  /// Si encuentra una corrección, la aplica AUTOMÁTICAMENTE en Firestore.
   /// Espera hasta 3 s a que los favoritos se carguen desde Firestore antes de verificar.
   Future<void> _checkCorrectionsForFavCourses() async {
     if (!mounted) return;
@@ -172,8 +173,30 @@ class _SetupScreenState extends State<SetupScreen> {
       if (favs.isNotEmpty) {
         for (final fav in favs) {
           if (!mounted) return;
-          await _checkForCorrection(fav.courseId);
-          if (_pendingCorrection != null) return; // ya hay banner, no seguir
+          try {
+            final correction = await CourseCorrectionsService.checkForCorrection(fav.courseId);
+            if (correction != null && mounted) {
+              // Aplicar corrección automáticamente en segundo plano
+              await CourseCorrectionsService.applyCorrection(correction);
+              // Si este campo ya está seleccionado en la pantalla, actualizar la UI también
+              if (_selectedApiCourse != null &&
+                  (_selectedApiCourse!.id.toString() == fav.courseId ||
+                   _selectedApiCourse!.clubName == fav.clubName)) {
+                final correctedApi = correction.correctedCourse;
+                if (correctedApi.allTees.isNotEmpty && mounted) {
+                  setState(() {
+                    _playerTees.clear();
+                    _selectedApiCourse = correctedApi;
+                    _selectedCourse = correctedApi.allTees.first
+                        .toCourseInfo(correctedApi.clubName, correctedApi.courseName);
+                    _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
+                  });
+                }
+              }
+            }
+          } catch (_) {
+            // No crítico: continuar con el siguiente favorito
+          }
         }
         return;
       }
@@ -2925,7 +2948,9 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   /// Selecciona un campo favorito obteniendo datos frescos de la API.
-  /// Si el campo tiene [manuallyEdited=true], NO reemplaza datos con la API.
+  /// Si hay corrección oficial disponible, la aplica AUTOMÁTICAMENTE.
+  /// Si el campo tiene [manuallyEdited=true] Y la corrección ya fue aplicada,
+  /// usa el caché sin volver a llamar la API.
   /// Respeta el tee preferido guardado en [fav.preferredTeeName].
   Future<void> _selectFavCourseWithFresh(FavoriteCourse fav) async {
     // Limpiar corrección pendiente anterior
@@ -2933,7 +2958,46 @@ class _SetupScreenState extends State<SetupScreen> {
       _pendingCorrection = null;
     });
 
-    // 1. Usar caché inmediatamente para respuesta rápida
+    final courseIdInt = int.tryParse(fav.courseId);
+
+    // PASO 0: Verificar si hay corrección oficial disponible ANTES de mostrar datos.
+    // Si existe corrección, aplicarla automáticamente para garantizar datos correctos.
+    if (courseIdInt != null) {
+      try {
+        final correction = await CourseCorrectionsService.checkForCorrection(fav.courseId);
+        if (correction != null && mounted) {
+          // Aplicar corrección automáticamente sin requerir acción del usuario
+          await CourseCorrectionsService.applyCorrection(correction);
+          if (!mounted) return;
+
+          final correctedApi = correction.correctedCourse;
+          if (correctedApi.allTees.isNotEmpty) {
+            setState(() {
+              _playerTees.clear();
+              _selectedApiCourse = correctedApi;
+              _selectedCourse = correctedApi.allTees.first
+                  .toCourseInfo(correctedApi.clubName, correctedApi.courseName);
+              _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
+            });
+            // Informar al usuario que se aplicaron datos corregidos
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('✅ ${correctedApi.clubName}: datos oficiales aplicados'),
+                  backgroundColor: Colors.green.shade700,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+            }
+            return; // Corrección aplicada, no necesitamos continuar con API o caché viejo
+          }
+        }
+      } catch (_) {
+        // Si falla la verificación de corrección, continuar con flujo normal
+      }
+    }
+
+    // 1. Usar caché inmediatamente para respuesta rápida (si no hay corrección pendiente)
     if (fav.hasCachedData) {
       final api = fav.cachedCourse!;
       if (api.allTees.isNotEmpty) {
@@ -2953,14 +3017,11 @@ class _SetupScreenState extends State<SetupScreen> {
       });
     }
 
-    final courseIdInt = int.tryParse(fav.courseId);
     if (courseIdInt == null) return;
 
-    // 2. Si el campo fue editado manualmente, NO sobrescribir con API.
-    //    Solo verificar si hay corrección oficial disponible.
+    // 2. Si el campo fue editado manualmente (y no hay corrección nueva), NO sobrescribir con API.
     if (fav.manuallyEdited) {
-      _checkForCorrection(fav.courseId);
-      return;
+      return; // Los datos del caché son los correctos (ya aplicamos correcciones en el paso 0)
     }
 
     // 3. Intentar obtener datos frescos de la API en background
@@ -2981,9 +3042,6 @@ class _SetupScreenState extends State<SetupScreen> {
     } catch (_) {
       // Si falla la API, el caché ya fue aplicado en el paso 1
     }
-
-    // 5. Verificar si hay corrección oficial disponible (independientemente de la API)
-    _checkForCorrection(fav.courseId);
   }
 
   /// Verifica en background si hay una corrección oficial disponible para el campo.
