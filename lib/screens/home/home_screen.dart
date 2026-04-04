@@ -328,6 +328,38 @@ class _JoinRoundDialogState extends State<_JoinRoundDialog> {
   String? _error;
 
   Future<void> _doJoin() async {
+    // Verificar si ya hay una ronda en vivo activa antes de continuar
+    if (widget.parentContext.mounted) {
+      final prov = widget.parentContext.read<RoundProvider>();
+      if (prov.hasRound && prov.isLiveRound && !(prov.round?.isFinished ?? true)) {
+        // Mostrar alerta de confirmación: ya está en otra ronda en vivo
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Ya estás en una ronda en vivo'),
+            content: Text(
+              'Estás participando en "${prov.round?.name ?? 'Ronda activa'}". '
+              '¿Deseas salir de esa ronda y unirte a "${widget.inv.roundName}"?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(
+                  'Sí, cambiar de ronda',
+                  style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+        );
+        if (confirm != true) return; // El usuario canceló
+      }
+    }
+
     setState(() { _joining = true; _error = null; });
     try {
       final round = await LiveRoundService.acceptInvitation(widget.inv);

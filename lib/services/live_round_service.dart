@@ -182,7 +182,8 @@ class LiveRoundService {
   // INVITACIONES — Lectura y acciones
   // ══════════════════════════════════════════════════════════════════════════
 
-  /// Stream de invitaciones pendientes para el usuario actual
+  /// Stream de invitaciones pendientes para el usuario actual.
+  /// Filtra automáticamente las rondas ya finalizadas (isFinished=true).
   static Stream<List<LiveRoundInvitation>> pendingInvitationsStream() {
     final uid = AuthService.uid;
     if (uid == null) return Stream.value([]);
@@ -198,6 +199,17 @@ class LiveRoundService {
       for (final ref in snap.docs) {
         try {
           final roundId = ref.data()['roundId'] as String? ?? ref.id;
+
+          // Verificar que la ronda no esté finalizada antes de mostrar la invitación
+          final roundSnap = await _liveRounds.doc(roundId).get();
+          if (!roundSnap.exists || roundSnap.data() == null) continue;
+          final isFinished = roundSnap.data()!['isFinished'] as bool? ?? false;
+          if (isFinished) {
+            // Limpiar silenciosamente la ref pendiente de una ronda ya terminada
+            _myRefs().doc(roundId).update({'status': 'declined'}).catchError((_) {});
+            continue;
+          }
+
           final invDoc = await _invitations(roundId).doc(uid).get();
           if (invDoc.exists && invDoc.data() != null) {
             invitations.add(LiveRoundInvitation.fromFirestore(
@@ -246,50 +258,44 @@ class LiveRoundService {
   }
 
   /// Carga la ronda en vivo activa donde el usuario es invitado con status='accepted'.
-  /// Revisa users/{uid}/liveRoundRefs con role='invited' y status='accepted'.
+  /// Ordena por acceptedAt descendente para cargar siempre la más reciente.
   static Future<Round?> loadAcceptedLiveRound() async {
     final uid = AuthService.uid;
     if (uid == null) return null;
     try {
-      // Query con dos filtros — si Firestore requiere índice, usamos fallback
+      // Obtener todas las refs de invitado aceptadas
       QuerySnapshot<Map<String, dynamic>> refs;
       try {
         refs = await _myRefs()
             .where('role', isEqualTo: 'invited')
             .where('status', isEqualTo: 'accepted')
-            .limit(5)
-            .get();
-      } catch (_) {
-        // Fallback: filtrar solo por role y verificar status en memoria
-        final all = await _myRefs()
-            .where('role', isEqualTo: 'invited')
             .limit(10)
             .get();
-        final filtered = all.docs
-            .where((d) => (d.data()['status'] as String?) == 'accepted')
-            .toList();
-        // Procesar docs filtrados directamente
-        for (final ref in filtered) {
-          final roundId = ref.data()['roundId'] as String? ?? ref.id;
-          final snap = await _liveRounds.doc(roundId).get();
-          if (!snap.exists || snap.data() == null) continue;
-          final data = snap.data()!;
-          final isFinished = data['isFinished'] as bool? ?? false;
-          if (!isFinished) {
-            try {
-              return roundFromJson(data);
-            } catch (e) {
-              if (kDebugMode) debugPrint('[LiveRound] Error parseando ronda del invitado: $e');
-            }
-          }
-        }
-        return null;
+      } catch (_) {
+        // Fallback sin índice compuesto: filtrar en memoria
+        final all = await _myRefs()
+            .where('role', isEqualTo: 'invited')
+            .limit(15)
+            .get();
+        refs = all; // usamos el mismo tipo; filtramos abajo
       }
 
       if (refs.docs.isEmpty) return null;
 
-      // Buscar la primera ronda no finalizada
-      for (final ref in refs.docs) {
+      // Ordenar en memoria por acceptedAt descendente → la más reciente primero
+      final sorted = refs.docs
+          .where((d) => (d.data()['status'] as String?) == 'accepted')
+          .toList()
+        ..sort((a, b) {
+          final aTs = a.data()['acceptedAt'];
+          final bTs = b.data()['acceptedAt'];
+          final aDate = aTs is Timestamp ? aTs.toDate() : DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = bTs is Timestamp ? bTs.toDate() : DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate); // descendente
+        });
+
+      // Buscar la primera ronda no finalizada (la más reciente aceptada)
+      for (final ref in sorted) {
         final roundId = ref.data()['roundId'] as String? ?? ref.id;
         final snap = await _liveRounds.doc(roundId).get();
         if (!snap.exists || snap.data() == null) continue;
@@ -299,7 +305,6 @@ class LiveRoundService {
           try {
             return roundFromJson(data);
           } catch (e, st) {
-            // Loguear siempre (no solo en debug) para diagnosticar errores de producción
             debugPrint('[LiveRound] Error parseando ronda del invitado: $e');
             debugPrint('[LiveRound] StackTrace: $st');
           }
@@ -312,17 +317,17 @@ class LiveRoundService {
     return null;
   }
 
-  /// Acepta una invitación: actualiza status y retorna la ronda cargada
+  /// Acepta una invitación: actualiza status, declina el resto de pendientes
+  /// automáticamente, y retorna la ronda cargada.
   static Future<Round?> acceptInvitation(LiveRoundInvitation inv) async {
     final uid = AuthService.uid;
     if (uid == null) return null;
 
-    // 1. Actualizar status (con manejo de errores individual para no bloquear el flujo)
+    // 1. Marcar esta invitación como aceptada
     try {
       await _invitations(inv.roundId).doc(uid).update({'status': 'accepted'});
     } catch (e) {
       if (kDebugMode) debugPrint('[LiveRound] Error actualizando invitation status: $e');
-      // No bloqueamos: el usuario puede unirse aunque falle el update del status
     }
     try {
       await _myRefs().doc(inv.roundId).update({
@@ -333,7 +338,33 @@ class LiveRoundService {
       if (kDebugMode) debugPrint('[LiveRound] Error actualizando liveRoundRef status: $e');
     }
 
-    // 2. Cargar la ronda desde liveRounds
+    // 2. Declinar automáticamente todas las demás invitaciones pendientes
+    //    para evitar que el usuario pueda unirse a dos rondas simultáneamente.
+    try {
+      final others = await _myRefs()
+          .where('status', isEqualTo: 'pending')
+          .get();
+      if (others.docs.isNotEmpty) {
+        final batch = _db.batch();
+        for (final doc in others.docs) {
+          final otherId = doc.data()['roundId'] as String? ?? doc.id;
+          if (otherId == inv.roundId) continue; // no tocar la que acaba de aceptar
+          // Declinar en liveRoundRef
+          batch.update(_myRefs().doc(otherId), {'status': 'declined'});
+          // Declinar en el sub-documento de invitación
+          batch.update(_invitations(otherId).doc(uid), {'status': 'declined'});
+        }
+        await batch.commit();
+        if (kDebugMode) {
+          debugPrint('[LiveRound] ${others.docs.length - 1} invitación(es) pendiente(s) declinada(s) automáticamente.');
+        }
+      }
+    } catch (e) {
+      // No bloqueamos el flujo principal si falla el auto-declinar
+      if (kDebugMode) debugPrint('[LiveRound] Error auto-declinando otras invitaciones: $e');
+    }
+
+    // 3. Cargar la ronda desde liveRounds
     try {
       final snap = await _liveRounds.doc(inv.roundId).get();
       if (!snap.exists || snap.data() == null) {
