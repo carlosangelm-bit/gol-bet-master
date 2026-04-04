@@ -55,11 +55,16 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             _buildHeader(context, t, prov),
-            // Banner de invitaciones pendientes
+            // Banner de invitaciones pendientes.
+            // IMPORTANTE: se pasa 'context' de HomeScreen (estable) como
+            // stableContext para que el diálogo pueda llamar a joinLiveRound
+            // incluso después de que la tarjeta de invitación se desmonte
+            // (ocurre cuando el stream emite la lista sin la inv. aceptada).
             if (_pendingInvitations.isNotEmpty)
               _InvitationsBanner(
                 invitations: _pendingInvitations,
                 t: t,
+                stableContext: context,
                 onAccepted: () => setState(() {}),
               ),
             Expanded(
@@ -169,9 +174,12 @@ class _InvitationsBanner extends StatelessWidget {
   final List<LiveRoundInvitation> invitations;
   final GolfTheme t;
   final VoidCallback onAccepted;
+  // Contexto estable de HomeScreen: sobrevive aunque las tarjetas se desmonten.
+  final BuildContext stableContext;
   const _InvitationsBanner({
     required this.invitations,
     required this.t,
+    required this.stableContext,
     required this.onAccepted,
   });
 
@@ -181,7 +189,7 @@ class _InvitationsBanner extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: Column(
         children: invitations.map((inv) => _InvitationCard(
-          inv: inv, t: t, onAccepted: onAccepted,
+          inv: inv, t: t, stableContext: stableContext, onAccepted: onAccepted,
         )).toList(),
       ),
     );
@@ -192,14 +200,26 @@ class _InvitationCard extends StatefulWidget {
   final LiveRoundInvitation inv;
   final GolfTheme t;
   final VoidCallback onAccepted;
-  const _InvitationCard({required this.inv, required this.t, required this.onAccepted});
+  // Contexto estable de HomeScreen pasado desde _InvitationsBanner.
+  // NO usar el contexto propio de la tarjeta como parentContext del diálogo:
+  // cuando acceptInvitation() actualiza Firestore, el stream emite la lista
+  // sin esta invitación y Flutter desmonta la tarjeta mientras el diálogo
+  // sigue abierto. Si el diálogo intenta usar el contexto de la tarjeta,
+  // parentContext.mounted es false y joinLiveRound() nunca se llama.
+  final BuildContext stableContext;
+  const _InvitationCard({
+    required this.inv,
+    required this.t,
+    required this.stableContext,
+    required this.onAccepted,
+  });
   @override State<_InvitationCard> createState() => _InvitationCardState();
 }
 
 class _InvitationCardState extends State<_InvitationCard> {
   bool _loading = false;
 
-  // Abre el diálogo de confirmación antes de unirse
+  // Abre el diálogo usando widget.stableContext (HomeScreen) como parentContext.
   void _showJoinDialog() {
     showDialog(
       context: context,
@@ -207,7 +227,7 @@ class _InvitationCardState extends State<_InvitationCard> {
       builder: (ctx) => _JoinRoundDialog(
         inv: widget.inv,
         t: widget.t,
-        parentContext: context,
+        parentContext: widget.stableContext,   // ← FIX: contexto de HomeScreen, no de la tarjeta
         onAccepted: widget.onAccepted,
         onDecline: () {
           Navigator.pop(ctx);
