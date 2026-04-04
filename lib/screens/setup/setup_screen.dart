@@ -3044,21 +3044,6 @@ class _SetupScreenState extends State<SetupScreen> {
     }
   }
 
-  /// Verifica en background si hay una corrección oficial disponible para el campo.
-  Future<void> _checkForCorrection(String courseId) async {
-    try {
-      final correction = await CourseCorrectionsService.checkForCorrection(courseId);
-      if (!mounted) return;
-      if (correction != null) {
-        setState(() {
-          _pendingCorrection = correction;
-        });
-      }
-    } catch (_) {
-      // No crítico
-    }
-  }
-
   /// Aplica la corrección pendiente al caché del usuario y actualiza la UI.
   Future<void> _applyPendingCorrection() async {
     final correction = _pendingCorrection;

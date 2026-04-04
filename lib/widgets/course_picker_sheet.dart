@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import '../core/app_theme.dart';
 import '../models/models.dart';
 import '../services/golf_course_service.dart';
+import '../services/course_corrections_service.dart';
 import '../providers/user_profile_provider.dart';
 import 'package:provider/provider.dart';
 import '../widgets/common_widgets.dart';
@@ -85,26 +86,61 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
       _selected = null;
     });
     try {
-      final full = await GolfCourseService.getById(course.id);
-      setState(() {
-        _selected = full;
-        _loadingDetail = false;
-      });
+      ApiCourse full = await GolfCourseService.getById(course.id);
+      // Verificar si hay corrección oficial y aplicarla automáticamente
+      full = await _applyGlobalCorrectionIfNeeded(full);
+      if (mounted) {
+        setState(() {
+          _selected = full;
+          _loadingDetail = false;
+        });
+      }
     } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingDetail = false;
+          _detailError = 'Error al cargar el campo: $e';
+        });
+      }
+    }
+  }
+
+  /// Carga un campo desde caché (sin llamada a la API).
+  /// También aplica corrección oficial si la hay.
+  Future<void> _loadFromCache(ApiCourse course) async {
+    setState(() {
+      _loadingDetail = true;
+      _detailError = null;
+    });
+    final corrected = await _applyGlobalCorrectionIfNeeded(course);
+    if (mounted) {
       setState(() {
+        _selected = corrected;
         _loadingDetail = false;
-        _detailError = 'Error al cargar el campo: $e';
+        _detailError = null;
       });
     }
   }
 
-  /// Carga un campo desde caché (sin llamada a la API)
-  void _loadFromCache(ApiCourse course) {
-    setState(() {
-      _selected = course;
-      _loadingDetail = false;
-      _detailError = null;
-    });
+  /// Verifica si existe una corrección oficial para el campo.
+  /// Si existe, la aplica en segundo plano al perfil del usuario (set con merge)
+  /// y devuelve el [ApiCourse] con los datos corregidos.
+  /// Si no existe corrección, devuelve el mismo [course] sin cambios.
+  Future<ApiCourse> _applyGlobalCorrectionIfNeeded(ApiCourse course) async {
+    try {
+      final courseId = course.id.toString();
+      final correction =
+          await CourseCorrectionsService.getGlobalCorrection(courseId);
+      if (correction == null) return course;
+
+      // Guardar corrección en el perfil del usuario en segundo plano (no bloqueante)
+      CourseCorrectionsService.applyCorrection(correction).catchError((_) {});
+
+      // Devolver los datos corregidos para mostrarlos en pantalla
+      return correction.correctedCourse;
+    } catch (_) {
+      return course; // ante cualquier error, usar datos originales
+    }
   }
 
   // ── Seleccionar tee y devolver CourseInfo ─────────────────────────────────
@@ -309,10 +345,10 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
                 child: GestureDetector(
                   onTap: () {
                     if (fav.hasCachedData) {
-                      // Directo a selección de tee, sin API
+                      // Directo a selección de tee, aplicando corrección si hay
                       _loadFromCache(fav.cachedCourse!);
                     } else {
-                      // Fallback: buscar por nombre
+                      // Sin caché: buscar por nombre (pasará por _loadDetail)
                       _doSearch(fav.clubName);
                     }
                   },
