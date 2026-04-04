@@ -381,14 +381,34 @@ class _PlayerTile extends StatelessWidget {
 
             // Datos
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // Línea 1: nombre · badge App · chip slide (todos en la misma fila)
               Row(children: [
                 Expanded(
                   child: Text(pw.displayName,
                       style: TextStyle(color: t.text,
-                          fontWeight: FontWeight.w700, fontSize: 14)),
+                          fontWeight: FontWeight.w700, fontSize: 14),
+                      overflow: TextOverflow.ellipsis),
                 ),
+                // Badge "App" alineado con el nombre
+                if (isLinked) ...[
+                  const SizedBox(width: 5),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: t.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.smartphone_rounded, color: t.primary, size: 10),
+                      const SizedBox(width: 3),
+                      Text('App', style: TextStyle(color: t.primary, fontSize: 9, fontWeight: FontWeight.w800)),
+                    ]),
+                  ),
+                ],
                 // Chip sliding
-                if (sliding != 0)
+                if (sliding != 0) ...[
+                  const SizedBox(width: 5),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
@@ -405,10 +425,11 @@ class _PlayerTile extends StatelessWidget {
                       ),
                     ),
                   ),
+                ],
               ]),
               const SizedBox(height: 2),
+              // Línea 2: nombre real (si custom) · HCP · cuenta vinculada
               Row(children: [
-                // Nombre real (si hay custom)
                 if (hasCustomName) ...[
                   Text(pw.player.name,
                       style: TextStyle(color: t.sub, fontSize: 11)),
@@ -431,39 +452,24 @@ class _PlayerTile extends StatelessWidget {
               ]),
             ])),
 
-            // Acciones
+            // Acciones: estrella y eliminar apiladas, centradas en la card
             const SizedBox(width: 8),
-            // Badge de vinculado visible como chip en el lado derecho
-            if (isLinked) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: t.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+            Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              GestureDetector(
+                onTap: onFav,
+                child: Icon(
+                  pw.isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+                  color: pw.isFavorite ? Colors.amber : t.sub,
+                  size: 22,
                 ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.smartphone_rounded, color: t.primary, size: 10),
-                  const SizedBox(width: 3),
-                  Text('App', style: TextStyle(color: t.primary, fontSize: 9, fontWeight: FontWeight.w800)),
-                ]),
               ),
-              const SizedBox(width: 6),
-            ],
-            GestureDetector(
-              onTap: onFav,
-              child: Icon(
-                pw.isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
-                color: pw.isFavorite ? Colors.amber : t.sub,
-                size: 22,
+              const SizedBox(height: 6),
+              GestureDetector(
+                onTap: onDelete,
+                child: Icon(Icons.remove_circle_outline,
+                    color: t.loss.withValues(alpha: 0.6), size: 20),
               ),
-            ),
-            const SizedBox(width: 4),
-            GestureDetector(
-              onTap: onDelete,
-              child: Icon(Icons.remove_circle_outline,
-                  color: t.loss.withValues(alpha: 0.6), size: 20),
-            ),
+            ]),
           ]),
         ),
       ),
