@@ -28,6 +28,32 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <!-- SW Cleanup: desregistrar service workers antiguos y limpiar cachés
+       ANTES de cargar la app. Esto garantiza que el usuario siempre ejecute
+       la versión más reciente sin quedar bloqueado por un SW en caché. -->
+  <script>
+    (function() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+          regs.forEach(function(reg) {
+            reg.unregister().then(function(ok) {
+              if (ok) console.debug('[SW] Unregistered:', reg.scope);
+            });
+          });
+        });
+        // Limpiar también todos los cachés del SW anterior
+        if ('caches' in window) {
+          caches.keys().then(function(keys) {
+            keys.forEach(function(k) {
+              caches.delete(k).then(function() {
+                console.debug('[SW] Cache deleted:', k);
+              });
+            });
+          });
+        }
+      }
+    })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
