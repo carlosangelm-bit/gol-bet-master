@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'core/firebase_options.dart';
 import 'providers/round_provider.dart';
@@ -40,6 +41,18 @@ void main() {
     // Inicializar Firebase con manejo de errores robusto
     try {
       await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+      // En Web, habilitar auto-detección de Long Polling para evitar:
+      // "WebChannelConnection RPC 'Listen' stream transport errored"
+      // Esto ocurre cuando proxies, VPNs o redes corporativas bloquean
+      // las conexiones WebChannel persistentes de Firestore.
+      if (kIsWeb) {
+        FirebaseFirestore.instance.settings = const Settings(
+          webExperimentalAutoDetectLongPolling: true,
+          persistenceEnabled: false,
+          ignoreUndefinedProperties: true,
+        );
+      }
     } catch (e) {
       debugPrint('Firebase init error: $e');
       runApp(_ErrorApp(message: 'Firebase init error: $e'));
