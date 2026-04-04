@@ -152,11 +152,19 @@ class _ProfileCard extends StatelessWidget {
     final playerProv = context.watch<PlayerProvider>();
     final profile  = profProv.profile;
 
+    // Mostrar spinner SOLO si está cargando Y aún no hay datos.
+    // El provider tiene un timeout de 8 s que pone loading=false,
+    // así que este spinner nunca puede quedarse colgado indefinidamente.
     if (profProv.loading && profile == null) {
       return GCard(child: Center(
         child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: CircularProgressIndicator(color: t.primary),
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            CircularProgressIndicator(color: t.primary, strokeWidth: 2.5),
+            const SizedBox(height: 12),
+            Text('Cargando perfil…',
+                style: TextStyle(color: t.sub, fontSize: 12)),
+          ]),
         ),
       ));
     }

@@ -15,6 +15,7 @@ class UserProfileProvider extends ChangeNotifier {
   String?               _error;
   StreamSubscription<UserProfile?>?        _profileSub;
   StreamSubscription<List<FavoriteCourse>>? _coursesSub;
+  Timer?                _loadingTimeout;
 
   // ── Getters ────────────────────────────────────────────────────────────────
   UserProfile?         get profile    => _profile;
@@ -28,19 +29,37 @@ class UserProfileProvider extends ChangeNotifier {
 
   // ── Suscripción en tiempo real ─────────────────────────────────────────────
   void startListening() {
-    _loading = true;
-    _error   = null;
-    notifyListeners();
+    // Si ya hay datos en caché, NO mostrar spinner — evita parpadeo al
+    // re-suscribirse (p.ej. al volver a la pantalla de Ajustes).
+    if (_profile == null) {
+      _loading = true;
+      _error   = null;
+      notifyListeners();
+    }
+
+    // Timeout de seguridad: si el stream no emite en 8 s, quitar el spinner.
+    // Previene que la tarjeta quede cargando indefinidamente ante errores
+    // de red, Firestore WebChannel o token no propagado aún.
+    _loadingTimeout?.cancel();
+    _loadingTimeout = Timer(const Duration(seconds: 8), () {
+      if (_loading) {
+        _loading = false;
+        if (kDebugMode) debugPrint('UserProfileProvider: timeout → loading=false');
+        notifyListeners();
+      }
+    });
 
     _profileSub?.cancel();
     _profileSub = UserProfileService.profileStream().listen(
       (profile) {
+        _loadingTimeout?.cancel();
         _profile = profile;
         _loading = false;
         notifyListeners();
       },
       onError: (e) {
         if (kDebugMode) debugPrint('UserProfileProvider profile error: $e');
+        _loadingTimeout?.cancel();
         _error   = e.toString();
         _loading = false;
         notifyListeners();
@@ -60,6 +79,7 @@ class UserProfileProvider extends ChangeNotifier {
   }
 
   void stopListening() {
+    _loadingTimeout?.cancel();
     _profileSub?.cancel();
     _coursesSub?.cancel();
     _profileSub = null;
@@ -68,6 +88,7 @@ class UserProfileProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _loadingTimeout?.cancel();
     stopListening();
     super.dispose();
   }
