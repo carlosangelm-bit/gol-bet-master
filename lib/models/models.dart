@@ -1193,7 +1193,7 @@ class BetGroup {
       format: PartidaFormat.values.firstWhere((f) => f.name == j['format'],
           orElse: () => PartidaFormat.allInOnePot),
       playerIds: pids,
-      modules: ((j['modules'] as List?) ?? []).map((m) {
+      modules: (j['modules'] is List ? (j['modules'] as List) : []).map((m) {
         final map = m is Map ? Map<String, dynamic>.from(m) : <String, dynamic>{};
         // Detectar si es formato legacy (BetModule antiguo) o nuevo (BetModuleInstance)
         try {

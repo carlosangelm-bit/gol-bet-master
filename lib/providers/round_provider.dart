@@ -117,19 +117,22 @@ Round roundFromJson(Map<String, dynamic> j) {
   }
 
   return Round(
-    id: j['id'] as String, name: j['name'] as String,
-    createdAt: parsedCreatedAt,
-    currentHole: j['currentHole'] as int? ?? 1,
-    isFinished: j['isFinished'] as bool? ?? false,
+    // Casts defensivos: Firestore Web devuelve Map<Object?,Object?> y tipos numéricos
+    // variables, por eso usamos helpers en lugar de casts directos con 'as'.
+    id:          (j['id']   as Object?)?.toString() ?? '',
+    name:        (j['name'] as Object?)?.toString() ?? 'Ronda',
+    createdAt:   parsedCreatedAt,
+    currentHole: (j['currentHole'] as num?)?.toInt()  ?? 1,
+    isFinished:  j['isFinished']  == true,
     startingNine: j['startingNine'] == 'back' ? StartingNine.back : StartingNine.front,
-    totalHoles: j['totalHoles'] as int? ?? 18,
-    isLive: j['isLive'] as bool? ?? false,
-    ownerUid: j['ownerUid'] as String?,
-    liveCode: j['liveCode'] as String?,
+    totalHoles:  (j['totalHoles']  as num?)?.toInt()  ?? 18,
+    isLive:      j['isLive']      == true,
+    ownerUid:    (j['ownerUid']   as Object?)?.toString(),
+    liveCode:    (j['liveCode']   as Object?)?.toString(),
     players: players, roundPlayers: roundPlayers,
     betGroups: betGroups,
     course: j['course'] != null
-        ? CourseInfo.fromJson(j['course'] as Map<String, dynamic>)
+        ? CourseInfo.fromJson(asMap(j['course']))   // asMap() normaliza Map<Object?,Object?>
         : CourseInfo.standard,
     scores: scores, events: events, oyeseRankings: oyeses, sliding: sliding,
   );
