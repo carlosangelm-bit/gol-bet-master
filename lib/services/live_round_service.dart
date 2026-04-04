@@ -76,6 +76,7 @@ class LiveRoundInvitation {
     'courseName':  courseName,
     'createdAt':   FieldValue.serverTimestamp(),
     'status':      status.name,
+    'role':        'invited',   // siempre incluir role para que los queries funcionen
     if (myPlayerId != null) 'myPlayerId': myPlayerId,
   };
 }
@@ -297,13 +298,16 @@ class LiveRoundService {
         if (!isFinished) {
           try {
             return roundFromJson(data);
-          } catch (e) {
-            if (kDebugMode) debugPrint('[LiveRound] Error parseando ronda del invitado: $e');
+          } catch (e, st) {
+            // Loguear siempre (no solo en debug) para diagnosticar errores de producción
+            debugPrint('[LiveRound] Error parseando ronda del invitado: $e');
+            debugPrint('[LiveRound] StackTrace: $st');
           }
         }
       }
-    } catch (e) {
-      if (kDebugMode) debugPrint('[LiveRound] Error buscando ronda aceptada del invitado: $e');
+    } catch (e, st) {
+      debugPrint('[LiveRound] Error buscando ronda aceptada del invitado: $e');
+      debugPrint('[LiveRound] StackTrace: $st');
     }
     return null;
   }
@@ -337,8 +341,9 @@ class LiveRoundService {
         return null;
       }
       return roundFromJson(snap.data()!);
-    } catch (e) {
-      if (kDebugMode) debugPrint('[LiveRound] Error cargando/parseando ronda: $e');
+    } catch (e, st) {
+      debugPrint('[LiveRound] Error cargando/parseando ronda en acceptInvitation: $e');
+      debugPrint('[LiveRound] StackTrace: $st');
       return null;
     }
   }
