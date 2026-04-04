@@ -39,7 +39,13 @@ class AuthProvider extends ChangeNotifier {
     });
 
     try {
-      _sub = FirebaseAuth.instance.authStateChanges().listen(
+      // idTokenChanges() en lugar de authStateChanges():
+      // - authStateChanges() emite cuando el usuario existe pero el ID Token
+      //   puede no estar propagado aún en el SDK de Firestore Web (bug SDK 11.x).
+      // - idTokenChanges() solo emite DESPUÉS de que el token está disponible,
+      //   garantizando que Firestore no abra streams con request.auth == null.
+      // Esto previene el error "WebChannelConnection transport errored" al inicio.
+      _sub = FirebaseAuth.instance.idTokenChanges().listen(
         (user) {
           _unknownTimer?.cancel();
           _user   = user;

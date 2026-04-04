@@ -59,8 +59,15 @@ service cloud.firestore {
 
     // RONDAS EN VIVO (multijugador en tiempo real)
     match /liveRounds/{roundId} {
+      // Permitir leer/actualizar si:
+      //   1. El usuario está en participantUids (caso normal), O
+      //   2. El usuario es el ownerUid (fallback: participantUids puede estar vacío
+      //      durante la creación inicial o en edge cases de timing).
+      // Ambas condiciones previenen que Firestore rechace la petición silenciosamente
+      // con un error de transporte en lugar de un PERMISSION_DENIED claro.
       allow read, update: if request.auth != null
-                          && request.auth.uid in resource.data.participantUids;
+                          && (request.auth.uid in resource.data.participantUids
+                              || request.auth.uid == resource.data.ownerUid);
       allow create: if request.auth != null
                     && request.auth.uid == request.resource.data.ownerUid;
       allow delete: if request.auth != null
