@@ -34,15 +34,15 @@ class _P {
   static const dUnder   = Color(0xFF64B5F6);
   static const dOver    = Color(0xFFEF9A9A);
 
-  // Classic (Verde fairway · Crema · Oro)
-  static const cBg      = Color(0xFF1B5E20);
-  static const cSurface = Color(0xFF194F1C);
-  static const cCard    = Color(0xFF1E6125);
+  // Classic (Verde premium · Crema · Oro) — mismo tono que hero screens
+  static const cBg      = Color(0xFF0D2B0F);
+  static const cSurface = Color(0xFF1A3A1C);
+  static const cCard    = Color(0xFF1E4620);
   static const cPrimary = Color(0xFFF9A825);
-  static const cOnPrim  = Color(0xFF1B5E20);
+  static const cOnPrim  = Color(0xFF0D2B0F);
   static const cText    = Color(0xFFFFF8E7);
   static const cSub     = Color(0xFFD4C89A);
-  static const cDiv     = Color(0xFF2E7D32);
+  static const cDiv     = Color(0xFF245527);
   static const cProfit  = Color(0xFFF9A825);
   static const cLoss    = Color(0xFFFFCDD2);
   static const cAccent  = Color(0xFFFBC02D);
