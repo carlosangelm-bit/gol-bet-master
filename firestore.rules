@@ -63,11 +63,16 @@ service cloud.firestore {
       //   1. El usuario está en participantUids (caso normal), O
       //   2. El usuario es el ownerUid (fallback: participantUids puede estar vacío
       //      durante la creación inicial o en edge cases de timing).
-      // Ambas condiciones previenen que Firestore rechace la petición silenciosamente
-      // con un error de transporte en lugar de un PERMISSION_DENIED claro.
+      // IMPORTANTE: verificar que 'participantUids' existe antes de usar 'in'.
+      // Si el campo está ausente (ronda sin jugadores vinculados), Firestore lanza
+      // un error de evaluación que se manifiesta como error de transporte en la app
+      // en lugar de un PERMISSION_DENIED claro.
       allow read, update: if request.auth != null
-                          && (request.auth.uid in resource.data.participantUids
-                              || request.auth.uid == resource.data.ownerUid);
+                          && (
+                            (('participantUids' in resource.data)
+                              && request.auth.uid in resource.data.participantUids)
+                            || request.auth.uid == resource.data.ownerUid
+                          );
       allow create: if request.auth != null
                     && request.auth.uid == request.resource.data.ownerUid;
       allow delete: if request.auth != null
