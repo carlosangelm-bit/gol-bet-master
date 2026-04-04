@@ -42,13 +42,13 @@ void main() {
     try {
       await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-      // En Web, habilitar auto-detección de Long Polling para evitar:
+      // En Web, forzar Long Polling en lugar de WebChannel para evitar:
       // "WebChannelConnection RPC 'Listen' stream transport errored"
-      // Esto ocurre cuando proxies, VPNs o redes corporativas bloquean
-      // las conexiones WebChannel persistentes de Firestore.
+      // autoDetect no es suficiente — forzamos Long Polling directamente.
+      // Esto garantiza compatibilidad con cualquier red/proxy/Safari.
       if (kIsWeb) {
         FirebaseFirestore.instance.settings = const Settings(
-          webExperimentalAutoDetectLongPolling: true,
+          webExperimentalForceLongPolling: true,
           persistenceEnabled: false,
           ignoreUndefinedProperties: true,
         );
