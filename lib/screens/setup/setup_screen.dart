@@ -656,9 +656,13 @@ class _SetupScreenState extends State<SetupScreen> {
               }
               _players.add(player);
               _assignDefaultTeeToPlayer(player.id);
-              // Aplicar el sliding predefinido del compañero
+              // Aplicar el sliding predefinido del compañero.
+              // El defaultSlidingAdjustment está guardado desde la perspectiva
+              // del usuario dueño del link (Carlos), pero _applyDefaultSliding
+              // lo interpreta desde la perspectiva de newPlayerId (el compañero).
+              // Por eso se invierte el signo: si Carlos da 9 (-9), Rafa recibe 9 (+9).
               final slide = pw.link?.defaultSlidingAdjustment ?? 0;
-              _applyDefaultSliding(player.id, slide);
+              _applyDefaultSliding(player.id, -slide);
             });
           }
         },
