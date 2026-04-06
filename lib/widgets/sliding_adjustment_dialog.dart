@@ -34,15 +34,14 @@ class _SlidingAdjustmentDialogState extends State<SlidingAdjustmentDialog> {
   }
 
   Future<void> _loadSuggestions() async {
-    final uid = AuthService.uid;
-    if (uid == null) {
-      setState(() { _loading = false; });
-      return;
-    }
+    final uid = AuthService.uid;  // puede ser null — el engine usa fallback al primer jugador
 
     try {
-      // Obtener playerLinks del usuario actual
-      final linksSnap = await PlayerService.getLinksForUser(uid);
+      // Obtener playerLinks del usuario actual (vacío si no está autenticado)
+      final linksSnap = uid != null
+          ? await PlayerService.getLinksForUser(uid)
+          : <String, PlayerLink>{};
+
       final suggestions = SlidingAdjustmentEngine.computeSuggestions(
         round:       widget.round,
         currentUid:  uid,
@@ -70,12 +69,23 @@ class _SlidingAdjustmentDialogState extends State<SlidingAdjustmentDialog> {
     try {
       for (final s in suggestions) {
         if (!s.accepted || s.delta == 0) continue;
-        // Actualizar el defaultSlidingAdjustment en el playerLink del usuario
+
+        // ── Ajuste unilateral: actualizar mi playerLink con el oponente ──────
         final link = await PlayerService.getLinkOrDefault(s.opponentId);
         final updated = link.copyWith(
           defaultSlidingAdjustment: s.suggestedAdjustment,
         );
         await PlayerService.updateLink(updated);
+
+        // ── Ajuste bilateral: si el oponente está vinculado, actualizar
+        //    también su playerLink hacia mí con el delta invertido ───────────
+        if (s.opponentIsLinked) {
+          await _applyBilateral(
+            opponentUid:  _getOpponentUid(s.opponentId),
+            myPlayerId:   s.playerId,
+            inverseDelta: -s.delta,
+          );
+        }
       }
     } catch (e) {
       if (kDebugMode) debugPrint('[SlidingAdjustmentDialog] Save error: $e');
@@ -84,6 +94,37 @@ class _SlidingAdjustmentDialogState extends State<SlidingAdjustmentDialog> {
     }
 
     if (mounted) Navigator.of(context).pop(true);
+  }
+
+  /// Actualiza el playerLink del oponente hacia mi jugador con el delta inverso.
+  /// Usa el UID del oponente (linkedUserId) para escribir en su colección.
+  Future<void> _applyBilateral({
+    required String? opponentUid,
+    required String myPlayerId,
+    required int inverseDelta,
+  }) async {
+    if (opponentUid == null || opponentUid.isEmpty) return;
+    try {
+      // Leer el playerLink que tiene el oponente hacia mí
+      final snap = await PlayerService.getLinkForUserAndPlayer(
+        uid: opponentUid, playerId: myPlayerId);
+      if (snap == null) return;
+      final updatedLink = snap.copyWith(
+        defaultSlidingAdjustment: snap.defaultSlidingAdjustment + inverseDelta,
+      );
+      await PlayerService.updateLinkForUser(
+        uid: opponentUid, link: updatedLink);
+    } catch (e) {
+      if (kDebugMode) debugPrint('[SlidingAdjustmentDialog] Bilateral error: $e');
+    }
+  }
+
+  /// Obtiene el linkedUserId del jugador oponente desde la ronda.
+  String? _getOpponentUid(String opponentId) {
+    final player = widget.round.players
+        .where((p) => p.id == opponentId)
+        .firstOrNull;
+    return player?.linkedUserId;
   }
 
   @override
@@ -211,7 +252,7 @@ class _SlidingAdjustmentDialogState extends State<SlidingAdjustmentDialog> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Center(child: Text(
-        'No hay jugadores con cuenta vinculada\nen esta ronda.',
+        'No hay apuestas registradas en esta ronda\npara calcular el ajuste.',
         style: TextStyle(color: t.sub, fontSize: 13),
         textAlign: TextAlign.center,
       )),
@@ -351,6 +392,46 @@ class _SuggestionTile extends StatelessWidget {
                       fontWeight: isTie ? FontWeight.normal : FontWeight.w600,
                     )),
               ]),
+              // Badge bilateral/unilateral
+              if (!isTie) ...[
+                const SizedBox(height: 5),
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: s.opponentIsLinked
+                          ? const Color(0xFF1565C0).withValues(alpha: 0.15)
+                          : Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: s.opponentIsLinked
+                            ? const Color(0xFF1565C0).withValues(alpha: 0.40)
+                            : Colors.white.withValues(alpha: 0.12),
+                      ),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(
+                        s.opponentIsLinked ? Icons.sync_rounded : Icons.sync_disabled_rounded,
+                        size: 10,
+                        color: s.opponentIsLinked
+                            ? const Color(0xFF42A5F5)
+                            : t.sub,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        s.opponentIsLinked ? 'Ajuste bilateral' : 'Solo local',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: s.opponentIsLinked
+                              ? const Color(0xFF42A5F5)
+                              : t.sub,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ]),
+                  ),
+                ]),
+              ],
             ],
           )),
 

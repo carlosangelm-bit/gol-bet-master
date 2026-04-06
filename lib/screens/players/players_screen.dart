@@ -317,6 +317,19 @@ class _Header extends StatelessWidget {
             ),
           ]),
         ),
+        // Botón cerrar (volver a Ajustes)
+        if (Navigator.canPop(context))
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: 32, height: 32,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.07),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.close, color: t.sub, size: 18),
+            ),
+          ),
       ]),
     );
   }

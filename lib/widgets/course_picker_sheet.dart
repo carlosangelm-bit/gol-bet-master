@@ -43,6 +43,7 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
   ApiCourse? _selected;
   bool _loadingDetail = false;
   String? _detailError;
+  bool _hasCorrectedData = false; // true cuando se usan datos corregidos del campo
 
   @override
   void dispose() {
@@ -84,15 +85,26 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
       _loadingDetail = true;
       _detailError = null;
       _selected = null;
+      _hasCorrectedData = false;
     });
     try {
-      ApiCourse full = await GolfCourseService.getById(course.id);
-      // Verificar si hay corrección oficial y aplicarla automáticamente
-      full = await _applyGlobalCorrectionIfNeeded(full);
+      // PRIMERO: verificar corrección oficial — si existe, usarla SIN llamar a la API
+      final correction = await CourseCorrectionsService.getForCourse(course.id.toString());
+      if (correction != null && mounted) {
+        setState(() {
+          _selected = correction.correctedCourse;
+          _loadingDetail = false;
+          _hasCorrectedData = true;
+        });
+        return;
+      }
+      // Sin corrección → llamar a la API
+      final full = await GolfCourseService.getById(course.id);
       if (mounted) {
         setState(() {
           _selected = full;
           _loadingDetail = false;
+          _hasCorrectedData = false;
         });
       }
     } catch (e) {
@@ -100,6 +112,7 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
         setState(() {
           _loadingDetail = false;
           _detailError = 'Error al cargar el campo: $e';
+          _hasCorrectedData = false;
         });
       }
     }
@@ -111,37 +124,23 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
     setState(() {
       _loadingDetail = true;
       _detailError = null;
+      _hasCorrectedData = false;
     });
-    final corrected = await _applyGlobalCorrectionIfNeeded(course);
+    // PRIMERO: corrección oficial
+    final correction = await CourseCorrectionsService.getForCourse(course.id.toString());
+    final hasCorrected = correction != null;
+    final result = hasCorrected ? correction.correctedCourse : course;
     if (mounted) {
       setState(() {
-        _selected = corrected;
+        _selected = result;
         _loadingDetail = false;
         _detailError = null;
+        _hasCorrectedData = hasCorrected;
       });
     }
   }
 
-  /// Verifica si existe una corrección oficial para el campo.
-  /// Si existe, la aplica en segundo plano al perfil del usuario (set con merge)
-  /// y devuelve el [ApiCourse] con los datos corregidos.
-  /// Si no existe corrección, devuelve el mismo [course] sin cambios.
-  Future<ApiCourse> _applyGlobalCorrectionIfNeeded(ApiCourse course) async {
-    try {
-      final courseId = course.id.toString();
-      final correction =
-          await CourseCorrectionsService.getGlobalCorrection(courseId);
-      if (correction == null) return course;
 
-      // Guardar corrección en el perfil del usuario en segundo plano (no bloqueante)
-      CourseCorrectionsService.applyCorrection(correction).catchError((_) {});
-
-      // Devolver los datos corregidos para mostrarlos en pantalla
-      return correction.correctedCourse;
-    } catch (_) {
-      return course; // ante cualquier error, usar datos originales
-    }
-  }
 
   // ── Seleccionar tee y devolver CourseInfo ─────────────────────────────────
   void _pickTee(ApiTeeBox tee) {
@@ -425,6 +424,27 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
       controller: scrollCtrl,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
+        // ── Banner de datos corregidos ────────────────────────────────────────
+        if (_hasCorrectedData)
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF34C759).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFF34C759).withValues(alpha: 0.4)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.verified_rounded, color: Color(0xFF34C759), size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Usando datos oficiales corregidos del campo',
+                  style: TextStyle(color: const Color(0xFF34C759), fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ]),
+          ),
         // Info del campo + botón favorito
         Consumer<UserProfileProvider>(
           builder: (ctx, profProv, _) {

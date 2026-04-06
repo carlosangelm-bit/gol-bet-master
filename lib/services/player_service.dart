@@ -453,6 +453,43 @@ class PlayerService {
     }
   }
 
+  // ── Métodos para ajuste bilateral de sliding ───────────────────────────────
+
+  /// Lee el PlayerLink que [uid] tiene hacia [playerId].
+  /// Retorna null si no existe ese link (el oponente no tiene al usuario en su directorio).
+  static Future<PlayerLink?> getLinkForUserAndPlayer({
+    required String uid,
+    required String playerId,
+  }) async {
+    try {
+      final doc = await _db
+          .collection('users')
+          .doc(uid)
+          .collection('playerLinks')
+          .doc(playerId)
+          .get();
+      if (!doc.exists || doc.data() == null) return null;
+      return PlayerLink.fromFirestore(doc.data()!, doc.id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Actualiza el PlayerLink de [uid] hacia el jugador del link con merge.
+  static Future<void> updateLinkForUser({
+    required String uid,
+    required PlayerLink link,
+  }) async {
+    try {
+      await _db
+          .collection('users')
+          .doc(uid)
+          .collection('playerLinks')
+          .doc(link.playerId)
+          .set(link.toFirestore(), SetOptions(merge: true));
+    } catch (_) {}
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
   static Player _playerFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data()!;

@@ -9,6 +9,7 @@ import '../../engines/game_engine.dart';
 import '../../engines/ledger_engine.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/common_widgets.dart';
 
 class ScorecardScreen extends StatefulWidget {
@@ -596,133 +597,237 @@ class _ScorecardGrid extends StatelessWidget {
           ]),
           const SizedBox(height: 10),
           // ── Tarjetas de jugadores ─────────────────────────────────────────
-          Row(
-            children: playerData.asMap().entries.map((e) {
-              final d = e.value;
-              final isLast = e.key == playerData.length - 1;
+          // Con 5+ jugadores se usa modo compacto: solo inicial, medal y putts
+          Builder(builder: (context) {
+            final compact = players.length >= 5;
+            return Row(
+              children: playerData.asMap().entries.map((e) {
+                final d = e.value;
+                final isLast = e.key == playerData.length - 1;
+                final gap = EdgeInsets.only(right: isLast ? 0 : (compact ? 5 : 8));
 
-              if (!d.hasAny || d.total == 0) {
-                return Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(right: isLast ? 0 : 8),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: cSub.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: cDiv),
-                      ),
-                      child: Row(children: [
-                        GAvatar(name: d.player.name,
-                            colorIndex: d.player.colorIndex, size: 28),
-                        const SizedBox(width: 8),
-                        Text('—', style: TextStyle(color: cSub, fontSize: 20,
-                            fontWeight: FontWeight.w900)),
-                      ]),
-                    ),
-                  ),
-                );
-              }
-
-              final diff = d.total - parT;
-              final dc = diff < 0 ? cUnder : diff > 0 ? cOver : cSub;
-              final diffLabel = diff > 0 ? '+$diff' : diff == 0 ? 'E' : '$diff';
-
-              // Color putts
-              final puttColor = d.totalPutts == 0
-                  ? cSub
-                  : d.totalPutts <= d.playedHoles
-                      ? cUnder
-                      : d.totalPutts >= d.playedHoles * 2
-                          ? cOver
-                          : cSub;
-
-              return Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(right: isLast ? 0 : 8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: dc.withValues(alpha: 0.07),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: dc.withValues(alpha: 0.35), width: 1.5),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // ── Nombre + avatar ──────────────────────────────
-                        Row(children: [
-                          GAvatar(name: d.player.name,
-                              colorIndex: d.player.colorIndex, size: 24),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              d.player.name.split(' ').first,
-                              style: TextStyle(
-                                  color: cText,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                // ── Sin scores aún ────────────────────────────────────────
+                if (!d.hasAny || d.total == 0) {
+                  if (compact) {
+                    // Compacto vacío: apodo (primer nombre) + guión
+                    final nickname = d.player.name.split(' ').first;
+                    return Expanded(
+                      child: Padding(
+                        padding: gap,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: cSub.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: cDiv),
                           ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(nickname,
+                                  style: TextStyle(color: cSub,
+                                      fontSize: 11, fontWeight: FontWeight.w800),
+                                  textAlign: TextAlign.center,
+                                  overflow: TextOverflow.ellipsis),
+                              Text('—', style: TextStyle(color: cSub,
+                                  fontSize: 16, fontWeight: FontWeight.w900),
+                                  textAlign: TextAlign.center),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  return Expanded(
+                    child: Padding(
+                      padding: gap,
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: cSub.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: cDiv),
+                        ),
+                        child: Row(children: [
+                          GAvatar(name: d.player.name,
+                              colorIndex: d.player.colorIndex, size: 28),
+                          const SizedBox(width: 8),
+                          Text('—', style: TextStyle(color: cSub, fontSize: 20,
+                              fontWeight: FontWeight.w900)),
                         ]),
-                        const SizedBox(height: 8),
-                        // ── Total golpes + vs par ────────────────────────
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
+                      ),
+                    ),
+                  );
+                }
+
+                final diff = d.total - parT;
+                final dc = diff < 0 ? cUnder : diff > 0 ? cOver : cSub;
+                final diffLabel = diff > 0 ? '+$diff' : diff == 0 ? 'E' : '$diff';
+
+                // Color putts
+                final puttColor = d.totalPutts == 0
+                    ? cSub
+                    : d.totalPutts <= d.playedHoles
+                        ? cUnder
+                        : d.totalPutts >= d.playedHoles * 2
+                            ? cOver
+                            : cSub;
+
+                // ── Modo COMPACTO (5+ jugadores) ─────────────────────────
+                if (compact) {
+                  final nickname = d.player.name.split(' ').first;
+                  return Expanded(
+                    child: Padding(
+                      padding: gap,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: dc.withValues(alpha: 0.07),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: dc.withValues(alpha: 0.35), width: 1.5),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
+                            // Apodo (primer nombre) del jugador
+                            Text(nickname,
+                                style: TextStyle(
+                                    color: cText,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800),
+                                textAlign: TextAlign.center,
+                                overflow: TextOverflow.ellipsis),
+                            const SizedBox(height: 4),
+                            // Score medal grande
                             Text('${d.total}',
                                 style: TextStyle(
                                     color: cText,
-                                    fontSize: 28,
+                                    fontSize: 22,
                                     fontWeight: FontWeight.w900,
-                                    height: 1.0)),
-                            const SizedBox(width: 6),
+                                    height: 1.0),
+                                textAlign: TextAlign.center),
+                            // Vs par (chip pequeño)
+                            const SizedBox(height: 3),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
+                                  horizontal: 4, vertical: 1),
                               decoration: BoxDecoration(
                                 color: dc.withValues(alpha: 0.18),
-                                borderRadius: BorderRadius.circular(5),
+                                borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(diffLabel,
                                   style: TextStyle(
                                       color: dc,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w900)),
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900),
+                                  textAlign: TextAlign.center),
                             ),
+                            // Putts (si existen)
+                            if (d.totalPutts > 0) ...[
+                              const SizedBox(height: 5),
+                              Text('${d.totalPutts}p',
+                                  style: TextStyle(
+                                      color: puttColor,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700),
+                                  textAlign: TextAlign.center),
+                            ],
                           ],
                         ),
-                        const SizedBox(height: 6),
-                        // ── F9 / B9 ──────────────────────────────────────
-                        Row(children: [
-                          _miniChip('F9', d.f9, cSub, cDiv),
-                          const SizedBox(width: 4),
-                          _miniChip('B9', d.b9, cSub, cDiv),
-                        ]),
-                        // ── Putts totales ─────────────────────────────────
-                        if (d.totalPutts > 0) ...[
-                          const SizedBox(height: 6),
+                      ),
+                    ),
+                  );
+                }
+
+                // ── Modo NORMAL (≤4 jugadores) ────────────────────────────
+                return Expanded(
+                  child: Padding(
+                    padding: gap,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: dc.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: dc.withValues(alpha: 0.35), width: 1.5),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // ── Nombre + avatar ──────────────────────────────
                           Row(children: [
-                            Icon(Icons.sports_golf_rounded,
-                                color: puttColor, size: 11),
-                            const SizedBox(width: 3),
-                            Text('${d.totalPutts} putts',
+                            GAvatar(name: d.player.name,
+                                colorIndex: d.player.colorIndex, size: 24),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                d.player.name.split(' ').first,
                                 style: TextStyle(
-                                    color: puttColor,
+                                    color: cText,
                                     fontSize: 11,
-                                    fontWeight: FontWeight.w700)),
+                                    fontWeight: FontWeight.w700),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                           ]),
+                          const SizedBox(height: 8),
+                          // ── Total golpes + vs par ────────────────────────
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              Text('${d.total}',
+                                  style: TextStyle(
+                                      color: cText,
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w900,
+                                      height: 1.0)),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: dc.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: Text(diffLabel,
+                                    style: TextStyle(
+                                        color: dc,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w900)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          // ── F9 / B9 ──────────────────────────────────────
+                          Row(children: [
+                            _miniChip('F9', d.f9, cSub, cDiv),
+                            const SizedBox(width: 4),
+                            _miniChip('B9', d.b9, cSub, cDiv),
+                          ]),
+                          // ── Putts totales ─────────────────────────────────
+                          if (d.totalPutts > 0) ...[
+                            const SizedBox(height: 6),
+                            Row(children: [
+                              Icon(Icons.sports_golf_rounded,
+                                  color: puttColor, size: 11),
+                              const SizedBox(width: 3),
+                              Text('${d.totalPutts} putts',
+                                  style: TextStyle(
+                                      color: puttColor,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700)),
+                            ]),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            }).toList(),
-          ),
+                );
+              }).toList(),
+            );
+          }),
         ],
       ),
     );
@@ -884,33 +989,107 @@ class _OneVOneView extends StatefulWidget {
   @override State<_OneVOneView> createState() => _OneVOneViewState();
 }
 
-class _OneVOneViewState extends State<_OneVOneView>
-    with SingleTickerProviderStateMixin {
-  String? _p1Id;
-  String? _p2Id;
-  late AnimationController _heroCtrl;
-  late Animation<double>    _heroFade;
-  late Animation<Offset>    _heroSlide;
+// Filtro de estado de duelo
+enum _DuelFilter { todos, ganados, acumulados, perdidos }
 
-  @override
-  void initState() {
-    super.initState();
-    final players = widget.round.players;
-    if (players.length >= 2) {
-      _p1Id = players[0].id;
-      _p2Id = players[1].id;
+class _OneVOneViewState extends State<_OneVOneView> {
+  bool         _onlyMine    = false;
+  String?      _myPlayerId;   // ID del jugador "yo" — se resuelve automáticamente o el usuario elige
+  _DuelFilter  _duelFilter  = _DuelFilter.todos;
+
+  // Resuelve quién es "mi jugador" en la ronda:
+  // 1. Jugador con linkedUserId == uid autenticado
+  // 2. Jugador con linkedUserId == ownerUid de la ronda
+  // 3. null → no se puede determinar automáticamente
+  Player? _resolveMyPlayer(Round round) {
+    final uid = AuthService.uid;
+
+    // Prioridad 1: linkedUserId == uid actual
+    if (uid != null) {
+      final linked = round.players
+          .where((p) => p.linkedUserId == uid)
+          .firstOrNull;
+      if (linked != null) return linked;
     }
-    _heroCtrl = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 520));
-    _heroFade  = CurvedAnimation(parent: _heroCtrl, curve: Curves.easeOut);
-    _heroSlide = Tween<Offset>(
-      begin: const Offset(0, 0.12), end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _heroCtrl, curve: Curves.easeOutCubic));
-    _heroCtrl.forward();
+
+    // Prioridad 2: ownerUid de la ronda
+    final ownerUid = round.ownerUid;
+    if (ownerUid != null) {
+      final owner = round.players
+          .where((p) => p.linkedUserId == ownerUid)
+          .firstOrNull;
+      if (owner != null) return owner;
+    }
+
+    // Prioridad 3: _myPlayerId elegido manualmente por el usuario
+    if (_myPlayerId != null) {
+      return round.players.where((p) => p.id == _myPlayerId).firstOrNull;
+    }
+
+    return null;
   }
 
-  @override
-  void dispose() { _heroCtrl.dispose(); super.dispose(); }
+  /// Calcula el estado del duelo desde la perspectiva del jugador [myPlayer].
+  /// Devuelve: ganados / perdidos / acumulados / todos (en juego / sin datos).
+  _DuelFilter _duelStateFor(Round round, Player p1, Player p2, Player? myPlayer) {
+    if (myPlayer == null) return _DuelFilter.todos;
+
+    // Buscar módulos para este par
+    BetModuleInstance? skinsMod;
+    int matchStatus = 0;
+    bool foundSkins = false;
+
+    for (final g in round.betGroups) {
+      for (final m in g.modules) {
+        final pids = m.hasTeamSides
+            ? [m.sideA.playerIds.first, m.sideB.playerIds.first]
+            : (m.participantIds.isNotEmpty ? m.participantIds : g.playerIds);
+        if (!pids.contains(p1.id) || !pids.contains(p2.id)) continue;
+
+        if (m.type == BetModuleType.skins) {
+          skinsMod = m;
+          foundSkins = true;
+        } else if (m.type == BetModuleType.nassau ||
+                   m.type == BetModuleType.matchAutoPress) {
+          matchStatus = GameEngine.matchPlayStatus(round, p1.id, p2.id, true);
+        }
+      }
+    }
+
+    if (foundSkins && skinsMod != null) {
+      final results = BetEngine.skinsScorecard(round, p1.id, p2.id, skinsMod);
+      final played = results.where((r) => !r.isPending).toList();
+      if (played.isEmpty) return _DuelFilter.todos;
+
+      final last = played.last;
+      final skins1 = last.cumP1;
+      final skins2 = last.cumP2;
+      final currentPot = results.last.pot;
+      final skinsInPot = (currentPot / skinsMod.skins.valuePerSkin).round();
+      final hasCarry = skinsInPot > 1 && skinsMod.skins.carryOver;
+
+      if (hasCarry) return _DuelFilter.acumulados;
+
+      // Perspectiva del usuario
+      final isP1 = myPlayer.id == p1.id;
+      final myLead = isP1 ? (skins1 - skins2) : (skins2 - skins1);
+      if (myLead > 0) return _DuelFilter.ganados;
+      if (myLead < 0) return _DuelFilter.perdidos;
+      return _DuelFilter.todos; // empate
+    }
+
+    // Match/Nassau
+    final playedCount = List.generate(round.totalHoles, (i) => i + 1)
+        .where((h) => round.getScore(p1.id, h).hasScore && round.getScore(p2.id, h).hasScore)
+        .length;
+    if (playedCount == 0) return _DuelFilter.todos;
+
+    final isP1 = myPlayer.id == p1.id;
+    final myStatus = isP1 ? matchStatus : -matchStatus;
+    if (myStatus > 0) return _DuelFilter.ganados;
+    if (myStatus < 0) return _DuelFilter.perdidos;
+    return _DuelFilter.todos; // all square
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -918,127 +1097,166 @@ class _OneVOneViewState extends State<_OneVOneView>
     final round = widget.round;
 
     if (round.players.length < 2) {
-      return Center(child: Text('Necesitas al menos 2 jugadores',
-          style: TextStyle(color: t.sub)));
+      return Center(child: Text('Necesitas al menos 2 jugadores', style: TextStyle(color: t.sub)));
     }
 
-    final p1 = round.players.firstWhere(
-        (p) => p.id == (_p1Id ?? round.players[0].id));
-    final p2 = round.players.firstWhere(
-        (p) => p.id == (_p2Id ?? round.players[1].id));
+    final allPairs = _buildPairs(round);
+    // Solo mostrar barra de filtros si hay más de 1 duelo
+    final canFilter = allPairs.length > 1;
 
-    final skinsModules      = _findModules(round, p1.id, p2.id, BetModuleType.skins);
-    final nassauModules     = _findModules(round, p1.id, p2.id, BetModuleType.nassau);
-    final matchPressModules = _findModules(round, p1.id, p2.id, BetModuleType.matchAutoPress);
+    // Resolver jugador "yo"
+    final myPlayer = _resolveMyPlayer(round);
 
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    // ── Aplicar filtro "mis duelos" ──────────────────────────────────────
+    final mineFiltered = (_onlyMine && canFilter && myPlayer != null)
+        ? allPairs
+            .where((p) => p.$1.id == myPlayer.id || p.$2.id == myPlayer.id)
+            .toList()
+        : allPairs;
 
-              // ─────────────────────────────────────────────────────
-              // BLOQUE 1 · HEADER
-              // ─────────────────────────────────────────────────────
-              _OneVOneHeader(round: round, t: t,
-                p1: p1, p2: p2,
-                onP1: (pid) => setState(() { _p1Id = pid; _heroCtrl.forward(from: 0); }),
-                onP2: (pid) => setState(() { _p2Id = pid; _heroCtrl.forward(from: 0); }),
-              ),
-              const SizedBox(height: 16),
+    // ── Aplicar filtro de estado ─────────────────────────────────────────
+    // IMPORTANTE: si el filtro es "todos", mostrar todos sin condición.
+    // Si hay filtro activo y no hay resultados, mostrar vacío (NO hacer fallback).
+    final finalPairs = (_duelFilter == _DuelFilter.todos)
+        ? mineFiltered
+        : mineFiltered.where((p) {
+            final state = _duelStateFor(round, p.$1, p.$2, myPlayer);
+            return state == _duelFilter;
+          }).toList();
 
-              // ─────────────────────────────────────────────────────
-              // BLOQUE 2 · HERO DEL MATCH  (animado)
-              // ─────────────────────────────────────────────────────
-              FadeTransition(
-                opacity: _heroFade,
-                child: SlideTransition(
-                  position: _heroSlide,
-                  child: _MatchHeroCard(
-                    round: round, p1: p1, p2: p2, t: t,
-                    skinsModules:      skinsModules,
-                    nassauModules:     nassauModules,
-                    matchPressModules: matchPressModules,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // ─────────────────────────────────────────────────────
-              // BLOQUE 3 · RESUMEN RÁPIDO
-              // ─────────────────────────────────────────────────────
-              _MatchQuickSummary(round: round, p1: p1, p2: p2, t: t,
-                nassauModules: nassauModules,
-                matchPressModules: matchPressModules,
-              ),
-              const SizedBox(height: 16),
-
-              // ─────────────────────────────────────────────────────
-              // BLOQUE 4 · TIMELINE HOYO A HOYO
-              // ─────────────────────────────────────────────────────
-              _HoleTimeline(
-                round: round, p1: p1, p2: p2, t: t,
-                skinsMod: skinsModules.isNotEmpty ? skinsModules.first : null,
-              ),
-              const SizedBox(height: 16),
-
-              // Paneles Nassau / Match+Press (lógica existente preservada)
-              ...nassauModules.map((mod) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _NassauLivePanel(round: round, p1: p1, p2: p2, mod: mod, t: t),
-              )),
-              ...matchPressModules.map((mod) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _MatchPressLivePanel(round: round, p1: p1, p2: p2, mod: mod, t: t),
-              )),
-              const SizedBox(height: 12),
-
-              // Carry panel
-              _CarryPanel(
-                round: round, p1: p1, p2: p2, t: t,
-                nassauModules:     nassauModules,
-                matchPressModules: matchPressModules,
-                onApplyCarry: (factor) => _applyCarry(
-                    context, factor, nassauModules, matchPressModules),
-              ),
-              const SizedBox(height: 12),
-
-              // Desglose financiero
-              _FinancialBreakdown(round: round, p1: p1, p2: p2, t: t),
-              const SizedBox(height: 24),
-            ]),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(children: [
+        // ── Barra de filtros ─────────────────────────────────────────────
+        if (canFilter) ...[
+          _FiltersBar(
+            onlyMine: _onlyMine,
+            duelFilter: _duelFilter,
+            myPlayer: myPlayer,
+            allPlayers: round.players,
+            t: t,
+            onToggleMine: () => setState(() => _onlyMine = !_onlyMine),
+            onPickPlayer: (pid) => setState(() {
+              _myPlayerId = pid;
+              _onlyMine   = true;
+            }),
+            onFilterChange: (f) => setState(() => _duelFilter = f),
           ),
-        ),
-      ],
+          const SizedBox(height: 12),
+        ],
+
+        // ── Tarjetas de duelo ─────────────────────────────────────────────
+        if (finalPairs.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Column(children: [
+              Icon(Icons.filter_list_off, color: t.sub, size: 40),
+              const SizedBox(height: 10),
+              Text('Sin duelos en esta categoría',
+                  style: TextStyle(color: t.sub, fontSize: 14)),
+            ]),
+          )
+        else
+          ...finalPairs.asMap().entries.map((entry) {
+            final i    = entry.key;
+            final pair = entry.value;
+            return Padding(
+              padding: EdgeInsets.only(bottom: i < finalPairs.length - 1 ? 12 : 0),
+              child: _MatchDuelCard(
+                round: round, p1: pair.$1, p2: pair.$2, t: t,
+                expanded: finalPairs.length == 1,
+                myPlayerId: myPlayer?.id,
+                onApplyCarry: (ctx, factor, nassauMods, matchMods) =>
+                    _applyCarry(ctx, pair.$1.id, pair.$2.id, factor, nassauMods, matchMods),
+              ),
+            );
+          }),
+      ]),
     );
   }
 
-  // ── Aplica carry SOLO a los módulos del par activo (p1, p2) ──────────────
-  // Usa carryByPair para que cada duelo tenga su propio carry independiente,
-  // incluso si varios duelos comparten el mismo módulo en un grupo grande.
-  void _applyCarry(BuildContext context, double factor,
+  /// Construye pares únicos (p1, p2) para la vista 1v1.
+  ///
+  /// Estrategia en orden de prioridad:
+  ///  1. BetGroups con exactamente 2 jugadores → duelo directo.
+  ///  2. Módulos 1v1 (nassau / matchAutoPress / skins) con participantIds de 2
+  ///     dentro de grupos multi-jugador → cada par de participantIds = un duelo.
+  ///  3. Si sigue vacío, generar todos los pares posibles entre los jugadores
+  ///     de la ronda (round-robin) como fallback visual.
+  List<(Player, Player)> _buildPairs(Round round) {
+    final seen  = <String>{};
+    final pairs = <(Player, Player)>[];
+
+    void addPair(String id1, String id2) {
+      final key = ([id1, id2]..sort()).join('|');
+      if (seen.contains(key)) return;
+      try {
+        final p1 = round.players.firstWhere((p) => p.id == id1);
+        final p2 = round.players.firstWhere((p) => p.id == id2);
+        seen.add(key);
+        pairs.add((p1, p2));
+      } catch (_) {}
+    }
+
+    // ── Prioridad 1: grupos con exactamente 2 jugadores ──────────────────
+    for (final g in round.betGroups) {
+      if (g.playerIds.length == 2) {
+        addPair(g.playerIds[0], g.playerIds[1]);
+      }
+    }
+
+    // ── Prioridad 2: módulos 1v1 dentro de grupos multi-jugador ──────────
+    for (final g in round.betGroups) {
+      for (final m in g.modules) {
+        // Tipos que implican duelo 1v1
+        if (m.type == BetModuleType.nassau ||
+            m.type == BetModuleType.matchAutoPress ||
+            m.type == BetModuleType.skins) {
+          // Fuente de participantes: sides > participantIds > playerIds del grupo
+          List<String> pids;
+          if (m.hasTeamSides) {
+            // Cada "side" puede ser un equipo, pero tratamos el duelo como 1v1
+            // tomando el primer jugador de cada lado
+            pids = [m.sideA.playerIds.first, m.sideB.playerIds.first];
+          } else {
+            pids = m.participantIds.isNotEmpty ? m.participantIds : g.playerIds;
+          }
+          if (pids.length == 2) {
+            addPair(pids[0], pids[1]);
+          }
+        }
+      }
+    }
+
+    // ── Prioridad 3: fallback round-robin si no se encontró ningún par ────
+    if (pairs.isEmpty && round.players.length >= 2) {
+      final players = round.players;
+      for (int i = 0; i < players.length; i++) {
+        for (int j = i + 1; j < players.length; j++) {
+          addPair(players[i].id, players[j].id);
+        }
+      }
+    }
+
+    return pairs;
+  }
+
+  void _applyCarry(BuildContext context, String p1Id, String p2Id, double factor,
       List<BetModuleInstance> nassauMods, List<BetModuleInstance> matchMods) {
     final prov  = context.read<RoundProvider>();
     final round = prov.round!;
-    // p1 y p2 son los jugadores activos en la vista (obtenidos del estado)
-    final p1Id  = _p1Id ?? round.players[0].id;
-    final p2Id  = _p2Id ?? round.players[1].id;
 
     final newGroups = round.betGroups.map((g) {
       final newModules = g.modules.map((m) {
         if (nassauMods.any((nm) => nm.id == m.id)) {
-          // Nassau: carry global por módulo (cada grupo Nassau es típicamente 1v1)
           return m.copyWith(nassauConfig: m.nassau.copyWith(carryApplied: true, carryFactor: factor));
         }
         if (matchMods.any((mm) => mm.id == m.id)) {
-          // Match+Press: carry por par para soportar grupos con múltiples duelos
           final existingByPair = Map<String, double>.from(m.matchAutoPress.carryByPair);
           existingByPair[MatchAutoPressConfig.pairKey(p1Id, p2Id)] = factor;
           return m.copyWith(
             matchAutoPressConfig: m.matchAutoPress.copyWith(
               carryByPair: existingByPair,
-              // También actualizar legacy fields por si algún código antiguo los usa
               carryApplied: true,
               carryFactor: factor,
             ),
@@ -1053,15 +1271,12 @@ class _OneVOneViewState extends State<_OneVOneView>
 
   List<BetModuleInstance> _findModules(Round round, String p1Id, String p2Id, BetModuleType type) {
     final mods = <BetModuleInstance>[];
-    // Primero buscar en grupos 1v1 exactos (playerIds = exactamente esos 2 jugadores)
-    // para que el carry y otros controles sean individuales por partida.
     for (final g in round.betGroups) {
       final ids = g.playerIds;
       if (ids.length == 2 && ids.contains(p1Id) && ids.contains(p2Id)) {
         mods.addAll(g.modules.where((m) => m.type == type));
       }
     }
-    // Si no hay grupo exacto, ampliar búsqueda a grupos que contengan a ambos
     if (mods.isEmpty) {
       for (final g in round.betGroups) {
         if (g.playerIds.contains(p1Id) && g.playerIds.contains(p2Id)) {
@@ -1085,1183 +1300,1375 @@ List<String> _modGroupPids(Round round, BetModuleInstance mod) {
   return [];
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SISTEMA DE TEMA DINÁMICO POR ESTADO DEL MATCH
-// ═══════════════════════════════════════════════════════════════════════════════
-enum _MatchStatus { winning, tied, losing }
-
-class _MatchTheme {
-  final List<Color> gradient;
-  final Color accent;
-  final Color glowColor;
-  final String label;
-  const _MatchTheme({
-    required this.gradient, required this.accent,
-    required this.glowColor, required this.label,
-  });
-
-  static _MatchTheme of(_MatchStatus s) {
-    switch (s) {
-      case _MatchStatus.winning:
-        return const _MatchTheme(
-          gradient: [Color(0xFF1F8F3A), Color(0xFF0E3D1B)],
-          accent:   Color(0xFF35C759),
-          glowColor: Color(0xFF1F8F3A),
-          label: 'GANANDO',
-        );
-      case _MatchStatus.tied:
-        return const _MatchTheme(
-          gradient: [Color(0xFF3A3A3C), Color(0xFF1C1C1E)],
-          accent:   Color(0xFFFFC857),
-          glowColor: Color(0xFF3A3A3C),
-          label: 'PAREJO',
-        );
-      case _MatchStatus.losing:
-        return const _MatchTheme(
-          gradient: [Color(0xFF7A1E1E), Color(0xFF2A0E0E)],
-          accent:   Color(0xFFFF453A),
-          glowColor: Color(0xFF7A1E1E),
-          label: 'PERDIENDO',
-        );
-    }
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// BLOQUE 1 · HEADER  (título ronda + fecha + selector jugadores)
-// ═══════════════════════════════════════════════════════════════════════════════
-class _OneVOneHeader extends StatelessWidget {
-  final Round round;
-  final Player p1, p2;
+// ── Barra de filtros combinada ────────────────────────────────────────────────
+// Fila 1: Toggle "Mis duelos" + botón de elegir jugador
+// Fila 2: Chips de estado (Todos / Ganados / Acumulados / Perdidos)
+class _FiltersBar extends StatelessWidget {
+  final bool onlyMine;
+  final _DuelFilter duelFilter;
+  final Player? myPlayer;
+  final List<Player> allPlayers;
   final GolfTheme t;
-  final void Function(String) onP1, onP2;
-  const _OneVOneHeader({
-    required this.round, required this.p1, required this.p2,
-    required this.t, required this.onP1, required this.onP2,
+  final VoidCallback onToggleMine;
+  final void Function(String pid) onPickPlayer;
+  final void Function(_DuelFilter) onFilterChange;
+
+  const _FiltersBar({
+    required this.onlyMine,
+    required this.duelFilter,
+    required this.myPlayer,
+    required this.allPlayers,
+    required this.t,
+    required this.onToggleMine,
+    required this.onPickPlayer,
+    required this.onFilterChange,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    // Tipo de juego
-    final hasNassau = round.betGroups.any((g) =>
-        g.playerIds.contains(p1.id) && g.playerIds.contains(p2.id) &&
-        g.modules.any((m) => m.type == BetModuleType.nassau));
-    final hasMatch  = round.betGroups.any((g) =>
-        g.playerIds.contains(p1.id) && g.playerIds.contains(p2.id) &&
-        g.modules.any((m) => m.type == BetModuleType.matchAutoPress));
-    final hasSkins  = round.betGroups.any((g) =>
-        g.playerIds.contains(p1.id) && g.playerIds.contains(p2.id) &&
-        g.modules.any((m) => m.type == BetModuleType.skins));
-    final gameTypeParts = <String>[
-      if (hasNassau) 'Nassau',
-      if (hasMatch)  'Match',
-      if (hasSkins)  'Skins',
-    ];
-    final gameType = gameTypeParts.isEmpty ? '1v1' : gameTypeParts.join(' · ');
-
-    return Row(children: [
-      // Izquierda: info ronda
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(round.name,
-            style: TextStyle(color: t.text, fontWeight: FontWeight.w800,
-                fontSize: 16, letterSpacing: -0.3),
-            overflow: TextOverflow.ellipsis),
-        const SizedBox(height: 2),
-        Row(children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-            decoration: BoxDecoration(
-              color: t.primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: t.primary.withValues(alpha: 0.3)),
-            ),
-            child: Text(gameType,
-                style: TextStyle(color: t.primary, fontSize: 9,
-                    fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-          ),
-          const SizedBox(width: 6),
-          Text('NETO · ${round.totalHoles} hoyos',
-              style: TextStyle(color: t.sub, fontSize: 10)),
-        ]),
-      ])),
-
-      // Derecha: selector de jugadores compacto
-      GestureDetector(
-        onTap: () => _showPicker(context, p1, onP1),
-        child: _miniPlayerChip(p1, t),
-      ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Text('vs', style: TextStyle(color: t.sub, fontSize: 11,
-            fontWeight: FontWeight.w700)),
-      ),
-      GestureDetector(
-        onTap: () => _showPicker(context, p2, onP2),
-        child: _miniPlayerChip(p2, t),
-      ),
-    ]);
-  }
-
-  Widget _miniPlayerChip(Player p, GolfTheme t) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      GAvatar(name: p.name, colorIndex: p.colorIndex, size: 28),
-      const SizedBox(width: 4),
-      Icon(Icons.expand_more, color: t.sub, size: 14),
-    ],
-  );
-
-  void _showPicker(BuildContext context, Player current, void Function(String) onSelect) {
-    final t = this.t;
+  void _showPicker(BuildContext context) {
     showModalBottomSheet(
-      context: context, backgroundColor: t.card,
+      context: context,
+      backgroundColor: t.card,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
         child: Column(mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Cambiar jugador', style: TextStyle(color: t.text,
-              fontWeight: FontWeight.w800, fontSize: 16)),
-          const SizedBox(height: 12),
-          ...round.players.map((p) => ListTile(
-            leading: GAvatar(name: p.name, colorIndex: p.colorIndex, size: 32),
-            title: Text(p.name, style: TextStyle(color: t.text,
-                fontWeight: FontWeight.w700)),
+          Text('¿Cuál jugador eres tú?',
+              style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
+          const SizedBox(height: 4),
+          Text('Filtrará solo los duelos donde participas.',
+              style: TextStyle(color: t.sub, fontSize: 12)),
+          const SizedBox(height: 14),
+          ...allPlayers.map((p) => ListTile(
+            leading: GAvatar(name: p.name, colorIndex: p.colorIndex, size: 36),
+            title: Text(p.name,
+                style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
             subtitle: Text('HCP ${p.handicapBase.toStringAsFixed(0)}',
-                style: TextStyle(color: t.sub, fontSize: 11)),
-            trailing: p.id == current.id
-                ? Icon(Icons.check_circle, color: t.primary, size: 18) : null,
-            onTap: () { onSelect(p.id); Navigator.pop(context); },
+                style: TextStyle(color: t.sub)),
+            trailing: myPlayer?.id == p.id
+                ? Icon(Icons.check_circle, color: t.primary, size: 20)
+                : null,
+            onTap: () {
+              onPickPlayer(p.id);
+              Navigator.pop(context);
+            },
           )),
         ]),
       ),
     );
   }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// BLOQUE 2 · HERO DEL MATCH
-// ═══════════════════════════════════════════════════════════════════════════════
-class _MatchHeroCard extends StatelessWidget {
-  final Round round;
-  final Player p1, p2;
-  final GolfTheme t;
-  final List<BetModuleInstance> skinsModules, nassauModules, matchPressModules;
-  const _MatchHeroCard({
-    required this.round, required this.p1, required this.p2, required this.t,
-    required this.skinsModules, required this.nassauModules,
-    required this.matchPressModules,
-  });
 
   @override
   Widget build(BuildContext context) {
-    // ── Calcular score principal (hoyos ganados cada uno en match play)
-    final status    = GameEngine.matchPlayStatus(round, p1.id, p2.id, true);
-    final holesWon1 = status > 0 ? status : 0;
-    final holesWon2 = status < 0 ? status.abs() : 0;
+    final myName   = myPlayer?.name.split(' ').first;
+    final hasPlayer = myPlayer != null;
 
-    // ── Estado del match
-    final _MatchStatus ms;
-    if (status > 0)      ms = _MatchStatus.winning;
-    else if (status < 0) ms = _MatchStatus.losing;
-    else                  ms = _MatchStatus.tied;
-    final mt = _MatchTheme.of(ms);
+    // Chips: (filtro, icono, color, tooltip)
+    final chips = [
+      (_DuelFilter.todos,      Icons.apps_rounded,            Colors.white70,             'Todos'),
+      (_DuelFilter.ganados,    Icons.trending_up_rounded,     const Color(0xFF35C759),    'Ganados'),
+      (_DuelFilter.acumulados, Icons.local_fire_department,   const Color(0xFFFFCC00),    'Acumulados'),
+      (_DuelFilter.perdidos,   Icons.trending_down_rounded,   const Color(0xFFFF453A),    'Perdidos'),
+    ];
 
-    // ── Datos secundarios (pills)
-    final skinsWon1 = _skinsWon(p1.id);
-    final skinsWon2 = _skinsWon(p2.id);
-    final streak    = _winStreak();
-    final balance   = _netBalance();
-    final n1 = p1.name.split(' ').first;
-    final n2 = p2.name.split(' ').first;
-
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: mt.gradient,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: mt.glowColor.withValues(alpha: 0.22),
-            blurRadius: 28,
-            spreadRadius: 0,
-            offset: const Offset(0, 10),
-          ),
-        ],
-        border: Border.all(
-          color: mt.accent.withValues(alpha: 0.18),
-          width: 1,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-        child: Column(children: [
-          // Label de estado
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+      // ── Toggle "Mis duelos" — ocupa el espacio disponible ─────────────
+      Expanded(
+        child: GestureDetector(
+          onTap: hasPlayer ? onToggleMine : () => _showPicker(context),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOut,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.25),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(mt.label,
-              style: TextStyle(
-                color: mt.accent,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.4,
+              gradient: (onlyMine && hasPlayer)
+                  ? const LinearGradient(
+                      colors: [Color(0xFF1F8F3A), Color(0xFF0D5020)])
+                  : null,
+              color: (onlyMine && hasPlayer) ? null : const Color(0xFF2C2C2E),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: (onlyMine && hasPlayer)
+                    ? const Color(0xFF35C759).withValues(alpha: 0.50)
+                    : Colors.white.withValues(alpha: 0.08),
+                width: 1.2,
               ),
             ),
-          ),
-          const SizedBox(height: 14),
-
-          // Bloque central: P1 — Score grande — P2
-          Row(children: [
-            // Jugador 1
-            Expanded(child: Column(children: [
-              GAvatar(name: p1.name, colorIndex: p1.colorIndex, size: 44),
-              const SizedBox(height: 6),
-              Text(n1, style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
-              Text('HCP ${round.getHandicap(p1.id).toStringAsFixed(0)}',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  fontSize: 10)),
-            ])),
-
-            // Score gigante animado
-            Expanded(
-              flex: 2,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 350),
-                transitionBuilder: (child, anim) => ScaleTransition(
-                  scale: CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
-                  child: FadeTransition(opacity: anim, child: child),
-                ),
+            child: Row(children: [
+              Icon(
+                (onlyMine && hasPlayer) ? Icons.person : Icons.people_outline,
+                color: (onlyMine && hasPlayer) ? Colors.white : t.sub,
+                size: 15,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
                 child: Text(
-                  '$holesWon1 – $holesWon2',
-                  key: ValueKey('$holesWon1-$holesWon2'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 46,
-                    fontWeight: FontWeight.w900,
-                    height: 1.0,
-                    letterSpacing: -1,
-                    shadows: [Shadow(color: Colors.black38, blurRadius: 8)],
+                  (onlyMine && hasPlayer)
+                      ? 'Mis duelos ($myName)'
+                      : 'Todos',
+                  style: TextStyle(
+                    color: (onlyMine && hasPlayer) ? Colors.white : t.sub,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              _MiniSwitch(active: onlyMine && hasPlayer),
+            ]),
+          ),
+        ),
+      ),
+
+      const SizedBox(width: 6),
+
+      // ── Botón elegir jugador ──────────────────────────────────────────
+      GestureDetector(
+        onTap: () => _showPicker(context),
+        child: Container(
+          width: 36, height: 36,
+          decoration: BoxDecoration(
+            color: hasPlayer
+                ? t.primary.withValues(alpha: 0.15)
+                : const Color(0xFF2C2C2E),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: hasPlayer
+                    ? t.primary.withValues(alpha: 0.35)
+                    : Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Icon(
+            hasPlayer ? Icons.edit_outlined : Icons.person_search_outlined,
+            color: hasPlayer ? t.primary : t.sub,
+            size: 16,
+          ),
+        ),
+      ),
+
+      const SizedBox(width: 6),
+
+      // ── Separador vertical ────────────────────────────────────────────
+      Container(
+        width: 1, height: 28,
+        color: Colors.white.withValues(alpha: 0.10),
+      ),
+
+      const SizedBox(width: 6),
+
+      // ── Chips de estado: solo iconos, sin scroll, misma altura ────────
+      ...chips.map((chip) {
+        final (filter, icon, chipColor, tooltip) = chip;
+        final isSelected = duelFilter == filter;
+        return Padding(
+          padding: const EdgeInsets.only(left: 2),
+          child: Tooltip(
+            message: tooltip,
+            child: GestureDetector(
+              onTap: () => onFilterChange(filter),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? chipColor.withValues(alpha: 0.18)
+                      : const Color(0xFF2C2C2E),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isSelected
+                        ? chipColor.withValues(alpha: 0.70)
+                        : Colors.white.withValues(alpha: 0.08),
+                    width: isSelected ? 1.5 : 1.0,
                   ),
                 ),
+                child: Icon(icon,
+                    color: isSelected ? chipColor : t.sub,
+                    size: 17),
               ),
             ),
-
-            // Jugador 2
-            Expanded(child: Column(children: [
-              GAvatar(name: p2.name, colorIndex: p2.colorIndex, size: 44),
-              const SizedBox(height: 6),
-              Text(n2, style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
-              Text('HCP ${round.getHandicap(p2.id).toStringAsFixed(0)}',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  fontSize: 10)),
-            ])),
-          ]),
-
-          const SizedBox(height: 16),
-          Divider(color: Colors.white.withValues(alpha: 0.12), height: 1),
-          const SizedBox(height: 14),
-
-          // Pills de stats secundarios
-          Wrap(
-            spacing: 8, runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              if (skinsWon1 > 0 || skinsWon2 > 0)
-                _StatPill(
-                  label: skinsWon1 > skinsWon2
-                      ? '+$skinsWon1 skins'
-                      : skinsWon2 > skinsWon1
-                          ? '+$skinsWon2 skins'
-                          : '${skinsWon1+skinsWon2} skins',
-                  icon: Icons.local_fire_department,
-                  color: mt.accent,
-                ),
-              if (streak >= 2)
-                _StatPill(
-                  label: '🔥 racha x$streak',
-                  icon: null,
-                  color: const Color(0xFFFF9500),
-                ),
-              if (balance != 0)
-                _StatPill(
-                  label: balance > 0
-                      ? '+\$${balance.toStringAsFixed(0)}'
-                      : '-\$${balance.abs().toStringAsFixed(0)}',
-                  icon: Icons.attach_money,
-                  color: balance > 0 ? const Color(0xFF35C759) : const Color(0xFFFF453A),
-                ),
-              _StatPill(
-                label: 'Thru ${_playedHoles()}',
-                icon: Icons.flag_outlined,
-                color: Colors.white.withValues(alpha: 0.55),
-              ),
-            ],
           ),
-        ]),
-      ),
-    );
-  }
-
-  int _skinsWon(String pid) {
-    if (skinsModules.isEmpty) return 0;
-    final res = BetEngine.skinsScorecard(round, p1.id, p2.id, skinsModules.first);
-    return res.where((r) => r.winner == pid).length;
-  }
-
-  int _winStreak() {
-    // Racha de hoyos consecutivos ganados por el líder (p1 perspective)
-    final status = GameEngine.matchPlayStatus(round, p1.id, p2.id, true);
-    if (status == 0) return 0;
-    int streak = 0;
-    final order = round.startingNine == StartingNine.back
-        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
-        : List.generate(18, (i) => i + 1);
-    for (final h in order.reversed) {
-      final s1 = round.getScore(p1.id, h);
-      final s2 = round.getScore(p2.id, h);
-      if (!s1.hasScore || !s2.hasScore) continue;
-      final hcp1 = round.getHandicap(p1.id);
-      final hcp2 = round.getHandicap(p2.id);
-      final ch   = round.course.holes.firstWhere((c) => c.hole == h);
-      final strokes = GameEngine.strokesReceivedVs(
-        hcpHigher: hcp1 > hcp2 ? hcp1 : hcp2,
-        hcpLower:  hcp1 > hcp2 ? hcp2 : hcp1,
-        ch: ch, allHoles: round.course.holes,
-        startingNine: round.startingNine,
-      );
-      final net1 = hcp1 > hcp2 ? s1.grossScore! - strokes : s1.grossScore!;
-      final net2 = hcp2 > hcp1 ? s2.grossScore! - strokes : s2.grossScore!;
-      final p1Won = net1 < net2;
-      final p2Won = net2 < net1;
-      final leaderWon = status > 0 ? p1Won : p2Won;
-      if (leaderWon) streak++;
-      else break;
-    }
-    return streak;
-  }
-
-  double _netBalance() {
-    final bd = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
-    return bd.values.fold(0.0, (a, b) => a + b);
-  }
-
-  int _playedHoles() {
-    return List.generate(18, (i) => i + 1)
-        .where((h) => round.getScore(p1.id, h).hasScore &&
-                      round.getScore(p2.id, h).hasScore)
-        .length;
-  }
-}
-
-// Pill reutilizable para stats secundarios
-class _StatPill extends StatelessWidget {
-  final String label;
-  final IconData? icon;
-  final Color color;
-  const _StatPill({required this.label, required this.color, this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 280),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.25),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        if (icon != null) ...[
-          Icon(icon, color: color, size: 12),
-          const SizedBox(width: 4),
-        ],
-        Text(label, style: TextStyle(
-          color: color, fontSize: 11, fontWeight: FontWeight.w700)),
-      ]),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// BLOQUE 3 · RESUMEN RÁPIDO
-// ═══════════════════════════════════════════════════════════════════════════════
-class _MatchQuickSummary extends StatelessWidget {
-  final Round round;
-  final Player p1, p2;
-  final GolfTheme t;
-  final List<BetModuleInstance> nassauModules, matchPressModules;
-  const _MatchQuickSummary({
-    required this.round, required this.p1, required this.p2, required this.t,
-    required this.nassauModules, required this.matchPressModules,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final hcp1   = round.getHandicap(p1.id);
-    final hcp2   = round.getHandicap(p2.id);
-    final rp1    = round.roundPlayers.firstWhere(
-      (r) => r.playerId == p1.id,
-      orElse: () => RoundPlayer(playerId: p1.id, handicapEnRonda: hcp1),
-    );
-    final manual = rp1.manualHandicaps[p2.id];
-    final diff   = manual != null ? manual.round().abs() : (hcp1 - hcp2).round().abs();
-    final receiver = (manual != null && manual > 0) || (manual == null && hcp1 > hcp2)
-        ? p1 : p2;
-
-    final played = List.generate(18, (i) => i + 1)
-        .where((h) => round.getScore(p1.id, h).hasScore &&
-                      round.getScore(p2.id, h).hasScore)
-        .length;
-
-    final formats = <String>[
-      if (nassauModules.isNotEmpty) 'Nassau',
-      if (matchPressModules.isNotEmpty) 'Match+Press',
-    ];
-    final formatLabel = formats.isEmpty ? 'Stroke play' : formats.join(' + ');
-
-    final items = [
-      (Icons.sports_golf_rounded,
-        diff > 0
-            ? '${receiver.name.split(' ').first} recibe $diff stroke${diff > 1 ? 's' : ''}'
-            : 'Sin ventaja — igualdad',
-        'Strokes'),
-      (Icons.flag_outlined,
-        'Thru $played de ${round.totalHoles}',
-        'Progreso'),
-      (Icons.style_outlined,
-        formatLabel,
-        'Formato'),
-      (Icons.location_on_outlined,
-        round.startingNine == StartingNine.front ? 'Salida F9' : 'Salida B9',
-        'Inicio'),
-    ];
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: t.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: t.divider),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('RESUMEN', style: TextStyle(
-            color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
-          const SizedBox(height: 12),
-          ...items.map((item) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(children: [
-              Container(
-                width: 30, height: 30,
-                decoration: BoxDecoration(
-                  color: t.primary.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(item.$1, color: t.primary, size: 15),
-              ),
-              const SizedBox(width: 10),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(item.$2, style: TextStyle(
-                  color: t.text, fontSize: 12, fontWeight: FontWeight.w600)),
-                Text(item.$3, style: TextStyle(color: t.sub, fontSize: 10)),
-              ])),
-            ]),
-          )),
-        ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// BLOQUE 4 · TIMELINE HOYO A HOYO
-// ═══════════════════════════════════════════════════════════════════════════════
-enum _HoleState { win, tie, lose, pending }
-
-// ── Datos calculados por hoyo (immutable, para pasar a la fila) ───────────────
-class _HoleRowData {
-  final int hole;
-  final int par;
-  final int? grossBase;
-  final int? grossReceiver;
-  final int? netReceiver;
-  final int strokes;
-  final _HoleState state;
-  final bool hasSkin;
-  final bool skinGoesToBase;  // true = base ganó la piel, false = receiver
-  const _HoleRowData({
-    required this.hole, required this.par,
-    required this.grossBase, required this.grossReceiver,
-    required this.netReceiver, required this.strokes,
-    required this.state, required this.hasSkin,
-    required this.skinGoesToBase,
-  });
-}
-
-// ── Helper: color según score vs par ─────────────────────────────────────────
-Color _scoreColor(int score, int par) {
-  final rel = score - par;
-  if (rel <= -2) return const Color(0xFFFFD60A);  // Eagle → dorado
-  if (rel == -1) return const Color(0xFF30D158);  // Birdie → verde
-  if (rel == 0)  return const Color(0xFF8E8E93);  // Par → gris
-  if (rel == 1)  return const Color(0xFFFF6B35);  // Bogey → naranja
-  return const Color(0xFFFF453A);                  // Doble+ → rojo
-}
-
-// ── Badge estilo PGA (forma según resultado vs par) ───────────────────────────
-class _PGAScoreBadge extends StatelessWidget {
-  final int score;
-  final int par;
-  final bool dimmed;   // true cuando es bruto pero hay neto
-  final bool accent;   // true cuando es el score decisivo (neto)
-  const _PGAScoreBadge(this.score, this.par,
-      {this.dimmed = false, this.accent = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final rel = score - par;
-    final col = dimmed ? const Color(0xFF8E8E93) : _scoreColor(score, par);
-
-    BoxDecoration deco;
-    if (rel <= -2) {
-      // Eagle: doble círculo (relleno + borde exterior delgado)
-      deco = BoxDecoration(
-        shape: BoxShape.circle,
-        color: col.withValues(alpha: dimmed ? 0.07 : 0.18),
-        border: Border.all(color: col.withValues(alpha: dimmed ? 0.3 : 0.9), width: 1.5),
-      );
-    } else if (rel == -1) {
-      // Birdie: círculo simple
-      deco = BoxDecoration(
-        shape: BoxShape.circle,
-        color: col.withValues(alpha: dimmed ? 0.06 : 0.12),
-        border: Border.all(color: col.withValues(alpha: dimmed ? 0.3 : 0.85), width: 1.5),
-      );
-    } else if (rel == 1) {
-      // Bogey: cuadrado con bordes redondeados
-      deco = BoxDecoration(
-        borderRadius: BorderRadius.circular(4),
-        color: col.withValues(alpha: dimmed ? 0.06 : 0.1),
-        border: Border.all(color: col.withValues(alpha: dimmed ? 0.3 : 0.8), width: 1.5),
-      );
-    } else if (rel >= 2) {
-      // Doble bogey+: cuadrado doble (relleno más fuerte)
-      deco = BoxDecoration(
-        borderRadius: BorderRadius.circular(4),
-        color: col.withValues(alpha: dimmed ? 0.08 : 0.2),
-        border: Border.all(color: col.withValues(alpha: dimmed ? 0.35 : 0.85), width: 2),
-      );
-    } else {
-      // Par: sin decoración
-      deco = BoxDecoration(
-        borderRadius: BorderRadius.circular(4),
-        color: col.withValues(alpha: 0.07),
-      );
-    }
-
-    return Container(
-      width: 28, height: 28,
-      decoration: deco,
-      alignment: Alignment.center,
-      child: Text('$score',
-        style: TextStyle(
-          color: dimmed
-              ? const Color(0xFF8E8E93)
-              : col,
-          fontWeight: accent ? FontWeight.w900 : FontWeight.w700,
-          fontSize: accent ? 13 : 12,
-        ),
-      ),
-    );
-  }
-}
-
-class _HoleTimeline extends StatelessWidget {
-  final Round round;
-  final Player p1, p2;
-  final GolfTheme t;
-  final BetModuleInstance? skinsMod;
-  const _HoleTimeline({
-    required this.round, required this.p1, required this.p2,
-    required this.t, this.skinsMod,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Calcular ventajas
-    final hcp1 = round.getHandicap(p1.id);
-    final hcp2 = round.getHandicap(p2.id);
-    final rp1  = round.roundPlayers.firstWhere(
-      (r) => r.playerId == p1.id,
-      orElse: () => RoundPlayer(playerId: p1.id, handicapEnRonda: hcp1),
-    );
-    final manual = rp1.manualHandicaps[p2.id];
-    final Player basePlayer     = (manual != null && manual > 0) || (manual == null && hcp1 <= hcp2) ? p1 : p2;
-    final Player receiverPlayer = basePlayer == p1 ? p2 : p1;
-    final double hcpBase        = basePlayer == p1 ? hcp1 : hcp2;
-    final double hcpReceiver    = basePlayer == p1 ? hcp2 : hcp1;
-
-    // Skins results
-    final List<SkinHoleResult>? skinsResults = skinsMod != null
-        ? BetEngine.skinsScorecard(round, p1.id, p2.id, skinsMod!)
-        : null;
-
-    // Orden de hoyos
-    final holeMap = { for (final ch in round.course.holes) ch.hole: ch };
-    final order   = round.startingNine == StartingNine.back
-        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
-        : List.generate(18, (i) => i + 1);
-
-    // Calcular datos por hoyo + marcador acumulado
-    int running = 0; // positivo = base va ganando
-    final rows = <_HoleRowData>[];
-    final runningPerHole = <int>[];
-
-    for (final h in order) {
-      final ch        = holeMap[h];
-      if (ch == null) continue;
-      final sBase     = round.getScore(basePlayer.id, h);
-      final sReceiver = round.getScore(receiverPlayer.id, h);
-      if (!sBase.hasScore && !sReceiver.hasScore) continue;
-
-      final strokes    = GameEngine.strokesReceivedVs(
-        hcpHigher: hcpReceiver, hcpLower: hcpBase,
-        ch: ch, allHoles: round.course.holes,
-        startingNine: round.startingNine,
-      );
-      final grossBase     = sBase.hasScore ? sBase.grossScore! : null;
-      final grossReceiver = sReceiver.hasScore ? sReceiver.grossScore! : null;
-      final netReceiver   = grossReceiver != null ? grossReceiver - strokes : null;
-
-      _HoleState state = _HoleState.pending;
-      if (grossBase != null && netReceiver != null) {
-        if (grossBase < netReceiver)      { state = _HoleState.win;  running++; }
-        else if (grossBase > netReceiver) { state = _HoleState.lose; running--; }
-        else                               { state = _HoleState.tie; }
-      }
-      runningPerHole.add(running);
-
-      // Skins
-      final skinResult = skinsResults?.firstWhere(
-        (r) => r.hole == h,
-        orElse: () => SkinHoleResult(
-            hole: h, winner: null, isPending: true,
-            pot: skinsMod?.value ?? 0, cumP1: 0, cumP2: 0),
-      );
-      final hasSkin = skinResult != null && !skinResult.isPending && skinResult.winner != null;
-      final skinGoesToBase = hasSkin && skinResult!.winner == basePlayer.id;
-
-      rows.add(_HoleRowData(
-        hole: h, par: ch.par,
-        grossBase: grossBase, grossReceiver: grossReceiver,
-        netReceiver: netReceiver, strokes: strokes,
-        state: state, hasSkin: hasSkin, skinGoesToBase: skinGoesToBase,
-      ));
-    }
-
-    if (rows.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        decoration: BoxDecoration(
-          color: t.card, borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: t.divider),
-        ),
-        child: Column(children: [
-          Icon(Icons.sports_golf_rounded, color: t.sub, size: 36),
-          const SizedBox(height: 10),
-          Text('Aún no hay hoyos registrados',
-              style: TextStyle(color: t.sub, fontSize: 13,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          Text('Los resultados aparecerán aquí al registrar scores',
-              style: TextStyle(color: t.sub.withValues(alpha: 0.6),
-                  fontSize: 11), textAlign: TextAlign.center),
-        ]),
-      );
-    }
-
-    // Ancho disponible para el momentum tracker (se usa LayoutBuilder abajo)
-    final totalHoles = round.totalHoles;
-    final played     = rows.length;
-    final n1short    = basePlayer.name.split(' ').first;
-    final n2short    = receiverPlayer.name.split(' ').first;
-
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      // ── Header ────────────────────────────────────────────────────────────
-      Row(children: [
-        Text('HOYO A HOYO',
-          style: TextStyle(color: t.sub, fontSize: 10,
-              fontWeight: FontWeight.w800, letterSpacing: 0.8)),
-        const Spacer(),
-        Text('$played / $totalHoles hoyos',
-          style: TextStyle(color: t.sub.withValues(alpha: 0.6), fontSize: 10)),
-        if (skinsMod != null) ...[
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFF9500).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                  color: const Color(0xFFFF9500).withValues(alpha: 0.35)),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Text('🔥', style: TextStyle(fontSize: 9)),
-              const SizedBox(width: 3),
-              const Text('Skins', style: TextStyle(
-                  color: Color(0xFFFF9500), fontSize: 9,
-                  fontWeight: FontWeight.w700)),
-            ]),
-          ),
-        ],
-      ]),
-      const SizedBox(height: 10),
-
-      // ── Momentum Tracker ──────────────────────────────────────────────────
-      _MomentumTracker(
-        rows: rows,
-        runningPerHole: runningPerHole,
-        basePlayer: basePlayer,
-        receiverPlayer: receiverPlayer,
-        totalHoles: totalHoles,
-        t: t,
-      ),
-      const SizedBox(height: 14),
-
-      // ── Columna de cabecera (nombres de jugadores) ────────────────────────
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Row(children: [
-          const SizedBox(width: 44),   // ancho del indicador de hoyo
-          const SizedBox(width: 12),
-          // P1 nombre
-          Expanded(
-            child: Text(n1short,
-              style: TextStyle(color: t.sub, fontSize: 10,
-                  fontWeight: FontWeight.w700, letterSpacing: 0.3),
-              textAlign: TextAlign.center, overflow: TextOverflow.ellipsis),
-          ),
-          const SizedBox(width: 8),
-          // P2 nombre + indicador neto
-          Expanded(
-            child: Column(children: [
-              Text(n2short,
-                style: TextStyle(color: t.sub, fontSize: 10,
-                    fontWeight: FontWeight.w700, letterSpacing: 0.3),
-                textAlign: TextAlign.center, overflow: TextOverflow.ellipsis),
-              if (rows.any((r) => r.strokes > 0))
-                Text('neto', style: TextStyle(
-                  color: t.primary.withValues(alpha: 0.7),
-                  fontSize: 8, fontWeight: FontWeight.w600,
-                  letterSpacing: 0.2)),
-            ]),
-          ),
-          const SizedBox(width: 10),
-          const SizedBox(width: 52), // ancho chip resultado
-        ]),
-      ),
-      const SizedBox(height: 6),
-
-      // ── Filas de hoyos ────────────────────────────────────────────────────
-      ...rows.map((row) => _HoleTimelineRow(
-        data: row,
-        basePlayer: basePlayer,
-        receiverPlayer: receiverPlayer,
-        t: t,
-      )),
-
-      // ── Totales de Skins ──────────────────────────────────────────────────
-      if (skinsResults != null && skinsResults.isNotEmpty) ...[
-        const SizedBox(height: 8),
-        _SkinsTotalsRow(
-            results: skinsResults, round: round,
-            p1: p1, p2: p2, mod: skinsMod!, t: t),
-      ],
+        );
+      }),
     ]);
   }
 }
 
-// ── Momentum Tracker: barrita de progreso que muestra quién lidera hoyo a hoyo
-class _MomentumTracker extends StatelessWidget {
-  final List<_HoleRowData> rows;
-  final List<int> runningPerHole;
-  final Player basePlayer, receiverPlayer;
-  final int totalHoles;
-  final GolfTheme t;
-  const _MomentumTracker({
-    required this.rows, required this.runningPerHole,
-    required this.basePlayer, required this.receiverPlayer,
-    required this.totalHoles, required this.t,
-  });
-
+// Mini switch visual reutilizable
+class _MiniSwitch extends StatelessWidget {
+  final bool active;
+  const _MiniSwitch({required this.active});
   @override
   Widget build(BuildContext context) {
-    if (rows.isEmpty) return const SizedBox.shrink();
-
-    final current = runningPerHole.isNotEmpty ? runningPerHole.last : 0;
-    final n1 = basePlayer.name.split(' ').first;
-    final n2 = receiverPlayer.name.split(' ').first;
-
-    // Estado textual
-    final String stateText;
-    final Color stateCol;
-    if (current > 0) {
-      stateText = '$n1 +$current UP';
-      stateCol  = const Color(0xFF35C759);
-    } else if (current < 0) {
-      stateText = '$n2 +${current.abs()} UP';
-      stateCol  = const Color(0xFFFF453A);
-    } else {
-      stateText = 'ALL SQUARE';
-      stateCol  = const Color(0xFFFFD60A);
-    }
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      width: 36, height: 20,
       decoration: BoxDecoration(
-        color: t.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: t.divider),
+        color: active
+            ? Colors.white.withValues(alpha: 0.25)
+            : Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+            color: Colors.white.withValues(alpha: active ? 0.40 : 0.12)),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Estado actual centrado
-        Center(
-          child: Text(stateText,
-            style: TextStyle(
-              color: stateCol,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.5,
+      child: Stack(children: [
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeInOut,
+          left: active ? 17 : 2,
+          top: 2,
+          child: Container(
+            width: 16, height: 16,
+            decoration: BoxDecoration(
+              color: active ? Colors.white : Colors.white38,
+              shape: BoxShape.circle,
             ),
           ),
         ),
-        const SizedBox(height: 10),
-
-        // Barra de momentum hoyo por hoyo
-        LayoutBuilder(builder: (_, constraints) {
-          final totalW = constraints.maxWidth;
-          final slotW  = totalW / totalHoles;
-
-          return SizedBox(
-            height: 28,
-            child: Stack(children: [
-              // Fondo neutro (hoyos no jugados)
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                ),
-              ),
-
-              // Línea central (cero)
-              Positioned(
-                left: 0, right: 0,
-                top: 13, bottom: 13,
-                child: Container(color: Colors.white.withValues(alpha: 0.12)),
-              ),
-
-              // Barras de cada hoyo
-              ...List.generate(rows.length, (i) {
-                final r = rows[i];
-                Color barCol;
-                double barH;
-                double top;
-
-                if (r.state == _HoleState.win) {
-                  barCol = const Color(0xFF35C759);
-                  barH   = 10;
-                  top    = 4;  // arriba del centro
-                } else if (r.state == _HoleState.lose) {
-                  barCol = const Color(0xFFFF453A);
-                  barH   = 10;
-                  top    = 14; // abajo del centro
-                } else if (r.state == _HoleState.tie) {
-                  barCol = const Color(0xFF8E8E93);
-                  barH   = 4;
-                  top    = 12; // en el centro
-                } else {
-                  return const SizedBox.shrink();
-                }
-                return Positioned(
-                  left:  i * slotW + 1,
-                  width: slotW - 2,
-                  top:   top,
-                  height: barH,
-                  child: AnimatedContainer(
-                    duration: Duration(milliseconds: 300 + i * 15),
-                    curve: Curves.easeOut,
-                    decoration: BoxDecoration(
-                      color: barCol,
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                    // Dot extra para skin
-                    child: r.hasSkin
-                        ? Align(
-                            alignment: Alignment.topCenter,
-                            child: Container(
-                              width: 4, height: 4, margin: const EdgeInsets.only(top: 1),
-                              decoration: const BoxDecoration(
-                                color: Color(0xFFFFD60A),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          )
-                        : null,
-                  ),
-                );
-              }),
-
-              // Separador mitad del recorrido (hoyo 9/10)
-              Positioned(
-                left:  (totalHoles ~/ 2) * slotW - 0.5,
-                top: 0, bottom: 0, width: 1,
-                child: Container(
-                  color: Colors.white.withValues(alpha: 0.18),
-                ),
-              ),
-
-              // Números de hoyo (cada 3)
-              ...List.generate(totalHoles, (i) {
-                final hNum = rows.length > i ? rows[i].hole : null;
-                if (hNum == null) return const SizedBox.shrink();
-                if (i % 3 != 0) return const SizedBox.shrink();
-                return Positioned(
-                  left: i * slotW,
-                  width: slotW * 3,
-                  bottom: 0,
-                  child: Text('$hNum',
-                    style: TextStyle(
-                      color: t.sub.withValues(alpha: 0.4),
-                      fontSize: 7, fontWeight: FontWeight.w600),
-                    textAlign: TextAlign.left),
-                );
-              }),
-            ]),
-          );
-        }),
-
-        // Leyenda mínima
-        const SizedBox(height: 6),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text(n1, style: TextStyle(color: const Color(0xFF35C759),
-              fontSize: 9, fontWeight: FontWeight.w700)),
-          Row(children: [
-            Container(width: 6, height: 6,
-              decoration: const BoxDecoration(
-                color: Color(0xFFFFD60A), shape: BoxShape.circle)),
-            const SizedBox(width: 3),
-            Text('piel', style: TextStyle(color: t.sub, fontSize: 9)),
-          ]),
-          Text(n2, style: TextStyle(color: const Color(0xFFFF453A),
-              fontSize: 9, fontWeight: FontWeight.w700)),
-        ]),
       ]),
     );
   }
 }
 
-// ── Fila individual del timeline (rediseño compacto estilo marcador deportivo) ─
-class _HoleTimelineRow extends StatelessWidget {
-  final _HoleRowData data;
-  final Player basePlayer, receiverPlayer;
+// ── Toggle "Solo mis duelos" (DEPRECATED — mantenido para compatibilidad) ─────
+class _MyMatchesToggle extends StatelessWidget {
+  final bool active;
+  final Player? myPlayer;           // null = aún no determinado
+  final List<Player> allPlayers;
   final GolfTheme t;
+  final VoidCallback onToggle;
+  final void Function(String pid) onPickPlayer;
 
-  const _HoleTimelineRow({
-    required this.data,
-    required this.basePlayer,
-    required this.receiverPlayer,
+  const _MyMatchesToggle({
+    required this.active,
+    required this.myPlayer,
+    required this.allPlayers,
     required this.t,
+    required this.onToggle,
+    required this.onPickPlayer,
   });
 
-  Color get _stateColor {
-    switch (data.state) {
-      case _HoleState.win:     return const Color(0xFF35C759);
-      case _HoleState.lose:    return const Color(0xFFFF453A);
-      case _HoleState.tie:     return const Color(0xFF8E8E93);
-      case _HoleState.pending: return const Color(0xFF48484A);
-    }
+  void _showPicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+        child: Column(mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('¿Cuál jugador eres tú?',
+              style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
+          const SizedBox(height: 4),
+          Text('Filtrará solo los duelos donde participas.',
+              style: TextStyle(color: t.sub, fontSize: 12)),
+          const SizedBox(height: 14),
+          ...allPlayers.map((p) => ListTile(
+            leading: GAvatar(name: p.name, colorIndex: p.colorIndex, size: 36),
+            title: Text(p.name,
+                style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
+            subtitle: Text('HCP ${p.handicapBase.toStringAsFixed(0)}',
+                style: TextStyle(color: t.sub)),
+            trailing: myPlayer?.id == p.id
+                ? Icon(Icons.check_circle, color: t.primary, size: 20)
+                : null,
+            onTap: () {
+              onPickPlayer(p.id);
+              Navigator.pop(context);
+            },
+          )),
+        ]),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final sc      = _stateColor;
-    final isPending = data.state == _HoleState.pending;
-    final hasStrokes = data.strokes > 0;
+    const activeGrad = [Color(0xFF1F8F3A), Color(0xFF0D5020)];
+    final myName = myPlayer?.name.split(' ').first;
+    final hasPlayer = myPlayer != null;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 220),
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: isPending
-            ? t.surface.withValues(alpha: 0.5)
-            : sc.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isPending ? t.divider : sc.withValues(alpha: 0.22),
-          width: 1,
-        ),
-      ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-
-        // ── Indicador hoyo: número + par + dots de ventaja ─────────────────
-        Container(
-          width: 44,
-          alignment: Alignment.center,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Número del hoyo (con dot de color si hay resultado)
-              Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                if (!isPending)
-                  Container(
-                    width: 5, height: 5,
-                    margin: const EdgeInsets.only(right: 3),
-                    decoration: BoxDecoration(color: sc, shape: BoxShape.circle),
-                  ),
-                Text('${data.hole}',
-                  style: TextStyle(
-                    color: isPending ? t.sub : t.text,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14,
-                  ),
-                ),
-              ]),
-              Text('P${data.par}',
-                style: TextStyle(color: t.sub.withValues(alpha: 0.6),
-                    fontSize: 9, fontWeight: FontWeight.w500)),
-              // Puntos de ventaja (strokes recibidos)
-              if (hasStrokes)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Wrap(
-                    spacing: 2,
-                    children: List.generate(data.strokes.clamp(0, 3), (_) =>
-                      Container(width: 4, height: 4,
-                        decoration: BoxDecoration(
-                          color: t.primary.withValues(alpha: 0.65),
-                          shape: BoxShape.circle))),
-                  ),
-                ),
-            ],
-          ),
-        ),
-
-        const SizedBox(width: 12),
-
-        // ── Score P1 (base — bruto) ────────────────────────────────────────
-        Expanded(
-          child: Center(
-            child: data.grossBase != null
-                ? _PGAScoreBadge(data.grossBase!, data.par, accent: true)
-                : Text('–', style: TextStyle(color: t.sub, fontSize: 13,
-                    fontWeight: FontWeight.w600)),
-          ),
-        ),
-
-        // ── Separador VS ───────────────────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Text('vs',
-            style: TextStyle(
-              color: t.sub.withValues(alpha: 0.35),
-              fontSize: 9, fontWeight: FontWeight.w700)),
-        ),
-
-        // ── Score P2 (receiver — neto si aplica) ──────────────────────────
-        Expanded(
-          child: Center(
-            child: data.grossReceiver != null
-                ? hasStrokes && data.netReceiver != null
-                    ? Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _PGAScoreBadge(
-                              data.netReceiver!, data.par, accent: true),
-                          const SizedBox(height: 1),
-                          Text('(${data.grossReceiver})',
-                            style: TextStyle(
-                              color: t.sub.withValues(alpha: 0.45),
-                              fontSize: 8, fontWeight: FontWeight.w500)),
-                        ],
-                      )
-                    : _PGAScoreBadge(data.grossReceiver!, data.par, accent: true)
-                : Text('–', style: TextStyle(color: t.sub, fontSize: 13,
-                    fontWeight: FontWeight.w600)),
-          ),
-        ),
-
-        const SizedBox(width: 10),
-
-        // ── Resultado chip + skin ──────────────────────────────────────────
-        SizedBox(
-          width: 52,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Chip resultado
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isPending
-                      ? Colors.white.withValues(alpha: 0.05)
-                      : sc.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                  border: isPending
-                      ? null
-                      : Border.all(color: sc.withValues(alpha: 0.3), width: 0.5),
-                ),
-                child: Text(
-                  switch (data.state) {
-                    _HoleState.win     => '▲ WIN',
-                    _HoleState.lose    => '▼ LOST',
-                    _HoleState.tie     => '= TIE',
-                    _HoleState.pending => '—',
-                  },
-                  style: TextStyle(
-                    color: isPending
-                        ? t.sub.withValues(alpha: 0.4)
-                        : sc,
-                    fontSize: 8,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.3,
-                  ),
-                  textAlign: TextAlign.center,
+    return Row(children: [
+      // ── Botón principal toggle ──────────────────────────────────────
+      Expanded(
+        child: GestureDetector(
+          onTap: hasPlayer ? onToggle : () => _showPicker(context),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOut,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: (active && hasPlayer)
+                  ? const LinearGradient(colors: activeGrad)
+                  : null,
+              color: (active && hasPlayer) ? null : const Color(0xFF2C2C2E),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: (active && hasPlayer)
+                    ? const Color(0xFF35C759).withValues(alpha: 0.50)
+                    : Colors.white.withValues(alpha: 0.08),
+                width: 1.2,
+              ),
+            ),
+            child: Row(children: [
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: Icon(
+                  (active && hasPlayer) ? Icons.person : Icons.people_outline,
+                  key: ValueKey(active && hasPlayer),
+                  color: (active && hasPlayer) ? Colors.white : t.sub,
+                  size: 16,
                 ),
               ),
-              // Skin indicator
-              if (data.hasSkin) ...[
-                const SizedBox(height: 3),
-                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  const Text('🔥', style: TextStyle(fontSize: 9)),
-                  const SizedBox(width: 2),
-                  Text('skin', style: TextStyle(
-                      color: const Color(0xFFFF9500),
-                      fontSize: 7, fontWeight: FontWeight.w800)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: Text(
+                    (active && hasPlayer)
+                        ? 'Mis duelos ($myName)'
+                        : 'Todos los duelos',
+                    key: ValueKey(active && hasPlayer),
+                    style: TextStyle(
+                      color: (active && hasPlayer) ? Colors.white : t.sub,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              // Switch visual
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                width: 38, height: 22,
+                decoration: BoxDecoration(
+                  color: (active && hasPlayer)
+                      ? Colors.white.withValues(alpha: 0.25)
+                      : Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(
+                      color: Colors.white.withValues(
+                          alpha: (active && hasPlayer) ? 0.40 : 0.12)),
+                ),
+                child: Stack(children: [
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeInOut,
+                    left: (active && hasPlayer) ? 18 : 2,
+                    top: 2,
+                    child: Container(
+                      width: 18, height: 18,
+                      decoration: BoxDecoration(
+                        color: (active && hasPlayer) ? Colors.white : t.sub,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
                 ]),
-              ],
-            ],
+              ),
+            ]),
           ),
         ),
+      ),
+
+      // ── Botón "elegir jugador" (siempre visible, pequeño) ─────────
+      const SizedBox(width: 8),
+      GestureDetector(
+        onTap: () => _showPicker(context),
+        child: Container(
+          padding: const EdgeInsets.all(9),
+          decoration: BoxDecoration(
+            color: hasPlayer
+                ? t.primary.withValues(alpha: 0.15)
+                : const Color(0xFF2C2C2E),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: hasPlayer
+                    ? t.primary.withValues(alpha: 0.35)
+                    : Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Icon(
+            hasPlayer ? Icons.edit_outlined : Icons.person_search_outlined,
+            color: hasPlayer ? t.primary : t.sub,
+            size: 18,
+          ),
+        ),
+      ),
+    ]);
+  }
+}
+
+// ── Tarjeta de duelo expandible ───────────────────────────────────────────────
+// Muestra el badge de resultado. Al tocar, despliega hoyo-a-hoyo y paneles.
+class _MatchDuelCard extends StatefulWidget {
+  final Round round;
+  final Player p1, p2;
+  final GolfTheme t;
+  final bool expanded;
+  final String? myPlayerId;   // ID del jugador del usuario autenticado (para resaltar)
+  final void Function(BuildContext ctx, double factor,
+      List<BetModuleInstance> nassauMods,
+      List<BetModuleInstance> matchMods) onApplyCarry;
+
+  const _MatchDuelCard({
+    required this.round, required this.p1, required this.p2,
+    required this.t, required this.expanded,
+    required this.onApplyCarry,
+    this.myPlayerId,
+  });
+
+  @override
+  State<_MatchDuelCard> createState() => _MatchDuelCardState();
+}
+
+class _MatchDuelCardState extends State<_MatchDuelCard>
+    with SingleTickerProviderStateMixin {
+  late bool _expanded;
+  late AnimationController _ctrl;
+  late Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.expanded;
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 280));
+    _fadeAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+    if (_expanded) _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    if (_expanded) {
+      _ctrl.forward();
+    } else {
+      _ctrl.reverse();
+    }
+  }
+
+  List<BetModuleInstance> _findModules(BetModuleType type) {
+    final round = widget.round;
+    final p1Id  = widget.p1.id;
+    final p2Id  = widget.p2.id;
+    final mods  = <BetModuleInstance>[];
+    for (final g in round.betGroups) {
+      final ids = g.playerIds;
+      if (ids.length == 2 && ids.contains(p1Id) && ids.contains(p2Id)) {
+        mods.addAll(g.modules.where((m) => m.type == type));
+      }
+    }
+    if (mods.isEmpty) {
+      for (final g in round.betGroups) {
+        if (g.playerIds.contains(p1Id) && g.playerIds.contains(p2Id)) {
+          mods.addAll(g.modules.where((m) => m.type == type));
+        }
+      }
+    }
+    return mods;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final round            = widget.round;
+    final p1               = widget.p1;
+    final p2               = widget.p2;
+    final t                = widget.t;
+    final skinsModules     = _findModules(BetModuleType.skins);
+    final nassauModules    = _findModules(BetModuleType.nassau);
+    final matchMods        = _findModules(BetModuleType.matchAutoPress);
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      // ── Badge resultado (siempre visible, tap para expandir) ──────
+      GestureDetector(
+        onTap: _toggle,
+        behavior: HitTestBehavior.opaque,
+        child: Stack(
+          children: [
+            _MatchStatusCard(
+              round: round, p1: p1, p2: p2, t: t,
+              skinsModules:      skinsModules,
+              nassauModules:     nassauModules,
+              matchPressModules: matchMods,
+            ),
+            // Indicador de expansión (chevron) en la esquina inferior derecha
+            Positioned(
+              right: 14, bottom: 12,
+              child: AnimatedRotation(
+                turns: _expanded ? 0.5 : 0.0,
+                duration: const Duration(milliseconds: 280),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.keyboard_arrow_down,
+                      color: Colors.white.withValues(alpha: 0.60), size: 16),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+
+      // ── Detalle expandible ────────────────────────────────────────
+      SizeTransition(
+        sizeFactor: _fadeAnim,
+        child: FadeTransition(
+          opacity: _fadeAnim,
+          child: Column(children: [
+            const SizedBox(height: 10),
+
+            // Paneles Nassau
+            ...nassauModules.map((mod) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _NassauLivePanel(round: round, p1: p1, p2: p2, mod: mod, t: t),
+            )),
+
+            // Paneles Match+Press
+            ...matchMods.map((mod) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _MatchPressLivePanel(round: round, p1: p1, p2: p2, mod: mod, t: t),
+            )),
+
+            // Hoyo a hoyo
+            _HoleByHoleMatch(
+              round: round, p1: p1, p2: p2, t: t,
+              skinsMod: skinsModules.isNotEmpty ? skinsModules.first : null,
+            ),
+            const SizedBox(height: 10),
+
+            // Carry
+            _CarryPanel(
+              round: round, p1: p1, p2: p2, t: t,
+              nassauModules:     nassauModules,
+              matchPressModules: matchMods,
+              onApplyCarry: (factor) =>
+                  widget.onApplyCarry(context, factor, nassauModules, matchMods),
+            ),
+
+            // Desglose financiero por duelo
+            _FinancialBreakdown(round: round, p1: p1, p2: p2, t: t),
+          ]),
+        ),
+      ),
+    ]);
+  }
+}
+
+// ── Selector de jugadores (mantenido por compatibilidad, ya no usado en UI) ───
+class _PlayerSelector extends StatelessWidget {
+  final List<Player> players;
+  final Player p1, p2;
+  final GolfTheme t;
+  final void Function(String) onP1, onP2;
+  const _PlayerSelector({required this.players, required this.p1, required this.p2,
+      required this.t, required this.onP1, required this.onP2});
+
+  @override
+  Widget build(BuildContext context) {
+    return GCard(child: Row(children: [
+      _playerChip(context, p1, onP1),
+      Expanded(child: Center(child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(color: t.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+        child: Text('VS', style: TextStyle(color: t.primary, fontWeight: FontWeight.w800, fontSize: 12)),
+      ))),
+      _playerChip(context, p2, onP2),
+    ]));
+  }
+
+  Widget _playerChip(BuildContext context, Player p, void Function(String) onSelect) {
+    return GestureDetector(
+      onTap: () => _showPicker(context, onSelect),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        GAvatar(name: p.name, colorIndex: p.colorIndex, size: 32),
+        const SizedBox(width: 6),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(p.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 13)),
+          Text('HCP ${p.handicapBase.toStringAsFixed(0)}', style: TextStyle(color: t.sub, fontSize: 10)),
+        ]),
+        const SizedBox(width: 4),
+        Icon(Icons.expand_more, color: t.sub, size: 14),
       ]),
     );
+  }
+
+  void _showPicker(BuildContext context, void Function(String) onSelect) {
+    final t = this.t;
+    showModalBottomSheet(context: context, backgroundColor: t.card,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Seleccionar jugador', style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
+          const SizedBox(height: 12),
+          ...players.map((p) => ListTile(
+            leading: GAvatar(name: p.name, colorIndex: p.colorIndex, size: 36),
+            title: Text(p.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
+            subtitle: Text('HCP ${p.handicapBase.toStringAsFixed(0)}', style: TextStyle(color: t.sub)),
+            onTap: () { onSelect(p.id); Navigator.pop(context); },
+          )),
+        ]),
+      ));
+  }
+}
+
+// ── Match / Skins Status Card ─────────────────────────────────────────────────
+// Premium hero card: gradiente según estado, score grande centrado,
+// avatares con nombres, pills secundarias (thru, carry, dinero).
+class _MatchStatusCard extends StatelessWidget {
+  final Round round;
+  final Player p1, p2;
+  final GolfTheme t;
+  final List<BetModuleInstance> skinsModules;
+  final List<BetModuleInstance> nassauModules;
+  final List<BetModuleInstance> matchPressModules;
+  const _MatchStatusCard({
+    required this.round, required this.p1, required this.p2, required this.t,
+    required this.skinsModules, required this.nassauModules,
+    this.matchPressModules = const [],
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (skinsModules.isNotEmpty) {
+      return _SkinsGlanceCard(
+          round: round, p1: p1, p2: p2, mod: skinsModules.first, t: t);
+    }
+    return _buildMatchCard(context);
+  }
+
+  Widget _buildMatchCard(BuildContext context) {
+    final status      = GameEngine.matchPlayStatus(round, p1.id, p2.id, true);
+    final lastH       = GameEngine.lastCompletedHole(round, [p1.id, p2.id]);
+    final playedCount = List.generate(round.totalHoles, (i) => i + 1)
+        .where((h) => round.getScore(p1.id, h).hasScore &&
+                      round.getScore(p2.id, h).hasScore)
+        .length;
+
+    // ── Tema según estado ──────────────────────────────────────────────────
+    final Color accentColor;
+    final List<Color> gradColors;
+    final String stateWord;
+    final String scoreLabel;
+    final String diffLabel;
+
+    final n1 = p1.name.split(' ').first;
+    final n2 = p2.name.split(' ').first;
+    if (status == 0) {
+      accentColor = const Color(0xFF1565C0);
+      gradColors  = const [Color(0xFF1A3A6B), Color(0xFF0D1F3C)];
+      stateWord   = 'EMPATADO';
+      scoreLabel  = 'hoyos';
+      diffLabel   = 'All Square';
+    } else if (status > 0) {
+      accentColor = const Color(0xFF35C759);
+      gradColors  = const [Color(0xFF1F8F3A), Color(0xFF0E3D1B)];
+      stateWord   = 'GANANDO';
+      scoreLabel  = 'hoyos';
+      diffLabel   = '$n1 +$status UP';
+    } else {
+      accentColor = const Color(0xFFFF453A);
+      gradColors  = const [Color(0xFF7A1E1E), Color(0xFF2A0E0E)];
+      stateWord   = 'PERDIENDO';
+      scoreLabel  = 'hoyos';
+      diffLabel   = '$n2 +${status.abs()} UP';
+    }
+
+    // Scores grandes: hoyos ganados por cada jugador
+    final s1 = status > 0 ? status : 0;
+    final s2 = status < 0 ? status.abs() : 0;
+
+    // ── Métricas de presiones y balance en vivo (cuando hay módulo matchAutoPress) ──
+    String? subLabel;
+    double? liveBalance;
+    if (matchPressModules.isNotEmpty) {
+      final mod     = matchPressModules.first;
+      final presses = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
+
+      // Balance en vivo: suma match principal + todas las presiones
+      // (igual que lo hace _MatchPressLivePanel)
+      double mpBal = 0.0;
+      for (final pr in presses) {
+        if (pr.played == 0) continue;
+        if (pr.leadingPlayerId == p1.id) mpBal += pr.value;
+        if (pr.leadingPlayerId == p2.id) mpBal -= pr.value;
+      }
+      liveBalance = mpBal;
+
+      // Métricas de presiones para el subLabel
+      final pressSegments = presses.skip(1).where((pr) => pr.played > 0).toList();
+      if (pressSegments.isNotEmpty) {
+        final pw1        = pressSegments.where((pr) => pr.leadingPlayerId == p1.id).length;
+        final pw2        = pressSegments.where((pr) => pr.leadingPlayerId == p2.id).length;
+        final ties       = pressSegments.where((pr) => pr.score == 0).length;
+        final totalPresses = pressSegments.length;
+        final tieStr     = ties > 0 ? '  ($ties AS)' : '';
+        subLabel = 'Presiones: $n1 $pw1 – $pw2 $n2$tieStr  •  $totalPresses jugadas';
+      }
+    }
+
+    return _PremiumResultBadge(
+      p1: p1, p2: p2, t: t,
+      stateWord: stateWord,
+      score1: s1, score2: s2,
+      scoreLabel: scoreLabel,
+      diffLabel: diffLabel,
+      accentColor: accentColor,
+      gradColors: gradColors,
+      playedCount: playedCount,
+      lastHole: lastH,
+      tieCount: null,
+      skinsInPot: null,
+      round: round,
+      subLabel: subLabel,
+      liveBalance: liveBalance,
+    );
+  }
+}
+
+// \u2500\u2500 SKINS QUICK-GLANCE CARD \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Card de estado para ronda pura de Skins (sin Nassau).
+// Jerarqu\u00eda: banda de color (GANANDO/EMPATADO/PERDIENDO) \u2192
+//            diferencia (+2 skins / E) \u2192 score (4 vs 2) \u2192
+//            datos secundarios en fila \u00fanica (carryovers, dinero, thru).
+class _SkinsGlanceCard extends StatelessWidget {
+  final Round round;
+  final Player p1, p2;
+  final BetModuleInstance mod;
+  final GolfTheme t;
+  const _SkinsGlanceCard({
+    required this.round, required this.p1, required this.p2,
+    required this.mod, required this.t,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final results  = BetEngine.skinsScorecard(round, p1.id, p2.id, mod);
+    final played   = results.where((r) => !r.isPending).toList();
+    final last     = played.isNotEmpty ? played.last : null;
+    final skins1   = last?.cumP1 ?? 0;
+    final skins2   = last?.cumP2 ?? 0;
+    final tieCount = results.where((r) => r.isTie).length;
+    final currentPot  = results.isNotEmpty ? results.last.pot : mod.skins.valuePerSkin;
+    final skinsInPot  = (currentPot / mod.skins.valuePerSkin).round();
+    final playedCount = List.generate(round.totalHoles, (i) => i + 1)
+        .where((h) => round.getScore(p1.id, h).hasScore &&
+                      round.getScore(p2.id, h).hasScore)
+        .length;
+    final lastH = GameEngine.lastCompletedHole(round, [p1.id, p2.id]);
+    final lead  = skins1 - skins2;
+
+    final Color accentColor;
+    final List<Color> gradColors;
+    final String stateWord;
+    final String diffLabel;
+
+    final sn1 = p1.name.split(' ').first;
+    final sn2 = p2.name.split(' ').first;
+    // ¿Hay skins acumulados en el bote? → sobreescribir gradiente con amarillo-alerta
+    final bool hasCarry = skinsInPot > 1;
+
+    if (playedCount == 0) {
+      accentColor = const Color(0xFF607D8B);
+      gradColors  = const [Color(0xFF37474F), Color(0xFF1C1C1E)];
+      stateWord   = 'EN JUEGO';
+      diffLabel   = 'Esperando scores';
+    } else if (lead == 0) {
+      if (hasCarry) {
+        // Empate con carry: amarillo-ámbar de alerta
+        accentColor = const Color(0xFFFFCC00);
+        gradColors  = const [Color(0xFF5C4500), Color(0xFF2A1E00)];
+        stateWord   = 'EMPATADO';
+        diffLabel   = '🔥 ×$skinsInPot en juego';
+      } else {
+        accentColor = const Color(0xFF1565C0);
+        gradColors  = const [Color(0xFF1A3A6B), Color(0xFF0D1F3C)];
+        stateWord   = 'EMPATADO';
+        diffLabel   = 'All Square';
+      }
+    } else if (lead > 0) {
+      if (hasCarry) {
+        accentColor = const Color(0xFFFFCC00);
+        gradColors  = const [Color(0xFF4A3800), Color(0xFF1F1600)];
+        stateWord   = 'GANANDO';
+        diffLabel   = '$sn1 +$lead UP  🔥×$skinsInPot';
+      } else {
+        accentColor = const Color(0xFF35C759);
+        gradColors  = const [Color(0xFF1F8F3A), Color(0xFF0E3D1B)];
+        stateWord   = 'GANANDO';
+        diffLabel   = '$sn1 +$lead UP';
+      }
+    } else {
+      if (hasCarry) {
+        accentColor = const Color(0xFFFFCC00);
+        gradColors  = const [Color(0xFF4A3800), Color(0xFF1F1600)];
+        stateWord   = 'PERDIENDO';
+        diffLabel   = '$sn2 +${lead.abs()} UP  🔥×$skinsInPot';
+      } else {
+        accentColor = const Color(0xFFFF453A);
+        gradColors  = const [Color(0xFF7A1E1E), Color(0xFF2A0E0E)];
+        stateWord   = 'PERDIENDO';
+        diffLabel   = '$sn2 +${lead.abs()} UP';
+      }
+    }
+
+    return _PremiumResultBadge(
+      p1: p1, p2: p2, t: t,
+      stateWord: stateWord,
+      score1: skins1, score2: skins2,
+      scoreLabel: 'skins',
+      diffLabel: diffLabel,
+      accentColor: accentColor,
+      gradColors: gradColors,
+      playedCount: playedCount,
+      lastHole: lastH,
+      tieCount: tieCount,
+      skinsInPot: skinsInPot,
+      round: round,
+    );
+  }
+}
+
+// ── PREMIUM RESULT BADGE ──────────────────────────────────────────────────────
+// Badge elegante con gradiente, score grande centrado, avatares y pills.
+// Usado tanto para Skins como para Match/Nassau.
+class _PremiumResultBadge extends StatelessWidget {
+  final Player p1, p2;
+  final GolfTheme t;
+  final String stateWord;
+  final int score1, score2;
+  final String scoreLabel;   // "skins", "hoyos"
+  final String diffLabel;    // texto de diferencia principal
+  final String? subLabel;    // línea secundaria opcional (ej: métricas de presiones)
+  final Color accentColor;
+  final List<Color> gradColors;
+  final int playedCount;
+  final int lastHole;
+  final int? tieCount;
+  final int? skinsInPot;
+  final Round round;
+  final double? liveBalance;  // override del balance en vivo (para matchAutoPress)
+
+  const _PremiumResultBadge({
+    required this.p1, required this.p2, required this.t,
+    required this.stateWord, required this.score1, required this.score2,
+    required this.scoreLabel, required this.diffLabel,
+    required this.accentColor, required this.gradColors,
+    required this.playedCount, required this.lastHole,
+    required this.round,
+    this.tieCount, this.skinsInPot,
+    this.subLabel, this.liveBalance,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final n1 = p1.name.split(' ').first;
+    final n2 = p2.name.split(' ').first;
+    final isWinning = score1 > score2;
+    final isLosing  = score1 < score2;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: gradColors,
+        ),
+        border: Border.all(
+          color: accentColor.withValues(alpha: 0.25),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: gradColors[0].withValues(alpha: 0.35),
+            blurRadius: 18,
+            spreadRadius: 2,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(children: [
+          // ── Parte superior: estado ─────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.only(top: 14, bottom: 4),
+            child: Text(
+              stateWord,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.70),
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2.5,
+              ),
+            ),
+          ),
+
+          // ── Score grande centrado: Avatar · Número · vs · Número · Avatar ─
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Jugador 1
+                _playerBlock(n1, p1, isWinning, true),
+
+                // Score izquierdo
+                const SizedBox(width: 12),
+                _scoreBlock(score1, isWinning),
+
+                // Separador "–"
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '–',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.35),
+                          fontSize: 32,
+                          fontWeight: FontWeight.w300,
+                        ),
+                      ),
+                      const SizedBox(height: 14), // espacio para el label
+                    ],
+                  ),
+                ),
+
+                // Score derecho
+                _scoreBlock(score2, isLosing),
+                const SizedBox(width: 12),
+
+                // Jugador 2
+                _playerBlock(n2, p2, isLosing, false),
+              ],
+            ),
+          ),
+
+          // ── Label de tipo debajo de los scores ────────────────────────
+          Padding(
+            padding: EdgeInsets.only(bottom: subLabel != null ? 2 : 6),
+            child: Text(
+              diffLabel,
+              style: TextStyle(
+                color: accentColor.withValues(alpha: 0.90),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+
+          // ── SubLabel opcional (ej: métricas de presiones) ─────────────
+          if (subLabel != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                subLabel!,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.50),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+
+          // ── Separador fino ─────────────────────────────────────────────
+          Divider(
+            height: 1,
+            color: Colors.white.withValues(alpha: 0.08),
+            indent: 20,
+            endIndent: 20,
+          ),
+
+          // ── Pills: Thru · carry · dinero ──────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Thru X hoyos
+                if (playedCount > 0) ...[
+                  _pill(
+                    label: 'Thru $lastHole',
+                    icon: null,
+                    textColor: Colors.white.withValues(alpha: 0.55),
+                    bgColor: Colors.white.withValues(alpha: 0.06),
+                    borderColor: Colors.white.withValues(alpha: 0.10),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                // Carry/empates skins
+                if ((tieCount ?? 0) > 0 && (skinsInPot ?? 0) > 1) ...[
+                  _pill(
+                    label: '🔥×${skinsInPot!}',
+                    icon: null,
+                    textColor: const Color(0xFFFF9500),
+                    bgColor: const Color(0xFFFF9500).withValues(alpha: 0.12),
+                    borderColor: const Color(0xFFFF9500).withValues(alpha: 0.30),
+                  ),
+                  const SizedBox(width: 8),
+                ] else if ((tieCount ?? 0) > 0) ...[
+                  _pill(
+                    label: '${tieCount!} carries',
+                    icon: null,
+                    textColor: const Color(0xFFFF9500),
+                    bgColor: const Color(0xFFFF9500).withValues(alpha: 0.12),
+                    borderColor: const Color(0xFFFF9500).withValues(alpha: 0.30),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                // Balance neto
+                _NetBalanceChip(
+                    round: round, p1: p1, p2: p2, t: t,
+                    stateColor: accentColor,
+                    liveBalance: liveBalance),
+              ],
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _playerBlock(String name, Player p, bool highlight, bool alignLeft) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          decoration: highlight
+              ? BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: accentColor, width: 2.5),
+                  boxShadow: [
+                    BoxShadow(
+                        color: accentColor.withValues(alpha: 0.35),
+                        blurRadius: 8,
+                        spreadRadius: 1),
+                  ],
+                )
+              : null,
+          child: GAvatar(
+            name: p.name,
+            colorIndex: p.colorIndex,
+            size: 38,
+          ),
+        ),
+        const SizedBox(height: 5),
+        SizedBox(
+          width: 56,
+          child: Text(
+            name,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: highlight
+                  ? Colors.white
+                  : Colors.white.withValues(alpha: 0.60),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _scoreBlock(int score, bool highlight) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 350),
+          transitionBuilder: (child, anim) => ScaleTransition(
+            scale: anim,
+            child: FadeTransition(opacity: anim, child: child),
+          ),
+          child: Text(
+            '$score',
+            key: ValueKey(score),
+            style: TextStyle(
+              color: highlight
+                  ? Colors.white
+                  : Colors.white.withValues(alpha: 0.45),
+              fontSize: 52,
+              fontWeight: FontWeight.w900,
+              height: 1.0,
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 16,
+          child: Text(
+            scoreLabel,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.30),
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _pill({
+    required String label,
+    required Color textColor,
+    required Color bgColor,
+    required Color borderColor,
+    IconData? icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (icon != null) ...[
+          Icon(icon, color: textColor, size: 10),
+          const SizedBox(width: 3),
+        ],
+        Text(label, style: TextStyle(
+            color: textColor, fontSize: 10, fontWeight: FontWeight.w700)),
+      ]),
+    );
+  }
+}
+
+class _GlancePill extends StatelessWidget {
+  final String label;
+  final Color color;
+  final double bgAlpha;
+  final GolfTheme t;
+  const _GlancePill({required this.label, required this.color,
+      required this.bgAlpha, required this.t});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: bgAlpha),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Text(label,
+          style: TextStyle(color: color, fontSize: 10,
+              fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+// \u2500\u2500 Chip de balance neto (positivo verde, negativo rojo, cero gris) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+class _NetBalanceChip extends StatelessWidget {
+  final Round round;
+  final Player p1, p2;
+  final GolfTheme t;
+  final Color stateColor;
+  /// Si se pasa, usa este valor en lugar del ledger (para balance en vivo de Match+Press)
+  final double? liveBalance;
+  const _NetBalanceChip({required this.round, required this.p1,
+      required this.p2, required this.t, required this.stateColor,
+      this.liveBalance});
+
+  @override
+  Widget build(BuildContext context) {
+    context.watch<RoundProvider>(); // reconstruir al cambiar scores
+
+    // Si hay un balance en vivo (matchAutoPress activo), usarlo directamente
+    // Si no, calcular desde el ledger (balance de apuestas cerradas)
+    final double bal1;
+    if (liveBalance != null) {
+      bal1 = liveBalance!;
+    } else {
+      // Balance neto total entre p1 y p2 (suma todos los módulos activos)
+      final bd = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
+      bal1 = bd.values.fold(0.0, (sum, v) => sum + v);
+    }
+
+    // balance neto desde perspectiva de p1
+    final label = bal1.abs() < 0.005
+        ? '\$0'
+        : bal1 > 0
+            ? '+\$${bal1.abs().toStringAsFixed(0)}'
+            : '-\$${bal1.abs().toStringAsFixed(0)}';
+    final color = bal1.abs() < 0.005 ? t.sub : bal1 > 0 ? const Color(0xFF2E7D32) : const Color(0xFFC62828);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
+      ),
+      child: Text(label,
+          style: TextStyle(color: color, fontSize: 10,
+              fontWeight: FontWeight.w800)),
+    );
+  }
+}
+
+// \u2500\u2500 Fila de avatares con scores (reutilizado en Match card) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+class _AvatarScoreRow extends StatelessWidget {
+  final Player p1, p2;
+  final int? score1, score2;
+  final String label1, label2;
+  final bool highlightP1, highlightP2;
+  final Color stateColor;
+  final GolfTheme t;
+  const _AvatarScoreRow({
+    required this.p1, required this.p2,
+    this.score1, this.score2,
+    required this.label1, required this.label2,
+    required this.highlightP1, required this.highlightP2,
+    required this.stateColor, required this.t,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+      _chip(p1, score1, label1, highlightP1),
+      _chip(p2, score2, label2, highlightP2),
+    ]);
+  }
+  Widget _chip(Player p, int? score, String label, bool highlight) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      GAvatar(name: p.name, colorIndex: p.colorIndex, size: 28),
+      const SizedBox(width: 6),
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: TextStyle(
+            color: highlight ? stateColor : t.text,
+            fontSize: 11, fontWeight: FontWeight.w700)),
+        if (score != null)
+          Text('$score', style: TextStyle(
+              color: highlight ? stateColor : t.sub,
+              fontSize: 16, fontWeight: FontWeight.w900)),
+      ]),
+    ]);
+  }
+}
+
+// \u2500\u2500 Resumen compacto de Skins para panel Match+Skins \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+class _SkinsMiniSummary extends StatelessWidget {
+  final Round round;
+  final Player p1, p2;
+  final BetModuleInstance mod;
+  final GolfTheme t;
+  const _SkinsMiniSummary({
+    required this.round, required this.p1, required this.p2,
+    required this.mod, required this.t,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Path 1v1 bilateral: sin groupPids para cumP1/cumP2 correctos en duelo p1 vs p2
+    final results  = BetEngine.skinsScorecard(round, p1.id, p2.id, mod);
+    final played   = results.where((r) => !r.isPending).toList();
+    final last     = played.isNotEmpty ? played.last : null;
+    final skins1   = last?.cumP1 ?? 0;
+    final skins2   = last?.cumP2 ?? 0;
+    final tieCount = results.where((r) => r.isTie).length;
+    final currentPot = results.isNotEmpty ? results.last.pot : mod.skins.valuePerSkin;
+    final skinsInPot = (currentPot / mod.skins.valuePerSkin).round();
+
+    final n1 = p1.name.split(' ').first;
+    final n2 = p2.name.split(' ').first;
+
+    return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+      // Encabezado skins
+      Row(children: [
+        Icon(Icons.style_rounded, color: t.accent, size: 12),
+        const SizedBox(width: 4),
+        Text('SKINS', style: TextStyle(color: t.accent, fontSize: 9,
+            fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+      ]),
+
+      // Marcador compacto
+      Row(mainAxisSize: MainAxisSize.min, children: [
+        Text('$n1 $skins1',
+            style: TextStyle(
+              color: skins1 > skins2 ? t.profit : t.sub,
+              fontSize: 11, fontWeight: FontWeight.w700)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Text('·', style: TextStyle(color: t.divider, fontSize: 14)),
+        ),
+        Text('$skins2 $n2',
+            style: TextStyle(
+              color: skins2 > skins1 ? t.profit : t.sub,
+              fontSize: 11, fontWeight: FontWeight.w700)),
+      ]),
+
+      // Empates + pot
+      Row(mainAxisSize: MainAxisSize.min, children: [
+        if (tieCount > 0) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: t.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: t.divider),
+            ),
+            child: Text('=$tieCount',
+                style: TextStyle(color: t.sub, fontSize: 10,
+                    fontWeight: FontWeight.w600)),
+          ),
+          const SizedBox(width: 4),
+        ],
+        if (mod.skins.carryOver && skinsInPot > 1)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: t.accent.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: t.accent.withValues(alpha: 0.30)),
+            ),
+            child: Text('×$skinsInPot 🔥',
+                style: TextStyle(color: t.accent, fontSize: 10,
+                    fontWeight: FontWeight.w700)),
+          ),
+      ]),
+    ]);
+  }
+}
+
+class _BalanceRow extends StatelessWidget {
+  final Round round;
+  final Player p1, p2;
+  final GolfTheme t;
+  const _BalanceRow({required this.round, required this.p1, required this.p2, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final prov = context.watch<RoundProvider>();
+    final bal1 = prov.balances[p1.id] ?? 0.0;
+    final bal2 = prov.balances[p2.id] ?? 0.0;
+    return Row(children: [
+      Expanded(child: Column(children: [
+        GAvatar(name: p1.name, colorIndex: p1.colorIndex, size: 32),
+        const SizedBox(height: 4),
+        BalChip(amount: bal1),
+      ])),
+      Expanded(child: Column(children: [
+        GAvatar(name: p2.name, colorIndex: p2.colorIndex, size: 32),
+        const SizedBox(height: 4),
+        BalChip(amount: bal2),
+      ])),
+    ]);
   }
 }
 
@@ -2919,6 +3326,447 @@ class _CarryPanelState extends State<_CarryPanel> {
       ),
     );
   }
+}
+
+// ── Hoyo a hoyo + columna Skins ───────────────────────────────────────────────
+// Vista 1v1: muestra bruto del jugador BASE (menor HCP) y neto del RIVAL
+// Los strokes se calculan como diferencia entre handicaps (no individual vs par).
+class _HoleByHoleMatch extends StatelessWidget {
+  final Round round;
+  final Player p1, p2;
+  final GolfTheme t;
+  final BetModuleInstance? skinsMod;
+  const _HoleByHoleMatch({
+    required this.round, required this.p1, required this.p2,
+    required this.t, this.skinsMod,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // En la vista 1v1 (_HoleByHoleMatch) siempre usar el camino bilateral (1v1),
+    // sin importar cuántos participantes tenga el módulo en el grupo.
+    // Esto garantiza que la columna SKINS muestre los ganadores del duelo
+    // entre los dos jugadores visibles, no de un tercer jugador del grupo.
+    final List<SkinHoleResult>? skinsResults = skinsMod != null
+        ? BetEngine.skinsScorecard(round, p1.id, p2.id, skinsMod!)
+        : null;
+    final hasSkins = skinsResults != null;
+
+    // Determinar base/receptor y diff CORRECTOS usando manualHandicaps
+    // manual[p1][p2] ya ES la diferencia de strokes:
+    //   > 0 → p1 recibe esos strokes de p2  → p1 es receptor
+    //   < 0 → p1 da esos strokes a p2       → p2 es receptor
+    //   null → usar diferencia de HCPs normales
+    final hcp1 = round.getHandicap(p1.id);
+    final hcp2 = round.getHandicap(p2.id);
+    final rp1 = round.roundPlayers.firstWhere(
+      (r) => r.playerId == p1.id,
+      orElse: () => RoundPlayer(playerId: p1.id, handicapEnRonda: hcp1),
+    );
+    final manual = rp1.manualHandicaps[p2.id];
+
+    final Player basePlayer;
+    final Player receiverPlayer;
+    final double hcpBase;
+    final double hcpReceiver;
+
+    if (manual != null && manual != 0) {
+      // manual > 0: p1 recibe de p2  → p2=base, p1=receptor, diff=manual
+      // manual < 0: p1 da a p2       → p1=base, p2=receptor, diff=|manual|
+      if (manual > 0) {
+        basePlayer     = p2;
+        receiverPlayer = p1;
+        hcpBase        = hcp2;
+        hcpReceiver    = hcp2 + manual; // diff = manual
+      } else {
+        basePlayer     = p1;
+        receiverPlayer = p2;
+        hcpBase        = hcp1;
+        hcpReceiver    = hcp1 + (-manual); // diff = |manual|
+      }
+    } else {
+      // Sin manual: usar diferencia de HCPs normales
+      final p1IsBase = hcp1 <= hcp2;
+      basePlayer     = p1IsBase ? p1 : p2;
+      receiverPlayer = p1IsBase ? p2 : p1;
+      hcpBase        = p1IsBase ? hcp1 : hcp2;
+      hcpReceiver    = p1IsBase ? hcp2 : hcp1;
+    }
+
+    final allHoles = round.course.holes;
+
+    return GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      // ── Header card ─────────────────────────────────────────────────────
+      Row(children: [
+        Expanded(child: Text('HOYO A HOYO',
+            style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8))),
+        if (hasSkins) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: t.accent.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: t.accent.withValues(alpha: 0.3)),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.local_fire_department, color: t.accent, size: 11),
+              const SizedBox(width: 3),
+              Text('Skins ${skinsMod!.carryOver ? "+ carry" : "sin carry"}',
+                  style: TextStyle(color: t.accent, fontSize: 9, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        ],
+      ]),
+
+      // ── Leyenda de ventaja ───────────────────────────────────────────────
+      const SizedBox(height: 6),
+      _handicapLegend(basePlayer, receiverPlayer, hcpBase, hcpReceiver, allHoles, t, round.startingNine),
+      const SizedBox(height: 8),
+
+      // ── Cabecera de columnas ─────────────────────────────────────────────
+      Row(children: [
+        // Hoyo
+        SizedBox(width: 28, child: Text('H',
+            style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700))),
+        // Jugador base (bruto) — izquierda
+        Expanded(child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text(basePlayer.name.split(' ').first,
+                style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w600)),
+            const SizedBox(width: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: t.surface,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: t.divider),
+              ),
+              child: Text('BRUTO', style: TextStyle(color: t.sub, fontSize: 7, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        )),
+        const SizedBox(width: 4),
+        // Centro (flecha / resultado)
+        const SizedBox(width: 24),
+        const SizedBox(width: 4),
+        // Jugador receptor (neto) — derecha
+        Expanded(child: Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: t.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: t.primary.withValues(alpha: 0.3)),
+            ),
+            child: Text('NETO', style: TextStyle(color: t.primary, fontSize: 7, fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(width: 4),
+          Text(receiverPlayer.name.split(' ').first,
+              style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w600)),
+        ])),
+        if (hasSkins)
+          SizedBox(width: 68, child: Text('SKINS',
+              style: TextStyle(color: t.accent, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+              textAlign: TextAlign.center)),
+      ]),
+      const SizedBox(height: 4),
+      Divider(color: t.divider, height: 1),
+
+      // ── Filas de hoyos (en el orden de la ronda: startingNine) ──────────────
+      // Mostrar en el orden que se jugaron para que los skins y el marcador
+      // sean coherentes visualmente con la secuencia real de la partida.
+      ...() {
+        final holeMap = { for (final ch in round.course.holes) ch.hole: ch };
+        final order = round.startingNine == StartingNine.back
+            ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
+            : List.generate(18, (i) => i + 1);
+        return order.map((hNum) {
+          final ch = holeMap[hNum]!;
+          final sBase     = round.getScore(basePlayer.id,     ch.hole);
+          final sReceiver = round.getScore(receiverPlayer.id, ch.hole);
+          if (!sBase.hasScore && !sReceiver.hasScore) return const SizedBox.shrink();
+
+          // Strokes que recibe el rival (diferencia de HCPs en este hoyo)
+          final strokesHere = GameEngine.strokesReceivedVs(
+            hcpHigher:    hcpReceiver,
+          hcpLower:     hcpBase,
+          ch:           ch,
+          allHoles:     allHoles,
+          startingNine: round.startingNine,
+        );
+
+        // Scores a mostrar
+        final grossBase     = sBase.hasScore     ? sBase.grossScore!     : null;
+        final grossReceiver = sReceiver.hasScore ? sReceiver.grossScore! : null;
+        final netReceiver   = grossReceiver != null ? grossReceiver - strokesHere : null;
+
+        // Ganador del hoyo: compara bruto base vs neto receptor
+        bool? baseWins;
+        if (grossBase != null && netReceiver != null) {
+          if (grossBase < netReceiver)       baseWins = true;
+          else if (grossBase > netReceiver)  baseWins = false;
+          // null = empate
+        }
+
+        final skinResult = (hasSkins && skinsResults != null)
+            ? skinsResults.firstWhere(
+                (r) => r.hole == ch.hole,
+                orElse: () => SkinHoleResult(
+                    hole: ch.hole, winner: null, isPending: true,
+                    pot: skinsMod?.value ?? 0, cumP1: 0, cumP2: 0))
+            : null;
+
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          decoration: BoxDecoration(
+            // Resaltar filas donde hay ventaja asignada
+            color: strokesHere > 0
+                ? t.primary.withValues(alpha: 0.03)
+                : Colors.transparent,
+            border: Border(bottom: BorderSide(color: t.divider.withValues(alpha: 0.4))),
+          ),
+          child: Row(children: [
+            // Número de hoyo + indicador de ventaja
+            SizedBox(width: 28, child: Row(children: [
+              Text('${ch.hole}', style: TextStyle(
+                color: strokesHere > 0 ? t.primary : t.sub,
+                fontSize: 12,
+                fontWeight: strokesHere > 0 ? FontWeight.w800 : FontWeight.w600,
+              )),
+              // Punto(s) de ventaja
+              if (strokesHere > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 3),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(strokesHere, (_) => Container(
+                      width: 5, height: 5,
+                      margin: const EdgeInsets.only(bottom: 1),
+                      decoration: BoxDecoration(
+                        color: t.profit,
+                        shape: BoxShape.circle,
+                      ),
+                    )),
+                  ),
+                ),
+            ])),
+
+            // Score BASE (bruto)
+            Expanded(child: Align(
+              alignment: Alignment.centerRight,
+              child: grossBase != null
+                  ? _miniScore(grossBase, ch.par, baseWins == true, false, t)
+                  : _dash(t),
+            )),
+
+            // Flecha / resultado central
+            SizedBox(width: 28, child: Center(
+              child: baseWins == null
+                ? (sBase.hasScore && sReceiver.hasScore
+                    ? Text('=', style: TextStyle(color: t.sub, fontSize: 12, fontWeight: FontWeight.w700))
+                    : Text('·', style: TextStyle(color: t.divider, fontSize: 16)))
+                : Icon(
+                    baseWins ? Icons.arrow_back_ios : Icons.arrow_forward_ios,
+                    color: t.primary, size: 11,
+                  ),
+            )),
+
+            // Score RECEPTOR (neto = bruto − ventaja)
+            Expanded(child: netReceiver != null
+                ? _netScoreCell(netReceiver, grossReceiver!, ch.par, baseWins == false, strokesHere, t)
+                : (grossReceiver != null ? _dash(t) : _dash(t))),
+
+            // Columna Skins
+            if (hasSkins)
+              SizedBox(width: 68, child: _SkinsCellWidget(
+                  result: skinResult!, mod: skinsMod!, p1: p1, p2: p2, t: t)),
+          ]),
+        );
+        }).whereType<Widget>();
+      }(),
+
+      // ── Totales Skins al final ───────────────────────────────────────────
+      if (hasSkins && skinsResults.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        _SkinsTotalsRow(results: skinsResults, round: round, p1: p1, p2: p2, mod: skinsMod!, t: t),
+      ],
+    ]));
+  }
+
+  // Leyenda compacta: muestra la diferencia y cómo se distribuye
+  Widget _handicapLegend(
+    Player base, Player receiver,
+    double hcpBase, double hcpReceiver,
+    List<CourseHole> allHoles, GolfTheme t,
+    StartingNine startingNine,
+  ) {
+    final diff = (hcpReceiver - hcpBase).round();
+    if (diff <= 0) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: t.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: t.divider),
+        ),
+        child: Row(children: [
+          Icon(Icons.sports_golf, color: t.sub, size: 13),
+          const SizedBox(width: 6),
+          Text('Sin ventaja — handicaps iguales',
+              style: TextStyle(color: t.sub, fontSize: 11)),
+        ]),
+      );
+    }
+
+    // Distribuir strokes por vuelta según la vuelta de inicio
+    final firstStrokes  = (diff / 2).ceil();   // vuelta de inicio: más strokes
+    final secondStrokes = (diff / 2).floor();  // vuelta secundaria
+    final startIsFront = startingNine == StartingNine.front;
+    final frontStrokes = startIsFront ? firstStrokes : secondStrokes;
+    final backStrokes  = startIsFront ? secondStrokes : firstStrokes;
+    final startLabel   = startIsFront ? 'F9 primero' : 'B9 primero';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: t.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: t.primary.withValues(alpha: 0.25)),
+      ),
+      child: Row(children: [
+        // Avatar receptor + nombre
+        GAvatar(name: receiver.name, colorIndex: receiver.colorIndex, size: 20),
+        const SizedBox(width: 6),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          RichText(text: TextSpan(children: [
+            TextSpan(
+              text: receiver.name.split(' ').first,
+              style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 12),
+            ),
+            TextSpan(
+              text: ' recibe ',
+              style: TextStyle(color: t.sub, fontSize: 11),
+            ),
+            TextSpan(
+              text: '$diff stroke${diff > 1 ? 's' : ''}',
+              style: TextStyle(color: t.primary, fontWeight: FontWeight.w800, fontSize: 12),
+            ),
+            TextSpan(
+              text: ' de ${base.name.split(' ').first}',
+              style: TextStyle(color: t.sub, fontSize: 11),
+            ),
+          ])),
+          const SizedBox(height: 2),
+          Text(
+            'F9: $frontStrokes stroke${frontStrokes != 1 ? 's' : ''} · B9: $backStrokes stroke${backStrokes != 1 ? 's' : ''} · $startLabel',
+            style: TextStyle(color: t.sub, fontSize: 10),
+          ),
+        ])),
+        // Chips HCP
+        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          _hcpChip(base.name.split(' ').first,     hcpBase,     t),
+          const SizedBox(height: 3),
+          _hcpChip(receiver.name.split(' ').first, hcpReceiver, t, isHigher: true),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _hcpChip(String name, double hcp, GolfTheme t, {bool isHigher = false}) =>
+    Row(mainAxisSize: MainAxisSize.min, children: [
+      Text('$name ', style: TextStyle(color: t.sub, fontSize: 9)),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        decoration: BoxDecoration(
+          color: isHigher ? t.primary.withValues(alpha: 0.12) : t.surface,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: isHigher ? t.primary.withValues(alpha: 0.4) : t.divider),
+        ),
+        child: Text(
+          'HCPj ${hcp.toStringAsFixed(0)}',
+          style: TextStyle(
+            color: isHigher ? t.primary : t.sub,
+            fontSize: 9, fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    ]);
+
+  // Score bruto del jugador BASE coloreado vs par del hoyo
+  Widget _miniScore(int score, int par, bool winner, bool isNet, GolfTheme t) {
+    final rel = score - par;
+    final color = rel < 0 ? t.scoreUnder : rel > 0 ? t.scoreOver : t.sub;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: winner
+          ? BoxDecoration(color: t.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6))
+          : null,
+      child: Text('$score', style: TextStyle(
+        color: winner ? t.primary : color,
+        fontWeight: winner ? FontWeight.w800 : FontWeight.w600,
+        fontSize: 13,
+      )),
+    );
+  }
+
+  // Score neto del RECEPTOR: cuando hay ventaja muestra "bruto → neto"
+  // para dejar claro el impacto del stroke recibido.
+  Widget _netScoreCell(int netScore, int grossScore, int par, bool winner, int strokesHere, GolfTheme t) {
+    final netRel   = netScore - par;
+    final grossRel = grossScore - par;
+    final netColor   = netRel  < 0 ? t.scoreUnder : netRel  > 0 ? t.scoreOver : t.sub;
+    final grossColor = grossRel < 0 ? t.scoreUnder : grossRel > 0 ? t.scoreOver : t.sub;
+
+    if (strokesHere > 0) {
+      // Formato: "5 > 5 → 4" — bruto gris/color, flecha, neto resaltado
+      return Row(mainAxisSize: MainAxisSize.min, children: [
+        // Score bruto (sin ventaja)
+        Text(
+          '$grossScore',
+          style: TextStyle(
+            color: grossColor.withValues(alpha: 0.55),
+            fontWeight: FontWeight.w500,
+            fontSize: 11,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: Icon(Icons.arrow_forward, size: 9,
+              color: t.profit.withValues(alpha: 0.7)),
+        ),
+        // Score neto (con ventaja) — valor real de comparación
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+          decoration: winner
+              ? BoxDecoration(color: t.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6))
+              : BoxDecoration(
+                  border: Border(bottom: BorderSide(color: t.profit.withValues(alpha: 0.7), width: 1.5)),
+                ),
+          child: Text('$netScore', style: TextStyle(
+            color: winner ? t.primary : netColor,
+            fontWeight: winner ? FontWeight.w800 : FontWeight.w700,
+            fontSize: 13,
+          )),
+        ),
+      ]);
+    }
+
+    // Sin ventaja: mostrar solo el score
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: winner
+          ? BoxDecoration(color: t.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6))
+          : null,
+      child: Text('$netScore', style: TextStyle(
+        color: winner ? t.primary : netColor,
+        fontWeight: winner ? FontWeight.w800 : FontWeight.w600,
+        fontSize: 13,
+      )),
+    );
+  }
+
+  Widget _dash(GolfTheme t) => Text('·', style: TextStyle(color: t.divider, fontSize: 16));
 }
 
 // ── Celda de Skins por hoyo ───────────────────────────────────────────────────

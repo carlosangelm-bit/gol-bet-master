@@ -63,16 +63,23 @@ class ApiHole {
   };
 
   /// Deserializar desde cache
+  /// Acepta Map<String, dynamic> y también Map<Object?, Object?> (Firestore Web)
   static ApiHole fromCached(Map<String, dynamic> j) {
-    final hn = (j['hole'] as num?)?.toInt() ?? 1;
+    final hn = _n(j['hole'])?.toInt() ?? 1;
+    // hasRealHandicap puede venir como bool o como int (0/1) en Firestore Web
+    final rawHrh = j['hasRealHandicap'];
+    final hasRealH = rawHrh is bool ? rawHrh : (rawHrh is num ? rawHrh != 0 : false);
     return ApiHole(
       holeNumber:      hn,
-      par:             (j['par']      as num?)?.toInt() ?? 4,
-      yardage:         (j['yardage']  as num?)?.toInt() ?? 0,
-      strokeIndex:     (j['handicap'] as num?)?.toInt() ?? hn,
-      hasRealHandicap: (j['hasRealHandicap'] as bool?) ?? false,
+      par:             _n(j['par'])?.toInt() ?? 4,
+      yardage:         _n(j['yardage'])?.toInt() ?? 0,
+      strokeIndex:     _n(j['handicap'])?.toInt() ?? hn,
+      hasRealHandicap: hasRealH,
     );
   }
+
+  /// Helper: convierte cualquier valor numérico a num (null si no es num)
+  static num? _n(dynamic v) => v is num ? v : null;
 }
 
 class ApiTeeBox {
@@ -206,22 +213,20 @@ class ApiTeeBox {
   };
 
   /// Deserializar desde cache de Firestore (strokeIndex ya calculado, no recalcular)
+  /// Compatible con Map<Object?,Object?> que devuelve Firestore en Flutter Web.
   static ApiTeeBox fromCached(Map<String, dynamic> j) {
-    // Cast defensivo: Firestore puede devolver List<Object?> en web
+    // Los datos ya vienen normalizados por ApiCourse._deepNormalize
     final rawHoles = j['holes'];
     final holeList = (rawHoles is List)
-        ? rawHoles
-            .whereType<Map>()
-            .map((h) => Map<String, dynamic>.from(h))
-            .toList()
+        ? rawHoles.whereType<Map<String, dynamic>>().toList()
         : <Map<String, dynamic>>[];
     return ApiTeeBox(
-      teeName:       j['tee_name']         as String? ?? 'Tee',
-      courseRating:  (j['course_rating']   as num?)?.toDouble() ?? 72.0,
-      slopeRating:   (j['slope_rating']    as num?)?.toInt() ?? 113,
-      parTotal:      (j['par_total']       as num?)?.toInt() ?? 72,
-      totalYards:    (j['total_yards']     as num?)?.toInt() ?? 0,
-      numberOfHoles: (j['number_of_holes'] as num?)?.toInt() ?? 18,
+      teeName:       j['tee_name']?.toString() ?? 'Tee',
+      courseRating:  (j['course_rating']  is num ? (j['course_rating'] as num).toDouble() : 72.0),
+      slopeRating:   (j['slope_rating']   is num ? (j['slope_rating']  as num).toInt()    : 113),
+      parTotal:      (j['par_total']      is num ? (j['par_total']     as num).toInt()    : 72),
+      totalYards:    (j['total_yards']    is num ? (j['total_yards']   as num).toInt()    : 0),
+      numberOfHoles: (j['number_of_holes'] is num ? (j['number_of_holes'] as num).toInt() : 18),
       holes: holeList.map((h) => ApiHole.fromCached(h)).toList(),
     );
   }
@@ -289,27 +294,45 @@ class ApiCourse {
     'femaleTees':  femaleTees.map((t) => t.toJson()).toList(),
   };
 
-  /// Deserializar desde cache de Firestore
+  /// Normalización recursiva profunda: convierte cualquier Map o List anidada
+  /// de Firestore Web (Map<Object?,Object?> / List<Object?>) a tipos Dart limpios.
+  static dynamic deepNormalize(dynamic v) {
+    if (v is Map) {
+      final result = <String, dynamic>{};
+      for (final e in v.entries) {
+        result[e.key.toString()] = deepNormalize(e.value);
+      }
+      return result;
+    } else if (v is List) {
+      return v.map(deepNormalize).toList();
+    }
+    return v;
+  }
+
+  /// Deserializar desde cache de Firestore.
+  /// Usa normalización recursiva para compatibilidad con Flutter Web
+  /// donde Firestore devuelve Map<Object?,Object?> y List<Object?>.
   factory ApiCourse.fromCached(Map<String, dynamic> j) {
-    // Cast defensivo: Firestore puede devolver List<Object?> en web
-    List<Map<String, dynamic>> _toTeeList(dynamic raw) {
-      if (raw == null) return [];
-      if (raw is! List) return [];
+    // Normalizar recursivamente todo el mapa — resuelve el problema de raíz en Web
+    final clean = ApiCourse.deepNormalize(j) as Map<String, dynamic>;
+
+    List<Map<String, dynamic>> toTeeList(dynamic raw) {
+      if (raw == null || raw is! List) return [];
       return raw
-          .whereType<Map>()
-          .map((t) => Map<String, dynamic>.from(t))
+          .whereType<Map<String, dynamic>>()
+          .where((t) => t.isNotEmpty)
           .toList();
     }
 
-    final maleList   = _toTeeList(j['maleTees']);
-    final femaleList = _toTeeList(j['femaleTees']);
+    final maleList   = toTeeList(clean['maleTees']);
+    final femaleList = toTeeList(clean['femaleTees']);
     return ApiCourse(
-      id:         (j['id'] as num?)?.toInt() ?? 0,
-      clubName:   j['club_name']   as String? ?? '',
-      courseName: j['course_name'] as String? ?? '',
-      city:       j['city']        as String? ?? '',
-      state:      j['state']       as String? ?? '',
-      country:    j['country']     as String? ?? '',
+      id:         (clean['id'] is num ? (clean['id'] as num).toInt() : int.tryParse(clean['id']?.toString() ?? '') ?? 0),
+      clubName:   clean['club_name']?.toString()   ?? '',
+      courseName: clean['course_name']?.toString() ?? '',
+      city:       clean['city']?.toString()        ?? '',
+      state:      clean['state']?.toString()       ?? '',
+      country:    clean['country']?.toString()     ?? '',
       maleTees:   maleList  .map((t) => ApiTeeBox.fromCached(t)).toList(),
       femaleTees: femaleList.map((t) => ApiTeeBox.fromCached(t)).toList(),
     );

@@ -10,7 +10,6 @@ import 'providers/player_provider.dart';
 import 'providers/user_profile_provider.dart';
 import 'screens/capture/capture_screen.dart';
 import 'screens/home/home_screen.dart';
-import 'screens/players/players_screen.dart';
 import 'screens/results/results_screen.dart';
 import 'screens/scorecard/scorecard_screen.dart';
 import 'screens/settings/settings_screen.dart';
@@ -97,7 +96,6 @@ class _AppShellState extends State<AppShell> {
 
     final tabs = <_TabEntry>[
       _TabEntry(label: 'Inicio',       icon: Icons.home_outlined,                   activeIcon: Icons.home,                      screen: const HomeScreen()),
-      _TabEntry(label: 'Compañeros',   icon: Icons.people_outline,                  activeIcon: Icons.people,                    screen: const PlayersScreen()),
       if (hasRound) ...[
         _TabEntry(label: 'Score',      icon: Icons.edit_outlined,                   activeIcon: Icons.edit,                      screen: const CaptureScreen()),
         _TabEntry(label: 'Tarjeta',    icon: Icons.grid_on_outlined,                activeIcon: Icons.grid_on,                   screen: const ScorecardScreen()),

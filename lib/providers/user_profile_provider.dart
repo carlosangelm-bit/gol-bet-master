@@ -142,6 +142,28 @@ class UserProfileProvider extends ChangeNotifier {
     await UserProfileService.removeFavCourse(courseId);
   }
 
+  /// Restaura los datos de la API para un campo favorito (quita manuallyEdited).
+  Future<void> restoreApiData(String courseId, ApiCourse freshCourse) async {
+    final idx = _favCourses.indexWhere((c) => c.courseId == courseId);
+    if (idx == -1) return;
+    final old = _favCourses[idx];
+    // Actualización optimista
+    _favCourses[idx] = FavoriteCourse(
+      courseId:        old.courseId,
+      clubName:        old.clubName,
+      courseName:      old.courseName,
+      city:            old.city,
+      country:         old.country,
+      nickname:        old.nickname,
+      createdAt:       old.createdAt,
+      cachedCourse:    freshCourse,
+      preferredTeeName: old.preferredTeeName,
+      manuallyEdited:  false,
+    );
+    notifyListeners();
+    await UserProfileService.restoreApiData(courseId, freshCourse);
+  }
+
   /// Guarda el tee preferido del usuario para un campo favorito.
   /// Actualiza optimistamente la lista local y persiste en Firestore.
   Future<void> updateFavCourseTee(String courseId, String teeName) async {

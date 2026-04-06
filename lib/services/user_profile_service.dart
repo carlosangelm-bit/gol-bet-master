@@ -357,4 +357,13 @@ class UserProfileService {
       // Fallar silenciosamente
     }
   }
+
+  /// Restaura los datos del campo desde la API, quitando el flag manuallyEdited.
+  static Future<void> restoreApiData(String courseId, ApiCourse freshCourse) async {
+    if (AuthService.uid == null) return;
+    await _favCourses().doc(courseId).update({
+      'cachedCourse': freshCourse.toJson(),
+      'manuallyEdited': false,
+    });
+  }
 }

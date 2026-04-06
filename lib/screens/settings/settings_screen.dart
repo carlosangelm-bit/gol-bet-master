@@ -14,6 +14,7 @@ import '../../services/golf_course_service.dart';
 import '../../services/firestore_service.dart';
 import '../presets/game_presets_screen.dart';
 import '../../services/course_corrections_service.dart';
+import '../players/players_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -55,6 +56,13 @@ class SettingsScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ── COMPAÑEROS ─────────────────────────────────────────
+                  GSectionHeader(title: 'COMPAÑEROS'),
+                  const SizedBox(height: 8),
+                  _CompanionsCard(t: t),
+
+                  const SizedBox(height: 28),
+
                   // ── MI PERFIL ──────────────────────────────────────────
                   GSectionHeader(title: 'MI PERFIL'),
                   const SizedBox(height: 8),
@@ -399,7 +407,7 @@ class _LinkPlayerSheet extends StatelessWidget {
                       Icon(Icons.people_outline, color: t.sub, size: 40),
                       const SizedBox(height: 12),
                       Text(
-                        'No tienes jugadores en tu directorio.\nCrea uno primero desde la pestaña "Compañeros".',
+                        'No tienes jugadores en tu directorio.\nCrea uno primero en Ajustes → Compañeros.',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: t.sub, fontSize: 13),
                       ),
@@ -710,14 +718,103 @@ class _ProfileFormSheetState extends State<_ProfileFormSheet> {
 // ─────────────────────────────────────────────────────────────────────────────
 // SECCIÓN CAMPOS FAVORITOS
 // ─────────────────────────────────────────────────────────────────────────────
-class _FavCoursesSection extends StatelessWidget {
+class _FavCoursesSection extends StatefulWidget {
   final GolfTheme t;
   const _FavCoursesSection({required this.t});
+  @override State<_FavCoursesSection> createState() => _FavCoursesSectionState();
+}
+
+class _FavCoursesSectionState extends State<_FavCoursesSection> {
+  GolfTheme get t => widget.t;
+
+  // courseId → corrección disponible (null = sin corrección)
+  final Map<String, CourseCorrection?> _corrections = {};
+  // courseId → true mientras se está actualizando
+  final Map<String, bool> _refreshing = {};
+  // ids de cursos cuya corrección ya fue consultada
+  final Set<String> _checked = {};
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final profProv = context.read<UserProfileProvider>();
+    _checkCorrectionsForAll(profProv.favCourses);
+  }
+
+  /// Consulta courseCorrections para todos los favoritos que aún no se han verificado.
+  Future<void> _checkCorrectionsForAll(List<FavoriteCourse> favs) async {
+    for (final fav in favs) {
+      if (_checked.contains(fav.courseId)) continue;
+      _checked.add(fav.courseId);
+      try {
+        final correction = await CourseCorrectionsService.getForCourse(fav.courseId);
+        if (mounted) {
+          setState(() => _corrections[fav.courseId] = correction);
+        }
+      } catch (_) {
+        // Sin corrección disponible
+      }
+    }
+  }
+
+  /// Aplica la corrección oficial al favorito y actualiza la UI.
+  Future<void> _refreshCourseData(BuildContext ctx, FavoriteCourse fav) async {
+    // Capturar dependencias del contexto ANTES de cualquier await
+    final prov      = ctx.read<UserProfileProvider>();
+    final messenger = ScaffoldMessenger.of(ctx);
+
+    setState(() => _refreshing[fav.courseId] = true);
+    try {
+      final correction = await CourseCorrectionsService.getForCourse(fav.courseId);
+      if (!mounted) return;
+
+      if (correction != null) {
+        // Actualizar el cachedCourse en Firestore con los datos corregidos
+        await prov.restoreApiData(fav.courseId, correction.correctedCourse);
+        if (!mounted) return;
+        setState(() {
+          _corrections[fav.courseId] = correction;
+          _refreshing[fav.courseId] = false;
+        });
+        messenger.showSnackBar(SnackBar(
+          content: Row(children: [
+            const Icon(Icons.verified_rounded, color: Colors.white, size: 16),
+            const SizedBox(width: 8),
+            Expanded(child: Text('${fav.displayName}: datos oficiales aplicados (v${correction.correctionVersion})')),
+          ]),
+          backgroundColor: const Color(0xFF34C759),
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+        ));
+      } else {
+        setState(() => _refreshing[fav.courseId] = false);
+        messenger.showSnackBar(SnackBar(
+          content: const Text('No hay datos corregidos disponibles para este campo'),
+          backgroundColor: Colors.orange.shade700,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _refreshing[fav.courseId] = false);
+      messenger.showSnackBar(SnackBar(
+        content: Text('Error al actualizar: $e'),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final profProv = context.watch<UserProfileProvider>();
     final favs     = profProv.favCourses;
+
+    // Si llegan nuevos favoritos, verificar correcciones
+    final newFavs = favs.where((f) => !_checked.contains(f.courseId)).toList();
+    if (newFavs.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkCorrectionsForAll(newFavs));
+    }
 
     return Column(children: [
       // Lista de favoritos
@@ -733,68 +830,119 @@ class _FavCoursesSection extends StatelessWidget {
           ])),
         ]))
       else
-        ...favs.map((fav) => Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: GCard(child: Row(children: [
-            Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(
-                color: t.accent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(Icons.golf_course, color: t.accent, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(fav.displayName,
-                  style: TextStyle(color: t.text,
-                      fontWeight: FontWeight.w700, fontSize: 14)),
-              if (fav.location.isNotEmpty)
-                Text(fav.location,
-                    style: TextStyle(color: t.sub, fontSize: 11)),
-              const SizedBox(height: 4),
-              // ── Chip de salida preferida ─────────────────────
-              if (fav.hasCachedData && fav.cachedCourse!.allTees.isNotEmpty)
-                GestureDetector(
-                  onTap: () => _showTeeSheet(context, fav, profProv, t),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        ...favs.map((fav) {
+          final hasCorrection = _corrections.containsKey(fav.courseId) && _corrections[fav.courseId] != null;
+          final isRefreshing  = _refreshing[fav.courseId] == true;
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: GCard(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  // Icono del campo
+                  Container(
+                    width: 36, height: 36,
                     decoration: BoxDecoration(
-                      color: t.surface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: t.divider),
+                      color: hasCorrection
+                          ? const Color(0xFF34C759).withValues(alpha: 0.15)
+                          : t.accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.flag_outlined, size: 11, color: t.sub),
-                      const SizedBox(width: 4),
-                      Text(
-                        fav.preferredTeeName != null
-                            ? 'Salida: ${fav.preferredTeeName}'
-                            : 'Elegir salida favorita',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: fav.preferredTeeName != null ? t.accent : t.sub,
+                    child: Icon(Icons.golf_course,
+                        color: hasCorrection ? const Color(0xFF34C759) : t.accent,
+                        size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(fav.displayName,
+                        style: TextStyle(color: t.text,
+                            fontWeight: FontWeight.w700, fontSize: 14)),
+                    if (fav.location.isNotEmpty)
+                      Text(fav.location, style: TextStyle(color: t.sub, fontSize: 11)),
+                    const SizedBox(height: 4),
+                    // Chip: salida preferida
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: t.surface,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: t.divider),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.flag_outlined, size: 10, color: t.sub),
+                        const SizedBox(width: 3),
+                        Text(
+                          fav.preferredTeeName != null
+                              ? 'Salida: ${fav.preferredTeeName}'
+                              : 'Sin salida favorita',
+                          style: TextStyle(fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: fav.preferredTeeName != null ? t.accent : t.sub),
+                        ),
+                      ]),
+                    ),
+                  ])),
+                  // Botón refresh (actualizar datos)
+                  GestureDetector(
+                    onTap: isRefreshing ? null : () => _refreshCourseData(context, fav),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      child: isRefreshing
+                          ? SizedBox(
+                              width: 18, height: 18,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: t.accent),
+                            )
+                          : Icon(Icons.refresh_rounded,
+                              color: hasCorrection
+                                  ? const Color(0xFF34C759)
+                                  : t.sub,
+                              size: 20),
+                    ),
+                  ),
+                  // Botón quitar favorito
+                  GestureDetector(
+                    onTap: () => profProv.removeFavCourse(fav.courseId),
+                    child: const Padding(
+                      padding: EdgeInsets.only(left: 4),
+                      child: Icon(Icons.star_rounded, color: Colors.amber, size: 22),
+                    ),
+                  ),
+                ]),
+
+                // Banner de datos corregidos disponibles
+                if (hasCorrection) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF34C759).withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF34C759).withValues(alpha: 0.4)),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.verified_rounded,
+                          color: Color(0xFF34C759), size: 14),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Datos oficiales corregidos disponibles (v${_corrections[fav.courseId]?.correctionVersion ?? 1}). '
+                          'Pulsa \u21bb para aplicarlos.',
+                          style: const TextStyle(
+                              color: Color(0xFF1A7A3A),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600),
                         ),
                       ),
-                      const SizedBox(width: 3),
-                      Icon(Icons.edit_outlined, size: 10, color: t.sub),
                     ]),
                   ),
-                )
-              else if (!fav.hasCachedData)
-                Text('Selecciona este campo en una ronda para ver salidas',
-                    style: TextStyle(color: t.sub, fontSize: 10)),
-            ])),
-            GestureDetector(
-              onTap: () => profProv.removeFavCourse(fav.courseId),
-              child: const Padding(
-                padding: EdgeInsets.only(left: 8),
-                child: Icon(Icons.star_rounded, color: Colors.amber, size: 22),
-              ),
-            ),
-          ])),
-        )),
+                ],
+              ],
+            )),
+          );
+        }),
 
       // Botón agregar campo
       const SizedBox(height: 8),
@@ -819,10 +967,13 @@ class _FavCoursesSection extends StatelessWidget {
   }
 
   /// Muestra selector de salida preferida para un campo favorito.
+  // ignore: unused_element
   void _showTeeSheet(BuildContext ctx, FavoriteCourse fav,
       UserProfileProvider profProv, GolfTheme t) {
-    if (!fav.hasCachedData || fav.cachedCourse!.allTees.isEmpty) return;
-    final course = fav.cachedCourse!;
+    // La salida se configura al seleccionar el campo en Nueva Ronda.
+    // En ajustes solo se muestra cuál es la preferida guardada.
+    if (fav.preferredTeeName == null) return;
+    final course = fav.cachedCourse;
     String? picked = fav.preferredTeeName;
 
     showModalBottomSheet(
@@ -883,13 +1034,13 @@ class _FavCoursesSection extends StatelessWidget {
             Text('Se usará como salida por defecto al elegir este campo en una ronda.',
                 style: TextStyle(color: t.sub, fontSize: 12)),
             const SizedBox(height: 16),
-            if (course.maleTees.isNotEmpty) ...[
+            if (course != null && course.maleTees.isNotEmpty) ...[
               Align(alignment: Alignment.centerLeft,
                   child: Text('TEEs MASCULINOS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8))),
               const SizedBox(height: 8),
               Wrap(spacing: 8, runSpacing: 8, children: course.maleTees.map((tee) => teeChip(tee)).toList()),
             ],
-            if (course.femaleTees.isNotEmpty) ...[
+            if (course != null && course.femaleTees.isNotEmpty) ...[
               const SizedBox(height: 14),
               Align(alignment: Alignment.centerLeft,
                   child: Text('TEEs FEMENINOS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8))),
@@ -1022,65 +1173,77 @@ class _FavCoursePickerSheetState extends State<_FavCoursePickerSheet> {
           style: TextStyle(color: t.sub, fontSize: 13)));
     }
 
+    // Capturar profProv con watch para que la lista se reconstruya al cambiar favoritos
     final profProv = ctx.watch<UserProfileProvider>();
 
     return ListView.builder(
       itemCount: _results.length,
       itemBuilder: (_, i) {
-        final course  = _results[i];
-        final isFav   = profProv.isFavCourse(course.id.toString());
+        final course = _results[i];
+        final courseId = course.id.toString();
+        final isFav = profProv.isFavCourse(courseId);
+        final name = course.courseName.isNotEmpty && course.courseName != course.clubName
+            ? '${course.clubName} — ${course.courseName}'
+            : course.clubName;
+
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: GCard(
-            onTap: isFav ? null : () async {
-              final courseId = course.id.toString();
-              await profProv.toggleFavCourse(
-                courseId,
-                course.clubName,
-                courseName: course.courseName,
-                city: course.city.isNotEmpty ? course.city : null,
-                country: course.country.isNotEmpty ? course.country : null,
-                // Sin apiCourse aquí porque solo tenemos los datos básicos de búsqueda.
-                // El usuario deberá seleccionar el campo en una ronda para cachear los tees.
-              );
-              if (ctx.mounted) {
-                Navigator.pop(ctx);
-                final name = course.courseName.isNotEmpty && course.courseName != course.clubName
-                    ? '${course.clubName} — ${course.courseName}'
-                    : course.clubName;
+            onTap: () async {
+              // Capturar TODAS las referencias antes de cualquier await o pop
+              final messenger = ScaffoldMessenger.of(ctx);
+              final nav = Navigator.of(ctx);
+              // Capturar profProv con read (no watch) para no depender del contexto
+              final prov = ctx.read<UserProfileProvider>();
 
-                // Verificar si hay corrección disponible para este campo
+              // Actualización optimista local — inmediata, sin esperar Firestore
+              if (isFav) {
+                prov.removeFavCourse(courseId);
+                nav.pop();
+                messenger.showSnackBar(SnackBar(
+                  content: Text('$name eliminado de favoritos'),
+                  duration: const Duration(seconds: 2),
+                ));
+              } else {
+                await prov.toggleFavCourse(
+                  courseId,
+                  course.clubName,
+                  courseName: course.courseName,
+                  city: course.city.isNotEmpty ? course.city : null,
+                  country: course.country.isNotEmpty ? course.country : null,
+                );
+                nav.pop();
+
+                // Verificar corrección disponible en background
                 final correction = await CourseCorrectionsService.checkForCorrection(courseId);
-                if (ctx.mounted) {
-                  if (correction != null) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                      backgroundColor: t.profit,
-                      duration: const Duration(seconds: 5),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('$name agregado a favoritos',
-                              style: const TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 4),
-                          Row(children: [
-                            const Icon(Icons.info_outline, size: 14, color: Colors.white),
-                            const SizedBox(width: 6),
-                            Expanded(child: Text(
-                              'Hay datos corregidos disponibles. Ábrelo en Nueva Ronda para aplicarlos.',
-                              style: const TextStyle(fontSize: 12),
-                            )),
-                          ]),
-                        ],
-                      ),
-                    ));
-                  } else {
-                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                      backgroundColor: t.profit,
-                      content: Text('$name agregado a favoritos'),
-                      duration: const Duration(seconds: 2),
-                    ));
-                  }
+                if (correction != null) {
+                  messenger.showSnackBar(SnackBar(
+                    backgroundColor: t.profit,
+                    duration: const Duration(seconds: 5),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('$name agregado a favoritos',
+                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        Row(children: [
+                          const Icon(Icons.verified_rounded, size: 14, color: Colors.white),
+                          const SizedBox(width: 6),
+                          const Expanded(child: Text(
+                            'Tiene datos corregidos. Se aplicarán al abrirlo en Nueva Ronda.',
+                            style: TextStyle(fontSize: 12),
+                          )),
+                        ]),
+                      ],
+                    ),
+                  ));
+                } else {
+                  messenger.showSnackBar(SnackBar(
+                    backgroundColor: t.profit,
+                    content: Text('$name agregado a favoritos'),
+                    duration: const Duration(seconds: 2),
+                  ));
                 }
               }
             },
@@ -1113,6 +1276,7 @@ class _FavCoursePickerSheetState extends State<_FavCoursePickerSheet> {
                   ),
                 ],
               )),
+              // Ícono de estrella — indica si es favorito
               Icon(
                 isFav ? Icons.star_rounded : Icons.star_border_rounded,
                 color: isFav ? Colors.amber : t.sub,
@@ -1363,6 +1527,49 @@ class _GamePresetsCardState extends State<_GamePresetsCard> {
                     : '$_presetCount configuración${_presetCount != 1 ? 'es' : ''} guardada${_presetCount != 1 ? 's' : ''}',
                 style: TextStyle(color: t.sub, fontSize: 12),
               ),
+          ])),
+          Icon(Icons.arrow_forward_ios, color: t.sub, size: 14),
+        ]),
+      ),
+    );
+  }
+}
+
+// ── Card de acceso a Compañeros ───────────────────────────────────────────────
+class _CompanionsCard extends StatelessWidget {
+  final GolfTheme t;
+  const _CompanionsCard({required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final playerProv = context.watch<PlayerProvider>();
+    final count = playerProv.directory.length;
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const PlayersScreen()),
+      ),
+      child: GCard(
+        child: Row(children: [
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: t.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.people, color: t.primary, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Mis compañeros',
+                style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 15)),
+            Text(
+              count == 0
+                  ? 'Sin compañeros — toca para agregar'
+                  : '$count compañero${count != 1 ? 's' : ''} en tu directorio',
+              style: TextStyle(color: t.sub, fontSize: 12),
+            ),
           ])),
           Icon(Icons.arrow_forward_ios, color: t.sub, size: 14),
         ]),

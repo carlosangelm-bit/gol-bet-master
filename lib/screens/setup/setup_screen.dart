@@ -1,5 +1,6 @@
 // SETUP SCREEN — Configurar jugadores, partidas y módulos de apuesta
 import 'package:flutter/material.dart';
+
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/app_theme.dart';
@@ -13,6 +14,7 @@ import '../../widgets/course_picker_sheet.dart';
 import '../../widgets/bet_module_edit_sheet.dart';
 import '../../services/firestore_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/auth_service.dart';
 import '../../services/player_service.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/live_round_service.dart';
@@ -43,6 +45,8 @@ class _SetupScreenState extends State<SetupScreen> {
   ApiCourse?  _selectedApiCourse;        // curso API completo (para elegir tees)
   // Corrección pendiente para el campo actualmente seleccionado
   CourseCorrection? _pendingCorrection;
+  // ID del campo favorito que se está cargando (null = ninguno)
+  String? _loadingFavId;
 
   // ── Configuración de duración de ronda ────────────────────────────────────
   int _totalHoles = 18;                  // 9 o 18 hoyos
@@ -163,45 +167,11 @@ class _SetupScreenState extends State<SetupScreen> {
   /// Al abrir el setup, verifica si algún campo favorito tiene corrección pendiente.
   /// Si encuentra una corrección, la aplica AUTOMÁTICAMENTE en Firestore.
   /// Espera hasta 3 s a que los favoritos se carguen desde Firestore antes de verificar.
+  // Con el nuevo diseño, la corrección global se consulta directamente en
+  // _selectFavCourseWithFresh cuando el usuario elige un campo.
+  // No hay nada que hacer en segundo plano al abrir la pantalla.
   Future<void> _checkCorrectionsForFavCourses() async {
-    if (!mounted) return;
-    // Esperar hasta 3 s a que el provider cargue los favoritos
-    for (int i = 0; i < 6; i++) {
-      if (!mounted) return;
-      final profProv = context.read<UserProfileProvider>();
-      final favs = profProv.favCourses;
-      if (favs.isNotEmpty) {
-        for (final fav in favs) {
-          if (!mounted) return;
-          try {
-            final correction = await CourseCorrectionsService.checkForCorrection(fav.courseId);
-            if (correction != null && mounted) {
-              // Aplicar corrección automáticamente en segundo plano
-              await CourseCorrectionsService.applyCorrection(correction);
-              // Si este campo ya está seleccionado en la pantalla, actualizar la UI también
-              if (_selectedApiCourse != null &&
-                  (_selectedApiCourse!.id.toString() == fav.courseId ||
-                   _selectedApiCourse!.clubName == fav.clubName)) {
-                final correctedApi = correction.correctedCourse;
-                if (correctedApi.allTees.isNotEmpty && mounted) {
-                  setState(() {
-                    _playerTees.clear();
-                    _selectedApiCourse = correctedApi;
-                    _selectedCourse = correctedApi.allTees.first
-                        .toCourseInfo(correctedApi.clubName, correctedApi.courseName);
-                    _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
-                  });
-                }
-              }
-            }
-          } catch (_) {
-            // No crítico: continuar con el siguiente favorito
-          }
-        }
-        return;
-      }
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
+    // No-op: las correcciones se aplican en tiempo real en _selectFavCourseWithFresh.
   }
 
   /// Carga los presets de apuestas guardados para mostrarlos directamente en el paso 2.
@@ -341,130 +311,108 @@ class _SetupScreenState extends State<SetupScreen> {
           ...favCourses.map((fav) {
             final isSelected = _selectedApiCourse?.id.toString() == fav.courseId ||
                 (_selectedCourse?.name == fav.fullName && _selectedApiCourse == null);
-            final hasTees = fav.hasCachedData && fav.cachedCourse!.allTees.isNotEmpty;
+            final isLoading = _loadingFavId == fav.courseId;
             final teeName = fav.preferredTeeName;
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: GestureDetector(
-                onTap: () {
-                  if (isSelected) {
-                    // Deseleccionar
-                    setState(() {
-                      _selectedCourse = null;
-                      _selectedApiCourse = null;
-                      _playerTees.clear();
-                    });
-                    return;
-                  }
-                  // Siempre intentar obtener datos frescos de la API
-                  _selectFavCourseWithFresh(fav);
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: isSelected ? t.primary.withValues(alpha: 0.08) : t.card,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isSelected ? t.primary : t.divider,
-                      width: isSelected ? 2 : 1,
-                    ),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isSelected ? t.primary.withValues(alpha: 0.08) : t.card,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isSelected ? t.primary : t.divider,
+                    width: isSelected ? 2 : 1,
                   ),
-                  child: Row(children: [
-                    Container(
-                      width: 40, height: 40,
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? t.primary.withValues(alpha: 0.15)
-                            : t.surface,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        isSelected ? Icons.golf_course : Icons.golf_course_outlined,
-                        color: isSelected ? t.primary : t.sub,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(
-                        fav.displayName,
-                        style: TextStyle(
-                          color: isSelected ? t.primary : t.text,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
+                ),
+                child: Column(children: [
+                  // ── Fila info del campo ──────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+                    child: Row(children: [
+                      Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          color: isSelected ? t.primary.withValues(alpha: 0.15) : t.surface,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          isSelected ? Icons.golf_course : Icons.golf_course_outlined,
+                          color: isSelected ? t.primary : t.sub,
+                          size: 20,
                         ),
                       ),
-                      if (fav.location.isNotEmpty)
-                        Text(fav.location, style: TextStyle(color: t.sub, fontSize: 12)),
-                      const SizedBox(height: 4),
-                      // ── Chip de salida preferida ─────────────────────
-                      if (hasTees)
-                        GestureDetector(
-                          onTap: () => _showFavTeeSelector(context, fav, t),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? t.primary.withValues(alpha: 0.12)
-                                  : t.surface,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: isSelected ? t.primary.withValues(alpha: 0.4) : t.divider,
-                              ),
-                            ),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(Icons.flag_outlined,
-                                  size: 12,
-                                  color: isSelected ? t.primary : t.sub),
-                              const SizedBox(width: 4),
-                              Text(
-                                teeName != null ? 'Salida: $teeName' : 'Elegir salida favorita',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: isSelected ? t.primary : (teeName != null ? t.accent : t.sub),
-                                ),
-                              ),
-                              const SizedBox(width: 3),
-                              Icon(Icons.edit_outlined,
-                                  size: 10,
-                                  color: isSelected ? t.primary.withValues(alpha: 0.6) : t.sub),
-                            ]),
+                      const SizedBox(width: 12),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(
+                          fav.displayName,
+                          style: TextStyle(
+                            color: isSelected ? t.primary : t.text,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
                           ),
-                        )
-                      else
-                        Text('Sin datos de salidas', style: TextStyle(color: t.sub, fontSize: 11)),
-                    ])),
-                    if (isSelected)
-                      Container(
-                        width: 24, height: 24,
-                        decoration: BoxDecoration(color: t.primary, shape: BoxShape.circle),
-                        child: Icon(Icons.check, color: t.onPrimary, size: 14),
-                      )
-                    else
-                      Icon(Icons.radio_button_unchecked, color: t.divider, size: 24),
-                  ]),
-                ),
+                        ),
+                        if (fav.location.isNotEmpty)
+                          Text(fav.location, style: TextStyle(color: t.sub, fontSize: 12)),
+                        if (teeName != null) ...[
+                          const SizedBox(height: 2),
+                          Text('Salida: $teeName',
+                              style: TextStyle(color: t.accent, fontSize: 11, fontWeight: FontWeight.w600)),
+                        ],
+                      ])),
+                      if (isSelected)
+                        Container(
+                          width: 24, height: 24,
+                          decoration: BoxDecoration(color: t.primary, shape: BoxShape.circle),
+                          child: Icon(Icons.check, color: t.onPrimary, size: 14),
+                        ),
+                    ]),
+                  ),
+                  // ── Divisor ──────────────────────────────────────────
+                  Divider(height: 1, color: isSelected ? t.primary.withValues(alpha: 0.2) : t.divider),
+                  // ── Botón de acción ──────────────────────────────────
+                  SizedBox(
+                    width: double.infinity,
+                    child: isLoading
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                              SizedBox(width: 14, height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: t.primary)),
+                              const SizedBox(width: 10),
+                              Text('Cargando datos del campo…',
+                                  style: TextStyle(color: t.primary, fontSize: 13)),
+                            ]),
+                          )
+                        : isSelected
+                            ? TextButton.icon(
+                                onPressed: () => setState(() {
+                                  _selectedCourse = null;
+                                  _selectedApiCourse = null;
+                                  _playerTees.clear();
+                                }),
+                                icon: Icon(Icons.close, size: 16, color: t.sub),
+                                label: Text('Quitar selección',
+                                    style: TextStyle(color: t.sub, fontSize: 13)),
+                              )
+                            : TextButton.icon(
+                                onPressed: () => _selectFavCourseWithFresh(fav),
+                                icon: Icon(Icons.sports_golf, size: 16, color: t.primary),
+                                label: Text('Jugar en este campo',
+                                    style: TextStyle(
+                                      color: t.primary,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                    )),
+                              ),
+                  ),
+                ]),
               ),
             );
           }),
           const SizedBox(height: 4),
         ],
 
-        // ── Banner de corrección oficial disponible ───────────────────────
-        if (_pendingCorrection != null) ...[
-          const SizedBox(height: 4),
-          _CorrectionBanner(
-            correction: _pendingCorrection!,
-            onApply: _applyPendingCorrection,
-            onDismiss: () => setState(() {
-              _pendingCorrection = null;
-            }),
-            t: t,
-          ),
-          const SizedBox(height: 4),
-        ],
+
 
         // ── Campo seleccionado manualmente (no favorito) ──────────────────
         if (_selectedCourse != null &&
@@ -642,7 +590,7 @@ class _SetupScreenState extends State<SetupScreen> {
               GCard(child: Row(children: [
                 Icon(Icons.info_outline, color: t.sub, size: 18),
                 const SizedBox(width: 10),
-                Expanded(child: Text('Agrega compañeros en Ajustes → Jugadores para verlos aquí.', style: TextStyle(color: t.sub, fontSize: 13))),
+                Expanded(child: Text('Agrega compañeros en Ajustes → Compañeros para verlos aquí.', style: TextStyle(color: t.sub, fontSize: 13))),
               ])),
 
             // ── Ventajas (solo si hay 2+ jugadores) ───────────────────────
@@ -2826,8 +2774,12 @@ class _SetupScreenState extends State<SetupScreen> {
   /// Guarda la preferencia en Firestore y actualiza localmente el tee asignado si
   /// ese campo ya está seleccionado en la ronda actual.
   void _showFavTeeSelector(BuildContext context, FavoriteCourse fav, GolfTheme t) {
-    if (!fav.hasCachedData || fav.cachedCourse!.allTees.isEmpty) return;
-    final course = fav.cachedCourse!;
+    // Usar los tees del campo actualmente seleccionado (corrección global o API)
+    final course = _selectedApiCourse?.id.toString() == fav.courseId
+        ? _selectedApiCourse!
+        : null;
+    // Si el campo no está seleccionado aún, no hay tees disponibles
+    if (course == null || course.allTees.isEmpty) return;
     String? pickedName = fav.preferredTeeName;
 
     showModalBottomSheet(
@@ -2947,140 +2899,130 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
-  /// Selecciona un campo favorito obteniendo datos frescos de la API.
-  /// Si hay corrección oficial disponible, la aplica AUTOMÁTICAMENTE.
-  /// Si el campo tiene [manuallyEdited=true] Y la corrección ya fue aplicada,
-  /// usa el caché sin volver a llamar la API.
-  /// Respeta el tee preferido guardado en [fav.preferredTeeName].
+  /// Selecciona un campo favorito.
+  ///
+  /// Prioridad de datos (de mayor a menor):
+  ///   1. Corrección global en courseCorrections/{courseId}  ← fuente de verdad del CAMPO
+  ///   2. Llamada fresca a la API
+  ///   3. Placeholder con nombre mientras carga
+  ///
+  /// NUNCA depende de manuallyEdited ni del cachedCourse del usuario.
+  /// La corrección aplica igual para todos los usuarios sin configuración por persona.
   Future<void> _selectFavCourseWithFresh(FavoriteCourse fav) async {
-    // Limpiar corrección pendiente anterior
-    setState(() {
-      _pendingCorrection = null;
-    });
+    if (_loadingFavId != null) return; // evitar doble tap
 
     final courseIdInt = int.tryParse(fav.courseId);
 
-    // PASO 0: Verificar si hay corrección oficial disponible ANTES de mostrar datos.
-    // Si existe corrección, aplicarla automáticamente para garantizar datos correctos.
-    if (courseIdInt != null) {
-      try {
-        final correction = await CourseCorrectionsService.checkForCorrection(fav.courseId);
-        if (correction != null && mounted) {
-          // Aplicar corrección automáticamente sin requerir acción del usuario
-          await CourseCorrectionsService.applyCorrection(correction);
-          if (!mounted) return;
+    // Mostrar loading + placeholder inmediato
+    setState(() {
+      _pendingCorrection = null;
+      _loadingFavId = fav.courseId;
+      _selectedCourse = CourseInfo(name: fav.fullName, holes: CourseInfo.standard.holes);
+      _selectedApiCourse = null;
+      _playerTees.clear();
+    });
 
-          final correctedApi = correction.correctedCourse;
-          if (correctedApi.allTees.isNotEmpty) {
-            setState(() {
-              _playerTees.clear();
-              _selectedApiCourse = correctedApi;
-              _selectedCourse = correctedApi.allTees.first
-                  .toCourseInfo(correctedApi.clubName, correctedApi.courseName);
-              _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
-            });
-            // Informar al usuario que se aplicaron datos corregidos
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('✅ ${correctedApi.clubName}: datos oficiales aplicados'),
-                  backgroundColor: Colors.green.shade700,
-                  duration: const Duration(seconds: 3),
-                ),
-              );
-            }
-            return; // Corrección aplicada, no necesitamos continuar con API o caché viejo
-          }
-        }
-      } catch (_) {
-        // Si falla la verificación de corrección, continuar con flujo normal
-      }
+    if (courseIdInt == null) {
+      setState(() => _loadingFavId = null);
+      return;
     }
 
-    // 1. Usar caché inmediatamente para respuesta rápida (si no hay corrección pendiente)
-    if (fav.hasCachedData) {
-      final api = fav.cachedCourse!;
-      if (api.allTees.isNotEmpty) {
+    try {
+      // ── PASO 1: Corrección global del campo ──────────────────────────────────
+      // Vive en courseCorrections/{courseId} — aplica para TODOS los usuarios.
+      final correction = await CourseCorrectionsService.getForCourse(fav.courseId);
+      if (correction != null && mounted) {
+        final correctedApi = correction.correctedCourse;
         setState(() {
+          _loadingFavId = null;
           _playerTees.clear();
-          _selectedApiCourse = api;
-          _selectedCourse = api.allTees.first.toCourseInfo(api.clubName, api.courseName);
-          // Usar tee preferido guardado; si no existe, cae al primer masculino
+          _selectedApiCourse = correctedApi;
+          _selectedCourse = correctedApi.allTees.first
+              .toCourseInfo(correctedApi.clubName, correctedApi.courseName);
           _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
         });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Row(children: [
+              const Icon(Icons.verified_rounded, color: Colors.white, size: 16),
+              const SizedBox(width: 8),
+              Expanded(child: Text('${correctedApi.clubName}: datos oficiales corregidos')),
+            ]),
+            backgroundColor: const Color(0xFF34C759),
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+          ));
+        }
+        return;
       }
-    } else {
-      // Sin caché: mostrar nombre mientras carga
-      setState(() {
-        _selectedCourse = CourseInfo(name: fav.fullName, holes: CourseInfo.standard.holes);
-        _selectedApiCourse = null;
-      });
-    }
 
-    if (courseIdInt == null) return;
+      // ── PASO 2: cachedCourse del favorito (fallback antes de API) ────────────
+      // Si el parsing de courseCorrections falló en Web, usamos el cachedCourse
+      // que fue actualizado con datos corregidos desde Ajustes o automáticamente.
+      if (fav.hasCachedData && mounted) {
+        debugPrint('[Setup] Usando cachedCourse del favorito para ${fav.courseId}');
+        final cached = fav.cachedCourse!;
+        setState(() {
+          _loadingFavId = null;
+          _playerTees.clear();
+          _selectedApiCourse = cached;
+          _selectedCourse = cached.allTees.first
+              .toCourseInfo(cached.clubName, cached.courseName);
+          _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
+        });
+        return;
+      }
 
-    // 2. Si el campo fue editado manualmente (y no hay corrección nueva), NO sobrescribir con API.
-    if (fav.manuallyEdited) {
-      return; // Los datos del caché son los correctos (ya aplicamos correcciones en el paso 0)
-    }
-
-    // 3. Intentar obtener datos frescos de la API en background
-    try {
+      // ── PASO 3: API fresca (último recurso) ──────────────────────────────────
+      debugPrint('[Setup] Sin corrección ni caché para ${fav.courseId}, usando API externa');
       final fresh = await GolfCourseService.getById(courseIdInt);
       if (!mounted) return;
-      if (fresh.allTees.isNotEmpty) {
-        setState(() {
-          _playerTees.clear();
-          _selectedApiCourse = fresh;
-          _selectedCourse = fresh.allTees.first.toCourseInfo(fresh.clubName, fresh.courseName);
-          // Respetar tee preferido también con datos frescos
-          _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
-        });
-        // 4. Actualizar caché en Firestore silenciosamente
-        UserProfileService.updateFavCourseCache(fav.courseId, fresh);
-      }
-    } catch (_) {
-      // Si falla la API, el caché ya fue aplicado en el paso 1
+      setState(() {
+        _loadingFavId = null;
+        _playerTees.clear();
+        _selectedApiCourse = fresh;
+        if (fresh.allTees.isNotEmpty) {
+          _selectedCourse = fresh.allTees.first
+              .toCourseInfo(fresh.clubName, fresh.courseName);
+        }
+        _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
+      });
+
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingFavId = null);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Error al cargar el campo: $e'),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+      ));
     }
   }
 
   /// Aplica la corrección pendiente al caché del usuario y actualiza la UI.
   Future<void> _applyPendingCorrection() async {
+    // Con el nuevo diseño, la corrección ya se aplica automáticamente en
+    // _selectFavCourseWithFresh. Este método solo aplica si hubiera una
+    // corrección pendiente del banner (flujo legacy).
     final correction = _pendingCorrection;
     if (correction == null) return;
 
-    try {
-      await CourseCorrectionsService.applyCorrection(correction);
-      if (!mounted) return;
+    final course = correction.correctedCourse;
+    setState(() {
+      _playerTees.clear();
+      _selectedApiCourse = course;
+      _selectedCourse = course.allTees.isNotEmpty
+          ? course.allTees.first.toCourseInfo(course.clubName, course.courseName)
+          : _selectedCourse;
+      _pendingCorrection = null;
+    });
 
-      final course = correction.correctedCourse;
-      setState(() {
-        _playerTees.clear();
-        _selectedApiCourse = course;
-        _selectedCourse = course.allTees.isNotEmpty
-            ? course.allTees.first.toCourseInfo(course.clubName, course.courseName)
-            : _selectedCourse;
-        _pendingCorrection = null;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('✅ Datos del campo actualizados correctamente'),
-            backgroundColor: Colors.green.shade700,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error al actualizar los datos. Intenta de nuevo.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('✅ Datos del campo actualizados correctamente'),
+        backgroundColor: Colors.green.shade700,
+        duration: const Duration(seconds: 3),
+      ));
     }
   }
 
@@ -3129,11 +3071,23 @@ class _SetupScreenState extends State<SetupScreen> {
       );
     }).toList();
 
+    // Auto-identificar al creador: si el usuario está autenticado,
+    // vinculamos automáticamente su UID al primer jugador de la lista
+    // (convención: el creador es quien agrega la ronda).
+    final creatorUid = AuthService.uid;
+    final linkedPlayers = _players.map((p) {
+      // Si el jugador ya tiene linkedUserId, respetar; si es el primero y no tiene, vincular.
+      if (p.linkedUserId == null && creatorUid != null && p == _players.first) {
+        return p.copyWith(linkedUserId: creatorUid);
+      }
+      return p;
+    }).toList();
+
     final round = Round(
       id: _uuid.v4(),
       name: _nameCtrl.text.trim().isEmpty ? 'Ronda Golf' : _nameCtrl.text.trim(),
       course: _selectedCourse ?? CourseInfo.standard,
-      players: _players,
+      players: linkedPlayers,
       roundPlayers: roundPlayers,
       betGroups: effectiveGroups,
       scores: {for (final p in _players) p.id: {}},
@@ -3143,6 +3097,7 @@ class _SetupScreenState extends State<SetupScreen> {
       createdAt: DateTime.now(),
       startingNine: startingNine,
       totalHoles: _totalHoles,
+      ownerUid: creatorUid,
     );
 
     if (startLive) {

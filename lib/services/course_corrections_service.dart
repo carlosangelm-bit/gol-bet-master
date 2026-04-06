@@ -1,20 +1,24 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // COURSE CORRECTIONS SERVICE
-// Gestiona correcciones manuales de datos de campos de golf.
+//
+// Diseño correcto: la corrección vive en el CAMPO, no en el usuario.
 //
 // Colección global: courseCorrections/{courseId}
-//   - correctionVersion: int        — versión del conjunto de correcciones
-//   - notes: string                 — descripción de qué se corrigió
+//   - correctionVersion: int        — versión de la corrección
+//   - notes: string                 — qué se corrigió y por qué
 //   - correctedCourse: {...}        — ApiCourse serializado con datos correctos
 //   - updatedAt: Timestamp
 //
-// Caché local del usuario: users/{uid}/favoriteCourses/{courseId}
-//   - appliedCorrectionVersion: int — versión que ya aplicó el usuario
-//   - manuallyEdited: true          — marca para no sobreescribir con API
+// CUALQUIER usuario que seleccione ese campo recibe los datos corregidos
+// automáticamente, sin necesitar ser favorito ni tener nada guardado
+// en su perfil.
+//
+// El favorito del usuario (favoriteCourses/{courseId}) guarda SOLO
+// preferencias personales: preferredTeeName, clubName, city, etc.
+// NUNCA datos del campo (cachedCourse, manuallyEdited, etc.).
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
-import 'auth_service.dart';
 import 'golf_course_service.dart';
 
 /// Datos de una corrección disponible para un campo.
@@ -35,119 +39,94 @@ class CourseCorrection {
 class CourseCorrectionsService {
   static final _db = FirebaseFirestore.instance;
 
-  /// Colección global con correcciones oficiales.
   static CollectionReference<Map<String, dynamic>> get _corrections =>
       _db.collection('courseCorrections');
 
-  /// Referencia al favoriteCourse del usuario actual (puede no existir).
-  static DocumentReference<Map<String, dynamic>>? _favDoc(String courseId) {
-    final uid = AuthService.uid;
-    if (uid == null) return null;
-    return _db
-        .collection('users')
-        .doc(uid)
-        .collection('favoriteCourses')
-        .doc(courseId);
-  }
+  // ── API PÚBLICA ─────────────────────────────────────────────────────────────
 
-  // ── Obtener corrección global (sin depender de favoritos del usuario) ───────
-
-  /// Devuelve la corrección oficial para [courseId] si existe en Firestore,
-  /// independientemente de si el usuario tiene el campo como favorito.
-  /// Devuelve null si no hay corrección registrada para ese campo.
-  static Future<CourseCorrection?> getGlobalCorrection(String courseId) async {
+  /// Devuelve la corrección oficial para [courseId] si existe.
+  /// No depende del usuario ni de sus favoritos.
+  /// Retorna null si no hay corrección registrada para ese campo.
+  static Future<CourseCorrection?> getForCourse(String courseId) async {
     try {
-      final globalSnap = await _corrections.doc(courseId).get();
-      if (!globalSnap.exists) return null;
-
-      final globalData = globalSnap.data()!;
-      final globalVersion = (globalData['correctionVersion'] as num?)?.toInt() ?? 1;
-
-      final correctedJson = globalData['correctedCourse'] as Map<String, dynamic>?;
-      if (correctedJson == null) return null;
-
-      final correctedCourse = ApiCourse.fromCached(correctedJson);
-      if (correctedCourse.allTees.isEmpty) return null;
-
-      return CourseCorrection(
-        courseId: courseId,
-        correctionVersion: globalVersion,
-        notes: globalData['notes'] as String? ?? 'Datos del campo actualizados',
-        correctedCourse: correctedCourse,
-      );
-    } catch (e) {
-      if (kDebugMode) debugPrint('getGlobalCorrection error: $e');
-      return null;
-    }
-  }
-
-  // ── Verificar si hay corrección nueva para el usuario ──────────────────────
-
-  /// Devuelve una [CourseCorrection] si el campo [courseId] tiene una corrección
-  /// oficial **más nueva** que la versión ya aplicada por el usuario.
-  /// Funciona aunque el usuario NO tenga el campo como favorito.
-  static Future<CourseCorrection?> checkForCorrection(String courseId) async {
-    try {
-      // 1. Obtener corrección global
-      final globalSnap = await _corrections.doc(courseId).get();
-      if (!globalSnap.exists) return null;
-
-      final globalData = globalSnap.data()!;
-      final globalVersion = (globalData['correctionVersion'] as num?)?.toInt() ?? 1;
-
-      // 2. Obtener versión ya aplicada por el usuario (si tiene favorito)
-      int appliedVersion = 0;
-      final favDoc = _favDoc(courseId);
-      if (favDoc != null) {
-        final favSnap = await favDoc.get();
-        appliedVersion = favSnap.exists
-            ? (favSnap.data()?['appliedCorrectionVersion'] as num?)?.toInt() ?? 0
-            : 0;
+      debugPrint('[Corrections] Consultando courseCorrections/$courseId…');
+      final snap = await _corrections.doc(courseId).get();
+      if (!snap.exists) {
+        debugPrint('[Corrections] courseCorrections/$courseId NO existe en Firestore');
+        return null;
       }
 
-      // 3. Si la corrección global es más nueva, devolver la corrección
-      if (globalVersion <= appliedVersion) return null;
-
-      // 4. Deserializar el campo corregido
-      final correctedJson = globalData['correctedCourse'] as Map<String, dynamic>?;
-      if (correctedJson == null) return null;
-
-      final correctedCourse = ApiCourse.fromCached(correctedJson);
-      if (correctedCourse.allTees.isEmpty) return null;
-
-      return CourseCorrection(
-        courseId: courseId,
-        correctionVersion: globalVersion,
-        notes: globalData['notes'] as String? ?? 'Datos del campo actualizados',
-        correctedCourse: correctedCourse,
-      );
+      final data = snap.data()!;
+      debugPrint('[Corrections] Documento encontrado para $courseId, keys: ${data.keys.toList()}');
+      final result = _parse(courseId, data);
+      if (result != null) {
+        debugPrint('[Corrections] Corrección OK para $courseId: '
+            '${result.correctedCourse.allTees.length} tees, v${result.correctionVersion}');
+      } else {
+        debugPrint('[Corrections] _parse devolvió null para $courseId');
+      }
+      return result;
     } catch (e) {
-      if (kDebugMode) debugPrint('checkForCorrection error: $e');
+      debugPrint('[Corrections] ERROR en getForCourse($courseId): $e');
       return null;
     }
   }
 
-  // ── Aplicar corrección ──────────────────────────────────────────────────────
+  /// Alias de [getForCourse] — mantiene compatibilidad con llamadas existentes
+  /// que usaban checkForCorrection o getGlobalCorrection.
+  static Future<CourseCorrection?> checkForCorrection(String courseId) =>
+      getForCourse(courseId);
 
-  /// Aplica una corrección a la caché del usuario.
-  /// Usa set() con merge para funcionar aunque el documento NO exista todavía.
-  /// Actualiza [cachedCourse], marca [manuallyEdited=true] y guarda
-  /// [appliedCorrectionVersion] para no volver a aplicarla.
-  static Future<void> applyCorrection(CourseCorrection correction) async {
-    final favDoc = _favDoc(correction.courseId);
-    if (favDoc == null) return;
+  /// Alias de [getForCourse]
+  static Future<CourseCorrection?> getGlobalCorrection(String courseId) =>
+      getForCourse(courseId);
 
+  // ── PRIVADO ─────────────────────────────────────────────────────────────────
+
+  static CourseCorrection? _parse(String courseId, Map<String, dynamic> data) {
     try {
-      // set() con SetOptions(merge: true) crea el documento si no existe,
-      // o actualiza solo los campos especificados si ya existe.
-      await favDoc.set({
-        'cachedCourse':             correction.correctedCourse.toJson(),
-        'manuallyEdited':           true,
-        'appliedCorrectionVersion': correction.correctionVersion,
-      }, SetOptions(merge: true));
+      final version = (data['correctionVersion'] is num
+          ? (data['correctionVersion'] as num).toInt()
+          : 1);
+
+      // Normalizar el mapa de correctedCourse (Firestore Web devuelve Map<Object?,Object?>)
+      final rawCc = data['correctedCourse'];
+      if (rawCc == null) return null;
+
+      // Normalización recursiva profunda — delegar a ApiCourse._deepNormalize
+      // para garantizar que Map<Object?,Object?> y List<Object?> de Firestore Web
+      // se convierten correctamente a tipos Dart antes de llamar a fromCached.
+      final Map<String, dynamic> correctedJson;
+      try {
+        final normalized = ApiCourse.deepNormalize(rawCc);
+        if (normalized is! Map<String, dynamic>) {
+          debugPrint('[Corrections] correctedCourse no es un Map tras normalizar: ${normalized.runtimeType}');
+          return null;
+        }
+        correctedJson = normalized;
+      } catch (_) {
+        debugPrint('[Corrections] No se pudo normalizar correctedCourse para $courseId');
+        return null;
+      }
+
+      debugPrint('[Corrections] correctedJson keys: ${correctedJson.keys.toList()}');
+      debugPrint('[Corrections] maleTees raw type: ${correctedJson['maleTees']?.runtimeType}');
+      final course = ApiCourse.fromCached(correctedJson);
+      debugPrint('[Corrections] fromCached → maleTees: ${course.maleTees.length}, femaleTees: ${course.femaleTees.length}');
+      if (course.allTees.isEmpty) {
+        debugPrint('[Corrections] allTees VACÍO para $courseId — revisa la estructura del documento');
+        return null;
+      }
+
+      return CourseCorrection(
+        courseId:          courseId,
+        correctionVersion: version,
+        notes:             data['notes']?.toString() ?? 'Datos del campo actualizados',
+        correctedCourse:   course,
+      );
     } catch (e) {
-      if (kDebugMode) debugPrint('applyCorrection error: $e');
-      rethrow;
+      debugPrint('[Corrections] EXCEPCIÓN en _parse($courseId): $e');
+      return null;
     }
   }
 }

@@ -57,6 +57,8 @@ class SlidingAdjustmentSuggestion {
   final double currentAdjustment;
   final int    delta;               // +1 o -1 o 0 (empate)
   final DuelResult duelResult;
+  /// true si el oponente tiene linkedUserId → ajuste bilateral posible.
+  final bool opponentIsLinked;
   bool accepted;
 
   SlidingAdjustmentSuggestion({
@@ -66,6 +68,7 @@ class SlidingAdjustmentSuggestion {
     required this.currentAdjustment,
     required this.delta,
     required this.duelResult,
+    this.opponentIsLinked = false,
     this.accepted = true,
   });
 
@@ -77,11 +80,11 @@ class SlidingAdjustmentEngine {
   /// Calcula las sugerencias de ajuste de sliding.
   ///
   /// [round]       : ronda finalizada.
-  /// [currentUid]  : UID del usuario actual.
+  /// [currentUid]  : UID del usuario actual (puede ser null si no está autenticado).
   /// [playerLinks] : mapa playerId → PlayerLink del usuario actual.
   static List<SlidingAdjustmentSuggestion> computeSuggestions({
     required Round round,
-    required String currentUid,
+    String? currentUid,
     required Map<String, PlayerLink> playerLinks,
   }) {
     final myPlayer = _findMyPlayer(round, currentUid);
@@ -94,7 +97,9 @@ class SlidingAdjustmentEngine {
 
     for (final player in round.players) {
       if (player.id == myPlayer.id) continue;
-      if (!player.hasLinkedAccount) continue;
+      // Se calcula sliding para TODOS los jugadores, tengan cuenta o no.
+      // Si no tiene cuenta, el ajuste se guarda solo del lado del usuario actual
+      // en su PlayerLink hacia ese jugador (por linkedPlayerId).
 
       final duel = _computeDuel(
         p1Id:       myPlayer.id,
@@ -123,6 +128,7 @@ class SlidingAdjustmentEngine {
         currentAdjustment: currentAdj,
         delta:             delta,
         duelResult:        duel,
+        opponentIsLinked:  player.hasLinkedAccount,
         accepted:          true,
       ));
     }
@@ -131,11 +137,24 @@ class SlidingAdjustmentEngine {
   }
 
   // ── Encontrar el jugador del usuario actual ─────────────────────────────────
-  static Player? _findMyPlayer(Round round, String uid) {
-    for (final p in round.players) {
-      if (p.linkedUserId == uid) return p;
+  // Prioridad:
+  //   1. linkedUserId == uid autenticado
+  //   2. linkedUserId == round.ownerUid
+  //   3. Primer jugador de la ronda (fallback: el creador es típicamente el primero)
+  static Player? _findMyPlayer(Round round, String? uid) {
+    if (uid != null && uid.isNotEmpty) {
+      for (final p in round.players) {
+        if (p.linkedUserId == uid) return p;
+      }
+      // ownerUid como fallback
+      if (round.ownerUid != null) {
+        for (final p in round.players) {
+          if (p.linkedUserId == round.ownerUid) return p;
+        }
+      }
     }
-    return null;
+    // Fallback: primer jugador de la ronda
+    return round.players.isNotEmpty ? round.players.first : null;
   }
 
   // ── Calcular el duelo entre p1 y p2 usando prioridad de apuesta ────────────
