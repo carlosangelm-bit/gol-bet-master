@@ -1050,7 +1050,8 @@ class _OneVOneViewState extends State<_OneVOneView> {
           skinsMod = m;
           foundSkins = true;
         } else if (m.type == BetModuleType.nassau ||
-                   m.type == BetModuleType.matchAutoPress) {
+                   m.type == BetModuleType.matchAutoPress ||
+                   m.type == BetModuleType.nassauPress) {
           matchStatus = GameEngine.matchPlayStatus(round, p1.id, p2.id, true);
         }
       }
@@ -1211,6 +1212,7 @@ class _OneVOneViewState extends State<_OneVOneView> {
         // Tipos que implican duelo 1v1
         if (m.type == BetModuleType.nassau ||
             m.type == BetModuleType.matchAutoPress ||
+            m.type == BetModuleType.nassauPress ||
             m.type == BetModuleType.skins) {
           // Fuente de participantes: sides > participantIds > playerIds del grupo
           List<String> pids;
@@ -1261,6 +1263,14 @@ class _OneVOneViewState extends State<_OneVOneView> {
               carryFactor: factor,
             ),
           );
+        }
+        // NassauPress carry: aplica si el módulo tiene carryEnabled
+        if (m.type == BetModuleType.nassauPress && m.nassauPress.carryEnabled) {
+          final pids = m.participantIds.isNotEmpty ? m.participantIds : g.playerIds;
+          if (pids.contains(p1Id) && pids.contains(p2Id)) {
+            return m.copyWith(nassauPressConfig: m.nassauPress.copyWith(
+              carryApplied: true, carryFactor: factor));
+          }
         }
         return m;
       }).toList();
@@ -1782,6 +1792,7 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
     final skinsModules     = _findModules(BetModuleType.skins);
     final nassauModules    = _findModules(BetModuleType.nassau);
     final matchMods        = _findModules(BetModuleType.matchAutoPress);
+    final nassauPressMods  = _findModules(BetModuleType.nassauPress);
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       // ── Badge resultado (siempre visible, tap para expandir) ──────
@@ -1795,6 +1806,7 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
               skinsModules:      skinsModules,
               nassauModules:     nassauModules,
               matchPressModules: matchMods,
+              nassauPressMods:   nassauPressMods,
             ),
             // Indicador de expansión (chevron) en la esquina inferior derecha
             Positioned(
@@ -1835,6 +1847,12 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
             ...matchMods.map((mod) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: _MatchPressLivePanel(round: round, p1: p1, p2: p2, mod: mod, t: t),
+            )),
+
+            // Paneles Nassau + Press
+            ...nassauPressMods.map((mod) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _NassauPressLivePanel(round: round, p1: p1, p2: p2, mod: mod, t: t),
             )),
 
             // Hoyo a hoyo
@@ -1930,10 +1948,12 @@ class _MatchStatusCard extends StatelessWidget {
   final List<BetModuleInstance> skinsModules;
   final List<BetModuleInstance> nassauModules;
   final List<BetModuleInstance> matchPressModules;
+  final List<BetModuleInstance> nassauPressMods;
   const _MatchStatusCard({
     required this.round, required this.p1, required this.p2, required this.t,
     required this.skinsModules, required this.nassauModules,
     this.matchPressModules = const [],
+    this.nassauPressMods   = const [],
   });
 
   @override
@@ -1986,15 +2006,13 @@ class _MatchStatusCard extends StatelessWidget {
     final s1 = status > 0 ? status : 0;
     final s2 = status < 0 ? status.abs() : 0;
 
-    // ── Métricas de presiones y balance en vivo (cuando hay módulo matchAutoPress) ──
+    // ── Métricas y balance en vivo ────────────────────────────────────────────
     String? subLabel;
     double? liveBalance;
+
     if (matchPressModules.isNotEmpty) {
       final mod     = matchPressModules.first;
       final presses = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
-
-      // Balance en vivo: suma match principal + todas las presiones
-      // (igual que lo hace _MatchPressLivePanel)
       double mpBal = 0.0;
       for (final pr in presses) {
         if (pr.played == 0) continue;
@@ -2002,17 +2020,54 @@ class _MatchStatusCard extends StatelessWidget {
         if (pr.leadingPlayerId == p2.id) mpBal -= pr.value;
       }
       liveBalance = mpBal;
-
-      // Métricas de presiones para el subLabel
       final pressSegments = presses.skip(1).where((pr) => pr.played > 0).toList();
       if (pressSegments.isNotEmpty) {
-        final pw1        = pressSegments.where((pr) => pr.leadingPlayerId == p1.id).length;
-        final pw2        = pressSegments.where((pr) => pr.leadingPlayerId == p2.id).length;
-        final ties       = pressSegments.where((pr) => pr.score == 0).length;
+        final pw1          = pressSegments.where((pr) => pr.leadingPlayerId == p1.id).length;
+        final pw2          = pressSegments.where((pr) => pr.leadingPlayerId == p2.id).length;
+        final ties         = pressSegments.where((pr) => pr.score == 0).length;
         final totalPresses = pressSegments.length;
-        final tieStr     = ties > 0 ? '  ($ties AS)' : '';
+        final tieStr       = ties > 0 ? '  ($ties AS)' : '';
         subLabel = 'Presiones: $n1 $pw1 – $pw2 $n2$tieStr  •  $totalPresses jugadas';
       }
+    } else if (nassauPressMods.isNotEmpty) {
+      // Nassau + Press: mostrar balance en vivo agregado de todos los segmentos
+      final mod    = nassauPressMods.first;
+      final st     = BetEngine.nassauPressLiveStatus(round, p1.id, p2.id, mod);
+      double npBal = 0.0;
+      if (st.frontPlayed > 0) {
+        if (st.front > 0) npBal += st.frontVal;
+        if (st.front < 0) npBal -= st.frontVal;
+      }
+      if (st.backPlayed > 0) {
+        if (st.back > 0) npBal += st.backVal;
+        if (st.back < 0) npBal -= st.backVal;
+      }
+      if (st.frontPlayed + st.backPlayed > 0 && round.totalHoles >= 18) {
+        if (st.total > 0) npBal += st.totalVal;
+        if (st.total < 0) npBal -= st.totalVal;
+      }
+      for (final p in st.frontPresses) {
+        if (p.score > 0) npBal += st.frontPressVal;
+        if (p.score < 0) npBal -= st.frontPressVal;
+      }
+      for (final p in st.backPresses) {
+        if (p.score > 0) npBal += st.backPressVal;
+        if (p.score < 0) npBal -= st.backPressVal;
+      }
+      liveBalance = npBal;
+      // Resumen de segmentos para el subLabel
+      final parts = <String>[];
+      if (st.frontPlayed > 0) {
+        final fs = st.front == 0 ? 'F9: AS' : 'F9: ${st.front > 0 ? n1 : n2} ${st.front.abs()}UP';
+        parts.add(fs);
+      }
+      if (st.backPlayed > 0) {
+        final bs = st.back == 0 ? 'B9: AS' : 'B9: ${st.back > 0 ? n1 : n2} ${st.back.abs()}UP';
+        parts.add(bs);
+      }
+      final totalPresses = st.frontPresses.length + st.backPresses.length;
+      if (totalPresses > 0) parts.add('$totalPresses press${totalPresses > 1 ? 'iones' : 'ión'}');
+      if (parts.isNotEmpty) subLabel = parts.join('  •  ');
     }
 
     return _PremiumResultBadge(
@@ -3154,7 +3209,9 @@ class _CarryPanelState extends State<_CarryPanel> {
     final matchCarry = widget.matchPressModules.any((m) =>
         m.matchAutoPress.carryAppliedForPair(p1Id, p2Id));
     final nassauCarry = widget.nassauModules.any((m) => m.nassau.carryApplied);
-    return nassauCarry || matchCarry;
+    final npCarry     = widget.nassauModules.any((m) =>
+        m.type == BetModuleType.nassauPress && m.nassauPress.carryApplied);
+    return nassauCarry || matchCarry || npCarry;
   }
 
   bool get _hasCarryModules =>
@@ -4121,6 +4178,135 @@ class _FinancialBreakdown extends StatelessWidget {
             ),
           ),
         ]),
+      ]),
+    );
+  }
+}
+
+// ── NassauPress Live Panel ────────────────────────────────────────────────────
+// Panel de estado en vivo para Nassau + Presiones.
+// Muestra F9, B9, Total + presiones activas por segmento.
+class _NassauPressLivePanel extends StatelessWidget {
+  final Round round;
+  final Player p1, p2;
+  final BetModuleInstance mod;
+  final GolfTheme t;
+  const _NassauPressLivePanel({
+    required this.round, required this.p1, required this.p2,
+    required this.mod, required this.t,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final status = BetEngine.nassauPressLiveStatus(round, p1.id, p2.id, mod);
+    final cfg    = mod.nassauPress;
+
+    Color segColor(int score) {
+      if (score > 0) return t.profit;
+      if (score < 0) return t.loss;
+      return t.sub;
+    }
+
+    Widget segChip(String label, int score, double val, bool complete) {
+      final color = segColor(score);
+      final scoreStr = score == 0 ? 'AS' : '${score.abs()}UP';
+      return Expanded(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: color.withValues(alpha: complete ? 0.6 : 0.3)),
+          ),
+          child: Column(children: [
+            Text(label, style: TextStyle(color: t.sub, fontSize: 9, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(scoreStr, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w900)),
+            Text('\$${val.toStringAsFixed(0)}',
+                style: TextStyle(color: t.sub, fontSize: 9)),
+          ]),
+        ),
+      );
+    }
+
+    Widget pressRow(NassauPress press, double pressVal, String segLabel) {
+      final color = press.score == 0 ? t.sub : (press.score > 0 ? t.profit : t.loss);
+      final scoreStr = press.score == 0 ? 'AS' : '${press.score.abs()}UP';
+      return Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: t.accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text('⚡ Press H${press.startHole}',
+                style: TextStyle(color: t.accent, fontSize: 9, fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(segLabel,
+              style: TextStyle(color: t.sub, fontSize: 9))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: color.withValues(alpha: 0.4)),
+            ),
+            child: Text(scoreStr,
+                style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w800)),
+          ),
+          const SizedBox(width: 4),
+          Text('\$${pressVal.toStringAsFixed(0)}',
+              style: TextStyle(color: t.sub, fontSize: 9)),
+        ]),
+      );
+    }
+
+    return GCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text('🏆', style: const TextStyle(fontSize: 13)),
+          const SizedBox(width: 6),
+          Text(mod.name, style: TextStyle(color: t.text, fontSize: 12, fontWeight: FontWeight.w800)),
+          if (status.carryActive) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: t.profit.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text('CARRY ×${cfg.carryFactor.toStringAsFixed(0)}',
+                  style: TextStyle(color: t.profit, fontSize: 8, fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ]),
+        const SizedBox(height: 10),
+        // Segmentos F9 / B9 / Total
+        Row(children: [
+          segChip('FRONT 9', status.front, status.frontVal, status.frontComplete),
+          segChip('BACK 9',  status.back,  status.backVal,  status.backComplete),
+          segChip('TOTAL',   status.total, status.totalVal, status.frontComplete && status.backComplete),
+        ]),
+        // Presiones F9
+        if (status.frontPresses.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text('PRESIONES FRONT 9',
+              style: TextStyle(color: t.sub, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+          ...status.frontPresses.map((p) =>
+              pressRow(p, status.frontPressVal, 'Front 9')),
+        ],
+        // Presiones B9
+        if (status.backPresses.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text('PRESIONES BACK 9',
+              style: TextStyle(color: t.sub, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+          ...status.backPresses.map((p) =>
+              pressRow(p, status.backPressVal, 'Back 9')),
+        ],
       ]),
     );
   }

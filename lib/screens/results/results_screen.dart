@@ -699,15 +699,49 @@ class _PlayerFaceToFace extends StatelessWidget {
             for (final gr in round.betGroups) {
               if (!gr.playerIds.contains(player.id) || !gr.playerIds.contains(opp.id)) continue;
               for (final mod in gr.modules) {
-                if (mod.type != BetModuleType.matchAutoPress) continue;
-                double mpLiveBal = 0.0;
-                final presses = BetEngine.matchAutoPressLive(round, player.id, opp.id, mod);
-                for (final pr in presses) {
-                  if (pr.played == 0) continue;
-                  if (pr.leadingPlayerId == player.id) mpLiveBal += pr.value;
-                  if (pr.leadingPlayerId == opp.id) mpLiveBal -= pr.value;
+                // ── Match + Press live balance ─────────────────────────────
+                if (mod.type == BetModuleType.matchAutoPress) {
+                  double mpLiveBal = 0.0;
+                  final presses = BetEngine.matchAutoPressLive(round, player.id, opp.id, mod);
+                  for (final pr in presses) {
+                    if (pr.played == 0) continue;
+                    if (pr.leadingPlayerId == player.id) mpLiveBal += pr.value;
+                    if (pr.leadingPlayerId == opp.id) mpLiveBal -= pr.value;
+                  }
+                  breakdown[BetModuleType.matchAutoPress] = mpLiveBal;
                 }
-                breakdown[BetModuleType.matchAutoPress] = mpLiveBal;
+                // ── Nassau + Press live balance ────────────────────────────
+                if (mod.type == BetModuleType.nassauPress) {
+                  final status = BetEngine.nassauPressLiveStatus(round, player.id, opp.id, mod);
+                  double npLiveBal = 0.0;
+                  // Segmento F9
+                  if (status.frontPlayed > 0) {
+                    if (status.front > 0) npLiveBal += status.frontVal;
+                    if (status.front < 0) npLiveBal -= status.frontVal;
+                  }
+                  // Segmento B9
+                  if (status.backPlayed > 0) {
+                    if (status.back > 0) npLiveBal += status.backVal;
+                    if (status.back < 0) npLiveBal -= status.backVal;
+                  }
+                  // Total 18 (solo si la ronda es de 18)
+                  if (status.frontPlayed + status.backPlayed > 0 && round.totalHoles >= 18) {
+                    final tot = status.total;
+                    if (tot > 0) npLiveBal += status.totalVal;
+                    if (tot < 0) npLiveBal -= status.totalVal;
+                  }
+                  // Presiones F9
+                  for (final p in status.frontPresses) {
+                    if (p.score > 0) npLiveBal += status.frontPressVal;
+                    if (p.score < 0) npLiveBal -= status.frontPressVal;
+                  }
+                  // Presiones B9
+                  for (final p in status.backPresses) {
+                    if (p.score > 0) npLiveBal += status.backPressVal;
+                    if (p.score < 0) npLiveBal -= status.backPressVal;
+                  }
+                  breakdown[BetModuleType.nassauPress] = npLiveBal;
+                }
               }
             }
 
@@ -753,6 +787,7 @@ class _PlayerFaceToFace extends StatelessWidget {
                     final order = [
                       BetModuleType.skins,
                       BetModuleType.nassau,
+                      BetModuleType.nassauPress,
                       BetModuleType.matchAutoPress,
                       BetModuleType.medal,
                       BetModuleType.putts,
