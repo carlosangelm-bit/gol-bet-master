@@ -600,7 +600,7 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
               Text('MATCH PLAY', style: TextStyle(color: t.sub, fontSize: 10,
                   fontWeight: FontWeight.w800, letterSpacing: 0.8)),
               const SizedBox(height: 8),
-              ...[BetModuleType.nassau, BetModuleType.matchAutoPress]
+              ...[BetModuleType.nassau, BetModuleType.matchAutoPress, BetModuleType.nassauPress]
                   .map((bt) => _betTypeTile(bt, selected, setSt, t)),
               const SizedBox(height: 16),
 
@@ -641,7 +641,7 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
 
   Widget _betTypeTile(BetModuleType bt, Set<BetModuleType> selected, StateSetter setSt, GolfTheme t) {
     final isSel = selected.contains(bt);
-    final isMatchType = bt == BetModuleType.nassau || bt == BetModuleType.matchAutoPress;
+    final isMatchType = bt == BetModuleType.nassau || bt == BetModuleType.matchAutoPress || bt == BetModuleType.nassauPress;
     final accentColor = isMatchType ? t.accent : t.primary;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -847,6 +847,8 @@ class _PresetConfigWidgets {
         return _nassauWidgets(cfg, t, setSt, update);
       case BetModuleType.matchAutoPress:
         return _matchPressWidgets(cfg, t, setSt, update);
+      case BetModuleType.nassauPress:
+        return _nassauWidgets(cfg, t, setSt, update); // reutiliza Nassau base para presets
       case BetModuleType.medal:
         return _medalWidgets(cfg, t, setSt, update);
       case BetModuleType.putts:

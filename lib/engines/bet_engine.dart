@@ -59,6 +59,9 @@ class BetEngine {
             // Skins en modo equipo: cada hoyo best-ball entre lados
             entries.addAll(_skinsTeam(round, mod));
             break;
+          case BetModuleType.nassauPress:
+            entries.addAll(_nassauPress(round, [...mod.sideA.playerIds, ...mod.sideB.playerIds], mod));
+            break;
           default:
             // Medal, putts, oyeses, units: no tienen semántica de equipo aún.
             // Fallback: usar todos los jugadores de ambos lados en modo individual.
@@ -95,6 +98,9 @@ class BetEngine {
         break;
       case BetModuleType.putts:
         entries.addAll(_putts(round, pids, mod));
+        break;
+      case BetModuleType.nassauPress:
+        entries.addAll(_nassauPress(round, pids, mod));
         break;
       case BetModuleType.oyeses:
         entries.addAll(_oyeses(round, pids, mod));
@@ -302,6 +308,192 @@ class BetEngine {
       entries.add(LedgerEntry(fromPlayerId: p2Id, toPlayerId: p1Id, amount: value, betType: BetModuleType.nassau, reason: label));
     } else if (margin < 0) {
       entries.add(LedgerEntry(fromPlayerId: p1Id, toPlayerId: p2Id, amount: value, betType: BetModuleType.nassau, reason: label));
+    }
+  }
+
+  // ── NASSAU + PRESS ────────────────────────────────────────────────────────
+  // Nassau F9/B9/Total18 con presiones automáticas por segmento.
+  // Las presiones de un segmento terminan al finalizar ese segmento.
+  // Carry: si el F9 termina en empate (push) y carryEnabled, el B9 vale x2.
+  static List<LedgerEntry> _nassauPress(
+      Round round, List<String> pids, BetModuleInstance mod) {
+    final entries = <LedgerEntry>[];
+    for (int i = 0; i < pids.length; i++) {
+      for (int j = i + 1; j < pids.length; j++) {
+        entries.addAll(_nassauPressPair(round, pids[i], pids[j], mod));
+      }
+    }
+    return entries;
+  }
+
+  static List<LedgerEntry> _nassauPressPair(
+      Round round, String p1Id, String p2Id, BetModuleInstance mod) {
+    final entries = <LedgerEntry>[];
+    final cfg = mod.nassauPress;
+
+    final (hcp1, hcp2) = _effectiveHcps(round, p1Id, p2Id, mod.useHandicap);
+    final p1IsBase    = hcp1 <= hcp2;
+    final hcpBase     = p1IsBase ? hcp1 : hcp2;
+    final hcpReceiver = p1IsBase ? hcp2 : hcp1;
+    final baseId      = p1IsBase ? p1Id : p2Id;
+    final receiverId  = p1IsBase ? p2Id : p1Id;
+    final allHoles    = round.course.holes;
+    final holeMap     = { for (final ch in allHoles) ch.hole: ch };
+
+    // ── Calcular deltas hoyo a hoyo ──────────────────────────────────────────
+    // delta > 0 → p1 gana el hoyo; delta < 0 → p2 gana; 0 → empate
+    final Map<int, int> deltaByHole = {};
+    for (int h = 1; h <= round.totalHoles; h++) {
+      final ch = holeMap[h]; if (ch == null) continue;
+      final sBase     = round.getScore(baseId, h);
+      final sReceiver = round.getScore(receiverId, h);
+      if (!sBase.hasScore || !sReceiver.hasScore) continue;
+      final strokes = mod.useHandicap
+          ? GameEngine.strokesReceivedVs(
+              hcpHigher: hcpReceiver, hcpLower: hcpBase,
+              ch: ch, allHoles: allHoles, startingNine: round.startingNine)
+          : 0;
+      final grossBase    = sBase.grossScore!;
+      final netReceiver  = sReceiver.grossScore! - strokes;
+      if      (grossBase < netReceiver) deltaByHole[h] = p1IsBase ?  1 : -1;
+      else if (grossBase > netReceiver) deltaByHole[h] = p1IsBase ? -1 :  1;
+      else                              deltaByHole[h] = 0;
+    }
+
+    // ── Detectar carry (F9 empatado) ─────────────────────────────────────────
+    int front = 0;
+    for (int h = 1; h <= 9; h++) front += (deltaByHole[h] ?? 0);
+    final carryActive = cfg.carryEnabled && cfg.carryApplied && front == 0;
+
+    // ── Liquidar segmento con presiones ─────────────────────────────────────
+    void liquidateSegment({
+      required int holeFrom,
+      required int holeTo,
+      required double segValue,
+      required double pressValue,
+      required String segLabel,
+    }) {
+      // Score acumulado hoyo a hoyo dentro del segmento
+      final List<int> history = [];
+      for (int h = holeFrom; h <= holeTo; h++) {
+        final prev = history.isEmpty ? 0 : history.last;
+        history.add(prev + (deltaByHole[h] ?? 0));
+      }
+      if (history.isEmpty) return;
+
+      // Score final del segmento
+      final segScore = history.last;
+
+      // Detectar presiones automáticas (misma lógica que _detectPresses del Nassau)
+      // cada presión corre desde su hoyo de inicio hasta el final del segmento
+      final int maxP = cfg.maxPresses ?? 99;
+      final List<({int startIdx, int startHole})> pressStarts = [];
+      final int played = history.length;
+
+      for (int i = 0; i < history.length; i++) {
+        if (pressStarts.length >= maxP) break;
+        final diff = history[i];
+        if (diff.abs() >= cfg.pressTriggerValue) {
+          final startH = holeFrom + i + 1;
+          if (startH <= holeTo && !pressStarts.any((p) => p.startHole == startH)) {
+            if (cfg.allowMultiplePresses || pressStarts.isEmpty) {
+              pressStarts.add((startIdx: i + 1, startHole: startH));
+            }
+          }
+        }
+      }
+
+      // Liquidar segmento base
+      void addEntry(int score, double val, String label) {
+        if (score > 0) {
+          entries.add(LedgerEntry(fromPlayerId: p2Id, toPlayerId: p1Id,
+              amount: val, betType: BetModuleType.nassauPress, reason: label));
+        } else if (score < 0) {
+          entries.add(LedgerEntry(fromPlayerId: p1Id, toPlayerId: p2Id,
+              amount: val, betType: BetModuleType.nassauPress, reason: label));
+        }
+      }
+
+      addEntry(segScore, segValue, segLabel);
+
+      // Liquidar cada presión
+      for (final ps in pressStarts) {
+        int pressScore = 0;
+        for (int idx = ps.startIdx; idx < history.length; idx++) {
+          pressScore = history[idx] - history[ps.startIdx - 1];
+        }
+        addEntry(pressScore, pressValue,
+            'Press H${ps.startHole}–H$holeTo ($segLabel)');
+      }
+
+      // Presiones manuales del módulo (no son match principal, en rango del segmento)
+      for (final press in mod.presses) {
+        if (press.isPrimaryMatch) continue; // solo presiones, no el match principal
+        if (press.startHole < holeFrom || press.startHole > holeTo) continue;
+        int manualScore = 0;
+        for (int h = press.startHole; h <= holeTo; h++) {
+          manualScore += (deltaByHole[h] ?? 0);
+        }
+        addEntry(manualScore, press.value,
+            'Press Manual H${press.startHole}–H$holeTo ($segLabel)');
+      }
+    }
+
+    // ── Aplicar segmentos ────────────────────────────────────────────────────
+    if (round.totalHoles <= 9) {
+      // Solo 9 hoyos: un único segmento front
+      liquidateSegment(
+        holeFrom: 1, holeTo: 9,
+        segValue:   cfg.frontValue,
+        pressValue: cfg.frontPressValue,
+        segLabel:   'Nassau+Press 9H',
+      );
+    } else {
+      // Front 9
+      liquidateSegment(
+        holeFrom: 1, holeTo: 9,
+        segValue:   cfg.frontValue,
+        pressValue: cfg.frontPressValue,
+        segLabel:   'NP Front 9',
+      );
+      // Back 9 (con carry si aplica)
+      final effBack      = carryActive ? cfg.backValue      * cfg.carryFactor : cfg.backValue;
+      final effBackPress = carryActive ? cfg.backPressValue * cfg.carryFactor : cfg.backPressValue;
+      liquidateSegment(
+        holeFrom: 10, holeTo: 18,
+        segValue:   effBack,
+        pressValue: effBackPress,
+        segLabel:   'NP Back 9${carryActive ? ' (x${cfg.carryFactor.toStringAsFixed(0)})' : ''}',
+      );
+      // Total 18
+      int total = 0;
+      for (int h = 1; h <= 18; h++) total += (deltaByHole[h] ?? 0);
+      final effTotal = carryActive ? cfg.totalValue * cfg.carryFactor : cfg.totalValue;
+      void addTotal(int score, double val) {
+        if (score > 0)
+          entries.add(LedgerEntry(fromPlayerId: p2Id, toPlayerId: p1Id,
+              amount: val, betType: BetModuleType.nassauPress, reason: 'NP Total 18'));
+        else if (score < 0)
+          entries.add(LedgerEntry(fromPlayerId: p1Id, toPlayerId: p2Id,
+              amount: val, betType: BetModuleType.nassauPress, reason: 'NP Total 18'));
+      }
+      addTotal(total, effTotal);
+    }
+
+    return entries;
+  }
+
+  // ── NASSAU + PRESS: helper para LedgerEntry con betType correcto ─────────
+  static void _addNassauPressEntry(
+    List<LedgerEntry> entries, String p1Id, String p2Id,
+    int margin, double value, String label,
+  ) {
+    if (margin > 0) {
+      entries.add(LedgerEntry(fromPlayerId: p2Id, toPlayerId: p1Id,
+          amount: value, betType: BetModuleType.nassauPress, reason: label));
+    } else if (margin < 0) {
+      entries.add(LedgerEntry(fromPlayerId: p1Id, toPlayerId: p2Id,
+          amount: value, betType: BetModuleType.nassauPress, reason: label));
     }
   }
 
@@ -1519,6 +1711,78 @@ class BetEngine {
     );
   }
 
+  // ── NASSAU + PRESS: estado en vivo ───────────────────────────────────────
+  static NassauPressLiveStatus nassauPressLiveStatus(
+    Round round, String p1Id, String p2Id, BetModuleInstance mod,
+  ) {
+    final cfg = mod.nassauPress;
+    final (hcp1, hcp2) = _effectiveHcps(round, p1Id, p2Id, mod.useHandicap);
+    final p1IsBase    = hcp1 <= hcp2;
+    final hcpBase     = p1IsBase ? hcp1 : hcp2;
+    final hcpReceiver = p1IsBase ? hcp2 : hcp1;
+    final baseId      = p1IsBase ? p1Id : p2Id;
+    final receiverId  = p1IsBase ? p2Id : p1Id;
+    final allHoles    = round.course.holes;
+
+    int front = 0, back = 0;
+    int frontPlayed = 0, backPlayed = 0;
+    final List<int> frontHistory = [];
+    final List<int> backHistory  = [];
+
+    for (int h = 1; h <= round.totalHoles; h++) {
+      final ch = round.course.holes.firstWhere((c) => c.hole == h, orElse: () => round.course.holes.first);
+      final sBase     = round.getScore(baseId,     h);
+      final sReceiver = round.getScore(receiverId, h);
+      if (!sBase.hasScore || !sReceiver.hasScore) continue;
+      final strokes = mod.useHandicap
+          ? GameEngine.strokesReceivedVs(
+              hcpHigher: hcpReceiver, hcpLower: hcpBase,
+              ch: ch, allHoles: allHoles, startingNine: round.startingNine)
+          : 0;
+      final grossBase   = sBase.grossScore!;
+      final netReceiver = sReceiver.grossScore! - strokes;
+      final int delta;
+      if      (grossBase < netReceiver) delta = p1IsBase ?  1 : -1;
+      else if (grossBase > netReceiver) delta = p1IsBase ? -1 :  1;
+      else                              delta = 0;
+
+      if (h <= 9) { front += delta; frontPlayed++; frontHistory.add(front); }
+      else        { back  += delta; backPlayed++;  backHistory.add(back);   }
+    }
+
+    // Carry: F9 completo y empatado
+    final f9Complete  = frontPlayed == 9;
+    final carryActive = cfg.carryEnabled && cfg.carryApplied && f9Complete && front == 0;
+
+    // Valores efectivos
+    final effBackVal       = carryActive ? cfg.backValue      * cfg.carryFactor : cfg.backValue;
+    final effBackPressVal  = carryActive ? cfg.backPressValue * cfg.carryFactor : cfg.backPressValue;
+    final effTotalVal      = carryActive ? cfg.totalValue     * cfg.carryFactor : cfg.totalValue;
+
+    // Presiones F9
+    final List<NassauPress> frontPresses = [];
+    _detectPresses(frontPresses, frontHistory, 1, 9, frontPlayed,
+        p1Id, p2Id, cfg.pressTriggerValue);
+    // Presiones B9
+    final List<NassauPress> backPresses  = [];
+    _detectPresses(backPresses, backHistory, 10, 18, backPlayed,
+        p1Id, p2Id, cfg.pressTriggerValue);
+
+    return NassauPressLiveStatus(
+      front: front, back: back, total: front + back,
+      frontPlayed: frontPlayed, backPlayed: backPlayed,
+      frontVal:      cfg.frontValue,
+      backVal:       effBackVal,
+      totalVal:      effTotalVal,
+      frontPressVal: cfg.frontPressValue,
+      backPressVal:  effBackPressVal,
+      carryActive:   carryActive,
+      carryEnabled:  cfg.carryEnabled,
+      frontPresses:  frontPresses,
+      backPresses:   backPresses,
+    );
+  }
+
   static void _detectPresses(
     List<NassauPress> out,
     List<int> history,
@@ -1653,4 +1917,39 @@ class MatchPressLiveStatus {
     if (score == 0) return 'AS';
     return '${score.abs()}UP';
   }
+}
+
+// ── NassauPressLiveStatus ─────────────────────────────────────────────────────
+// Estado en vivo de un duelo Nassau + Press para la scorecard.
+class NassauPressLiveStatus {
+  final int front;         // score acumulado F9 (positivo = p1 va arriba)
+  final int back;          // score acumulado B9
+  final int total;         // front + back
+  final int frontPlayed;   // hoyos F9 jugados
+  final int backPlayed;    // hoyos B9 jugados
+  final double frontVal;
+  final double backVal;
+  final double totalVal;
+  final double frontPressVal;
+  final double backPressVal;
+  final bool   carryActive;   // carry ya está activado y F9 terminó en empate
+  final bool   carryEnabled;  // carry está configurado
+  final List<NassauPress> frontPresses;
+  final List<NassauPress> backPresses;
+
+  const NassauPressLiveStatus({
+    required this.front, required this.back, required this.total,
+    required this.frontPlayed, required this.backPlayed,
+    required this.frontVal, required this.backVal, required this.totalVal,
+    required this.frontPressVal, required this.backPressVal,
+    required this.carryActive, required this.carryEnabled,
+    required this.frontPresses, required this.backPresses,
+  });
+
+  String scoreLabel(int s) => s == 0 ? 'AS' : '${s.abs()}UP';
+  String get frontLabel => scoreLabel(front);
+  String get backLabel  => scoreLabel(back);
+  String get totalLabel => scoreLabel(total);
+  bool get frontComplete => frontPlayed == 9;
+  bool get backComplete  => backPlayed  == 9;
 }

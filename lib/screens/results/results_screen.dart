@@ -710,38 +710,8 @@ class _PlayerFaceToFace extends StatelessWidget {
                   }
                   breakdown[BetModuleType.matchAutoPress] = mpLiveBal;
                 }
-                // ── Nassau + Press live balance ────────────────────────────
-                if (mod.type == BetModuleType.nassauPress) {
-                  final status = BetEngine.nassauPressLiveStatus(round, player.id, opp.id, mod);
-                  double npLiveBal = 0.0;
-                  // Segmento F9
-                  if (status.frontPlayed > 0) {
-                    if (status.front > 0) npLiveBal += status.frontVal;
-                    if (status.front < 0) npLiveBal -= status.frontVal;
-                  }
-                  // Segmento B9
-                  if (status.backPlayed > 0) {
-                    if (status.back > 0) npLiveBal += status.backVal;
-                    if (status.back < 0) npLiveBal -= status.backVal;
-                  }
-                  // Total 18 (solo si la ronda es de 18)
-                  if (status.frontPlayed + status.backPlayed > 0 && round.totalHoles >= 18) {
-                    final tot = status.total;
-                    if (tot > 0) npLiveBal += status.totalVal;
-                    if (tot < 0) npLiveBal -= status.totalVal;
-                  }
-                  // Presiones F9
-                  for (final p in status.frontPresses) {
-                    if (p.score > 0) npLiveBal += status.frontPressVal;
-                    if (p.score < 0) npLiveBal -= status.frontPressVal;
-                  }
-                  // Presiones B9
-                  for (final p in status.backPresses) {
-                    if (p.score > 0) npLiveBal += status.backPressVal;
-                    if (p.score < 0) npLiveBal -= status.backPressVal;
-                  }
-                  breakdown[BetModuleType.nassauPress] = npLiveBal;
-                }
+                // Nassau+Press: LedgerEngine.breakdownBetween ya incluye
+                // el balance correcto v\u00eda BetEngine.computeAll \u2192 _nassauPressPair.
               }
             }
 

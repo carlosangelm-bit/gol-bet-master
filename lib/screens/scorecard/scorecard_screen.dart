@@ -4013,6 +4013,7 @@ class _FinancialBreakdown extends StatelessWidget {
     final order = [
       BetModuleType.skins,
       BetModuleType.nassau,
+      BetModuleType.nassauPress,
       BetModuleType.matchAutoPress,
       BetModuleType.medal,
       BetModuleType.putts,
@@ -4027,8 +4028,7 @@ class _FinancialBreakdown extends StatelessWidget {
     context.watch<RoundProvider>(); // rebuilda al cambiar la ronda
     final breakdown = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
 
-    // Para Match+Press: calcular balance desde matchAutoPressLive (siempre correcto, independiente
-    // del orden de pids en el módulo). Sobreescribir el valor del breakdown si hay módulos activos.
+    // Match+Press: calcular balance desde live status (orden de pids no importa)
     final mpMods = _modsOf(BetModuleType.matchAutoPress);
     if (mpMods.isNotEmpty) {
       double mpBal = 0.0;
@@ -4042,6 +4042,11 @@ class _FinancialBreakdown extends StatelessWidget {
       }
       breakdown[BetModuleType.matchAutoPress] = mpBal;
     }
+
+    // Nassau+Press: el breakdown ya viene calculado correctamente por
+    // LedgerEngine.breakdownBetween → BetEngine.computeAll → _nassauPressPair.
+    // No sobreescribir — solo nos aseguramos de que el tipo esté presente.
+    // (a diferencia de matchAutoPress que necesita recalcular por orden de pids)
 
     // Obtener todos los tipos de módulo configurados para este par
     final allTypes = _allModuleTypes();

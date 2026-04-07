@@ -727,12 +727,12 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
                   decoration: BoxDecoration(
                     color: _slidingVal == 0
                         ? t.surface
-                        : (_slidingVal > 0 ? t.loss : t.profit).withValues(alpha: 0.08),
+                        : (_slidingVal > 0 ? t.profit : t.loss).withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
                       color: _slidingVal == 0
                           ? t.divider
-                          : (_slidingVal > 0 ? t.loss : t.profit).withValues(alpha: 0.5),
+                          : (_slidingVal > 0 ? t.profit : t.loss).withValues(alpha: 0.5),
                       width: _slidingVal == 0 ? 1 : 1.5,
                     ),
                   ),
@@ -742,7 +742,7 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
                       style: TextStyle(
                         color: _slidingVal == 0
                             ? t.sub
-                            : (_slidingVal > 0 ? t.loss : t.profit),
+                            : (_slidingVal > 0 ? t.profit : t.loss),
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
                       ),

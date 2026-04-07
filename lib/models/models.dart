@@ -21,7 +21,7 @@ DateTime _parseDate(dynamic value) {
 }
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
-enum BetModuleType { skins, nassau, matchAutoPress, medal, putts, oyeses, units }
+enum BetModuleType { skins, nassau, matchAutoPress, nassauPress, medal, putts, oyeses, units }
 enum UnitEventType { birdie, eagle, sandyPar, parUnico, birdieUnico, holeOut }
 enum PartidaFormat { allInOnePot, oneVsOne, groupVsGroup }
 
@@ -136,6 +136,7 @@ extension BetModuleLabel on BetModuleType {
     BetModuleType.skins:         'Skins',
     BetModuleType.nassau:        'Nassau',
     BetModuleType.matchAutoPress:'Match + Press',
+    BetModuleType.nassauPress:   'Nassau + Press',
     BetModuleType.medal:         'Medal',
     BetModuleType.putts:         'Putts',
     BetModuleType.oyeses:        'Oyeses',
@@ -146,6 +147,7 @@ extension BetModuleLabel on BetModuleType {
     BetModuleType.skins:         '🎯',
     BetModuleType.nassau:        '🏌️',
     BetModuleType.matchAutoPress:'⚔️',
+    BetModuleType.nassauPress:   '🏆',
     BetModuleType.medal:         '🥇',
     BetModuleType.putts:         '⛳',
     BetModuleType.oyeses:        '🌟',
@@ -156,6 +158,7 @@ extension BetModuleLabel on BetModuleType {
     BetModuleType.skins:         'Cada hoyo vale una skin. Empates acumulan.',
     BetModuleType.nassau:        'Front 9, Back 9 y Total 18 independientes.',
     BetModuleType.matchAutoPress:'Match principal + presiones automáticas al llegar a X up.',
+    BetModuleType.nassauPress:   'Nassau F9/B9/T18 con presiones automáticas por segmento y carry.',
     BetModuleType.medal:         'Score neto total más bajo gana.',
     BetModuleType.putts:         'Menor cantidad de putts por segmento.',
     BetModuleType.oyeses:        'Ranking en par 3s. El más cercano cobra.',
@@ -722,6 +725,110 @@ class NassauConfig {
   static const def = NassauConfig();
 }
 
+// ── NassauPressConfig ─────────────────────────────────────────────────────────
+// Configuración para Nassau + Presiones.
+// Nassau estándar (F9 / B9 / Total 18) con presiones automáticas y/o manuales
+// que se abren dentro de cada segmento y terminan al finalizar el segmento.
+// Opción carry: si el F9 queda empatado, el B9 vale x2 (carryFactor).
+class NassauPressConfig {
+  // ── Valores base ─────────────────────────────────────────────────────────────
+  final double frontValue;     // valor del F9
+  final double backValue;      // valor del B9
+  final double totalValue;     // valor del Total 18
+  // ── Presiones ────────────────────────────────────────────────────────────────
+  final double frontPressValue;  // valor de cada press en el F9 (default = frontValue)
+  final double backPressValue;   // valor de cada press en el B9 (default = backValue)
+  final int pressTriggerValue;   // down gap que dispara una nueva presión (default 2)
+  final bool allowMultiplePresses; // permite más de una presión simultánea por segmento
+  final int? maxPresses;         // max por segmento (null = ilimitado)
+  // ── Carry ────────────────────────────────────────────────────────────────────
+  // Si el F9 termina empatado (push) y carry=true, el valor del B9 se multiplica
+  // por carryFactor (default 2). También aplica las presiones del B9 con el mismo factor.
+  final bool carryEnabled;       // carry activado
+  final bool carryApplied;       // carry ya fue aceptado para este módulo/par
+  final double carryFactor;      // multiplicador carry (default 2.0)
+  // ── Modo ─────────────────────────────────────────────────────────────────────
+  final GrossNetMode mode;
+  final TieRule tieRule;
+
+  const NassauPressConfig({
+    this.frontValue       = 50,
+    this.backValue        = 50,
+    this.totalValue       = 100,
+    this.frontPressValue  = 50,
+    this.backPressValue   = 50,
+    this.pressTriggerValue= 2,
+    this.allowMultiplePresses = true,
+    this.maxPresses,
+    this.carryEnabled     = false,
+    this.carryApplied     = false,
+    this.carryFactor      = 2.0,
+    this.mode             = GrossNetMode.net,
+    this.tieRule          = TieRule.push,
+  });
+
+  // Valores efectivos considerando carry
+  double get effectiveBackValue       => carryApplied ? backValue      * carryFactor : backValue;
+  double get effectiveTotalValue      => carryApplied ? totalValue     * carryFactor : totalValue;
+  double get effectiveBackPressValue  => carryApplied ? backPressValue * carryFactor : backPressValue;
+
+  NassauPressConfig copyWith({
+    double? frontValue, double? backValue, double? totalValue,
+    double? frontPressValue, double? backPressValue,
+    int? pressTriggerValue, bool? allowMultiplePresses, int? maxPresses,
+    bool? carryEnabled, bool? carryApplied, double? carryFactor,
+    GrossNetMode? mode, TieRule? tieRule,
+  }) => NassauPressConfig(
+    frontValue:          frontValue          ?? this.frontValue,
+    backValue:           backValue           ?? this.backValue,
+    totalValue:          totalValue          ?? this.totalValue,
+    frontPressValue:     frontPressValue     ?? this.frontPressValue,
+    backPressValue:      backPressValue      ?? this.backPressValue,
+    pressTriggerValue:   pressTriggerValue   ?? this.pressTriggerValue,
+    allowMultiplePresses:allowMultiplePresses?? this.allowMultiplePresses,
+    maxPresses:          maxPresses          ?? this.maxPresses,
+    carryEnabled:        carryEnabled        ?? this.carryEnabled,
+    carryApplied:        carryApplied        ?? this.carryApplied,
+    carryFactor:         carryFactor         ?? this.carryFactor,
+    mode:                mode                ?? this.mode,
+    tieRule:             tieRule             ?? this.tieRule,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'frontValue':          frontValue,
+    'backValue':           backValue,
+    'totalValue':          totalValue,
+    'frontPressValue':     frontPressValue,
+    'backPressValue':      backPressValue,
+    'pressTriggerValue':   pressTriggerValue,
+    'allowMultiplePresses':allowMultiplePresses,
+    if (maxPresses != null) 'maxPresses': maxPresses,
+    'carryEnabled':        carryEnabled,
+    'carryApplied':        carryApplied,
+    'carryFactor':         carryFactor,
+    'mode':                mode.name,
+    'tieRule':             tieRule.name,
+  };
+
+  factory NassauPressConfig.fromJson(Map<String, dynamic> j) => NassauPressConfig(
+    frontValue:          (j['frontValue']       as num?)?.toDouble() ?? 50,
+    backValue:           (j['backValue']        as num?)?.toDouble() ?? 50,
+    totalValue:          (j['totalValue']       as num?)?.toDouble() ?? 100,
+    frontPressValue:     (j['frontPressValue']  as num?)?.toDouble() ?? (j['frontValue'] as num?)?.toDouble() ?? 50,
+    backPressValue:      (j['backPressValue']   as num?)?.toDouble() ?? (j['backValue']  as num?)?.toDouble() ?? 50,
+    pressTriggerValue:   (j['pressTriggerValue'] as int?) ?? 2,
+    allowMultiplePresses:j['allowMultiplePresses'] as bool? ?? true,
+    maxPresses:          j['maxPresses'] as int?,
+    carryEnabled:        j['carryEnabled'] as bool? ?? false,
+    carryApplied:        j['carryApplied'] as bool? ?? false,
+    carryFactor:         (j['carryFactor'] as num?)?.toDouble() ?? 2.0,
+    mode:    GrossNetMode.values.firstWhere((e) => e.name == (j['mode'] ?? 'net'), orElse: () => GrossNetMode.net),
+    tieRule: TieRule.values.firstWhere((e) => e.name == (j['tieRule'] ?? 'push'), orElse: () => TieRule.push),
+  );
+
+  static const def = NassauPressConfig();
+}
+
 class MedalConfig {
   final double value;
   final GrossNetMode mode;
@@ -929,6 +1036,7 @@ class BetModuleInstance {
   final SkinsConfig?          skinsConfig;
   final NassauConfig?         nassauConfig;
   final MatchAutoPressConfig? matchAutoPressConfig;
+  final NassauPressConfig?    nassauPressConfig;
   final MedalConfig?          medalConfig;
   final PuttsConfig?          puttsConfig;
   final OyesesConfig?         oyesesConfig;
@@ -948,6 +1056,7 @@ class BetModuleInstance {
     this.skinsConfig,
     this.nassauConfig,
     this.matchAutoPressConfig,
+    this.nassauPressConfig,
     this.medalConfig,
     this.puttsConfig,
     this.oyesesConfig,
@@ -983,6 +1092,7 @@ class BetModuleInstance {
   SkinsConfig          get skins          => skinsConfig          ?? SkinsConfig.def;
   NassauConfig         get nassau         => nassauConfig         ?? NassauConfig.def;
   MatchAutoPressConfig get matchAutoPress => matchAutoPressConfig ?? MatchAutoPressConfig.def;
+  NassauPressConfig    get nassauPress    => nassauPressConfig    ?? NassauPressConfig.def;
   MedalConfig          get medal          => medalConfig          ?? MedalConfig.def;
   PuttsConfig          get putts          => puttsConfig          ?? PuttsConfig.def;
   OyesesConfig         get oyeses         => oyesesConfig         ?? OyesesConfig.def;
@@ -993,6 +1103,7 @@ class BetModuleInstance {
     BetModuleType.skins         => skins.valuePerSkin,
     BetModuleType.nassau        => nassau.frontValue,
     BetModuleType.matchAutoPress=> matchAutoPress.matchValue,
+    BetModuleType.nassauPress   => nassauPress.frontValue,
     BetModuleType.medal         => medal.value,
     BetModuleType.putts         => putts.value,
     BetModuleType.oyeses        => oyeses.value,
@@ -1003,13 +1114,17 @@ class BetModuleInstance {
     BetModuleType.skins         => skins.mode == GrossNetMode.net,
     BetModuleType.nassau        => nassau.mode == GrossNetMode.net,
     BetModuleType.matchAutoPress=> matchAutoPress.mode == GrossNetMode.net,
+    BetModuleType.nassauPress   => nassauPress.mode == GrossNetMode.net,
     BetModuleType.medal         => medal.mode == GrossNetMode.net,
     _                           => false,
   };
 
   bool get carryOver    => type == BetModuleType.skins  && skins.carryOver;
-  bool get pressEnabled => type == BetModuleType.nassau && nassau.pressEnabled;
-  int  get pressTrigger => nassau.autoPressTrigger;
+  bool get pressEnabled => (type == BetModuleType.nassau && nassau.pressEnabled)
+                        || type == BetModuleType.nassauPress;
+  int  get pressTrigger => type == BetModuleType.nassauPress
+      ? nassauPress.pressTriggerValue
+      : nassau.autoPressTrigger;
 
   Map<String, dynamic> get extra => type == BetModuleType.nassau ? {
     'frontValue': nassau.frontValue,
@@ -1030,6 +1145,13 @@ class BetModuleInstance {
                             'Match \$${matchAutoPress.matchValue.toStringAsFixed(0)}'
                             ' · Press \$${matchAutoPress.pressValue.toStringAsFixed(0)}'
                             ' · trigger ${matchAutoPress.pressTriggerValue}up',
+    BetModuleType.nassauPress =>
+                            'F\$${nassauPress.frontValue.toStringAsFixed(0)}'
+                            ' B\$${nassauPress.backValue.toStringAsFixed(0)}'
+                            ' T\$${nassauPress.totalValue.toStringAsFixed(0)}'
+                            ' · Press F\$${nassauPress.frontPressValue.toStringAsFixed(0)}'
+                            '/B\$${nassauPress.backPressValue.toStringAsFixed(0)}'
+                            '${nassauPress.carryEnabled ? ' · Carry' : ''}',
     BetModuleType.medal  => '\$${medal.value.toStringAsFixed(0)}'
                             ' · ${medal.holes}H'
                             ' · ${medal.mode == GrossNetMode.net ? 'Net' : 'Gross'}',
@@ -1052,6 +1174,7 @@ class BetModuleInstance {
     SkinsConfig?          skinsConfig,
     NassauConfig?         nassauConfig,
     MatchAutoPressConfig? matchAutoPressConfig,
+    NassauPressConfig?    nassauPressConfig,
     MedalConfig?          medalConfig,
     PuttsConfig?          puttsConfig,
     OyesesConfig?         oyesesConfig,
@@ -1067,6 +1190,7 @@ class BetModuleInstance {
     skinsConfig:          skinsConfig          ?? this.skinsConfig,
     nassauConfig:         nassauConfig         ?? this.nassauConfig,
     matchAutoPressConfig: matchAutoPressConfig ?? this.matchAutoPressConfig,
+    nassauPressConfig:    nassauPressConfig    ?? this.nassauPressConfig,
     medalConfig:          medalConfig          ?? this.medalConfig,
     puttsConfig:          puttsConfig          ?? this.puttsConfig,
     oyesesConfig:         oyesesConfig         ?? this.oyesesConfig,
@@ -1085,6 +1209,7 @@ class BetModuleInstance {
     if (skinsConfig          != null) 'skinsConfig':          skinsConfig!.toJson(),
     if (nassauConfig         != null) 'nassauConfig':         nassauConfig!.toJson(),
     if (matchAutoPressConfig != null) 'matchAutoPressConfig': matchAutoPressConfig!.toJson(),
+    if (nassauPressConfig    != null) 'nassauPressConfig':    nassauPressConfig!.toJson(),
     if (medalConfig          != null) 'medalConfig':          medalConfig!.toJson(),
     if (puttsConfig          != null) 'puttsConfig':          puttsConfig!.toJson(),
     if (oyesesConfig         != null) 'oyesesConfig':         oyesesConfig!.toJson(),
@@ -1124,6 +1249,7 @@ class BetModuleInstance {
       skinsConfig:          j['skinsConfig']          != null ? SkinsConfig.fromJson(asMap(j['skinsConfig']))          : null,
       nassauConfig:         j['nassauConfig']         != null ? NassauConfig.fromJson(asMap(j['nassauConfig']))         : null,
       matchAutoPressConfig: j['matchAutoPressConfig'] != null ? MatchAutoPressConfig.fromJson(asMap(j['matchAutoPressConfig'])) : null,
+      nassauPressConfig:    j['nassauPressConfig']    != null ? NassauPressConfig.fromJson(asMap(j['nassauPressConfig'])) : null,
       medalConfig:          j['medalConfig']          != null ? MedalConfig.fromJson(asMap(j['medalConfig']))          : null,
       puttsConfig:          j['puttsConfig']          != null ? PuttsConfig.fromJson(asMap(j['puttsConfig']))          : null,
       oyesesConfig:         j['oyesesConfig']         != null ? OyesesConfig.fromJson(asMap(j['oyesesConfig']))        : null,
@@ -1152,6 +1278,7 @@ class BetModuleInstance {
       skinsConfig:          type == BetModuleType.skins         ? SkinsConfig.def          : null,
       nassauConfig:         type == BetModuleType.nassau        ? NassauConfig.def         : null,
       matchAutoPressConfig: type == BetModuleType.matchAutoPress? MatchAutoPressConfig.def : null,
+      nassauPressConfig:    type == BetModuleType.nassauPress   ? NassauPressConfig.def    : null,
       medalConfig:          type == BetModuleType.medal         ? MedalConfig.def          : null,
       puttsConfig:          type == BetModuleType.putts         ? PuttsConfig.def          : null,
       oyesesConfig:         type == BetModuleType.oyeses        ? OyesesConfig.def         : null,

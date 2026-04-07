@@ -1544,7 +1544,7 @@ class _ActiveRoundView extends StatelessWidget {
 
           Text('MATCH PLAY', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
           const SizedBox(height: 8),
-          ...[BetModuleType.nassau, BetModuleType.matchAutoPress].map((bt) =>
+          ...[BetModuleType.nassau, BetModuleType.matchAutoPress, BetModuleType.nassauPress].map((bt) =>
             _betTypeTileHome(bt, selected, setSt, t, group)),
           const SizedBox(height: 16),
           Text('OTRAS APUESTAS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
@@ -1600,7 +1600,7 @@ class _ActiveRoundView extends StatelessWidget {
 
   Widget _betTypeTileHome(BetModuleType bt, Set<BetModuleType> selected, StateSetter setSt, GolfTheme t, BetGroup group) {
     final isSel = selected.contains(bt);
-    final isMatchType = bt == BetModuleType.nassau || bt == BetModuleType.matchAutoPress;
+    final isMatchType = bt == BetModuleType.nassau || bt == BetModuleType.matchAutoPress || bt == BetModuleType.nassauPress;
     final accentColor = isMatchType ? t.accent : t.primary;
     final alreadyAdded = group.modules.any((m) => m.type == bt);
     return Padding(
