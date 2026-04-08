@@ -41,7 +41,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   late final TextEditingController _skinCtrl;
   late final TextEditingController _nassauF, _nassauB, _nassauT;
   late final TextEditingController _matchM, _matchP;
-  late final TextEditingController _npF, _npB, _npT, _npPF, _npPB;
+  late final TextEditingController _npPF, _npPB;
   late final TextEditingController _medalCtrl;
   late final TextEditingController _puttsCtrl;
   late final TextEditingController _oyesCtrl, _zapatoCtrl;
@@ -69,11 +69,8 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _nassauT    = TextEditingController(text: m.nassau.totalValue.toStringAsFixed(0));
     _matchM     = TextEditingController(text: m.matchAutoPress.matchValue.toStringAsFixed(0));
     _matchP     = TextEditingController(text: m.matchAutoPress.pressValue.toStringAsFixed(0));
-    _npF        = TextEditingController(text: m.nassauPress.frontValue.toStringAsFixed(0));
-    _npB        = TextEditingController(text: m.nassauPress.backValue.toStringAsFixed(0));
-    _npT        = TextEditingController(text: m.nassauPress.totalValue.toStringAsFixed(0));
-    _npPF       = TextEditingController(text: m.nassauPress.frontPressValue.toStringAsFixed(0));
-    _npPB       = TextEditingController(text: m.nassauPress.backPressValue.toStringAsFixed(0));
+    _npPF       = TextEditingController(text: m.nassau.frontPressValue.toStringAsFixed(0));
+    _npPB       = TextEditingController(text: m.nassau.backPressValue.toStringAsFixed(0));
     _medalCtrl  = TextEditingController(text: m.medal.value.toStringAsFixed(0));
     _puttsCtrl  = TextEditingController(text: m.putts.value.toStringAsFixed(0));
     _oyesCtrl   = TextEditingController(text: m.oyeses.value.toStringAsFixed(0));
@@ -105,7 +102,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _skinCtrl.dispose();
     _nassauF.dispose(); _nassauB.dispose(); _nassauT.dispose();
     _matchM.dispose(); _matchP.dispose();
-    _npF.dispose(); _npB.dispose(); _npT.dispose(); _npPF.dispose(); _npPB.dispose();
+    _npPF.dispose(); _npPB.dispose();
     _medalCtrl.dispose();
     _puttsCtrl.dispose();
     _oyesCtrl.dispose(); _zapatoCtrl.dispose();
@@ -262,7 +259,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       case BetModuleType.skins:         return _skinsFields(t);
       case BetModuleType.nassau:        return _nassauFields(t);
       case BetModuleType.matchAutoPress: return _matchFields(t);
-      case BetModuleType.nassauPress:   return _nassauPressFields(t);
+
       case BetModuleType.medal:         return _medalFields(t);
       case BetModuleType.putts:         return _puttsFields(t);
       case BetModuleType.oyeses:        return _oyesesFields(t);
@@ -586,14 +583,19 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     ];
   }
 
-  // ── NASSAU ──────────────────────────────────────────────────────────────────
+  // ── NASSAU ────────────────────────────────────────────────────────────────────────
   List<Widget> _nassauFields(GolfTheme t) {
     final n = _current.nassau;
     void saveNassau() {
-      final fv = double.tryParse(_nassauF.text) ?? n.frontValue;
-      final bv = double.tryParse(_nassauB.text) ?? n.backValue;
-      final tv = double.tryParse(_nassauT.text) ?? n.totalValue;
-      _update(_current.copyWith(nassauConfig: n.copyWith(frontValue: fv, backValue: bv, totalValue: tv)));
+      final fv  = double.tryParse(_nassauF.text) ?? n.frontValue;
+      final bv  = double.tryParse(_nassauB.text) ?? n.backValue;
+      final tv  = double.tryParse(_nassauT.text) ?? n.totalValue;
+      final pfv = double.tryParse(_npPF.text)    ?? n.frontPressValue;
+      final pbv = double.tryParse(_npPB.text)    ?? n.backPressValue;
+      _update(_current.copyWith(nassauConfig: n.copyWith(
+        frontValue: fv, backValue: bv, totalValue: tv,
+        frontPressValue: pfv, backPressValue: pbv,
+      )));
     }
     return [
       _label('VALORES', t),
@@ -616,6 +618,19 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         _label('TRIGGER', t),
         _segmented(['1 down', '2 down', '3 down'], n.autoPressTrigger - 1, t, (i) {
           _update(_current.copyWith(nassauConfig: n.copyWith(autoPressTrigger: i + 1)));
+        }),
+        const SizedBox(height: 16),
+        _label('VALOR PRESS', t),
+        _amountField('Press Front 9', _npPF, t, onChanged: (_) => saveNassau()),
+        const SizedBox(height: 8),
+        _amountField('Press Back 9', _npPB, t, onChanged: (_) => saveNassau()),
+        const SizedBox(height: 16),
+        _toggle('Presiones múltiples', n.allowMultiplePresses ? 'Puede haber más de una por segmento' : 'Solo 1 por segmento', n.allowMultiplePresses, t, (v) {
+          _update(_current.copyWith(nassauConfig: n.copyWith(allowMultiplePresses: v)));
+        }),
+        const SizedBox(height: 16),
+        _toggle('Carry en Back 9', n.carryEnabled ? 'Si F9 empata, B9 vale x${n.carryFactor.toStringAsFixed(0)}' : 'Sin carry', n.carryEnabled, t, (v) {
+          _update(_current.copyWith(nassauConfig: n.copyWith(carryEnabled: v)));
         }),
       ],
     ];
@@ -642,74 +657,6 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       _label('JUEGO', t),
       _segmented(['Gross', 'Net'], m.mode == GrossNetMode.net ? 1 : 0, t, (i) {
         _update(_current.copyWith(matchAutoPressConfig: m.copyWith(mode: i == 1 ? GrossNetMode.net : GrossNetMode.gross)));
-      }),
-    ];
-  }
-
-  // ── NASSAU + PRESS ──────────────────────────────────────────────────────────
-  List<Widget> _nassauPressFields(GolfTheme t) {
-    final n = _current.nassauPress;
-
-    void saveNP({
-      double? fv, double? bv, double? tv,
-      double? pfv, double? pbv,
-    }) {
-      _update(_current.copyWith(nassauPressConfig: n.copyWith(
-        frontValue:       fv  ?? double.tryParse(_npF.text)  ?? n.frontValue,
-        backValue:        bv  ?? double.tryParse(_npB.text)  ?? n.backValue,
-        totalValue:       tv  ?? double.tryParse(_npT.text)  ?? n.totalValue,
-        frontPressValue:  pfv ?? double.tryParse(_npPF.text) ?? n.frontPressValue,
-        backPressValue:   pbv ?? double.tryParse(_npPB.text) ?? n.backPressValue,
-      )));
-    }
-
-    return [
-      // ── Valores Nassau ─────────────────────────────────────────────────────
-      _label('VALORES NASSAU', t),
-      _amountField('Front 9', _npF, t, onChanged: (_) => saveNP()),
-      const SizedBox(height: 8),
-      _amountField('Back 9',  _npB, t, onChanged: (_) => saveNP()),
-      const SizedBox(height: 8),
-      _amountField('Total 18', _npT, t, onChanged: (_) => saveNP()),
-      const SizedBox(height: 16),
-
-      // ── Valores de presión por segmento ────────────────────────────────────
-      _label('VALOR PRESS', t),
-      _amountField('Press Front 9', _npPF, t, onChanged: (_) => saveNP()),
-      const SizedBox(height: 8),
-      _amountField('Press Back 9',  _npPB, t, onChanged: (_) => saveNP()),
-      const SizedBox(height: 16),
-
-      // ── Trigger ────────────────────────────────────────────────────────────
-      _label('TRIGGER (down para nueva presión)', t),
-      _segmented(['1 down', '2 down', '3 down'], n.pressTriggerValue - 1, t, (i) {
-        _update(_current.copyWith(nassauPressConfig: n.copyWith(pressTriggerValue: i + 1)));
-      }),
-      const SizedBox(height: 16),
-
-      // ── Presiones múltiples ────────────────────────────────────────────────
-      _toggle('Presiones múltiples por segmento',
-          n.allowMultiplePresses ? 'Se puede abrir más de una presión' : 'Solo 1 presión por segmento',
-          n.allowMultiplePresses, t, (v) {
-        _update(_current.copyWith(nassauPressConfig: n.copyWith(allowMultiplePresses: v)));
-      }),
-      const SizedBox(height: 16),
-
-      // ── Carry ──────────────────────────────────────────────────────────────
-      _toggle('Carry en Back 9',
-          n.carryEnabled
-              ? 'Si F9 empata, el B9 vale x${n.carryFactor.toStringAsFixed(0)}'
-              : 'Sin carry',
-          n.carryEnabled, t, (v) {
-        _update(_current.copyWith(nassauPressConfig: n.copyWith(carryEnabled: v)));
-      }),
-      const SizedBox(height: 16),
-
-      // ── Modo Gross/Net ─────────────────────────────────────────────────────
-      _label('JUEGO', t),
-      _segmented(['Gross', 'Net'], n.mode == GrossNetMode.net ? 1 : 0, t, (i) {
-        _update(_current.copyWith(nassauPressConfig: n.copyWith(
-            mode: i == 1 ? GrossNetMode.net : GrossNetMode.gross)));
       }),
     ];
   }

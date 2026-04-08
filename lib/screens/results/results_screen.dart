@@ -757,7 +757,6 @@ class _PlayerFaceToFace extends StatelessWidget {
                     final order = [
                       BetModuleType.skins,
                       BetModuleType.nassau,
-                      BetModuleType.nassauPress,
                       BetModuleType.matchAutoPress,
                       BetModuleType.medal,
                       BetModuleType.putts,

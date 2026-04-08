@@ -1529,10 +1529,7 @@ class _SetupScreenState extends State<SetupScreen> {
               _infoChip('Press ON', t.accent, t),
             if (mod.type == BetModuleType.matchAutoPress)
               _infoChip('⚡ Auto Press', t.accent, t),
-            if (mod.type == BetModuleType.nassauPress) ...[
-              _infoChip('⚡ Press Auto', t.accent, t),
-              if (mod.nassauPress.carryEnabled) _infoChip('🔄 Carry', t.profit, t),
-            ],
+
             _infoChip(mod.useHandicap ? 'Net' : 'Gross', t.primary, t),
           ]),
         ]),
@@ -1806,18 +1803,28 @@ class _SetupScreenState extends State<SetupScreen> {
         ];
 
       case BetModuleType.nassau:
-        final n = cfg.nassau;        final cFront = TextEditingController(text: n.frontValue.toStringAsFixed(0));
+        final n = cfg.nassau;
+        final cFront = TextEditingController(text: n.frontValue.toStringAsFixed(0));
         final cBack  = TextEditingController(text: n.backValue.toStringAsFixed(0));
         final cTotal = TextEditingController(text: n.totalValue.toStringAsFixed(0));
+        final cPF    = TextEditingController(text: n.frontPressValue.toStringAsFixed(0));
+        final cPB    = TextEditingController(text: n.backPressValue.toStringAsFixed(0));
         void saveNassauValues() {
-          final fv = double.tryParse(cFront.text) ?? n.frontValue;
-          final bv = double.tryParse(cBack.text)  ?? n.backValue;
-          final tv = double.tryParse(cTotal.text) ?? n.totalValue;
-          update(cfg.copyWith(nassauConfig: n.copyWith(frontValue: fv, backValue: bv, totalValue: tv)));
+          final fv  = double.tryParse(cFront.text) ?? n.frontValue;
+          final bv  = double.tryParse(cBack.text)  ?? n.backValue;
+          final tv  = double.tryParse(cTotal.text) ?? n.totalValue;
+          final pfv = double.tryParse(cPF.text)    ?? n.frontPressValue;
+          final pbv = double.tryParse(cPB.text)    ?? n.backPressValue;
+          update(cfg.copyWith(nassauConfig: n.copyWith(
+            frontValue: fv, backValue: bv, totalValue: tv,
+            frontPressValue: pfv, backPressValue: pbv,
+          )));
         }
         cFront.addListener(saveNassauValues);
         cBack.addListener(saveNassauValues);
         cTotal.addListener(saveNassauValues);
+        cPF.addListener(saveNassauValues);
+        cPB.addListener(saveNassauValues);
         return [
           ...formatSelector,
           _sectionLabel('VALORES', t),
@@ -1837,7 +1844,7 @@ class _SetupScreenState extends State<SetupScreen> {
           _toggleRow(
             title: 'Activar presiones (Press)',
             subtitle: n.pressEnabled
-                ? 'Si vas ${n.autoPressTrigger} down se activa una presión automáticamente'
+                ? 'Si vas ${n.autoPressTrigger} down se abre una presión automáticamente'
                 : 'Sin presiones — solo Front 9, Back 9 y Total',
             value: n.pressEnabled,
             onChanged: (v) => setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(pressEnabled: v)))),
@@ -1850,14 +1857,42 @@ class _SetupScreenState extends State<SetupScreen> {
             _segmentedRow(['1 down', '2 down', '3 down'], n.autoPressTrigger - 1, t, (i) {
               setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(autoPressTrigger: i + 1))));
             }),
+            const SizedBox(height: 16),
+            _sectionLabel('VALOR DE PRESIONES', t),
+            const SizedBox(height: 6),
+            Text('Monto que vale cada presión dentro del segmento.',
+                style: TextStyle(color: t.sub, fontSize: 11)),
+            const SizedBox(height: 8),
+            _amountField('Press Front 9', cPF, t),
+            const SizedBox(height: 8),
+            _amountField('Press Back 9', cPB, t),
+            const SizedBox(height: 16),
+            _toggleRow(
+              title: 'Presiones múltiples por segmento',
+              subtitle: n.allowMultiplePresses
+                  ? 'Se pueden abrir varias presiones en el mismo segmento'
+                  : 'Máximo una presión activa por segmento',
+              value: n.allowMultiplePresses,
+              onChanged: (v) => setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(allowMultiplePresses: v)))),
+              t: t,
+            ),
+            const SizedBox(height: 16),
+            _toggleRow(
+              title: 'Carry en Back 9',
+              subtitle: n.carryEnabled
+                  ? 'Si el F9 termina empatado, el B9 (y sus presiones) valen x${n.carryFactor.toStringAsFixed(0)}'
+                  : 'Sin carry — el B9 siempre vale su valor normal',
+              value: n.carryEnabled,
+              onChanged: (v) => setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(carryEnabled: v)))),
+              t: t,
+            ),
           ],
         ];
 
       case BetModuleType.matchAutoPress:
         return [...formatSelector, ..._matchAutoPressConfig(cfg, t, setSt, update)];
 
-      case BetModuleType.nassauPress:
-        return [...formatSelector, ..._nassauPressConfigWidgets(cfg, t, setSt, update)];
+
 
       case BetModuleType.medal:
         final m = cfg.medal;
@@ -2153,103 +2188,7 @@ class _SetupScreenState extends State<SetupScreen> {
     ];
   }
 
-  // ── NASSAU + PRESS config widgets (reutilizable desde _configWidgets) ───────
-  List<Widget> _nassauPressConfigWidgets(BetModuleInstance cfg, GolfTheme t, StateSetter setSt, void Function(BetModuleInstance) update) {
-    final n = cfg.nassauPress;
-    final cF   = TextEditingController(text: n.frontValue.toStringAsFixed(0));
-    final cB   = TextEditingController(text: n.backValue.toStringAsFixed(0));
-    final cT   = TextEditingController(text: n.totalValue.toStringAsFixed(0));
-    final cPF  = TextEditingController(text: n.frontPressValue.toStringAsFixed(0));
-    final cPB  = TextEditingController(text: n.backPressValue.toStringAsFixed(0));
-    void saveNP() {
-      final fv  = double.tryParse(cF.text)  ?? n.frontValue;
-      final bv  = double.tryParse(cB.text)  ?? n.backValue;
-      final tv  = double.tryParse(cT.text)  ?? n.totalValue;
-      final pfv = double.tryParse(cPF.text) ?? n.frontPressValue;
-      final pbv = double.tryParse(cPB.text) ?? n.backPressValue;
-      update(cfg.copyWith(nassauPressConfig: n.copyWith(
-        frontValue: fv, backValue: bv, totalValue: tv,
-        frontPressValue: pfv, backPressValue: pbv,
-      )));
-    }
-    cF.addListener(saveNP); cB.addListener(saveNP); cT.addListener(saveNP);
-    cPF.addListener(saveNP); cPB.addListener(saveNP);
 
-    return [
-      _sectionLabel('VALORES NASSAU', t),
-      const SizedBox(height: 8),
-      _amountField('Front 9', cF, t),
-      const SizedBox(height: 8),
-      _amountField('Back 9',  cB, t),
-      const SizedBox(height: 8),
-      _amountField('Total 18', cT, t),
-      const SizedBox(height: 16),
-      _sectionLabel('VALOR DE PRESIONES', t),
-      const SizedBox(height: 6),
-      Text('Cada presión dentro del segmento vale este monto.',
-          style: TextStyle(color: t.sub, fontSize: 11)),
-      const SizedBox(height: 8),
-      _amountField('Press Front 9', cPF, t),
-      const SizedBox(height: 8),
-      _amountField('Press Back 9',  cPB, t),
-      const SizedBox(height: 16),
-      _sectionLabel('TRIGGER DE PRESIÓN', t),
-      const SizedBox(height: 6),
-      Text('Se abre una presión cuando vas N hoyos abajo en el segmento.',
-          style: TextStyle(color: t.sub, fontSize: 11)),
-      const SizedBox(height: 8),
-      _segmentedRow(['1 down', '2 down', '3 down'], n.pressTriggerValue - 1, t, (i) {
-        setSt(() => update(cfg.copyWith(nassauPressConfig: n.copyWith(pressTriggerValue: i + 1))));
-      }),
-      const SizedBox(height: 16),
-      _toggleRow(
-        title: 'Presiones múltiples por segmento',
-        subtitle: n.allowMultiplePresses
-            ? 'Se pueden abrir varias presiones en el mismo segmento'
-            : 'Máximo una presión activa por segmento',
-        value: n.allowMultiplePresses,
-        onChanged: (v) => setSt(() => update(cfg.copyWith(nassauPressConfig: n.copyWith(allowMultiplePresses: v)))),
-        t: t,
-      ),
-      const SizedBox(height: 16),
-      _toggleRow(
-        title: 'Carry en Back 9',
-        subtitle: n.carryEnabled
-            ? 'Si el F9 termina empatado, el B9 (y sus presiones) valen x${n.carryFactor.toStringAsFixed(0)}'
-            : 'Sin carry — el B9 siempre vale su valor normal',
-        value: n.carryEnabled,
-        onChanged: (v) => setSt(() => update(cfg.copyWith(nassauPressConfig: n.copyWith(carryEnabled: v)))),
-        t: t,
-      ),
-      const SizedBox(height: 16),
-      _sectionLabel('HANDICAP', t),
-      const SizedBox(height: 8),
-      _segmentedRow(['Gross', 'Net'], n.mode == GrossNetMode.net ? 1 : 0, t, (i) {
-        setSt(() => update(cfg.copyWith(nassauPressConfig: n.copyWith(mode: i == 1 ? GrossNetMode.net : GrossNetMode.gross))));
-      }),
-      const SizedBox(height: 20),
-      // Vista previa
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: t.accent.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: t.accent.withValues(alpha: 0.3)),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('🏆  CÓMO FUNCIONA ESTE JUEGO', style: TextStyle(color: t.accent, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.6)),
-          const SizedBox(height: 8),
-          _previewRow('🏌️', 'Nassau: F9 / B9 / Total 18', 'independientes', t),
-          const SizedBox(height: 4),
-          _previewRow('⚡', 'Presiones auto por segmento', 'trigger: ${n.pressTriggerValue} down', t),
-          const SizedBox(height: 4),
-          _previewRow('🎯', 'Cada presión termina al', 'final del segmento', t),
-          const SizedBox(height: 4),
-          _previewRow('🔄', 'Carry B9', n.carryEnabled ? 'Si F9 empata → B9 x${n.carryFactor.toStringAsFixed(0)}' : 'Desactivado', t),
-        ]),
-      ),
-    ];
-  }
 
   Widget _previewRow(String icon, String label, String value, GolfTheme t) {
     return Row(children: [
@@ -2445,7 +2384,7 @@ class _SetupScreenState extends State<SetupScreen> {
           // ── Grupo Match / Apuestas de 18 hoyos ──────────────────────────
           Text('MATCH PLAY', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
           const SizedBox(height: 8),
-          ...[BetModuleType.nassau, BetModuleType.matchAutoPress, BetModuleType.nassauPress].map((bt) => _betTypeTile(bt, selected, setSt, t)),
+          ...[BetModuleType.nassau, BetModuleType.matchAutoPress].map((bt) => _betTypeTile(bt, selected, setSt, t)),
           const SizedBox(height: 16),
 
           // ── Grupo apuestas individuales ───────────────────────────────
@@ -2483,7 +2422,7 @@ class _SetupScreenState extends State<SetupScreen> {
   Widget _betTypeTile(BetModuleType bt, Set<BetModuleType> selected, StateSetter setSt, GolfTheme t) {
     final isSel = selected.contains(bt);
     // Colores especiales para Match types
-    final isMatchType = bt == BetModuleType.nassau || bt == BetModuleType.matchAutoPress || bt == BetModuleType.nassauPress;
+    final isMatchType = bt == BetModuleType.nassau || bt == BetModuleType.matchAutoPress;
     final accentColor = isMatchType ? t.accent : t.primary;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
