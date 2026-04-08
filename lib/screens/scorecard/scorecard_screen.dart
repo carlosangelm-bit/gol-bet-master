@@ -1965,18 +1965,20 @@ class _MatchStatusCard extends StatelessWidget {
     final lastH       = GameEngine.lastCompletedHole(round, [p1.id, p2.id]);
     final playedCount = st.frontPlayed + st.backPlayed;
 
-    // ── Resultado global (F9 + B9 + Total) como marcador de Nassau ───────────
-    // Contamos cuántos segmentos gana cada jugador (F9, B9, Total)
+    // ── Resultado global: segmentos COMPLETADOS ganados por cada jugador ───────
+    // Solo se cuenta un segmento cuando se jugaron sus 9 hoyos completos.
+    // Un segmento en curso (< 9 hoyos) no se asigna como ganado — influye
+    // solo como desempate visual cuando segsP1 == segsP2.
     int segsP1 = 0, segsP2 = 0;
-    if (st.frontPlayed > 0) {
+    if (st.frontPlayed >= 9) {          // F9 completado
       if (st.front > 0) segsP1++;
       else if (st.front < 0) segsP2++;
     }
-    if (st.backPlayed > 0) {
+    if (st.backPlayed >= 9) {           // B9 completado
       if (st.back > 0) segsP1++;
       else if (st.back < 0) segsP2++;
     }
-    if (playedCount >= 18) {
+    if (playedCount >= 18) {            // Total completado
       if (st.total > 0) segsP1++;
       else if (st.total < 0) segsP2++;
     }
@@ -2025,22 +2027,26 @@ class _MatchStatusCard extends StatelessWidget {
             : 'B9: ${st.back > 0 ? n1 : n2} ${st.back.abs()}UP';
     diffLabel = '$fLabel  ·  $bLabel';
 
+    // ── Color basado en segmentos ganados (F9/B9/Total), no en balance monetario
+    // Esto es más intuitivo: verde = ganando más segmentos, rojo = perdiendo más
+    // El balance monetario (npBal) se usa solo para el chip de dinero
     if (playedCount == 0) {
       accentColor = const Color(0xFF607D8B);
       gradColors  = const [Color(0xFF37474F), Color(0xFF1C1C1E)];
       stateWord   = 'NASSAU';
-    } else if (npBal == 0) {
-      accentColor = const Color(0xFF1565C0);
-      gradColors  = const [Color(0xFF1A3A6B), Color(0xFF0D1F3C)];
-      stateWord   = 'EMPATADO';
-    } else if (npBal > 0) {
+    } else if (segsP1 > segsP2) {
       accentColor = const Color(0xFF35C759);
       gradColors  = const [Color(0xFF1F8F3A), Color(0xFF0E3D1B)];
       stateWord   = 'GANANDO';
-    } else {
+    } else if (segsP2 > segsP1) {
       accentColor = const Color(0xFFFF453A);
       gradColors  = const [Color(0xFF7A1E1E), Color(0xFF2A0E0E)];
       stateWord   = 'PERDIENDO';
+    } else {
+      // segsP1 == segsP2: ninguno lleva ventaja en segmentos cerrados
+      accentColor = const Color(0xFF1565C0);
+      gradColors  = const [Color(0xFF1A3A6B), Color(0xFF0D1F3C)];
+      stateWord   = 'EMPATADO';
     }
 
     // subLabel: presiones activas
