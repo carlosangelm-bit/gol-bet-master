@@ -15,7 +15,7 @@ import '../../widgets/common_widgets.dart';
 import '../../widgets/sliding_adjustment_dialog.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HELPER: paleta de gradientes adaptada a cada GolfTheme
+// HELPER: paleta de colores sólidos por estado — sin gradientes que desaparezcan
 // ─────────────────────────────────────────────────────────────────────────────
 class _ThemeGrad {
   final GolfTheme t;
@@ -23,107 +23,99 @@ class _ThemeGrad {
 
   bool get isLight => t.brightness == Brightness.light;
 
-  // Color base de fondo del scaffold
-  Color get scaffoldBg => t.bg;
+  // ── Colores de superficie ──────────────────────────────────────────────────
+  Color get scaffoldBg  => t.bg;
+  Color get cardSurface => isLight ? Colors.white : const Color(0xFF1C1C1E);
+  Color get cardBorder  => isLight ? const Color(0xFFE8E8EC) : const Color(0xFF2C2C30);
 
-  // Gradiente del header (dos colores)
+  // ── Header ────────────────────────────────────────────────────────────────
+  // Gradiente sólido de arriba a abajo, siempre visible
   List<Color> get header => isLight
-      ? [t.primary.withValues(alpha: 0.10), t.bg]
-      : [t.primary.withValues(alpha: 0.22), t.bg];
+      ? [t.primary, t.primary.withValues(alpha: 0.82)]
+      : [const Color(0xFF1A1A2E), const Color(0xFF16213E)];
 
-  Color get headerBorder => t.divider;
+  Color get headerText  => Colors.white;
+  Color get headerSub   => Colors.white.withValues(alpha: 0.70);
 
-  // Gradiente tarjeta hero ganador — positivo
-  List<Color> get winnerHeroPos => isLight
-      ? [t.profit.withValues(alpha: 0.08), t.card]
-      : [t.profit.withValues(alpha: 0.18), t.surface];
+  // ── Ganador hero ──────────────────────────────────────────────────────────
+  List<Color> heroGrad(bool isPos) => isPos
+      ? (isLight
+          ? [const Color(0xFF1B5E20), const Color(0xFF2E7D32)]
+          : [const Color(0xFF1B5E20), const Color(0xFF2E7D32)])
+      : (isLight
+          ? [const Color(0xFF7F0000), const Color(0xFFC62828)]
+          : [const Color(0xFF7F0000), const Color(0xFFC62828)]);
 
-  // Gradiente tarjeta hero ganador — negativo
-  List<Color> get winnerHeroNeg => isLight
-      ? [t.loss.withValues(alpha: 0.06), t.card]
-      : [t.loss.withValues(alpha: 0.16), t.surface];
+  Color get heroText   => Colors.white;
+  Color get heroSub    => Colors.white.withValues(alpha: 0.72);
 
-  // Color borde ganador pos/neg
-  Color winnerBorderPos(bool pos) => pos
-      ? t.profit.withValues(alpha: isLight ? 0.30 : 0.35)
-      : t.loss.withValues(alpha: isLight ? 0.25 : 0.30);
+  // ── Fila ranking compacta ─────────────────────────────────────────────────
+  Color get rankBg     => cardSurface;
+  Color get rankBorder => cardBorder;
 
-  // Color sombra ganador
-  Color winnerShadowPos(bool pos) => pos
-      ? t.profit.withValues(alpha: isLight ? 0.08 : 0.14)
-      : t.loss.withValues(alpha: isLight ? 0.06 : 0.12);
+  // ── Medallas ──────────────────────────────────────────────────────────────
+  List<Color> get medal1 => [const Color(0xFFFFC107), const Color(0xFFFF8F00)];
+  List<Color> get medal2 => [const Color(0xFFB0BEC5), const Color(0xFF78909C)];
+  List<Color> get medal3 => [const Color(0xFFBF9660), const Color(0xFF8D6E3A)];
+  List<Color> get medalN => [const Color(0xFF757575), const Color(0xFF616161)];
+  List<Color> medalGrad(int rank) => rank == 1 ? medal1 : rank == 2 ? medal2 : rank == 3 ? medal3 : medalN;
 
-  // Fondo filas de ranking
-  Color get rankingRowBg => t.card;
-  Color get rankingRowBorder => t.divider;
+  Color get medal1Shadow => const Color(0xFFFFC107).withValues(alpha: 0.45);
 
-  // Gradiente tarjeta de pago
-  List<Color> get paymentCard => isLight
-      ? [t.loss.withValues(alpha: 0.05), t.card]
-      : [t.loss.withValues(alpha: 0.12), t.surface];
+  // ── Monto ─────────────────────────────────────────────────────────────────
+  Color amountHero(bool isPos) => Colors.white;
+  Color amountRow(bool isPos)  => isPos ? t.profit : t.loss;
 
-  Color get paymentBorder => t.loss.withValues(alpha: isLight ? 0.20 : 0.25);
-
-  // Fondo monto del pago
-  List<Color> get paymentAmount => isLight
-      ? [t.loss.withValues(alpha: 0.10), t.card]
-      : [t.loss.withValues(alpha: 0.20), t.surface];
-
-  // Fondo sección de detalle por jugador
-  Color get detailCardBg => t.card;
-  Color detailCardBorder(bool expanded) => expanded
-      ? t.accent.withValues(alpha: isLight ? 0.40 : 0.35)
-      : t.divider;
-
-  // Fondo tarjeta duelo cara a cara
-  Color get duelCardBg => t.surface;
-
-  // Etiqueta dorada de sección (dorado en dark/classic, verde primario en light)
-  Color get sectionLabelColor => isLight ? t.primary : t.accent;
-
-  // Icono trofeo header
-  List<Color> get trophyGrad => isLight
-      ? [t.primary, t.primary.withValues(alpha: 0.70)]
-      : [t.accent, t.primary];
-
-  // Botón cerrar ronda
-  List<Color> get closeRoundGrad => isLight
-      ? [t.primary, t.primary.withValues(alpha: 0.80)]
-      : [t.profit.withValues(alpha: 0.90), t.profit.withValues(alpha: 0.60)];
-
-  Color get closeRoundBorder => t.profit.withValues(alpha: 0.40);
-  Color get closeRoundText   => isLight ? t.onPrimary : t.bg;
-
-  // Medalla #1 (dorado siempre, pero más suave en light)
-  List<Color> get medal1 => isLight
-      ? [const Color(0xFFF9A825), const Color(0xFFE65100)]
-      : [const Color(0xFFF9A825), const Color(0xFFFF8F00)];
-
-  Color get medal1Shadow => const Color(0xFFF9A825).withValues(alpha: isLight ? 0.25 : 0.40);
-
-  // Texto del monto grande
-  Color amountColor(bool isPos) => isPos ? t.profit : t.loss;
-
-  // Colores semáforo para chips de balance en duelo
+  // ── Chip balance duelo ────────────────────────────────────────────────────
   Color chipBg(double bal) {
-    if (bal == 0) return t.scoreUnder.withValues(alpha: 0.12);
-    return (bal > 0 ? t.profit : t.loss).withValues(alpha: 0.12);
+    if (bal == 0) return t.scoreUnder.withValues(alpha: 0.15);
+    return (bal > 0 ? t.profit : t.loss).withValues(alpha: 0.15);
   }
-
   Color chipBorder(double bal) {
-    if (bal == 0) return t.scoreUnder.withValues(alpha: 0.40);
-    return (bal > 0 ? t.profit : t.loss).withValues(alpha: 0.40);
+    if (bal == 0) return t.scoreUnder.withValues(alpha: 0.45);
+    return (bal > 0 ? t.profit : t.loss).withValues(alpha: 0.45);
   }
-
   Color chipText(double bal) {
     if (bal == 0) return t.scoreUnder;
     return bal > 0 ? t.profit : t.loss;
   }
 
-  // Chip de unidades
-  Color get unitChipBg     => t.accent.withValues(alpha: 0.10);
-  Color get unitChipBorder => t.accent.withValues(alpha: 0.28);
+  // ── Sección label ─────────────────────────────────────────────────────────
+  Color get sectionColor => isLight ? t.primary : t.accent;
+
+  // ── Transferencias ────────────────────────────────────────────────────────
+  // Fondo con contraste sólido, no transparente
+  List<Color> transferBg(bool isDark) => isDark
+      ? [const Color(0xFF1A1A2E), const Color(0xFF16213E)]
+      : [const Color(0xFFF8F9FF), const Color(0xFFEEF0F8)];
+
+  Color get transferBorder => isLight
+      ? const Color(0xFFD0D5E8)
+      : const Color(0xFF2A2A3E);
+
+  List<Color> get amountPillBg => isLight
+      ? [t.primary, t.primary.withValues(alpha: 0.80)]
+      : [const Color(0xFF3D5AFE), const Color(0xFF1A237E)];
+
+  Color get amountPillText => Colors.white;
+
+  // ── Duelo card ────────────────────────────────────────────────────────────
+  Color get duelBg     => isLight ? const Color(0xFFF4F5F9) : const Color(0xFF1E1E24);
+  Color get duelBorder => cardBorder;
+
+  // ── Unidades ─────────────────────────────────────────────────────────────
+  Color get unitChipBg     => t.accent.withValues(alpha: 0.12);
+  Color get unitChipBorder => t.accent.withValues(alpha: 0.30);
   Color get unitAccent     => t.accent;
+
+  // ── Botón cerrar ronda ───────────────────────────────────────────────────
+  List<Color> get closeRoundGrad => isLight
+      ? [Colors.white, Colors.white.withValues(alpha: 0.90)]
+      : [const Color(0xFF2E7D32), const Color(0xFF1B5E20)];
+  Color get closeRoundText => isLight ? t.primary : Colors.white;
+
+  // ── Trofeo ───────────────────────────────────────────────────────────────
+  Color get trophyColor => isLight ? Colors.white : t.accent;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,14 +161,14 @@ class _ResultsScreenState extends State<ResultsScreen> {
                 children: [
                   // NIVEL 1: Podio PGA
                   _PGAPodium(players: sortedPlayers, balances: balances, t: t, g: g),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 28),
 
                   // NIVEL 2: Pagos directos
                   if (netDebts.isNotEmpty) ...[
                     _PGASectionLabel(label: 'TRANSFERENCIAS', icon: Icons.currency_exchange_rounded, g: g),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     ...netDebts.map((d) => _PGAPaymentCard(debt: d, round: round, t: t, g: g)),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 28),
                   ],
 
                   // NIVEL 3: Detalle cara a cara
@@ -239,7 +231,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
   }
 }
 
-// ── Header PGA adaptado al tema ───────────────────────────────────────────────
+// ── Header con gradiente sólido siempre visible ───────────────────────────────
 class _PGAHeader extends StatelessWidget {
   final Round round;
   final GolfTheme t;
@@ -258,54 +250,44 @@ class _PGAHeader extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: g.header,
         ),
-        border: Border(bottom: BorderSide(color: g.headerBorder, width: 1)),
       ),
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
       child: Row(children: [
         // Ícono trofeo
         Container(
-          width: 38, height: 38,
+          width: 40, height: 40,
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: g.trophyGrad,
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: [BoxShadow(
-              color: g.trophyGrad.first.withValues(alpha: 0.30),
-              blurRadius: 8, offset: const Offset(0, 2),
-            )],
+            color: Colors.white.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(Icons.emoji_events_rounded, color: t.onPrimary, size: 20),
+          child: Icon(Icons.emoji_events_rounded, color: g.trophyColor, size: 22),
         ),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('RESULTADOS FINALES',
             style: TextStyle(
-              color: t.text, fontWeight: FontWeight.w900,
-              fontSize: 13, letterSpacing: 1.5,
+              color: g.headerText, fontWeight: FontWeight.w900,
+              fontSize: 13, letterSpacing: 1.4,
             )),
           Text(round.name,
-            style: TextStyle(color: t.sub, fontSize: 11),
+            style: TextStyle(color: g.headerSub, fontSize: 11),
             overflow: TextOverflow.ellipsis),
         ])),
         // Botón cerrar ronda
         GestureDetector(
           onTap: () => onFinish(context, round, prov, t),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
             decoration: BoxDecoration(
               gradient: LinearGradient(colors: g.closeRoundGrad),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: g.closeRoundBorder),
               boxShadow: [BoxShadow(
-                color: t.profit.withValues(alpha: 0.18),
-                blurRadius: 8,
+                color: Colors.black.withValues(alpha: 0.20),
+                blurRadius: 8, offset: const Offset(0, 2),
               )],
             ),
             child: Text('Cerrar ronda',
-              style: TextStyle(color: g.closeRoundText, fontWeight: FontWeight.w700, fontSize: 12)),
+              style: TextStyle(color: g.closeRoundText, fontWeight: FontWeight.w800, fontSize: 12)),
           ),
         ),
       ]),
@@ -313,7 +295,7 @@ class _PGAHeader extends StatelessWidget {
   }
 }
 
-// ── Label de sección estilo PGA adaptado al tema ──────────────────────────────
+// ── Label de sección ──────────────────────────────────────────────────────────
 class _PGASectionLabel extends StatelessWidget {
   final String label;
   final IconData icon;
@@ -322,23 +304,21 @@ class _PGASectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = g.sectionLabelColor;
+    final color = g.sectionColor;
     return Row(children: [
       Icon(icon, color: color, size: 14),
       const SizedBox(width: 8),
       Text(label, style: TextStyle(
-        color: color,
-        fontSize: 10,
-        fontWeight: FontWeight.w900,
-        letterSpacing: 2.0,
+        color: color, fontSize: 10,
+        fontWeight: FontWeight.w900, letterSpacing: 2.0,
       )),
       const SizedBox(width: 10),
-      Expanded(child: Container(height: 1, color: color.withValues(alpha: 0.22))),
+      Expanded(child: Container(height: 1, color: color.withValues(alpha: 0.25))),
     ]);
   }
 }
 
-// ── Podio PGA adaptado al tema ────────────────────────────────────────────────
+// ── Podio PGA ─────────────────────────────────────────────────────────────────
 class _PGAPodium extends StatelessWidget {
   final List<Player> players;
   final Map<String, double> balances;
@@ -350,7 +330,7 @@ class _PGAPodium extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(children: [
       if (players.isNotEmpty)
-        _WinnerHeroCard(player: players[0], balance: balances[players[0].id] ?? 0, t: t, g: g),
+        _WinnerHeroCard(player: players[0], balance: balances[players[0].id] ?? 0, rank: 1, t: t, g: g),
       if (players.length > 1) const SizedBox(height: 8),
       ...players.skip(1).toList().asMap().entries.map((e) {
         final rank = e.key + 2;
@@ -362,40 +342,40 @@ class _PGAPodium extends StatelessWidget {
   }
 }
 
-// Tarjeta hero ganador (#1)
+// ── Tarjeta hero: fondo de color sólido intenso, texto blanco ────────────────
 class _WinnerHeroCard extends StatelessWidget {
   final Player player;
   final double balance;
+  final int rank;
   final GolfTheme t;
   final _ThemeGrad g;
-  const _WinnerHeroCard({required this.player, required this.balance, required this.t, required this.g});
+  const _WinnerHeroCard({required this.player, required this.balance, required this.rank,
+      required this.t, required this.g});
 
   @override
   Widget build(BuildContext context) {
     final isPos = balance >= 0;
-    final heroGrad = isPos ? g.winnerHeroPos : g.winnerHeroNeg;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: heroGrad,
+          colors: g.heroGrad(isPos),
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: g.winnerBorderPos(isPos), width: 1.5),
         boxShadow: [BoxShadow(
-          color: g.winnerShadowPos(isPos),
-          blurRadius: 20,
-          spreadRadius: 2,
+          color: (isPos ? const Color(0xFF1B5E20) : const Color(0xFF7F0000))
+              .withValues(alpha: 0.40),
+          blurRadius: 18, offset: const Offset(0, 6),
         )],
       ),
       child: Row(children: [
         // Medalla #1
         Container(
-          width: 42, height: 42,
+          width: 44, height: 44,
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: g.medal1,
@@ -405,10 +385,9 @@ class _WinnerHeroCard extends StatelessWidget {
             shape: BoxShape.circle,
             boxShadow: [BoxShadow(color: g.medal1Shadow, blurRadius: 10)],
           ),
-          child: Center(
+          child: const Center(
             child: Text('1', style: TextStyle(
-              color: t.brightness == Brightness.light ? Colors.white : Colors.white,
-              fontWeight: FontWeight.w900, fontSize: 18,
+              color: Colors.white, fontWeight: FontWeight.w900, fontSize: 20,
             )),
           ),
         ),
@@ -417,45 +396,48 @@ class _WinnerHeroCard extends StatelessWidget {
         const SizedBox(width: 14),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(player.name,
-            style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
+            style: TextStyle(color: g.heroText, fontWeight: FontWeight.w800, fontSize: 16)),
           const SizedBox(height: 2),
           Text('HCP ${player.handicapBase.toStringAsFixed(0)}',
-            style: TextStyle(color: t.sub, fontSize: 11)),
-          const SizedBox(height: 6),
+            style: TextStyle(color: g.heroSub, fontSize: 11)),
+          const SizedBox(height: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
             decoration: BoxDecoration(
-              color: g.chipBg(isPos ? 1 : -1),
+              color: Colors.white.withValues(alpha: 0.20),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: g.chipBorder(isPos ? 1 : -1)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.40)),
             ),
             child: Text(
               isPos ? 'LÍDER  ·  COBRA' : 'PAGA',
-              style: TextStyle(
-                color: isPos ? t.profit : t.loss,
-                fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.0,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2,
               ),
             ),
           ),
         ])),
-        // Balance grande
+        // Balance grande en blanco sobre fondo oscuro
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
           Text(
             '\$${balance.abs().toStringAsFixed(0)}',
-            style: TextStyle(
-              color: g.amountColor(isPos),
+            style: const TextStyle(
+              color: Colors.white,
               fontWeight: FontWeight.w900,
-              fontSize: 28,
+              fontSize: 30,
             ),
           ),
-          Text('MXN', style: TextStyle(color: t.sub, fontSize: 10, letterSpacing: 0.5)),
+          Text('MXN', style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.65),
+            fontSize: 10, letterSpacing: 0.5,
+          )),
         ]),
       ]),
     );
   }
 }
 
-// Fila de ranking compacta (#2 en adelante)
+// ── Fila ranking compacta ─────────────────────────────────────────────────────
 class _RankingRow extends StatelessWidget {
   final int rank;
   final Player player;
@@ -468,39 +450,37 @@ class _RankingRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPos = balance >= 0;
-    // Gradientes de medalla: plata y bronce siempre igual de saturados según tema
-    final isLight = t.brightness == Brightness.light;
-    final medal2 = isLight
-        ? [const Color(0xFF78909C), const Color(0xFF546E7A)]
-        : [const Color(0xFFB0BEC5), const Color(0xFF78909C)];
-    final medal3 = isLight
-        ? [const Color(0xFF8D6E63), const Color(0xFF6D4C41)]
-        : [const Color(0xFFBF9660), const Color(0xFF8D6E3A)];
-    final medalN = [const Color(0xFF757575), const Color(0xFF616161)];
-
-    final medGrad = rank == 2 ? medal2 : rank == 3 ? medal3 : medalN;
+    final medGrad = g.medalGrad(rank);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: g.rankingRowBg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: g.rankingRowBorder, width: 1),
+          color: g.rankBg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: g.rankBorder, width: 1),
+          boxShadow: [BoxShadow(
+            color: Colors.black.withValues(alpha: g.isLight ? 0.04 : 0.18),
+            blurRadius: 8, offset: const Offset(0, 2),
+          )],
         ),
         child: Row(children: [
           Container(
-            width: 28, height: 28,
+            width: 30, height: 30,
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: medGrad),
+              gradient: LinearGradient(
+                colors: medGrad,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               shape: BoxShape.circle,
             ),
             child: Center(child: Text('$rank',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13))),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14))),
           ),
           const SizedBox(width: 10),
-          GAvatar(name: player.name, colorIndex: player.colorIndex, size: 36),
+          GAvatar(name: player.name, colorIndex: player.colorIndex, size: 38),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(player.name,
@@ -512,15 +492,14 @@ class _RankingRow extends StatelessWidget {
             Text(
               '\$${balance.abs().toStringAsFixed(0)}',
               style: TextStyle(
-                color: g.amountColor(isPos),
-                fontWeight: FontWeight.w800,
-                fontSize: 18,
+                color: g.amountRow(isPos),
+                fontWeight: FontWeight.w800, fontSize: 19,
               ),
             ),
             Text(
               isPos ? 'COBRA' : 'PAGA',
               style: TextStyle(
-                color: g.amountColor(isPos).withValues(alpha: 0.70),
+                color: g.amountRow(isPos).withValues(alpha: 0.70),
                 fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.8,
               ),
             ),
@@ -531,7 +510,7 @@ class _RankingRow extends StatelessWidget {
   }
 }
 
-// ── Tarjeta de pago adaptada al tema ─────────────────────────────────────────
+// ── Tarjeta de transferencia — diseño impactante ───────────────────────────────
 class _PGAPaymentCard extends StatelessWidget {
   final NetDebt debt;
   final Round round;
@@ -545,60 +524,151 @@ class _PGAPaymentCard extends StatelessWidget {
     final receiver = round.players.firstWhere((p) => p.id == debt.toPlayerId);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: g.paymentCard,
+            colors: g.transferBg(g.isLight ? false : true),
           ),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: g.paymentBorder),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: g.transferBorder, width: 1),
+          boxShadow: [BoxShadow(
+            color: Colors.black.withValues(alpha: g.isLight ? 0.06 : 0.28),
+            blurRadius: 12, offset: const Offset(0, 4),
+          )],
         ),
-        child: Row(children: [
-          // Pagador
-          Column(children: [
-            GAvatar(name: payer.name, colorIndex: payer.colorIndex, size: 38),
-            const SizedBox(height: 4),
-            Text(payer.name.split(' ').first,
-              style: TextStyle(color: t.text, fontSize: 11, fontWeight: FontWeight.w600)),
-            Text('PAGA', style: TextStyle(
-              color: t.loss, fontSize: 8, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
-          ]),
-          // Flecha + monto
-          Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(Icons.arrow_forward_rounded, color: t.loss, size: 18),
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: g.paymentAmount),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: t.loss.withValues(alpha: 0.40)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: Row(
+            children: [
+              // ── Pagador ──────────────────────────────────────────────────
+              _TransferPlayer(
+                player: payer,
+                label: 'PAGA',
+                labelColor: t.loss,
+                t: t,
+                g: g,
               ),
-              child: Text('\$${debt.amount.toStringAsFixed(0)}',
-                style: TextStyle(
-                  color: t.loss,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18,
-                )),
-            ),
-          ])),
-          // Cobrador
-          Column(children: [
-            GAvatar(name: receiver.name, colorIndex: receiver.colorIndex, size: 38),
-            const SizedBox(height: 4),
-            Text(receiver.name.split(' ').first,
-              style: TextStyle(color: t.text, fontSize: 11, fontWeight: FontWeight.w600)),
-            Text('COBRA', style: TextStyle(
-              color: t.profit, fontSize: 8, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
-          ]),
-        ]),
+
+              // ── Centro: flecha + monto ────────────────────────────────────
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Monto en pill con gradiente sólido
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: g.amountPillBg,
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(30),
+                        boxShadow: [BoxShadow(
+                          color: g.amountPillBg.first.withValues(alpha: 0.40),
+                          blurRadius: 10, offset: const Offset(0, 3),
+                        )],
+                      ),
+                      child: Text(
+                        '\$${debt.amount.toStringAsFixed(0)}',
+                        style: TextStyle(
+                          color: g.amountPillText,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 20,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // Flecha animada
+                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      _ArrowDot(color: t.loss.withValues(alpha: 0.50)),
+                      const SizedBox(width: 2),
+                      _ArrowDot(color: t.loss.withValues(alpha: 0.75)),
+                      const SizedBox(width: 2),
+                      _ArrowDot(color: t.loss),
+                      const SizedBox(width: 2),
+                      Icon(Icons.arrow_forward_rounded, color: t.loss, size: 16),
+                    ]),
+                  ],
+                ),
+              ),
+
+              // ── Cobrador ─────────────────────────────────────────────────
+              _TransferPlayer(
+                player: receiver,
+                label: 'COBRA',
+                labelColor: t.profit,
+                t: t,
+                g: g,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
+}
+
+class _TransferPlayer extends StatelessWidget {
+  final Player player;
+  final String label;
+  final Color labelColor;
+  final GolfTheme t;
+  final _ThemeGrad g;
+  const _TransferPlayer({
+    required this.player, required this.label, required this.labelColor,
+    required this.t, required this.g,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      Container(
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: labelColor.withValues(alpha: 0.50), width: 2),
+        ),
+        child: GAvatar(name: player.name, colorIndex: player.colorIndex, size: 42),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        player.name.split(' ').first,
+        style: TextStyle(
+          color: t.text, fontSize: 12, fontWeight: FontWeight.w700,
+        ),
+      ),
+      const SizedBox(height: 2),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        decoration: BoxDecoration(
+          color: labelColor.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: labelColor,
+            fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.8,
+          ),
+        ),
+      ),
+    ]);
+  }
+}
+
+class _ArrowDot extends StatelessWidget {
+  final Color color;
+  const _ArrowDot({required this.color});
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 4, height: 4,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
 }
 
 // ── Nivel 3: Detalle por jugador expandible ───────────────────────────────────
@@ -620,31 +690,40 @@ class _PlayerDetailSection extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6),
       child: Container(
         decoration: BoxDecoration(
-          color: g.detailCardBg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: g.detailCardBorder(isExpanded)),
+          color: g.cardSurface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isExpanded
+                ? t.accent.withValues(alpha: 0.45)
+                : g.cardBorder,
+            width: isExpanded ? 1.5 : 1,
+          ),
+          boxShadow: [BoxShadow(
+            color: Colors.black.withValues(alpha: g.isLight ? 0.04 : 0.20),
+            blurRadius: 8, offset: const Offset(0, 2),
+          )],
         ),
         child: Column(
           children: [
             GestureDetector(
               onTap: onToggle,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
                 child: Row(children: [
-                  GAvatar(name: player.name, colorIndex: player.colorIndex, size: 34),
+                  GAvatar(name: player.name, colorIndex: player.colorIndex, size: 36),
                   const SizedBox(width: 12),
                   Expanded(child: Text(player.name,
                     style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 14))),
                   AnimatedRotation(
                     turns: isExpanded ? 0.5 : 0,
                     duration: const Duration(milliseconds: 220),
-                    child: Icon(Icons.keyboard_arrow_down, color: t.sub, size: 20),
+                    child: Icon(Icons.keyboard_arrow_down, color: t.sub, size: 22),
                   ),
                 ]),
               ),
             ),
             if (isExpanded) ...[
-              Divider(height: 1, color: t.divider),
+              Divider(height: 1, color: g.cardBorder),
               _PlayerFaceToFace(player: player, round: round, t: t, g: g),
             ],
           ],
@@ -710,9 +789,7 @@ class _PlayerFaceToFace extends StatelessWidget {
                   }
                   breakdown[BetModuleType.matchAutoPress] = mpLiveBal;
                 }
-                // Nassau: sobreescribir con balance en vivo (computeAll solo liquida
-                // segmentos CERRADOS; durante la ronda el total 18 y segmentos en curso
-                // deben reflejarse desde el primer hoyo jugado).
+                // Nassau: sobreescribir con balance en vivo
                 if (mod.type == BetModuleType.nassau) {
                   double npLiveBal = 0.0;
                   if (mod.pressEnabled) {
@@ -761,91 +838,10 @@ class _PlayerFaceToFace extends StatelessWidget {
             final balance = breakdown.values.fold<double>(0.0, (s, v) => s + v);
 
             return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: g.duelCardBg,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: g.chipBorder(balance).withValues(alpha: 0.25)),
-                ),
-                padding: const EdgeInsets.all(12),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    GAvatar(name: opp.name, colorIndex: opp.colorIndex, size: 28),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(opp.name,
-                      style: TextStyle(color: t.text, fontWeight: FontWeight.w600, fontSize: 13))),
-                    // Balance chip
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: g.chipBg(balance),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: g.chipBorder(balance)),
-                      ),
-                      child: Text(
-                        balance.abs() < 0.005
-                            ? 'AS'
-                            : '${balance > 0 ? '+' : ''}\$${balance.toStringAsFixed(0)}',
-                        style: TextStyle(
-                          color: g.chipText(balance),
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ]),
-                  // Desglose por módulo
-                  Builder(builder: (_) {
-                    final order = [
-                      BetModuleType.skins,
-                      BetModuleType.nassau,
-                      BetModuleType.matchAutoPress,
-                      BetModuleType.medal,
-                      BetModuleType.putts,
-                      BetModuleType.oyeses,
-                      BetModuleType.units,
-                    ];
-                    final allTypes = order.where((type) {
-                      for (final gr in round.betGroups) {
-                        final pids = gr.playerIds;
-                        if (!pids.contains(player.id) || !pids.contains(opp.id)) continue;
-                        if (gr.modules.any((m) => m.type == type)) return true;
-                      }
-                      return false;
-                    }).toList();
-
-                    if (allTypes.isEmpty) return const SizedBox.shrink();
-
-                    return Padding(
-                      padding: const EdgeInsets.only(left: 36, top: 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: allTypes.map((betType) {
-                          final amount = breakdown[betType] ?? 0.0;
-                          final amtColor = amount > 0
-                              ? t.profit
-                              : amount < 0 ? t.loss : t.sub;
-                          final amtText = amount.abs() < 0.005
-                              ? 'AS'
-                              : '${amount >= 0 ? '+' : ''}\$${amount.toStringAsFixed(0)}';
-
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Row(children: [
-                              Text('${betType.icon}  ${betType.label}',
-                                style: TextStyle(color: t.sub, fontSize: 11)),
-                              const Spacer(),
-                              Text(amtText,
-                                style: TextStyle(color: amtColor, fontSize: 11, fontWeight: FontWeight.w700)),
-                            ]),
-                          );
-                        }).toList(),
-                      ),
-                    );
-                  }),
-                  Divider(color: t.divider.withValues(alpha: 0.5), height: 16),
-                ]),
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _DuelCard(
+                opponent: opp, balance: balance, breakdown: breakdown,
+                player: player, round: round, t: t, g: g,
               ),
             );
           }),
@@ -853,6 +849,123 @@ class _PlayerFaceToFace extends StatelessWidget {
           if (hasUnits) _UnitsDetailSection(
             player: player, round: round, unitsByType: unitsByType, t: t, g: g,
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Tarjeta de duelo cara a cara ──────────────────────────────────────────────
+class _DuelCard extends StatelessWidget {
+  final Player opponent;
+  final double balance;
+  final Map<BetModuleType, double> breakdown;
+  final Player player;
+  final Round round;
+  final GolfTheme t;
+  final _ThemeGrad g;
+  const _DuelCard({
+    required this.opponent, required this.balance, required this.breakdown,
+    required this.player, required this.round, required this.t, required this.g,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final order = [
+      BetModuleType.skins,
+      BetModuleType.nassau,
+      BetModuleType.matchAutoPress,
+      BetModuleType.medal,
+      BetModuleType.putts,
+      BetModuleType.oyeses,
+      BetModuleType.units,
+    ];
+    final allTypes = order.where((type) {
+      for (final gr in round.betGroups) {
+        final pids = gr.playerIds;
+        if (!pids.contains(player.id) || !pids.contains(opponent.id)) continue;
+        if (gr.modules.any((m) => m.type == type)) return true;
+      }
+      return false;
+    }).toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: g.duelBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: g.duelBorder),
+      ),
+      child: Column(
+        children: [
+          // Cabecera del duelo
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+            child: Row(children: [
+              GAvatar(name: opponent.name, colorIndex: opponent.colorIndex, size: 30),
+              const SizedBox(width: 8),
+              Expanded(child: Text(opponent.name,
+                style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 13))),
+              // Balance chip
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  color: g.chipBg(balance),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: g.chipBorder(balance), width: 1),
+                ),
+                child: Text(
+                  balance.abs() < 0.005
+                      ? 'AS'
+                      : '${balance > 0 ? '+' : ''}\$${balance.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    color: g.chipText(balance),
+                    fontWeight: FontWeight.w900, fontSize: 14,
+                  ),
+                ),
+              ),
+            ]),
+          ),
+
+          // Desglose por módulo (filas compactas)
+          if (allTypes.isNotEmpty) ...[
+            Divider(height: 1, color: g.cardBorder),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: Column(
+                children: allTypes.map((betType) {
+                  final amount   = breakdown[betType] ?? 0.0;
+                  final amtColor = amount > 0 ? t.profit : amount < 0 ? t.loss : t.sub;
+                  final amtText  = amount.abs() < 0.005
+                      ? 'AS'
+                      : '${amount >= 0 ? '+' : ''}\$${amount.toStringAsFixed(0)}';
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 5),
+                    child: Row(children: [
+                      // Icono y nombre del tipo de apuesta
+                      Text('${betType.icon}', style: const TextStyle(fontSize: 12)),
+                      const SizedBox(width: 6),
+                      Expanded(child: Text(betType.label,
+                        style: TextStyle(color: t.sub, fontSize: 11, fontWeight: FontWeight.w500))),
+                      // Barra de monto
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: amtColor.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(amtText,
+                          style: TextStyle(
+                            color: amtColor,
+                            fontWeight: FontWeight.w800, fontSize: 12,
+                          )),
+                      ),
+                    ]),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -904,21 +1017,21 @@ class _UnitsDetailSection extends StatelessWidget {
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: g.unitChipBg,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: g.unitChipBorder),
         ),
         child: Row(children: [
-          const Text('💫', style: TextStyle(fontSize: 15)),
+          const Text('💫', style: TextStyle(fontSize: 16)),
           const SizedBox(width: 8),
           Expanded(child: Text('UNIDADES GANADAS',
-            style: TextStyle(color: g.unitAccent, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.7))),
+            style: TextStyle(color: g.unitAccent, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8))),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
             decoration: BoxDecoration(
-              color: g.unitAccent.withValues(alpha: 0.15),
+              color: g.unitAccent.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
@@ -939,11 +1052,11 @@ class _UnitsDetailSection extends StatelessWidget {
         return Padding(
           padding: const EdgeInsets.only(bottom: 6),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: t.surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: t.divider),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: g.cardBorder),
             ),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
@@ -952,9 +1065,9 @@ class _UnitsDetailSection extends StatelessWidget {
                 Expanded(child: Text(type.label,
                   style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 13))),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
-                    color: t.primary.withValues(alpha: 0.10),
+                    color: t.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text('×$count',
@@ -1021,7 +1134,7 @@ class _ResultsBodyState extends State<ResultsBody> {
         const SizedBox(height: 20),
         if (netDebts.isNotEmpty) ...[
           _PGASectionLabel(label: 'TRANSFERENCIAS', icon: Icons.currency_exchange_rounded, g: g),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           ...netDebts.map((d) => _PGAPaymentCard(debt: d, round: round, t: t, g: g)),
           const SizedBox(height: 20),
         ],
@@ -1045,4 +1158,3 @@ class _ResultsBodyState extends State<ResultsBody> {
     );
   }
 }
-
