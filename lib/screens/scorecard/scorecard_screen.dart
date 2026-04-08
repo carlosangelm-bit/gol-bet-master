@@ -3083,114 +3083,145 @@ class _NassauSegment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Estado del segmento
-    final Color bandColor;
-    final String stateWord;
-    final String scoreWord;
+    // ── Paleta según estado ───────────────────────────────────────────────
+    final Color baseColor;
+    final List<Color> grad;
+    final String bigNumber;   // número grande central
+    final String playerName;  // nombre del ganador (o vacío)
 
     if (played == 0) {
-      bandColor = const Color(0xFF455A64);
-      stateWord = '\u2013';
-      scoreWord = '';
+      baseColor  = const Color(0xFF546E7A);
+      grad       = const [Color(0xFF37474F), Color(0xFF263238)];
+      bigNumber  = '\u2013';
+      playerName = '';
     } else if (score == 0) {
-      bandColor = const Color(0xFF1565C0);   // azul = empatado
-      stateWord = 'AS';
-      scoreWord = '';
+      baseColor  = const Color(0xFF1976D2);
+      grad       = const [Color(0xFF1565C0), Color(0xFF0D47A1)];
+      bigNumber  = 'AS';
+      playerName = '';
     } else if (score > 0) {
-      bandColor = const Color(0xFF2E7D32);   // verde = p1 gana
-      stateWord = '$p1Name';
-      scoreWord = '+$score';
+      baseColor  = const Color(0xFF2E7D32);
+      grad       = const [Color(0xFF388E3C), Color(0xFF1B5E20)];
+      bigNumber  = '+${score.abs()}';
+      playerName = p1Name;
     } else {
-      bandColor = const Color(0xFFC62828);   // rojo = p2 gana
-      stateWord = '$p2Name';
-      scoreWord = '+${score.abs()}';
+      baseColor  = const Color(0xFFC62828);
+      grad       = const [Color(0xFFD32F2F), Color(0xFF7F0000)];
+      bigNumber  = '+${score.abs()}';
+      playerName = p2Name;
     }
 
     final isDone = played >= total;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: bandColor.withValues(alpha: 0.35)),
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: grad,
         ),
-        child: Column(children: [
-          // Banda de color con estado
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(
-              color: bandColor,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+        border: Border.all(color: baseColor.withValues(alpha: 0.45), width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: grad[0].withValues(alpha: 0.30),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Etiqueta del segmento (F9 / B9 / 18) ──────────────────────
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.0,
+                ),
+              ),
             ),
-            child: Column(children: [
-              // Nombre del segmento (F9 / B9 / 18)
-              Text(label,
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 9,
-                      fontWeight: FontWeight.w800, letterSpacing: 1.2)),
+            const SizedBox(height: 5),
+
+            // ── Número grande: ventaja o AS o – ───────────────────────────
+            Text(
+              bigNumber,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: bigNumber.length > 2 ? 18 : 22,
+                fontWeight: FontWeight.w900,
+                height: 1.0,
+              ),
+              textAlign: TextAlign.center,
+            ),
+
+            // ── Nombre del jugador líder ────────────────────────────────
+            if (playerName.isNotEmpty) ...[
               const SizedBox(height: 2),
-              // Estado condensado: nombre o AS o guión
-              Text(stateWord,
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.95),
-                      fontSize: 13, fontWeight: FontWeight.w900),
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center),
-              if (scoreWord.isNotEmpty)
-                Text(scoreWord,
+              Text(
+                playerName,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.70),
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ] else
+              const SizedBox(height: 4),
+
+            // ── Separador sutil ────────────────────────────────────────────
+            const SizedBox(height: 5),
+            Divider(height: 1, color: Colors.white.withValues(alpha: 0.15)),
+            const SizedBox(height: 5),
+
+            // ── Pie: progreso + valor ─────────────────────────────────────
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (!isDone) ...[
+                  Text(
+                    '$played/$total',
                     style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.80),
-                        fontSize: 11, fontWeight: FontWeight.w700)),
-            ]),
-          ),
-          // Pie: progreso o valor
-          Container(
-            color: bandColor.withValues(alpha: 0.07),
-            padding: const EdgeInsets.symmetric(vertical: 5),
-            child: Center(
-              child: isDone
-                  // Segmento terminado: solo el valor final
-                  ? Text(
-                      '\$${value.toStringAsFixed(0)}',
-                      style: TextStyle(
-                        color: bandColor,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    )
-                  // Segmento en curso: progreso + valor en juego
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          '$played/$total',
-                          style: TextStyle(
-                            color: t.sub,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '·',
-                          style: TextStyle(color: t.sub.withValues(alpha: 0.4), fontSize: 9),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '\$${value.toStringAsFixed(0)}',
-                          style: TextStyle(
-                            color: bandColor.withValues(alpha: 0.85),
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 8,
+                      fontWeight: FontWeight.w500,
                     ),
+                  ),
+                  Text(
+                    '  ·  ',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.20),
+                      fontSize: 8,
+                    ),
+                  ),
+                ],
+                Text(
+                  '\$${value.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    color: isDone
+                        ? Colors.white.withValues(alpha: 0.95)
+                        : Colors.white.withValues(alpha: 0.65),
+                    fontSize: isDone ? 11 : 9,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
-          ),
-        ]),
+          ],
+        ),
       ),
     );
   }
