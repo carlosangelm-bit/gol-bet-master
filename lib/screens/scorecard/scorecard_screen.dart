@@ -3148,16 +3148,44 @@ class _NassauSegment extends StatelessWidget {
             color: bandColor.withValues(alpha: 0.07),
             padding: const EdgeInsets.symmetric(vertical: 5),
             child: Center(
-              child: Text(
-                isDone
-                    ? '\$${value.toStringAsFixed(0)}'
-                    : '$played/$total',
-                style: TextStyle(
-                  color: isDone ? bandColor : t.sub,
-                  fontSize: 10,
-                  fontWeight: isDone ? FontWeight.w800 : FontWeight.w500,
-                ),
-              ),
+              child: isDone
+                  // Segmento terminado: solo el valor final
+                  ? Text(
+                      '\$${value.toStringAsFixed(0)}',
+                      style: TextStyle(
+                        color: bandColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    )
+                  // Segmento en curso: progreso + valor en juego
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '$played/$total',
+                          style: TextStyle(
+                            color: t.sub,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '·',
+                          style: TextStyle(color: t.sub.withValues(alpha: 0.4), fontSize: 9),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '\$${value.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            color: bandColor.withValues(alpha: 0.85),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
             ),
           ),
         ]),
@@ -4216,10 +4244,57 @@ class _FinancialBreakdown extends StatelessWidget {
       breakdown[BetModuleType.matchAutoPress] = mpBal;
     }
 
-    // Nassau+Press: el breakdown ya viene calculado correctamente por
-    // LedgerEngine.breakdownBetween → BetEngine.computeAll → _nassauPressPair.
-    // No sobreescribir — solo nos aseguramos de que el tipo esté presente.
-    // (a diferencia de matchAutoPress que necesita recalcular por orden de pids)
+    // Nassau (con o sin presiones): sobreescribir con balance en vivo.
+    // computeAll solo liquida segmentos CERRADOS; durante la ronda en curso
+    // el breakdown quedaría en $0 aunque alguien lleve ventaja.
+    // nassauLiveStatus / nassauPressLiveStatus calculan el estado real en cada hoyo.
+    final nassauMods = _modsOf(BetModuleType.nassau);
+    if (nassauMods.isNotEmpty) {
+      double npBal = 0.0;
+      for (final mod in nassauMods) {
+        if (mod.pressEnabled) {
+          // Con presiones: usar nassauPressLiveStatus para frontPresses/backPresses
+          final st = BetEngine.nassauPressLiveStatus(round, p1.id, p2.id, mod);
+          final isBack   = round.startingNine == StartingNine.back;
+          final seg1From = isBack ? 10 : 1;
+          final seg1To   = isBack ? 18 : 9;
+          if (st.frontPlayed > 0) {
+            if (st.front > 0) npBal += st.frontVal;
+            if (st.front < 0) npBal -= st.frontVal;
+          }
+          if (st.backPlayed > 0) {
+            if (st.back > 0) npBal += st.backVal;
+            if (st.back < 0) npBal -= st.backVal;
+          }
+          if (st.frontPlayed + st.backPlayed >= 18) {
+            if (st.total > 0) npBal += st.totalVal;
+            if (st.total < 0) npBal -= st.totalVal;
+          }
+          for (final p in [...st.frontPresses, ...st.backPresses]) {
+            final inSeg1   = p.startHole >= seg1From && p.startHole <= seg1To;
+            final pressVal = inSeg1 ? mod.nassau.frontPressValue : mod.nassau.backPressValue;
+            if (p.score > 0) npBal += pressVal;
+            if (p.score < 0) npBal -= pressVal;
+          }
+        } else {
+          // Sin presiones: usar nassauLiveStatus estándar
+          final st = BetEngine.nassauLiveStatus(round, p1.id, p2.id, mod);
+          if (st.frontPlayed > 0) {
+            if (st.front > 0) npBal += st.frontVal;
+            if (st.front < 0) npBal -= st.frontVal;
+          }
+          if (st.backPlayed > 0) {
+            if (st.back > 0) npBal += st.backVal;
+            if (st.back < 0) npBal -= st.backVal;
+          }
+          if (st.frontPlayed + st.backPlayed >= 18) {
+            if (st.total > 0) npBal += st.totalVal;
+            if (st.total < 0) npBal -= st.totalVal;
+          }
+        }
+      }
+      breakdown[BetModuleType.nassau] = npBal;
+    }
 
     // Obtener todos los tipos de módulo configurados para este par
     final allTypes = _allModuleTypes();
