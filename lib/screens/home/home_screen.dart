@@ -1073,194 +1073,209 @@ class _BetInfo {
   });
 
   static const List<_BetInfo> all = [
+    // ── Nassau ────────────────────────────────────────────────────────────────
     _BetInfo(
       icon: Icons.attach_money_rounded,
       color: Color(0xFF2E7D32),
       name: 'Nassau',
-      tagline: 'La apuesta clásica del golf',
+      tagline: 'La apuesta clásica del golf — F9, B9 y Total 18',
       howItWorks:
-          'Tres apuestas independientes en una: ganas el Front 9 (hoyos 1-9), '
-          'el Back 9 (hoyos 10-18) y el Total 18. Cada segmento se resuelve '
-          'por match play (quién ganó más hoyos).',
+          'Tres apuestas independientes en una: Front 9 (hoyos 1-9), '
+          'Back 9 (hoyos 10-18) y Total 18. Cada segmento se resuelve '
+          'por match play (quien ganó más hoyos). '
+          'Activa las presiones automáticas (Press) desde la misma '
+          'configuración para añadir mini-apuestas dentro de cada segmento.',
       rules: [
-        'Se juega por pares (1v1 o equipo A vs equipo B)',
-        'Front 9 y Back 9 valen el mismo importe configurado',
-        'Total 18 vale el doble (o el importe total configurado)',
-        'Con Carry: si el Front 9 termina empatado, su valor se suma al Back 9',
-        'Admite handicap neto o score bruto',
-        'Opcionalmente con presión automática (Auto-press)',
+        'Se juega 1v1 o equipo A vs equipo B',
+        'F9, B9 y Total 18 se resuelven de forma independiente',
+        'Carry: si el F9 termina empatado, su valor se transfiere al B9',
+        'Press ON → si un jugador va N-down abre una presión automática',
+        'La presión corre desde el siguiente hoyo hasta el final del segmento',
+        'Permite múltiples presiones por segmento (configurable)',
+        'Valor de cada presión configurable independientemente',
+        'Compatible con handicap neto o score bruto',
       ],
       example:
           'Configuración: F9 \$50 · B9 \$50 · Total \$100\n'
+          'Press ON · Trigger 2-down · Press value \$25\n'
+          '───────────────────────────────\n'
           'Rafa gana F9 → cobra \$50\n'
-          'Carlos gana B9 → cobra \$50\n'
+          'Carlos va 2-down en B9 al H12 → Press H13 (\$25)\n'
+          'Rafa gana B9 → cobra \$50\n'
           'Rafa gana Total → cobra \$100\n'
-          'Resultado final: Rafa +\$50',
+          'Rafa gana Press B9 → cobra \$25\n'
+          'Resultado: Rafa +\$225',
     ),
-    _BetInfo(
-      icon: Icons.bolt_rounded,
-      color: Color(0xFFF57F17),
-      name: 'Nassau + Press',
-      tagline: 'Nassau con presiones automáticas integradas',
-      howItWorks:
-          'Igual que Nassau (F9, B9, Total), pero cada segmento puede generar '
-          'presiones automáticas: cuando un jugador va N-down dentro del segmento, '
-          'se inicia una mini-apuesta (press) que corre hasta el final de ese segmento.',
-      rules: [
-        'Presión automática cuando el déficit alcanza el trigger (ej. 2-down)',
-        'Cada press corre desde el hoyo siguiente hasta el final del segmento',
-        'Las presiones del F9 terminan en el hoyo 9; las del B9 en el 18',
-        'Permite múltiples presiones en el mismo segmento (configurable)',
-        'Carry en F9 aplica también al valor base del B9',
-        'Valor de presión configurable independiente del segmento',
-      ],
-      example:
-          'F9 \$50 · Press trigger: 2-down · Press value: \$50\n'
-          'Carlos va 2-down al H3 → Press automático en H4\n'
-          'Carlos recupera y gana el press → cobra \$50\n'
-          'Rafa gana el F9 → cobra \$50\n'
-          'Resultado: neutro en F9 (\$50 - \$50)',
-    ),
+    // ── Match + Press ─────────────────────────────────────────────────────────
     _BetInfo(
       icon: Icons.compare_arrows_rounded,
       color: Color(0xFF1565C0),
       name: 'Match + Press',
       tagline: 'Match play de 18 hoyos con presiones en cadena',
       howItWorks:
-          'Match play clásico (18 hoyos) donde el jugador que va N-down '
-          'puede activar una presión. Las presiones pueden generar a su vez '
-          'nuevas presiones, creando una cadena activa durante la ronda.',
+          'Match play puro de 18 hoyos. El jugador que va N-down activa '
+          'una presión que corre hasta el hoyo 18. Esa presión puede generar '
+          'a su vez nuevas presiones, creando una cadena activa durante la ronda. '
+          'Es el formato más dinámico y de mayor riesgo acumulado.',
       rules: [
         'El match principal corre los 18 hoyos completos',
-        'Press automático cuando el déficit alcanza el trigger configurado',
+        'Press automático cuando el déficit alcanza el trigger (ej. 2-down)',
         'Cada press corre desde su hoyo de inicio hasta el hoyo 18',
-        'Un press puede generar otro press (cadena anidada)',
-        'Se puede limitar el número máximo de presiones activas',
+        'Un press puede generar otro press (presiones anidadas en cadena)',
+        'Carry: si el match principal termina empatado, puede trasladarse',
+        'Se puede limitar el número máximo de presiones activas simultáneas',
         'Compatible con handicap neto o score bruto',
       ],
       example:
           'Match \$100 · Trigger 2-down · Press \$50\n'
-          'H5: Carlos va 2-down → Press 1 (\$50) desde H6\n'
-          'H9: Carlos va 2-down en el press → Press 2 (\$50) desde H10\n'
+          '───────────────────────────────\n'
+          'H5: Carlos va 2-down → Press 1 (\$50) abre H6\n'
+          'H10: Carlos va 2-down en Press 1 → Press 2 (\$50) abre H11\n'
           'Rafa gana el match → cobra \$100\n'
           'Rafa gana Press 1 → cobra \$50\n'
-          'Carlos gana Press 2 → cobra \$50',
+          'Carlos gana Press 2 → cobra \$50\n'
+          'Resultado: Rafa +\$100',
     ),
+    // ── Skins ─────────────────────────────────────────────────────────────────
     _BetInfo(
       icon: Icons.star_rounded,
       color: Color(0xFFAD1457),
       name: 'Skins',
-      tagline: 'Cada hoyo tiene su propio premio',
+      tagline: 'Cada hoyo es una apuesta independiente',
       howItWorks:
-          'Cada hoyo es una apuesta independiente. El jugador con el score '
-          'más bajo en ese hoyo gana el "skin". Si hay empate, nadie lo gana '
-          'y el valor se acumula (carry-over) para el siguiente hoyo.',
+          'Cada hoyo tiene su propio premio (skin). El jugador con el score '
+          'más bajo en ese hoyo lo gana. Si hay empate entre los líderes, '
+          'nadie gana ese skin y el valor se acumula (carry-over) al siguiente hoyo, '
+          'generando pots potencialmente grandes.',
       rules: [
-        'Un skin por hoyo; valor igual para todos los hoyos',
-        'Empate → nadie gana, el skin pasa al siguiente (carry-over)',
-        'El jugador con más skins gana el total acumulado',
-        'Se puede configurar con o sin handicap (bruto/neto)',
-        'Compatible con partidas de 2 a N jugadores',
-        'El pot acumulado puede crecer hasta el último hoyo',
+        'Un skin por hoyo; monto igual para todos',
+        'Empate entre líderes → nadie gana, el skin se acumula al hoyo siguiente',
+        'Si un carry lleva varios hoyos, el pot puede ser muy alto',
+        'El skin solo se gana si un jugador tiene el score MÁS BAJO SOLO',
+        'Juego all-vs-all: cada par tiene su propia dinámica',
+        'Compatible con handicap neto o score bruto',
+        'El pot final no cobrado se reparte al terminar la ronda',
       ],
       example:
-          'Skins \$20/hoyo · 3 jugadores\n'
-          'H1: Rafa gana → cobra \$20\n'
-          'H2: Empate → carry (pot: \$40)\n'
-          'H3: Carlos gana → cobra \$40 (acumulado)\n'
-          'H4: Empate → carry (pot: \$20)\n'
-          '...',
+          'Skins \$20/hoyo · 3 jugadores (Rafa, Carlos, Rich)\n'
+          '───────────────────────────────\n'
+          'H1: Rafa 4, Carlos 5, Rich 5 → Rafa gana \$20\n'
+          'H2: Rafa 4, Carlos 4, Rich 5 → Empate → carry \$20\n'
+          'H3: Carlos 3, Rafa 4, Rich 5 → Carlos gana \$40\n'
+          'H4: Rich 3, Carlos 3, Rafa 4 → Empate → carry \$20\n'
+          'H5: Rich 4, Carlos 5, Rafa 5 → Rich gana \$40',
     ),
+    // ── Medal ─────────────────────────────────────────────────────────────────
     _BetInfo(
       icon: Icons.emoji_events_rounded,
       color: Color(0xFF4527A0),
       name: 'Medal',
-      tagline: 'Score neto total de la ronda',
+      tagline: 'Score neto total más bajo de la ronda',
       howItWorks:
-          'Apuesta al score total neto (o bruto) de la ronda. '
-          'El jugador con menos golpes al final de los 9 u 18 hoyos '
-          'cobra la apuesta a cada uno de los demás jugadores.',
+          'Apuesta al score total neto (o bruto) acumulado durante la ronda. '
+          'El jugador con menos golpes al finalizar los 9 u 18 hoyos '
+          'cobra el premio a cada uno de sus rivales. '
+          'Es la apuesta más directa: juega bien y cobras.',
       rules: [
         'Gana el jugador con el menor score total neto',
-        'En caso de empate el premio se divide (o se aplica tie rule)',
-        'Configurable para 9 o 18 hoyos',
-        'Bruto o neto según handicap de ronda',
-        'Se puede usar como apuesta principal o complementaria',
+        'En 18H: gana una sola vez sobre cada rival',
+        'En 9H: se puede jugar por el segmento configurado',
+        'En caso de empate el premio se divide equitativamente',
+        'Compatible con handicap neto o score bruto',
+        'Se puede combinar con otras apuestas en la misma ronda',
       ],
       example:
-          'Medal \$100\n'
-          'Rafa: 72 neto · Carlos: 74 neto · Rich: 76 neto\n'
+          'Medal \$100 · 3 jugadores\n'
+          '───────────────────────────────\n'
+          'Rafa: 72 neto · Carlos: 74 · Rich: 76\n'
           'Rafa gana → Carlos paga \$100, Rich paga \$100\n'
           'Rafa cobra \$200 total',
     ),
+    // ── Skins Oyeses (par 3) ─────────────────────────────────────────────────
     _BetInfo(
       icon: Icons.sports_golf_rounded,
       color: Color(0xFF00695C),
       name: 'Oyeses',
-      tagline: 'Ranking en los par 3',
+      tagline: 'El más cercano en cada par 3 cobra',
       howItWorks:
-          'Apuesta exclusiva de los hoyos par 3. Se lleva un ranking '
-          'de quién hace el mejor tiro (más cerca del pin, birdie, etc.). '
-          'Al finalizar la ronda, el que mejor lo hizo en los par 3 cobra.',
+          'Apuesta exclusiva de los hoyos par 3. En cada par 3 el jugador '
+          'más cercano al pin (o quien haga el mejor score) gana ese oyés. '
+          'Al final de la ronda el jugador con más oyeses cobra el premio '
+          'a cada uno de los demás. Opcionalmente, un "zapato" '
+          '(birdie o mejor) tiene su propio valor extra.',
       rules: [
         'Solo aplica en hoyos par 3',
-        'Se registra el resultado en cada par 3 (birdie/par/bogey)',
-        'El ranking se actualiza hoyo a hoyo',
-        'El ganador al final de la ronda cobra a todos los demás',
-        'Empates se resuelven según la regla de tie configurada',
+        'El ganador de cada par 3 se registra manualmente durante el juego',
+        'Se acumulan los oyeses a lo largo de la ronda',
+        'El jugador con más oyeses al final cobra a todos los demás',
+        'Zapato (birdie o mejor en par 3) puede tener valor adicional',
+        'Empates en el total se resuelven dividiendo el premio',
       ],
       example:
-          'Oyeses \$50\n'
-          'H4 (par 3): Rafa hace birdie → +1 punto\n'
-          'H8 (par 3): Carlos hace birdie → +1 punto\n'
-          'H12 (par 3): Rafa hace birdie → Rafa +2\n'
-          'Rafa gana → cobra \$50 de Carlos y \$50 de Rich',
+          'Oyeses \$50 · Zapato \$25 extra\n'
+          '───────────────────────────────\n'
+          'H4 (par 3): Rafa más cerca → +1 oyés\n'
+          'H8 (par 3): Carlos hace birdie (zapato) → +1 oyés + \$25\n'
+          'H12 (par 3): Rafa más cerca → +2 oyeses\n'
+          'H16 (par 3): Carlos más cerca → empate 2-2\n'
+          'Premio se divide: cada uno cobra \$25 de Rich',
     ),
+    // ── Units ─────────────────────────────────────────────────────────────────
     _BetInfo(
       icon: Icons.touch_app_rounded,
       color: Color(0xFF6A1B9A),
       name: 'Units',
-      tagline: 'Puntos por logros especiales',
+      tagline: 'Puntos por logros especiales hoyo a hoyo',
       howItWorks:
-          'Sistema de puntos donde cada logro tiene un valor en unidades. '
-          'Los jugadores ganan o pierden unidades según sus logros a lo largo '
-          'de la ronda. Al final el balance neto determina quién paga a quién.',
+          'Cada logro especial tiene un valor en unidades (puntos). '
+          'Los jugadores ganan unidades de sus rivales al conseguir '
+          'birdies, eagles, sandy pars, etc. durante la ronda. '
+          'Al terminar, el balance neto define cuánto paga o cobra cada uno.',
       rules: [
-        'Birdie: +1 unidad por jugador que no lo hizo',
-        'Eagle: +2 unidades (configurable)',
-        'Sandy: par o mejor desde el bunker → +1 unidad',
-        'Greenie: más cerca del pin en par 3 → +1 unidad',
-        'El valor por unidad es configurable',
-        'Se acumulan durante toda la ronda',
+        'Birdie: ganas 1 unit de cada jugador que no lo hizo',
+        'Eagle: ganas 2 units de cada jugador (configurable)',
+        'Sandy: par o mejor desde bunker → 1 unit de cada rival',
+        'Par único (solo uno hace par): 1 unit extra configurable',
+        'Birdie único (solo uno hace birdie): bonus extra',
+        'Hole-out (chip/bunker): 2 units (configurable)',
+        'Valor monetario por unidad configurable',
       ],
       example:
-          'Units: \$10 por unidad\n'
-          'H3: Rafa hace birdie → gana 1 unit de Carlos y Rich\n'
-          'H7: Carlos hace eagle → gana 2 units de Rafa y Rich\n'
-          'H15: Rafa hace sandy → gana 1 unit de Carlos y Rich\n'
-          'Balance final: Rafa +\$10, Carlos +\$10, Rich -\$20',
+          'Units \$10/unidad · 3 jugadores\n'
+          '───────────────────────────────\n'
+          'H3: Rafa birdie → +1 unit de Carlos, +1 unit de Rich\n'
+          'H7: Carlos eagle → +2 units de Rafa, +2 units de Rich\n'
+          'H11: Rafa sandy par → +1 unit de Carlos, +1 unit de Rich\n'
+          'H15: Rich birdie único → +1 unit extra de Rafa y Carlos\n'
+          'Balance: Rafa +\$10, Carlos +\$0, Rich -\$10',
     ),
+    // ── Putts ─────────────────────────────────────────────────────────────────
     _BetInfo(
       icon: Icons.track_changes_rounded,
       color: Color(0xFF00838F),
       name: 'Putts',
-      tagline: 'El que menos putts hace, gana',
+      tagline: 'El que menos putts hace en la ronda, cobra',
       howItWorks:
-          'Apuesta al número total de putts en la ronda. '
-          'El jugador que registre menos putts al finalizar los 9 u 18 hoyos '
-          'cobra la apuesta. También disponible en formato por segmento (F9/B9).',
+          'Apuesta al número total de putts registrados hoyo a hoyo. '
+          'El jugador que acumule menos putts al finalizar gana el premio. '
+          'Premia el putting y la eficiencia en el green, independientemente '
+          'de cómo se juegue el resto del hoyo.',
       rules: [
         'Se registran los putts por hoyo durante la captura de scores',
-        'Gana el jugador con menos putts totales',
-        'Disponible en formato total (18H) o por segmento (F9 + B9)',
-        'En caso de empate se divide el premio',
-        'No aplica handicap (putts son brutos)',
+        'Gana el jugador con menos putts totales en la ronda',
+        'Disponible en formato 18H o segmentado (F9 + B9 por separado)',
+        'No aplica handicap — putts son siempre brutos',
+        'En empate, el premio se divide entre los empatados',
+        'Se puede combinar con otras apuestas sin conflicto',
       ],
       example:
-          'Putts \$50 total\n'
-          'Rafa: 28 putts · Carlos: 31 putts · Rich: 33 putts\n'
+          'Putts \$50 · 3 jugadores\n'
+          '───────────────────────────────\n'
+          'Rafa: 28 putts totales\n'
+          'Carlos: 31 putts totales\n'
+          'Rich: 33 putts totales\n'
           'Rafa gana → cobra \$50 de Carlos y \$50 de Rich\n'
-          'Rafa cobra \$100 total',
+          'Rafa cobra \$100 en total',
     ),
   ];
 }
