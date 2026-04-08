@@ -1014,71 +1014,532 @@ class _HeroBgPainter extends CustomPainter {
   bool shouldRepaint(_) => false;
 }
 
+// ── Sección de apuestas disponibles con detalle expandible ───────────────────
 class _QuickInfoCards extends StatelessWidget {
   final GolfTheme t;
   const _QuickInfoCards({required this.t});
 
   @override
   Widget build(BuildContext context) {
-    final cards = [
-      (Icons.attach_money,   'Nassau',   'Front 9, Back 9 y Total'),
-      (Icons.flash_on,       'Skins',    'Carry-over por empate'),
-      (Icons.emoji_events,   'Medal',    'Score neto total'),
-      (Icons.sports_golf,    'Oyeses',   'Ranking en par 3s'),
-      (Icons.touch_app,      'Units',    'Birdie, Eagle, Sandy...'),
-      (Icons.track_changes,  'Putts',    'Menos putts gana'),
-    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Separador
         Divider(color: t.divider, height: 1),
         const SizedBox(height: 20),
-        Text(
-          'APUESTAS DISPONIBLES',
-          style: TextStyle(
-            color: t.sub,
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.8,
-          ),
-        ),
-        const SizedBox(height: 12),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: 2.5,
-          children: cards.map((c) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: t.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: t.divider),
-            ),
-            child: Row(children: [
-              Container(
-                width: 32, height: 32,
-                decoration: BoxDecoration(
-                  color: t.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'APUESTAS DISPONIBLES',
+                style: TextStyle(
+                  color: t.sub,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
                 ),
-                child: Icon(c.$1, color: t.primary, size: 16),
               ),
-              const SizedBox(width: 8),
-              Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(c.$2, style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 12)),
-                  Text(c.$3, style: TextStyle(color: t.sub, fontSize: 9), overflow: TextOverflow.ellipsis),
-                ],
-              )),
-            ]),
-          )).toList(),
+            ),
+            Text(
+              'Toca + para ver detalles',
+              style: TextStyle(color: t.sub.withValues(alpha: 0.6), fontSize: 10),
+            ),
+          ],
         ),
+        const SizedBox(height: 10),
+        ..._BetInfo.all.map((info) => _BetExpandableCard(t: t, info: info)),
+      ],
+    );
+  }
+}
+
+// ── Modelo de datos para cada apuesta ───────────────────────────────────────
+class _BetInfo {
+  final IconData icon;
+  final Color color;
+  final String name;
+  final String tagline;
+  final String howItWorks;
+  final List<String> rules;
+  final String example;
+
+  const _BetInfo({
+    required this.icon,
+    required this.color,
+    required this.name,
+    required this.tagline,
+    required this.howItWorks,
+    required this.rules,
+    required this.example,
+  });
+
+  static const List<_BetInfo> all = [
+    _BetInfo(
+      icon: Icons.attach_money_rounded,
+      color: Color(0xFF2E7D32),
+      name: 'Nassau',
+      tagline: 'La apuesta clásica del golf',
+      howItWorks:
+          'Tres apuestas independientes en una: ganas el Front 9 (hoyos 1-9), '
+          'el Back 9 (hoyos 10-18) y el Total 18. Cada segmento se resuelve '
+          'por match play (quién ganó más hoyos).',
+      rules: [
+        'Se juega por pares (1v1 o equipo A vs equipo B)',
+        'Front 9 y Back 9 valen el mismo importe configurado',
+        'Total 18 vale el doble (o el importe total configurado)',
+        'Con Carry: si el Front 9 termina empatado, su valor se suma al Back 9',
+        'Admite handicap neto o score bruto',
+        'Opcionalmente con presión automática (Auto-press)',
+      ],
+      example:
+          'Configuración: F9 \$50 · B9 \$50 · Total \$100\n'
+          'Rafa gana F9 → cobra \$50\n'
+          'Carlos gana B9 → cobra \$50\n'
+          'Rafa gana Total → cobra \$100\n'
+          'Resultado final: Rafa +\$50',
+    ),
+    _BetInfo(
+      icon: Icons.bolt_rounded,
+      color: Color(0xFFF57F17),
+      name: 'Nassau + Press',
+      tagline: 'Nassau con presiones automáticas integradas',
+      howItWorks:
+          'Igual que Nassau (F9, B9, Total), pero cada segmento puede generar '
+          'presiones automáticas: cuando un jugador va N-down dentro del segmento, '
+          'se inicia una mini-apuesta (press) que corre hasta el final de ese segmento.',
+      rules: [
+        'Presión automática cuando el déficit alcanza el trigger (ej. 2-down)',
+        'Cada press corre desde el hoyo siguiente hasta el final del segmento',
+        'Las presiones del F9 terminan en el hoyo 9; las del B9 en el 18',
+        'Permite múltiples presiones en el mismo segmento (configurable)',
+        'Carry en F9 aplica también al valor base del B9',
+        'Valor de presión configurable independiente del segmento',
+      ],
+      example:
+          'F9 \$50 · Press trigger: 2-down · Press value: \$50\n'
+          'Carlos va 2-down al H3 → Press automático en H4\n'
+          'Carlos recupera y gana el press → cobra \$50\n'
+          'Rafa gana el F9 → cobra \$50\n'
+          'Resultado: neutro en F9 (\$50 - \$50)',
+    ),
+    _BetInfo(
+      icon: Icons.compare_arrows_rounded,
+      color: Color(0xFF1565C0),
+      name: 'Match + Press',
+      tagline: 'Match play de 18 hoyos con presiones en cadena',
+      howItWorks:
+          'Match play clásico (18 hoyos) donde el jugador que va N-down '
+          'puede activar una presión. Las presiones pueden generar a su vez '
+          'nuevas presiones, creando una cadena activa durante la ronda.',
+      rules: [
+        'El match principal corre los 18 hoyos completos',
+        'Press automático cuando el déficit alcanza el trigger configurado',
+        'Cada press corre desde su hoyo de inicio hasta el hoyo 18',
+        'Un press puede generar otro press (cadena anidada)',
+        'Se puede limitar el número máximo de presiones activas',
+        'Compatible con handicap neto o score bruto',
+      ],
+      example:
+          'Match \$100 · Trigger 2-down · Press \$50\n'
+          'H5: Carlos va 2-down → Press 1 (\$50) desde H6\n'
+          'H9: Carlos va 2-down en el press → Press 2 (\$50) desde H10\n'
+          'Rafa gana el match → cobra \$100\n'
+          'Rafa gana Press 1 → cobra \$50\n'
+          'Carlos gana Press 2 → cobra \$50',
+    ),
+    _BetInfo(
+      icon: Icons.star_rounded,
+      color: Color(0xFFAD1457),
+      name: 'Skins',
+      tagline: 'Cada hoyo tiene su propio premio',
+      howItWorks:
+          'Cada hoyo es una apuesta independiente. El jugador con el score '
+          'más bajo en ese hoyo gana el "skin". Si hay empate, nadie lo gana '
+          'y el valor se acumula (carry-over) para el siguiente hoyo.',
+      rules: [
+        'Un skin por hoyo; valor igual para todos los hoyos',
+        'Empate → nadie gana, el skin pasa al siguiente (carry-over)',
+        'El jugador con más skins gana el total acumulado',
+        'Se puede configurar con o sin handicap (bruto/neto)',
+        'Compatible con partidas de 2 a N jugadores',
+        'El pot acumulado puede crecer hasta el último hoyo',
+      ],
+      example:
+          'Skins \$20/hoyo · 3 jugadores\n'
+          'H1: Rafa gana → cobra \$20\n'
+          'H2: Empate → carry (pot: \$40)\n'
+          'H3: Carlos gana → cobra \$40 (acumulado)\n'
+          'H4: Empate → carry (pot: \$20)\n'
+          '...',
+    ),
+    _BetInfo(
+      icon: Icons.emoji_events_rounded,
+      color: Color(0xFF4527A0),
+      name: 'Medal',
+      tagline: 'Score neto total de la ronda',
+      howItWorks:
+          'Apuesta al score total neto (o bruto) de la ronda. '
+          'El jugador con menos golpes al final de los 9 u 18 hoyos '
+          'cobra la apuesta a cada uno de los demás jugadores.',
+      rules: [
+        'Gana el jugador con el menor score total neto',
+        'En caso de empate el premio se divide (o se aplica tie rule)',
+        'Configurable para 9 o 18 hoyos',
+        'Bruto o neto según handicap de ronda',
+        'Se puede usar como apuesta principal o complementaria',
+      ],
+      example:
+          'Medal \$100\n'
+          'Rafa: 72 neto · Carlos: 74 neto · Rich: 76 neto\n'
+          'Rafa gana → Carlos paga \$100, Rich paga \$100\n'
+          'Rafa cobra \$200 total',
+    ),
+    _BetInfo(
+      icon: Icons.sports_golf_rounded,
+      color: Color(0xFF00695C),
+      name: 'Oyeses',
+      tagline: 'Ranking en los par 3',
+      howItWorks:
+          'Apuesta exclusiva de los hoyos par 3. Se lleva un ranking '
+          'de quién hace el mejor tiro (más cerca del pin, birdie, etc.). '
+          'Al finalizar la ronda, el que mejor lo hizo en los par 3 cobra.',
+      rules: [
+        'Solo aplica en hoyos par 3',
+        'Se registra el resultado en cada par 3 (birdie/par/bogey)',
+        'El ranking se actualiza hoyo a hoyo',
+        'El ganador al final de la ronda cobra a todos los demás',
+        'Empates se resuelven según la regla de tie configurada',
+      ],
+      example:
+          'Oyeses \$50\n'
+          'H4 (par 3): Rafa hace birdie → +1 punto\n'
+          'H8 (par 3): Carlos hace birdie → +1 punto\n'
+          'H12 (par 3): Rafa hace birdie → Rafa +2\n'
+          'Rafa gana → cobra \$50 de Carlos y \$50 de Rich',
+    ),
+    _BetInfo(
+      icon: Icons.touch_app_rounded,
+      color: Color(0xFF6A1B9A),
+      name: 'Units',
+      tagline: 'Puntos por logros especiales',
+      howItWorks:
+          'Sistema de puntos donde cada logro tiene un valor en unidades. '
+          'Los jugadores ganan o pierden unidades según sus logros a lo largo '
+          'de la ronda. Al final el balance neto determina quién paga a quién.',
+      rules: [
+        'Birdie: +1 unidad por jugador que no lo hizo',
+        'Eagle: +2 unidades (configurable)',
+        'Sandy: par o mejor desde el bunker → +1 unidad',
+        'Greenie: más cerca del pin en par 3 → +1 unidad',
+        'El valor por unidad es configurable',
+        'Se acumulan durante toda la ronda',
+      ],
+      example:
+          'Units: \$10 por unidad\n'
+          'H3: Rafa hace birdie → gana 1 unit de Carlos y Rich\n'
+          'H7: Carlos hace eagle → gana 2 units de Rafa y Rich\n'
+          'H15: Rafa hace sandy → gana 1 unit de Carlos y Rich\n'
+          'Balance final: Rafa +\$10, Carlos +\$10, Rich -\$20',
+    ),
+    _BetInfo(
+      icon: Icons.track_changes_rounded,
+      color: Color(0xFF00838F),
+      name: 'Putts',
+      tagline: 'El que menos putts hace, gana',
+      howItWorks:
+          'Apuesta al número total de putts en la ronda. '
+          'El jugador que registre menos putts al finalizar los 9 u 18 hoyos '
+          'cobra la apuesta. También disponible en formato por segmento (F9/B9).',
+      rules: [
+        'Se registran los putts por hoyo durante la captura de scores',
+        'Gana el jugador con menos putts totales',
+        'Disponible en formato total (18H) o por segmento (F9 + B9)',
+        'En caso de empate se divide el premio',
+        'No aplica handicap (putts son brutos)',
+      ],
+      example:
+          'Putts \$50 total\n'
+          'Rafa: 28 putts · Carlos: 31 putts · Rich: 33 putts\n'
+          'Rafa gana → cobra \$50 de Carlos y \$50 de Rich\n'
+          'Rafa cobra \$100 total',
+    ),
+  ];
+}
+
+// ── Card expandible individual para cada apuesta ─────────────────────────────
+class _BetExpandableCard extends StatefulWidget {
+  final GolfTheme t;
+  final _BetInfo info;
+  const _BetExpandableCard({required this.t, required this.info});
+  @override
+  State<_BetExpandableCard> createState() => _BetExpandableCardState();
+}
+
+class _BetExpandableCardState extends State<_BetExpandableCard>
+    with SingleTickerProviderStateMixin {
+  bool _expanded = false;
+  late AnimationController _ctrl;
+  late Animation<double> _expandAnim;
+  late Animation<double> _rotateAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+    );
+    _expandAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+    _rotateAnim = Tween<double>(begin: 0, end: 0.25).animate(_expandAnim);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    if (_expanded) {
+      _ctrl.forward();
+    } else {
+      _ctrl.reverse();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    final info = widget.info;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: _expanded
+              ? info.color.withValues(alpha: 0.4)
+              : t.divider,
+          width: _expanded ? 1.5 : 1.0,
+        ),
+        boxShadow: _expanded
+            ? [BoxShadow(
+                color: info.color.withValues(alpha: 0.08),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              )]
+            : [],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Fila principal (siempre visible) ─────────────────────────
+          InkWell(
+            onTap: _toggle,
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  // Icono con color de la apuesta
+                  Container(
+                    width: 38, height: 38,
+                    decoration: BoxDecoration(
+                      color: info.color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(info.icon, color: info.color, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  // Nombre y tagline
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          info.name,
+                          style: TextStyle(
+                            color: t.text,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          info.tagline,
+                          style: TextStyle(color: t.sub, fontSize: 11),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Botón +/chevron animado
+                  RotationTransition(
+                    turns: _rotateAnim,
+                    child: Container(
+                      width: 28, height: 28,
+                      decoration: BoxDecoration(
+                        color: _expanded
+                            ? info.color.withValues(alpha: 0.15)
+                            : t.divider.withValues(alpha: 0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.add_rounded,
+                        color: _expanded ? info.color : t.sub,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Detalle expandible ────────────────────────────────────────
+          SizeTransition(
+            sizeFactor: _expandAnim,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Divider(
+                  color: info.color.withValues(alpha: 0.2),
+                  height: 1,
+                  indent: 14,
+                  endIndent: 14,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+
+                      // Cómo funciona
+                      _DetailSection(
+                        icon: Icons.info_outline_rounded,
+                        color: info.color,
+                        label: 'CÓMO FUNCIONA',
+                        child: Text(
+                          info.howItWorks,
+                          style: TextStyle(
+                            color: t.sub,
+                            fontSize: 12.5,
+                            height: 1.55,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Reglas
+                      _DetailSection(
+                        icon: Icons.rule_rounded,
+                        color: info.color,
+                        label: 'REGLAS',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: info.rules.map((r) => Padding(
+                            padding: const EdgeInsets.only(bottom: 5),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 6, height: 6,
+                                  margin: const EdgeInsets.only(top: 5, right: 8),
+                                  decoration: BoxDecoration(
+                                    color: info.color,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    r,
+                                    style: TextStyle(
+                                      color: t.sub,
+                                      fontSize: 12,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )).toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Ejemplo
+                      _DetailSection(
+                        icon: Icons.calculate_outlined,
+                        color: info.color,
+                        label: 'EJEMPLO',
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: info.color.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: info.color.withValues(alpha: 0.18),
+                            ),
+                          ),
+                          child: Text(
+                            info.example,
+                            style: TextStyle(
+                              color: t.text,
+                              fontSize: 12,
+                              height: 1.6,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Sección de detalle con etiqueta e ícono ───────────────────────────────────
+class _DetailSection extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String label;
+  final Widget child;
+
+  const _DetailSection({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Icon(icon, color: color, size: 13),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ]),
+        const SizedBox(height: 7),
+        child,
       ],
     );
   }
