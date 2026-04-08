@@ -73,13 +73,20 @@ class _CaptureScreenState extends State<CaptureScreen> {
   void _jumpToHole(int h) {
     setState(() => _currentHole = h);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_holeScroll.hasClients) {
-        _holeScroll.animateTo(
-          (h - 1) * 48.0,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
+      if (!_holeScroll.hasClients) return;
+      // Calcular posición correcta según el orden real de juego
+      final prov  = context.read<RoundProvider>();
+      final round = prov.hasRound ? prov.round! : null;
+      if (round == null) return;
+      final sn    = round.startingNine;
+      final order = [..._firstSegment(sn), ..._secondSegment(sn)];
+      final idx   = order.indexOf(h);
+      if (idx < 0) return;
+      _holeScroll.animateTo(
+        idx * 46.0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
     });
   }
 
@@ -179,47 +186,33 @@ class _CaptureScreenState extends State<CaptureScreen> {
                   final is9Holes    = round.totalHoles == 9;
                   final firstSeg    = _firstSegment(sn);
                   final secondSeg   = _secondSegment(sn);
-                  final lastFirst   = _lastOfFirst(sn);
                   final firstSecond = _firstOfSecond(sn);
-                  final activeOrder = is9Holes ? firstSeg : [...firstSeg, ...secondSeg];
-                  final allOrder    = [...firstSeg, ...secondSeg];
-                  final curIdx      = activeOrder.indexOf(_currentHole);
-                  final curIdxFull  = allOrder.indexOf(_currentHole);
+                  // Orden real de juego según startingNine
+                  final playOrder   = is9Holes
+                      ? firstSeg
+                      : [...firstSeg, ...secondSeg];
+                  final curIdx      = playOrder.indexOf(_currentHole);
+                  final hasPrev     = curIdx > 0;
+                  final hasNext     = curIdx >= 0 && curIdx < playOrder.length - 1;
                   final inSecond    = secondSeg.contains(_currentHole);
-                  final hasPrev     = inSecond ? curIdxFull > 0 : curIdx > 0;
-                  final hasNext     = inSecond
-                      ? curIdxFull < allOrder.length - 1
-                      : (!is9Holes && curIdx < activeOrder.length - 1);
-                  final isLastOfFirst = _currentHole == lastFirst && !inSecond;
-                  final isVeryLast    = _currentHole == allOrder.last && inSecond;
-                  final isLast9       = is9Holes && _currentHole == firstSeg.last && !inSecond;
+                  final isLastOfFirst = curIdx == firstSeg.length - 1 && !is9Holes;
+                  final isVeryLast    = curIdx == playOrder.length - 1;
+                  final isLast9       = is9Holes && curIdx == playOrder.length - 1;
 
                   return _HoleNavButtons(
                     current:    _currentHole,
                     startingNine: sn,
                     is9HoleRound: is9Holes,
                     inSecondSegment: inSecond,
-                    prevHole: hasPrev
-                        ? (inSecond ? allOrder[curIdxFull - 1] : activeOrder[curIdx - 1])
-                        : null,
-                    nextHole: hasNext
-                        ? (inSecond ? allOrder[curIdxFull + 1] : activeOrder[curIdx + 1])
-                        : null,
-                    isLastOfFirstSegment: isLastOfFirst && !is9Holes,
+                    prevHole: hasPrev ? playOrder[curIdx - 1] : null,
+                    nextHole: hasNext ? playOrder[curIdx + 1] : null,
+                    isLastOfFirstSegment: isLastOfFirst,
                     firstOfSecond: firstSecond,
                     isVeryLast: isVeryLast,
                     isLast9: isLast9,
                     t: t,
-                    onPrev: hasPrev
-                        ? () => _jumpToHole(inSecond
-                            ? allOrder[curIdxFull - 1]
-                            : activeOrder[curIdx - 1])
-                        : null,
-                    onNext: hasNext
-                        ? () => _jumpToHole(inSecond
-                            ? allOrder[curIdxFull + 1]
-                            : activeOrder[curIdx + 1])
-                        : null,
+                    onPrev: hasPrev ? () => _jumpToHole(playOrder[curIdx - 1]) : null,
+                    onNext: hasNext ? () => _jumpToHole(playOrder[curIdx + 1]) : null,
                     onContinueTo18: isLast9
                         ? () => _jumpToHole(firstSecond)
                         : null,
@@ -314,9 +307,22 @@ class _HoleSelector extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
         itemCount: (round.totalHoles == 9 && !showAll) ? 9 : 18,
         itemBuilder: (_, i) {
-          final h = (round.totalHoles == 9 && !showAll)
-              ? (round.startingNine == StartingNine.back ? i + 10 : i + 1)
-              : i + 1;
+          // Respetar siempre el orden real de juego (startingNine)
+          final List<int> order;
+          if (round.totalHoles == 9 && !showAll) {
+            order = round.startingNine == StartingNine.back
+                ? List.generate(9, (j) => j + 10)
+                : List.generate(9, (j) => j + 1);
+          } else {
+            final first  = round.startingNine == StartingNine.back
+                ? List.generate(9, (j) => j + 10)
+                : List.generate(9, (j) => j + 1);
+            final second = round.startingNine == StartingNine.back
+                ? List.generate(9, (j) => j + 1)
+                : List.generate(9, (j) => j + 10);
+            order = [...first, ...second];
+          }
+          final h = order[i];
           final isSel   = h == currentHole;
           final allDone = round.players.isNotEmpty &&
               round.players.every((p) => round.getScore(p.id, h).hasScore);
