@@ -1950,7 +1950,126 @@ class _MatchStatusCard extends StatelessWidget {
       return _SkinsGlanceCard(
           round: round, p1: p1, p2: p2, mod: skinsModules.first, t: t);
     }
+    if (nassauModules.isNotEmpty) {
+      return _buildNassauCard(context);
+    }
     return _buildMatchCard(context);
+  }
+
+  // ── Badge principal para Nassau (F9 / B9 / Total) ─────────────────────────
+  Widget _buildNassauCard(BuildContext context) {
+    final mod  = nassauModules.first;
+    final st   = BetEngine.nassauLiveStatus(round, p1.id, p2.id, mod);
+    final n1   = p1.name.split(' ').first;
+    final n2   = p2.name.split(' ').first;
+    final lastH       = GameEngine.lastCompletedHole(round, [p1.id, p2.id]);
+    final playedCount = st.frontPlayed + st.backPlayed;
+
+    // ── Resultado global (F9 + B9 + Total) como marcador de Nassau ───────────
+    // Contamos cuántos segmentos gana cada jugador (F9, B9, Total)
+    int segsP1 = 0, segsP2 = 0;
+    if (st.frontPlayed > 0) {
+      if (st.front > 0) segsP1++;
+      else if (st.front < 0) segsP2++;
+    }
+    if (st.backPlayed > 0) {
+      if (st.back > 0) segsP1++;
+      else if (st.back < 0) segsP2++;
+    }
+    if (playedCount >= 18) {
+      if (st.total > 0) segsP1++;
+      else if (st.total < 0) segsP2++;
+    }
+
+    // ── Balance en vivo (suma de segmentos + presiones) ───────────────────────
+    double npBal = 0.0;
+    if (st.frontPlayed > 0) {
+      if (st.front > 0) npBal += st.frontVal;
+      if (st.front < 0) npBal -= st.frontVal;
+    }
+    if (st.backPlayed > 0) {
+      if (st.back > 0) npBal += st.backVal;
+      if (st.back < 0) npBal -= st.backVal;
+    }
+    if (playedCount >= 18) {
+      if (st.total > 0) npBal += st.totalVal;
+      if (st.total < 0) npBal -= st.totalVal;
+    }
+    // Presiones: usar valor correcto por segmento
+    final isBack   = round.startingNine == StartingNine.back;
+    final seg1From = isBack ? 10 : 1;
+    final seg1To   = isBack ? 18 : 9;
+    for (final p in st.presses) {
+      final inSeg1   = p.startHole >= seg1From && p.startHole <= seg1To;
+      final pressVal = inSeg1 ? mod.nassau.frontPressValue : mod.nassau.backPressValue;
+      if (p.score > 0) npBal += pressVal;
+      if (p.score < 0) npBal -= pressVal;
+    }
+
+    // ── Etiquetas de estado ───────────────────────────────────────────────────
+    final Color accentColor;
+    final List<Color> gradColors;
+    final String stateWord;
+    final String diffLabel;
+
+    // diffLabel: resumen F9 / B9
+    final fLabel = st.frontPlayed == 0
+        ? 'F9: –'
+        : st.front == 0
+            ? 'F9: AS'
+            : 'F9: ${st.front > 0 ? n1 : n2} ${st.front.abs()}UP';
+    final bLabel = st.backPlayed == 0
+        ? 'B9: –'
+        : st.back == 0
+            ? 'B9: AS'
+            : 'B9: ${st.back > 0 ? n1 : n2} ${st.back.abs()}UP';
+    diffLabel = '$fLabel  ·  $bLabel';
+
+    if (playedCount == 0) {
+      accentColor = const Color(0xFF607D8B);
+      gradColors  = const [Color(0xFF37474F), Color(0xFF1C1C1E)];
+      stateWord   = 'NASSAU';
+    } else if (npBal == 0) {
+      accentColor = const Color(0xFF1565C0);
+      gradColors  = const [Color(0xFF1A3A6B), Color(0xFF0D1F3C)];
+      stateWord   = 'EMPATADO';
+    } else if (npBal > 0) {
+      accentColor = const Color(0xFF35C759);
+      gradColors  = const [Color(0xFF1F8F3A), Color(0xFF0E3D1B)];
+      stateWord   = 'GANANDO';
+    } else {
+      accentColor = const Color(0xFFFF453A);
+      gradColors  = const [Color(0xFF7A1E1E), Color(0xFF2A0E0E)];
+      stateWord   = 'PERDIENDO';
+    }
+
+    // subLabel: presiones activas
+    String? subLabel;
+    final parts = <String>[];
+    if (st.frontPlayed > 0) parts.add(fLabel);
+    if (st.backPlayed > 0)  parts.add(bLabel);
+    final totalPresses = st.presses.length;
+    if (totalPresses > 0) {
+      parts.add('$totalPresses press${totalPresses > 1 ? 'iones' : 'ión'}');
+    }
+    if (parts.length > 2) subLabel = parts.skip(2).join('  •  ');
+
+    return _PremiumResultBadge(
+      p1: p1, p2: p2, t: t,
+      stateWord: stateWord,
+      score1: segsP1, score2: segsP2,
+      scoreLabel: 'segs',
+      diffLabel: diffLabel,
+      accentColor: accentColor,
+      gradColors: gradColors,
+      playedCount: playedCount,
+      lastHole: lastH,
+      tieCount: null,
+      skinsInPot: null,
+      round: round,
+      subLabel: subLabel,
+      liveBalance: npBal,
+    );
   }
 
   Widget _buildMatchCard(BuildContext context) {
@@ -2035,7 +2154,12 @@ class _MatchStatusCard extends StatelessWidget {
         if (st.total < 0) npBal -= st.totalVal;
       }
       for (final p in st.presses) {
-        final pressVal = mod.nassau.frontPressValue;
+        // Determinar si la presión es del segmento 1 o 2 según startingNine
+        final isBack   = round.startingNine == StartingNine.back;
+        final seg1From = isBack ? 10 : 1;
+        final seg1To   = isBack ? 18 : 9;
+        final inSeg1   = p.startHole >= seg1From && p.startHole <= seg1To;
+        final pressVal = inSeg1 ? mod.nassau.frontPressValue : mod.nassau.backPressValue;
         if (p.score > 0) npBal += pressVal;
         if (p.score < 0) npBal -= pressVal;
       }
