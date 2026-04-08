@@ -8,6 +8,7 @@ import 'providers/round_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/player_provider.dart';
 import 'providers/user_profile_provider.dart';
+import 'providers/handicap_provider.dart';
 import 'screens/capture/capture_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/results/results_screen.dart';
@@ -33,6 +34,7 @@ class _AppShellState extends State<AppShell> {
     context.read<RoundProvider>().syncFromFirestore();
     context.read<PlayerProvider>().startListening();
     context.read<UserProfileProvider>().startListening();
+    context.read<HandicapProvider>().startListening();
   }
 
   @override
@@ -83,6 +85,7 @@ class _AppShellState extends State<AppShell> {
     // Si el usuario cierra sesión, reseteamos el flag para el próximo login
     if (auth.status == AuthStatus.unauthenticated) {
       _listenersStarted = false;
+      context.read<HandicapProvider>().stopListening();
       return const AuthScreen();
     }
 

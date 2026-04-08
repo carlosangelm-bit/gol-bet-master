@@ -14,6 +14,7 @@ import 'providers/round_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/player_provider.dart';
 import 'providers/user_profile_provider.dart';
+import 'providers/handicap_provider.dart';
 import 'app_shell.dart';
 
 void main() {
@@ -79,6 +80,7 @@ void main() {
           ChangeNotifierProvider<AuthProvider>(create: (_) => AuthProvider()),
           ChangeNotifierProvider<PlayerProvider>(create: (_) => PlayerProvider()),
           ChangeNotifierProvider<UserProfileProvider>(create: (_) => UserProfileProvider()),
+          ChangeNotifierProvider<HandicapProvider>(create: (_) => HandicapProvider()),
         ],
         child: const GolfBetApp(),
       ),

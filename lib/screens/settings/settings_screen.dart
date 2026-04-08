@@ -10,7 +10,9 @@ import '../../providers/user_profile_provider.dart';
 import '../../services/user_profile_service.dart';
 import '../../widgets/common_widgets.dart';
 import '../../providers/player_provider.dart';
+import '../../providers/handicap_provider.dart';
 import '../../services/golf_course_service.dart';
+import '../../services/handicap_service.dart';
 import '../../services/firestore_service.dart';
 import '../presets/game_presets_screen.dart';
 import '../../services/course_corrections_service.dart';
@@ -155,10 +157,11 @@ class _ProfileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t        = GolfThemeExt.current;
-    final profProv = context.watch<UserProfileProvider>();
-    final playerProv = context.watch<PlayerProvider>();
-    final profile  = profProv.profile;
+    final t           = GolfThemeExt.current;
+    final profProv    = context.watch<UserProfileProvider>();
+    final playerProv  = context.watch<PlayerProvider>();
+    final hcpProv     = context.watch<HandicapProvider>();
+    final profile     = profProv.profile;
 
     // Mostrar spinner SOLO si está cargando Y aún no hay datos.
     // El provider tiene un timeout de 8 s que pone loading=false,
@@ -280,6 +283,12 @@ class _ProfileCard extends StatelessWidget {
           ),
         ]),
 
+        // ── Handicap Index ──────────────────────────────────────
+        const SizedBox(height: 12),
+        const GDivider(),
+        const SizedBox(height: 12),
+        _HandicapIndexCard(prov: hcpProv, t: t),
+
         // Aviso si no está configurado
         if (profile == null || myPlayer == null) ...[
           const SizedBox(height: 12),
@@ -345,6 +354,406 @@ class _ProfileCard extends StatelessWidget {
         t: t,
         profile: profile,
         playerProv: playerProv,
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HANDICAP INDEX CARD
+// ─────────────────────────────────────────────────────────────────────────────
+class _HandicapIndexCard extends StatelessWidget {
+  final HandicapProvider prov;
+  final GolfTheme t;
+  const _HandicapIndexCard({required this.prov, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final result = prov.result;
+    final hi     = result.index;
+    final n      = result.totalRounds;
+
+    return GestureDetector(
+      onTap: () => _showHandicapSheet(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: hi != null
+                ? [t.primary.withValues(alpha: 0.12), t.primary.withValues(alpha: 0.04)]
+                : [t.sub.withValues(alpha: 0.07), t.sub.withValues(alpha: 0.02)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: hi != null
+                ? t.primary.withValues(alpha: 0.25)
+                : t.sub.withValues(alpha: 0.18),
+          ),
+        ),
+        child: Row(children: [
+          // Icono
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: (hi != null ? t.primary : t.sub).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Center(
+              child: Text(
+                hi != null ? '⛳' : '📋',
+                style: const TextStyle(fontSize: 20),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Info central
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Text('Handicap Index',
+                    style: TextStyle(
+                      color: t.text,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    )),
+                const SizedBox(width: 6),
+                if (prov.loading)
+                  SizedBox(
+                    width: 12, height: 12,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 1.5, color: t.primary),
+                  ),
+              ]),
+              const SizedBox(height: 2),
+              Text(
+                hi != null
+                    ? HandicapService.handicapLevelLabel(hi)
+                    : n < 3
+                        ? 'Necesitas ${3 - n} ronda${3 - n == 1 ? '' : 's'} más'
+                        : 'Sin datos aún',
+                style: TextStyle(color: t.sub, fontSize: 11),
+              ),
+            ],
+          )),
+          // Valor
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(
+              prov.displayIndex,
+              style: TextStyle(
+                color: hi != null ? t.primary : t.sub,
+                fontWeight: FontWeight.w900,
+                fontSize: 26,
+                height: 1.0,
+              ),
+            ),
+            Text(
+              '$n ronda${n == 1 ? '' : 's'}',
+              style: TextStyle(color: t.sub, fontSize: 10),
+            ),
+          ]),
+          const SizedBox(width: 4),
+          Icon(Icons.chevron_right, color: t.sub, size: 18),
+        ]),
+      ),
+    );
+  }
+
+  void _showHandicapSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => ChangeNotifierProvider.value(
+        value: prov,
+        child: _HandicapTrackerSheet(t: t),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHEET TRACKER DE HANDICAP
+// ─────────────────────────────────────────────────────────────────────────────
+class _HandicapTrackerSheet extends StatelessWidget {
+  final GolfTheme t;
+  const _HandicapTrackerSheet({required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final prov   = context.watch<HandicapProvider>();
+    final result = prov.result;
+    final hi     = result.index;
+    final diffs  = result.allDifferentials;
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.75,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (_, sc) => Column(children: [
+        // Handle
+        Container(
+          margin: const EdgeInsets.only(top: 12, bottom: 8),
+          width: 36, height: 4,
+          decoration: BoxDecoration(
+            color: t.sub.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        // Header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+          child: Row(children: [
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Handicap Index', style: TextStyle(
+                color: t.text, fontWeight: FontWeight.w800, fontSize: 18)),
+              Text('Últimas ${diffs.length} rondas · WHS 2024',
+                  style: TextStyle(color: t.sub, fontSize: 12)),
+            ])),
+            // Índice grande
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: hi != null
+                      ? [t.primary, t.primary.withValues(alpha: 0.7)]
+                      : [t.sub.withValues(alpha: 0.3), t.sub.withValues(alpha: 0.15)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(children: [
+                Text(
+                  prov.displayIndex,
+                  style: TextStyle(
+                    color: hi != null ? Colors.white : t.sub,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 30,
+                    height: 1.0,
+                  ),
+                ),
+                Text('HI', style: TextStyle(
+                  color: (hi != null ? Colors.white : t.sub).withValues(alpha: 0.8),
+                  fontSize: 10, fontWeight: FontWeight.w600,
+                )),
+              ]),
+            ),
+          ]),
+        ),
+        // Stats si hay HI
+        if (hi != null) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: _HandicapStats(result: result, t: t),
+          ),
+        ] else ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: t.accent.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: t.accent.withValues(alpha: 0.25)),
+              ),
+              child: Row(children: [
+                Icon(Icons.info_outline, color: t.accent, size: 16),
+                const SizedBox(width: 8),
+                Expanded(child: Text(
+                  result.totalRounds < 3
+                      ? 'Necesitas al menos 3 rondas para calcular tu Handicap Index. '
+                        'Completa ${3 - result.totalRounds} más.'
+                      : 'Juega más rondas para un índice más preciso.',
+                  style: TextStyle(color: t.sub, fontSize: 12),
+                )),
+              ]),
+            ),
+          ),
+        ],
+        // Lista de diferenciales
+        Expanded(
+          child: diffs.isEmpty
+              ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  const Text('🏌️', style: TextStyle(fontSize: 48)),
+                  const SizedBox(height: 12),
+                  Text('Sin rondas registradas',
+                      style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  Text('Tu diferencial se calculará automáticamente\nal terminar tu próxima ronda.',
+                      style: TextStyle(color: t.sub, fontSize: 12), textAlign: TextAlign.center),
+                ]))
+              : ListView.builder(
+                  controller: sc,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  itemCount: diffs.length,
+                  itemBuilder: (_, i) {
+                    final d = diffs[i];
+                    final isUsed = result.usedDifferentials.any((u) => u.roundId == d.roundId);
+                    return _DiffRow(diff: d, isUsed: isUsed, rank: i + 1, t: t);
+                  },
+                ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ── Stats del Handicap Index ──────────────────────────────────────────────────
+class _HandicapStats extends StatelessWidget {
+  final HandicapIndexResult result;
+  final GolfTheme t;
+  const _HandicapStats({required this.result, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final used   = result.usedDifferentials;
+    final avg    = used.isEmpty ? 0.0
+        : used.fold<double>(0, (s, d) => s + d.differential) / used.length;
+    final best   = used.isEmpty ? null
+        : used.reduce((a, b) => a.differential < b.differential ? a : b);
+
+    return Row(children: [
+      _StatBox(
+        label: 'Diferenciales\nusados',
+        value: '${used.length}/${result.totalRounds}',
+        color: t.primary, t: t,
+      ),
+      const SizedBox(width: 8),
+      _StatBox(
+        label: 'Promedio\ndiferenciales',
+        value: avg.toStringAsFixed(1),
+        color: t.accent, t: t,
+      ),
+      const SizedBox(width: 8),
+      _StatBox(
+        label: 'Mejor\ndiferencial',
+        value: best?.differential.toStringAsFixed(1) ?? '—',
+        color: t.profit, t: t,
+      ),
+    ]);
+  }
+}
+
+class _StatBox extends StatelessWidget {
+  final String label, value;
+  final Color color;
+  final GolfTheme t;
+  const _StatBox({required this.label, required this.value, required this.color, required this.t});
+
+  @override
+  Widget build(BuildContext context) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(children: [
+        Text(value, style: TextStyle(
+          color: color, fontWeight: FontWeight.w800, fontSize: 18)),
+        const SizedBox(height: 2),
+        Text(label, style: TextStyle(color: t.sub, fontSize: 9.5),
+            textAlign: TextAlign.center),
+      ]),
+    ),
+  );
+}
+
+// ── Fila de diferencial en el tracker ─────────────────────────────────────────
+class _DiffRow extends StatelessWidget {
+  final ScoreDifferential diff;
+  final bool isUsed;
+  final int rank;
+  final GolfTheme t;
+  const _DiffRow({required this.diff, required this.isUsed, required this.rank, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    String formattedDate;
+    try {
+      final d = diff.playedAt;
+      formattedDate = '${d.day}/${d.month}/${d.year}';
+    } catch (_) {
+      formattedDate = '—';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isUsed
+              ? t.primary.withValues(alpha: 0.07)
+              : t.card,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isUsed
+                ? t.primary.withValues(alpha: 0.25)
+                : t.sub.withValues(alpha: 0.12),
+          ),
+        ),
+        child: Row(children: [
+          // Número de ronda
+          Container(
+            width: 28, height: 28,
+            decoration: BoxDecoration(
+              color: (isUsed ? t.primary : t.sub).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Center(
+              child: Text('$rank',
+                  style: TextStyle(
+                    color: isUsed ? t.primary : t.sub,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  )),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Info de la ronda
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              diff.roundName,
+              style: TextStyle(
+                color: t.text, fontWeight: FontWeight.w700, fontSize: 12),
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 1),
+            Row(children: [
+              Text('${diff.courseName} · ${diff.holesPlayed} H · $formattedDate',
+                  style: TextStyle(color: t.sub, fontSize: 10),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ]),
+          ])),
+          // Diferencial + indicador
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              if (isUsed)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Icon(Icons.check_circle, color: t.primary, size: 12),
+                ),
+              Text(
+                diff.differential.toStringAsFixed(1),
+                style: TextStyle(
+                  color: isUsed ? t.primary : t.sub,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
+              ),
+            ]),
+            Text(
+              'Gross ${diff.grossScore} · RBA ${diff.adjustedGrossScore}',
+              style: TextStyle(color: t.sub, fontSize: 9),
+            ),
+          ]),
+        ]),
       ),
     );
   }

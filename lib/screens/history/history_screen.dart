@@ -8,7 +8,9 @@ import '../../core/app_theme.dart';
 import '../../models/models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/round_provider.dart';
+import '../../providers/handicap_provider.dart';
 import '../../services/firestore_service.dart';
+import '../../services/handicap_service.dart';
 import '../../widgets/common_widgets.dart';
 import '../results/results_screen.dart';
 
@@ -18,8 +20,9 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  bool _recovering = false;
-  bool _syncing    = false;
+  bool _recovering  = false;
+  bool _syncing     = false;
+  bool _migrating   = false;
   int  _pendingCount = 0;
 
   @override
@@ -57,6 +60,53 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
+  /// Migra rondas históricas: calcula Score Differential para rondas sin él
+  Future<void> _migrateHandicapHistory(GolfTheme t) async {
+    setState(() => _migrating = true);
+    try {
+      final hcpProv = context.read<HandicapProvider>();
+      final existingIds = hcpProv.differentials.map((d) => d.roundId).toSet();
+
+      // Obtener historial completo
+      final history = await FirestoreService.getHistory(limit: 100);
+      final toMigrate = history.where((s) =>
+          !existingIds.contains(s.docId) && !existingIds.contains(s.id)).toList();
+
+      if (toMigrate.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Todas las rondas ya tienen diferencial calculado ✅'),
+          backgroundColor: t.profit,
+        ));
+        return;
+      }
+
+      int migrated = 0;
+      for (final summary in toMigrate) {
+        final round = await FirestoreService.loadRoundById(summary.docId);
+        if (round == null) continue;
+        final ok = await FirestoreService.recalculateDifferentialForRound(round);
+        if (ok) migrated++;
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          migrated == 0
+              ? 'No se pudieron migrar rondas (scores incompletos)'
+              : '$migrated diferencial${migrated > 1 ? 'es' : ''} calculado${migrated > 1 ? 's' : ''} ⛳'),
+        backgroundColor: migrated > 0 ? t.profit : t.sub,
+        duration: const Duration(seconds: 4),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al migrar: $e')));
+    } finally {
+      if (mounted) setState(() => _migrating = false);
+    }
+  }
+
   /// Busca rondas no finalizadas en Firestore y las marca como finalizadas
   /// (recuperación de rondas "huérfanas" que se concluyeron pero no quedaron en historial)
   Future<void> _recoverOrphanRounds(GolfTheme t) async {
@@ -84,7 +134,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     final t    = context.watch<RoundProvider>().theme;
     final auth = context.watch<AuthProvider>();
-    final busy = _recovering || _syncing;
+    final busy = _recovering || _syncing || _migrating;
     return Scaffold(
       backgroundColor: t.bg,
       appBar: AppBar(
@@ -126,6 +176,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ),
                 ],
               ),
+            IconButton(
+              icon: Icon(Icons.sports_golf_outlined, color: t.primary.withValues(alpha: 0.7)),
+              tooltip: 'Calcular diferenciales WHS del historial',
+              onPressed: () => _migrateHandicapHistory(t),
+            ),
             IconButton(
               icon: Icon(Icons.restore_outlined, color: t.sub),
               tooltip: 'Recuperar rondas',
@@ -249,6 +304,12 @@ class _HistoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hcpProv = context.watch<HandicapProvider>();
+    // Buscar si hay diferencial registrado para esta ronda
+    final ScoreDifferential? diff = hcpProv.differentials
+        .where((d) => d.roundId == summary.docId || d.roundId == summary.id)
+        .firstOrNull;
+
     final date = summary.finishedAt ?? summary.createdAt;
     String formattedDate;
     try {
@@ -286,7 +347,9 @@ class _HistoryCard extends StatelessWidget {
                 Row(children: [
                   Icon(Icons.calendar_today, size: 11, color: t.sub),
                   const SizedBox(width: 4),
-                  Text(formattedDate, style: TextStyle(color: t.sub, fontSize: 11)),
+                  Expanded(child: Text(formattedDate, style: TextStyle(color: t.sub, fontSize: 11))),
+                  // Chip de diferencial si existe
+                  if (diff != null) ..._buildDiffChip(diff),
                 ]),
               ])),
               Icon(Icons.chevron_right, color: t.sub, size: 20),
@@ -296,6 +359,25 @@ class _HistoryCard extends StatelessWidget {
       ),
     );
   }
+
+  List<Widget> _buildDiffChip(ScoreDifferential diff) => [
+    const SizedBox(width: 6),
+    Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: t.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: t.primary.withValues(alpha: 0.3)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text('⛳ ', style: TextStyle(fontSize: 9, color: t.primary)),
+        Text(
+          diff.differential.toStringAsFixed(1),
+          style: TextStyle(color: t.primary, fontSize: 10, fontWeight: FontWeight.w800),
+        ),
+      ]),
+    ),
+  ];
 
   Future<void> _openRound(BuildContext context) async {
     final t = this.t;
@@ -322,22 +404,135 @@ class _HistoryCard extends StatelessWidget {
 }
 
 // ── Detalle de ronda del historial ────────────────────────────────────────────
-class _HistoryRoundDetail extends StatelessWidget {
+class _HistoryRoundDetail extends StatefulWidget {
   final Round round;
   final GolfTheme t;
   const _HistoryRoundDetail({required this.round, required this.t});
+  @override State<_HistoryRoundDetail> createState() => _HistoryRoundDetailState();
+}
+
+class _HistoryRoundDetailState extends State<_HistoryRoundDetail> {
+  bool _calculating = false;
+
+  Future<void> _calculateDifferential() async {
+    final hcpProv = context.read<HandicapProvider>();
+    // Buscar jugador principal (vinculado al usuario)
+    String? playerId;
+    final uid = FirestoreService.currentUid;
+    for (final p in widget.round.players) {
+      if (p.linkedUserId == uid) { playerId = p.id; break; }
+    }
+    playerId ??= widget.round.players.firstOrNull?.id;
+    if (playerId == null) return;
+
+    setState(() => _calculating = true);
+    try {
+      final diff = HandicapService.calculateFromRound(
+        round: widget.round, playerId: playerId);
+      if (diff != null) {
+        await hcpProv.saveDifferential(diff);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('⛳ Diferencial ${diff.differential.toStringAsFixed(1)} guardado'),
+            backgroundColor: widget.t.profit,
+          ));
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: const Text('No se pudo calcular el diferencial (scores incompletos)'),
+            backgroundColor: widget.t.sub,
+          ));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _calculating = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final hcpProv = context.watch<HandicapProvider>();
+    final existingDiff = hcpProv.differentials
+        .where((d) => d.roundId == widget.round.id)
+        .firstOrNull;
+
     return Scaffold(
-      backgroundColor: t.bg,
+      backgroundColor: widget.t.bg,
       appBar: AppBar(
-        backgroundColor: t.bg,
+        backgroundColor: widget.t.bg,
         elevation: 0,
-        title: Text(round.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
-        iconTheme: IconThemeData(color: t.text),
+        title: Text(widget.round.name,
+            style: TextStyle(color: widget.t.text, fontWeight: FontWeight.w800)),
+        iconTheme: IconThemeData(color: widget.t.text),
+        actions: [
+          if (_calculating)
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: SizedBox(width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else
+            IconButton(
+              icon: Icon(
+                existingDiff != null ? Icons.refresh : Icons.calculate_outlined,
+                color: widget.t.primary,
+              ),
+              tooltip: existingDiff != null
+                  ? 'Recalcular diferencial WHS (${existingDiff.differential.toStringAsFixed(1)})'
+                  : 'Calcular diferencial WHS',
+              onPressed: _calculateDifferential,
+            ),
+        ],
       ),
-      body: ResultsBody(round: round),
+      body: Column(children: [
+        // Banner con el diferencial si existe
+        if (existingDiff != null)
+          _DifferentialBanner(diff: existingDiff, t: widget.t),
+        Expanded(child: ResultsBody(round: widget.round)),
+      ]),
+    );
+  }
+}
+
+// ── Banner de diferencial en detalle de ronda ─────────────────────────────────
+class _DifferentialBanner extends StatelessWidget {
+  final ScoreDifferential diff;
+  final GolfTheme t;
+  const _DifferentialBanner({required this.diff, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [t.primary.withValues(alpha: 0.12), t.primary.withValues(alpha: 0.04)],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.primary.withValues(alpha: 0.3)),
+      ),
+      child: Row(children: [
+        const Text('⛳', style: TextStyle(fontSize: 20)),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Score Differential',
+              style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 12)),
+          Text('Gross ${diff.grossScore} · RBA ${diff.adjustedGrossScore} · CR ${diff.courseRating.toStringAsFixed(1)} · Slope ${diff.slopeRating}',
+              style: TextStyle(color: t.sub, fontSize: 10)),
+        ])),
+        Text(
+          diff.differential.toStringAsFixed(1),
+          style: TextStyle(
+            color: t.primary, fontWeight: FontWeight.w900, fontSize: 24, height: 1.0),
+        ),
+      ]),
     );
   }
 }

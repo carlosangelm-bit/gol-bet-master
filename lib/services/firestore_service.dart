@@ -3,14 +3,19 @@
 // Gestiona rondas activas, historial y plantillas de apuestas
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/models.dart';
 import '../providers/round_provider.dart' show roundToJson, roundFromJson;
 import 'auth_service.dart';
+import 'handicap_service.dart';
 
 class FirestoreService {
   static final _db = FirebaseFirestore.instance;
   static const _uuid = Uuid();
+
+  /// UID del usuario autenticado actualmente (null si no está autenticado)
+  static String? get currentUid => AuthService.uid;
 
   // ── Paths ───────────────────────────────────────────────────────────────────
   static CollectionReference<Map<String, dynamic>> _rounds() =>
@@ -23,17 +28,113 @@ class FirestoreService {
   // RONDAS
   // ══════════════════════════════════════════════════════════════════════════════
 
-  /// Guarda o actualiza una ronda en Firestore
+  // ── Paths para diferenciales de handicap ──────────────────────────────────
+  static CollectionReference<Map<String, dynamic>> _scoreDiffs() =>
+      _db.collection('users').doc(AuthService.uid).collection('scoreDifferentials');
+
+  /// Guarda o actualiza una ronda en Firestore.
+  /// Al finalizar, calcula y persiste el Score Differential del jugador propietario.
   static Future<void> saveRound(Round round) async {
-    if (AuthService.uid == null) return;
+    final uid = AuthService.uid;
+    if (uid == null) return;
     final data = roundToJson(round);
     data['updatedAt'] = FieldValue.serverTimestamp();
     data['isFinished'] = round.isFinished;
     // Si se está finalizando, agregar el timestamp de finalización
     if (round.isFinished) {
       data['finishedAt'] = FieldValue.serverTimestamp();
+      // Calcular y guardar Score Differential para el jugador vinculado al uid
+      await _saveScoreDifferentialsForRound(round);
     }
     await _rounds().doc(round.id).set(data, SetOptions(merge: true));
+  }
+
+  /// Calcula y guarda el Score Differential del jugador del usuario al finalizar una ronda.
+  /// Prioridad: jugador con linkedUserId == uid → primer jugador con scores válidos.
+  static Future<void> _saveScoreDifferentialsForRound(Round round) async {
+    final uid = AuthService.uid;
+    if (uid == null) return;
+    if (round.players.isEmpty) return;
+    try {
+      // Prioridad 1: jugador con linkedUserId == uid
+      Player? target = round.players.where((p) => p.linkedUserId == uid).firstOrNull;
+      // Prioridad 2: primer jugador con scores registrados
+      if (target == null) {
+        for (final p in round.players) {
+          final hasScores = (round.scores[p.id] ?? {})
+              .values.any((s) => (s.grossScore ?? 0) > 0);
+          if (hasScores) { target = p; break; }
+        }
+      }
+      // Prioridad 3: primer jugador de la lista
+      target ??= round.players.first;
+
+      final diff = HandicapService.calculateFromRound(
+        round: round,
+        playerId: target.id,
+      );
+      if (diff == null) return;
+
+      // Guardar en users/{uid}/scoreDifferentials/{roundId}
+      await _scoreDiffs().doc(round.id).set(diff.toJson(), SetOptions(merge: false));
+      if (kDebugMode) {
+        debugPrint('[Handicap] Diferencial ${diff.differential} guardado '
+            'para ${target.name} en "${round.name}"');
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Handicap] Error al guardar diferencial: $e');
+    }
+  }
+
+  /// Recalcula y guarda el Score Differential de una ronda ya finalizada.
+  /// Útil para migrar el historial existente.
+  static Future<bool> recalculateDifferentialForRound(Round round) async {
+    if (!round.isFinished) return false;
+    try {
+      await _saveScoreDifferentialsForRound(round);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Stream de todos los Score Differentials del usuario (tiempo real)
+  static Stream<List<ScoreDifferential>> scoreDifferentialsStream() {
+    if (AuthService.uid == null) return Stream.value([]);
+    return _scoreDiffs()
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) {
+              try {
+                return ScoreDifferential.fromJson(
+                    Map<String, dynamic>.from(d.data()));
+              } catch (_) {
+                return null;
+              }
+            })
+            .whereType<ScoreDifferential>()
+            .toList());
+  }
+
+  /// Carga todos los Score Differentials una vez
+  static Future<List<ScoreDifferential>> getScoreDifferentials() async {
+    if (AuthService.uid == null) return [];
+    try {
+      final snap = await _scoreDiffs().get();
+      return snap.docs
+          .map((d) {
+            try {
+              return ScoreDifferential.fromJson(
+                  Map<String, dynamic>.from(d.data()));
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<ScoreDifferential>()
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   /// Carga la ronda activa (la más reciente no finalizada)

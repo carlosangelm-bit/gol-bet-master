@@ -1005,6 +1005,13 @@ class BetEngine {
         ? GameEngine.buildTeamHcpMap(round, allPlayerIds)
         : <String, double>{};
 
+    // Respetar startingNine igual que nassauLiveStatus individual
+    final bool isBack  = round.startingNine == StartingNine.back;
+    final int seg1From = isBack ? 10 : 1;
+    final int seg1To   = isBack ? 18 : 9;
+    final int seg2From = isBack ? 1  : 10;
+    final int seg2To   = isBack ? 9  : 18;
+
     int front = 0, back = 0;
     int frontPlayed = 0, backPlayed = 0;
     final List<int> frontHistory = [];
@@ -1017,10 +1024,10 @@ class BetEngine {
       );
       if (delta == null) continue;
 
-      if (h <= 9) {
+      if (h >= seg1From && h <= seg1To) {
         front += delta; frontPlayed++; frontHistory.add(front);
-      } else {
-        back += delta; backPlayed++; backHistory.add(back);
+      } else if (h >= seg2From && h <= seg2To) {
+        back  += delta; backPlayed++;  backHistory.add(back);
       }
     }
 
@@ -1029,9 +1036,9 @@ class BetEngine {
 
     final List<NassauPress> presses = [];
     if (cfg.pressEnabled) {
-      _detectPresses(presses, frontHistory, 1, 9, frontPlayed,
+      _detectPresses(presses, frontHistory, seg1From, seg1To, frontPlayed,
           idA, idB, cfg.autoPressTrigger);
-      _detectPresses(presses, backHistory, 10, 18, backPlayed,
+      _detectPresses(presses, backHistory, seg2From, seg2To, backPlayed,
           idA, idB, cfg.autoPressTrigger);
     }
 
@@ -1652,7 +1659,6 @@ class BetEngine {
     Round round, String p1Id, String p2Id, BetModuleInstance mod,
   ) {
     final cfg = mod.nassau;
-    // Usar _effectiveHcps para respetar manualHandicaps igual que _nassauPair
     final (hcp1, hcp2) = _effectiveHcps(round, p1Id, p2Id, mod.useHandicap);
     final p1IsBase    = hcp1 <= hcp2;
     final hcpBase     = p1IsBase ? hcp1 : hcp2;
@@ -1661,13 +1667,20 @@ class BetEngine {
     final receiverId  = p1IsBase ? p2Id : p1Id;
     final allHoles    = round.course.holes;
 
+    // Respetar startingNine: primer segmento = hoyos que se juegan primero
+    final bool isBack   = round.startingNine == StartingNine.back;
+    final int seg1From  = isBack ? 10 : 1;
+    final int seg1To    = isBack ? 18 : 9;
+    final int seg2From  = isBack ? 1  : 10;
+    final int seg2To    = isBack ? 9  : 18;
+
     int front = 0, back = 0;
     int frontPlayed = 0, backPlayed = 0;
     final List<int> frontHistory = [];
     final List<int> backHistory  = [];
 
-    for (int h = 1; h <= round.totalHoles; h++) {
-      final ch = round.course.holes.firstWhere((c) => c.hole == h);
+    for (final ch in allHoles) {
+      final h         = ch.hole;
       final sBase     = round.getScore(baseId,     h);
       final sReceiver = round.getScore(receiverId, h);
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
@@ -1688,18 +1701,18 @@ class BetEngine {
       else if (grossBase > netReceiver) delta = p1IsBase ? -1 :  1;
       else                              delta = 0;
 
-      if (h <= 9) {
+      if (h >= seg1From && h <= seg1To) {
         front += delta; frontPlayed++; frontHistory.add(front);
-      } else {
-        back += delta; backPlayed++; backHistory.add(back);
+      } else if (h >= seg2From && h <= seg2To) {
+        back  += delta; backPlayed++;  backHistory.add(back);
       }
     }
 
     final List<NassauPress> presses = [];
     if (cfg.pressEnabled) {
-      _detectPresses(presses, frontHistory, 1, 9, frontPlayed,
+      _detectPresses(presses, frontHistory, seg1From, seg1To, frontPlayed,
           p1Id, p2Id, cfg.autoPressTrigger);
-      _detectPresses(presses, backHistory, 10, 18, backPlayed,
+      _detectPresses(presses, backHistory, seg2From, seg2To, backPlayed,
           p1Id, p2Id, cfg.autoPressTrigger);
     }
 
