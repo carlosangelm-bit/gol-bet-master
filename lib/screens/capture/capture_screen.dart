@@ -26,7 +26,7 @@ class CaptureScreen extends StatefulWidget {
 }
 
 class _CaptureScreenState extends State<CaptureScreen> {
-  int _currentHole = 1;
+  int _currentHole = 1; // Se corrige en initState via postFrameCallback
   String? _activePlayerId; // jugador seleccionado en la tabla
   final ScrollController _holeScroll = ScrollController();
 
@@ -118,7 +118,24 @@ class _CaptureScreenState extends State<CaptureScreen> {
     }
 
     final round = prov.round!;
-    final ch    = round.course.holes.firstWhere((h) => h.hole == _currentHole);
+    // Validar que _currentHole pertenece al orden de juego real
+    final sn0       = round.startingNine;
+    final firstSeg0 = sn0 == StartingNine.back
+        ? List.generate(9, (i) => i + 10)
+        : List.generate(9, (i) => i + 1);
+    final secondSeg0 = sn0 == StartingNine.back
+        ? List.generate(9, (i) => i + 1)
+        : List.generate(9, (i) => i + 10);
+    final playOrder0 = round.totalHoles == 9
+        ? firstSeg0
+        : [...firstSeg0, ...secondSeg0];
+    if (!playOrder0.contains(_currentHole)) {
+      // Hoyo inválido para esta ronda → corregir de inmediato
+      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToHole(playOrder0.first));
+      _currentHole = playOrder0.first;
+    }
+    final ch    = round.course.holes.firstWhere((h) => h.hole == _currentHole,
+        orElse: () => round.course.holes.first);
 
     // Asegurar que siempre hay un jugador activo válido
     final activeId = (_activePlayerId != null &&
@@ -191,7 +208,15 @@ class _CaptureScreenState extends State<CaptureScreen> {
                   final playOrder   = is9Holes
                       ? firstSeg
                       : [...firstSeg, ...secondSeg];
-                  final curIdx      = playOrder.indexOf(_currentHole);
+                  int curIdx = playOrder.indexOf(_currentHole);
+                  // Si el hoyo actual no está en el playOrder (ej. _currentHole=1
+                  // pero la ronda empieza por Back 9), saltar al primer hoyo válido.
+                  if (curIdx == -1) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _jumpToHole(playOrder.first);
+                    });
+                    curIdx = 0;
+                  }
                   final hasPrev     = curIdx > 0;
                   final hasNext     = curIdx >= 0 && curIdx < playOrder.length - 1;
                   final inSecond    = secondSeg.contains(_currentHole);
