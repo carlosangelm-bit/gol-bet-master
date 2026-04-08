@@ -1993,7 +1993,9 @@ class _MatchStatusCard extends StatelessWidget {
       if (st.back > 0) npBal += st.backVal;
       if (st.back < 0) npBal -= st.backVal;
     }
-    if (playedCount >= 18) {
+    // Total 18: se acumula en vivo desde el primer hoyo jugado (es una apuesta
+    // independiente al ganador global, no solo al terminar los 18 hoyos).
+    if (playedCount > 0) {
       if (st.total > 0) npBal += st.totalVal;
       if (st.total < 0) npBal -= st.totalVal;
     }
@@ -4266,7 +4268,7 @@ class _FinancialBreakdown extends StatelessWidget {
             if (st.back > 0) npBal += st.backVal;
             if (st.back < 0) npBal -= st.backVal;
           }
-          if (st.frontPlayed + st.backPlayed >= 18) {
+          if (st.frontPlayed + st.backPlayed > 0) {
             if (st.total > 0) npBal += st.totalVal;
             if (st.total < 0) npBal -= st.totalVal;
           }
@@ -4287,7 +4289,7 @@ class _FinancialBreakdown extends StatelessWidget {
             if (st.back > 0) npBal += st.backVal;
             if (st.back < 0) npBal -= st.backVal;
           }
-          if (st.frontPlayed + st.backPlayed >= 18) {
+          if (st.frontPlayed + st.backPlayed > 0) {
             if (st.total > 0) npBal += st.totalVal;
             if (st.total < 0) npBal -= st.totalVal;
           }

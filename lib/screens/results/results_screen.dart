@@ -710,8 +710,51 @@ class _PlayerFaceToFace extends StatelessWidget {
                   }
                   breakdown[BetModuleType.matchAutoPress] = mpLiveBal;
                 }
-                // Nassau+Press: LedgerEngine.breakdownBetween ya incluye
-                // el balance correcto v\u00eda BetEngine.computeAll \u2192 _nassauPressPair.
+                // Nassau: sobreescribir con balance en vivo (computeAll solo liquida
+                // segmentos CERRADOS; durante la ronda el total 18 y segmentos en curso
+                // deben reflejarse desde el primer hoyo jugado).
+                if (mod.type == BetModuleType.nassau) {
+                  double npLiveBal = 0.0;
+                  if (mod.pressEnabled) {
+                    final st = BetEngine.nassauPressLiveStatus(round, player.id, opp.id, mod);
+                    final isBack   = round.startingNine == StartingNine.back;
+                    final seg1From = isBack ? 10 : 1;
+                    final seg1To   = isBack ? 18 : 9;
+                    if (st.frontPlayed > 0) {
+                      if (st.front > 0) npLiveBal += st.frontVal;
+                      if (st.front < 0) npLiveBal -= st.frontVal;
+                    }
+                    if (st.backPlayed > 0) {
+                      if (st.back > 0) npLiveBal += st.backVal;
+                      if (st.back < 0) npLiveBal -= st.backVal;
+                    }
+                    if (st.frontPlayed + st.backPlayed > 0) {
+                      if (st.total > 0) npLiveBal += st.totalVal;
+                      if (st.total < 0) npLiveBal -= st.totalVal;
+                    }
+                    for (final p in [...st.frontPresses, ...st.backPresses]) {
+                      final inSeg1   = p.startHole >= seg1From && p.startHole <= seg1To;
+                      final pressVal = inSeg1 ? mod.nassau.frontPressValue : mod.nassau.backPressValue;
+                      if (p.score > 0) npLiveBal += pressVal;
+                      if (p.score < 0) npLiveBal -= pressVal;
+                    }
+                  } else {
+                    final st = BetEngine.nassauLiveStatus(round, player.id, opp.id, mod);
+                    if (st.frontPlayed > 0) {
+                      if (st.front > 0) npLiveBal += st.frontVal;
+                      if (st.front < 0) npLiveBal -= st.frontVal;
+                    }
+                    if (st.backPlayed > 0) {
+                      if (st.back > 0) npLiveBal += st.backVal;
+                      if (st.back < 0) npLiveBal -= st.backVal;
+                    }
+                    if (st.frontPlayed + st.backPlayed > 0) {
+                      if (st.total > 0) npLiveBal += st.totalVal;
+                      if (st.total < 0) npLiveBal -= st.totalVal;
+                    }
+                  }
+                  breakdown[BetModuleType.nassau] = npLiveBal;
+                }
               }
             }
 
