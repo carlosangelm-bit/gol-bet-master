@@ -396,20 +396,27 @@ class BetEngine {
       // Score final del segmento
       final segScore = history.last;
 
-      // Detectar presiones automáticas (misma lógica que _detectPresses del Nassau)
-      // cada presión corre desde su hoyo de inicio hasta el final del segmento
+      // Detectar presiones automáticas.
+      // Regla: una presión se dispara cuando el marcador RELATIVO al último punto
+      // de referencia (inicio del segmento o inicio de la última presión) alcanza
+      // el trigger. Así evitamos disparar múltiples presiones en el mismo "bache".
       final int maxP = cfg.maxPresses ?? 99;
       final List<({int startIdx, int startHole})> pressStarts = [];
-      final int played = history.length;
 
+      // refIdx: índice en history desde donde medimos el marcador relativo.
+      // Al inicio es 0 (el segmento entero); después de cada press se actualiza
+      // al idx del hoyo que disparó esa press.
+      int refIdx = 0;
       for (int i = 0; i < history.length; i++) {
         if (pressStarts.length >= maxP) break;
-        final diff = history[i];
-        if (diff.abs() >= cfg.pressTriggerValue) {
+        // Marcador relativo desde el último punto de referencia
+        final relDiff = history[i] - (refIdx == 0 ? 0 : history[refIdx - 1]);
+        if (relDiff.abs() >= cfg.pressTriggerValue) {
           final startH = holeFrom + i + 1;
-          if (startH <= holeTo && !pressStarts.any((p) => p.startHole == startH)) {
+          if (startH <= holeTo) {
             if (cfg.allowMultiplePresses || pressStarts.isEmpty) {
               pressStarts.add((startIdx: i + 1, startHole: startH));
+              refIdx = i + 1; // mover referencia al hoyo que disparó la press
             }
           }
         }
@@ -1816,23 +1823,27 @@ class BetEngine {
     String p1Id, String p2Id,
     int trigger,
   ) {
-    final List<int> pressStartHoles = [];
+    // Misma lógica de marcador relativo que liquidateSegment:
+    // el trigger se mide desde el inicio del segmento o desde el último press,
+    // no desde el acumulado absoluto. Así se evitan presiones duplicadas
+    // cuando el marcador se mantiene en el umbral varios hoyos seguidos.
+    int refIdx = 0; // índice desde donde medimos el marcador relativo
     for (int i = 0; i < history.length; i++) {
-      final diff = history[i];
-      if (diff.abs() >= trigger) {
+      final relDiff = history[i] - (refIdx == 0 ? 0 : history[refIdx - 1]);
+      if (relDiff.abs() >= trigger) {
         final startHole = holeStart + i + 1;
-        if (startHole <= holeEnd && !pressStartHoles.contains(startHole)) {
-          pressStartHoles.add(startHole);
-          int pressScore = 0;
-          for (int j = i + 1; j < history.length; j++) {
-            pressScore = history[j] - history[i];
-          }
-          final loser = diff < 0 ? p1Id : p2Id;
+        if (startHole <= holeEnd) {
+          // Score de la presión: diferencia desde su punto de inicio hasta ahora
+          final pressScore = history.length > i + 1
+              ? history.last - history[i]
+              : 0;
+          final loser = relDiff < 0 ? p1Id : p2Id;
           out.add(NassauPress(
             loser: loser, startHole: startHole, endHole: holeEnd,
             score: pressScore,
             isOpen: played < (holeEnd - holeStart + 1),
           ));
+          refIdx = i + 1; // mover referencia al hoyo que disparó la press
         }
       }
     }

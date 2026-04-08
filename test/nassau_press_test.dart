@@ -150,10 +150,21 @@ void main() {
 
     // CAM (p2) gana B9 3UP → p1 paga a p2 → breakdown negativo para p1
     final npEntries = entries.where((e) => e.betType == BetModuleType.nassauPress).toList();
+    final pressEntries = npEntries.where((e) => e.reason.contains('Press')).toList();
+    print('Press entries: ${pressEntries.length}');
+
     expect(npEntries.isNotEmpty, true,
         reason: 'Debe haber entries de nassauPress en ronda back nine');
     expect(breakdown[BetModuleType.nassauPress], isNotNull);
     expect(breakdown[BetModuleType.nassauPress]!, lessThan(0),
         reason: 'p1 (CAV) perdió el B9 → balance debe ser negativo (p2=CAM gana)');
+
+    // Con trigger=2 y scores -1,-2,-2,-2,-1,-1,-2,-3,-3:
+    // refIdx=0, H10: rel=-1 (no trigger), H11: rel=-2 → PRESS en H12, refIdx=2
+    // Desde H12: H12: rel=0, H13: rel=0, H14: rel=+1, H15: rel=+1, H16: rel=0,
+    //            H17: rel=-1 (no trigger), H18: rel=-2? → depende de scores exactos
+    // Debe haber como máximo 2 presiones (no 5)
+    expect(pressEntries.length, lessThanOrEqualTo(2),
+        reason: 'No debe haber más de 2 presiones con trigger=2 en estos scores');
   });
 }
