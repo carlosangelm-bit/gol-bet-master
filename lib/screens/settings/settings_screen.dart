@@ -1151,15 +1151,18 @@ class _FavCoursesSectionState extends State<_FavCoursesSection> {
   }
 
   /// Consulta courseCorrections para todos los favoritos que aún no se han verificado.
+  /// Solo muestra el banner si la versión remota es MAYOR a la ya aplicada por el usuario.
   Future<void> _checkCorrectionsForAll(List<FavoriteCourse> favs) async {
     for (final fav in favs) {
       if (_checked.contains(fav.courseId)) continue;
       _checked.add(fav.courseId);
       try {
         final correction = await CourseCorrectionsService.getForCourse(fav.courseId);
-        if (mounted) {
-          setState(() => _corrections[fav.courseId] = correction);
-        }
+        if (!mounted) return;
+        // Solo mostrar aviso si hay una corrección NUEVA que el usuario aún no aplicó
+        final isNew = correction != null &&
+            correction.correctionVersion > fav.appliedCorrectionVersion;
+        setState(() => _corrections[fav.courseId] = isNew ? correction : null);
       } catch (_) {
         // Sin corrección disponible
       }
@@ -1178,11 +1181,16 @@ class _FavCoursesSectionState extends State<_FavCoursesSection> {
       if (!mounted) return;
 
       if (correction != null) {
-        // Actualizar el cachedCourse en Firestore con los datos corregidos
-        await prov.restoreApiData(fav.courseId, correction.correctedCourse);
+        // Actualizar el cachedCourse en Firestore con la versión aplicada
+        await prov.restoreApiData(
+          fav.courseId,
+          correction.correctedCourse,
+          appliedCorrectionVersion: correction.correctionVersion,
+        );
         if (!mounted) return;
         setState(() {
-          _corrections[fav.courseId] = correction;
+          // null = corrección ya aplicada → oculta el banner
+          _corrections[fav.courseId] = null;
           _refreshing[fav.courseId] = false;
         });
         messenger.showSnackBar(SnackBar(

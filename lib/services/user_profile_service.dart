@@ -149,6 +149,9 @@ class FavoriteCourse {
   /// Si true, los datos del campo fueron corregidos manualmente y NO deben
   /// sobreescribirse automáticamente con datos frescos de la API.
   final bool manuallyEdited;
+  /// Versión de la corrección oficial ya aplicada a este favorito.
+  /// 0 = nunca aplicada. Si correctionVersion remota > appliedCorrectionVersion, hay aviso.
+  final int appliedCorrectionVersion;
 
   const FavoriteCourse({
     required this.courseId,
@@ -161,6 +164,7 @@ class FavoriteCourse {
     this.cachedCourse,
     this.preferredTeeName,
     this.manuallyEdited = false,
+    this.appliedCorrectionVersion = 0,
   });
 
   /// Nombre completo del campo (mismo formato que en la tarjeta de ronda)
@@ -192,6 +196,8 @@ class FavoriteCourse {
     if (nickname != null)         'nickname':          nickname,
     if (preferredTeeName != null) 'preferredTeeName':  preferredTeeName,
     if (manuallyEdited)           'manuallyEdited':    true,
+    if (appliedCorrectionVersion > 0)
+                                  'appliedCorrectionVersion': appliedCorrectionVersion,
     'createdAt':  FieldValue.serverTimestamp(),
     if (cachedCourse != null)     'cachedCourse':      cachedCourse!.toJson(),
   };
@@ -209,6 +215,8 @@ class FavoriteCourse {
       createdAt:       _ts(d['createdAt']) ?? DateTime.now(),
       cachedCourse:    cached != null ? ApiCourse.fromCached(cached) : null,
       manuallyEdited:  d['manuallyEdited']  as bool? ?? false,
+      appliedCorrectionVersion:
+          (d['appliedCorrectionVersion'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -390,11 +398,17 @@ class UserProfileService {
   }
 
   /// Restaura los datos del campo desde la API, quitando el flag manuallyEdited.
-  static Future<void> restoreApiData(String courseId, ApiCourse freshCourse) async {
+  static Future<void> restoreApiData(
+    String courseId,
+    ApiCourse freshCourse, {
+    int appliedCorrectionVersion = 0,
+  }) async {
     if (AuthService.uid == null) return;
     await _favCourses().doc(courseId).update({
-      'cachedCourse': freshCourse.toJson(),
+      'cachedCourse':   freshCourse.toJson(),
       'manuallyEdited': false,
+      if (appliedCorrectionVersion > 0)
+        'appliedCorrectionVersion': appliedCorrectionVersion,
     });
   }
 }

@@ -167,11 +167,16 @@ class UserProfileProvider extends ChangeNotifier {
   }
 
   /// Restaura los datos de la API para un campo favorito (quita manuallyEdited).
-  Future<void> restoreApiData(String courseId, ApiCourse freshCourse) async {
+  /// [appliedCorrectionVersion]: versión de la corrección oficial que se está aplicando.
+  Future<void> restoreApiData(
+    String courseId,
+    ApiCourse freshCourse, {
+    int appliedCorrectionVersion = 0,
+  }) async {
     final idx = _favCourses.indexWhere((c) => c.courseId == courseId);
     if (idx == -1) return;
     final old = _favCourses[idx];
-    // Actualización optimista
+    // Actualización optimista — persiste la versión aplicada
     _favCourses[idx] = FavoriteCourse(
       courseId:        old.courseId,
       clubName:        old.clubName,
@@ -183,9 +188,14 @@ class UserProfileProvider extends ChangeNotifier {
       cachedCourse:    freshCourse,
       preferredTeeName: old.preferredTeeName,
       manuallyEdited:  false,
+      appliedCorrectionVersion: appliedCorrectionVersion,
     );
     notifyListeners();
-    await UserProfileService.restoreApiData(courseId, freshCourse);
+    await UserProfileService.restoreApiData(
+      courseId,
+      freshCourse,
+      appliedCorrectionVersion: appliedCorrectionVersion,
+    );
   }
 
   /// Guarda el tee preferido del usuario para un campo favorito.
