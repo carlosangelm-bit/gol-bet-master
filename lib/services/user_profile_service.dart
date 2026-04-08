@@ -231,18 +231,42 @@ class UserProfileService {
       _userDoc().collection('favoriteCourses');
 
   // ── Stream del perfil ──────────────────────────────────────────────────────
-  // snapshots(includeMetadataChanges: false) → solo emite cuando los datos
-  // cambian de verdad (ignora eventos de metadata como hasPendingWrites).
-  // Con persistenceEnabled=true en Firestore Web, el primer evento llega
-  // desde IndexedDB (<50 ms) sin esperar a la red.
+  // includeMetadataChanges: true → recibir el evento de caché local (isFromCache)
+  // inmediatamente y mostrar los datos sin esperar a la red. El segundo evento
+  // (isFromCache=false) llega cuando la red sincroniza y actualiza si hay cambios.
   static Stream<UserProfile?> profileStream() {
     if (AuthService.uid == null) return Stream.value(null);
     return _userDoc()
-        .snapshots(includeMetadataChanges: false)
+        .snapshots(includeMetadataChanges: true)
         .map((snap) {
           if (!snap.exists) return null;
           return UserProfile.fromFirestore(snap.data()!, snap.id);
         });
+  }
+
+  // ── Lectura única inmediata (fallback para cuando el stream tarda) ──────────
+  // Usa get() con Source.cache primero para respuesta instantánea desde
+  // IndexedDB; si no hay caché, va a la red. Ideal como pre-carga rápida.
+  static Future<UserProfile?> fetchProfileOnce() async {
+    if (AuthService.uid == null) return null;
+    try {
+      // Intentar caché local primero (instantáneo)
+      try {
+        final snap = await _userDoc().get(const GetOptions(source: Source.cache));
+        if (snap.exists && snap.data() != null) {
+          return UserProfile.fromFirestore(snap.data()!, snap.id);
+        }
+      } catch (_) {
+        // No hay caché — ir a la red
+      }
+      // Fallback: red
+      final snap = await _userDoc().get(const GetOptions(source: Source.server));
+      if (!snap.exists) return null;
+      return UserProfile.fromFirestore(snap.data()!, snap.id);
+    } catch (e) {
+      if (kDebugMode) debugPrint('fetchProfileOnce error: $e');
+      return null;
+    }
   }
 
   // ── Guardar perfil ─────────────────────────────────────────────────────────
@@ -264,11 +288,10 @@ class UserProfileService {
 
   static Stream<List<FavoriteCourse>> favCoursesStream() {
     if (AuthService.uid == null) return Stream.value([]);
-    // includeMetadataChanges: false → solo emite cuando los datos cambian,
-    // no en cada hasPendingWrites/fromCache toggle. Reduce rebuilds innecesarios.
-    // Con persistenceEnabled=true el primer evento sale de IndexedDB en <50 ms.
+    // includeMetadataChanges: true → el primer evento llega desde IndexedDB
+    // (<50 ms) con los campos favoritos ya guardados, sin esperar la red.
     return _favCourses()
-        .snapshots(includeMetadataChanges: false)
+        .snapshots(includeMetadataChanges: true)
         .map((snap) {
           final list = snap.docs
               .map((d) => FavoriteCourse.fromFirestore(d.data(), d.id))

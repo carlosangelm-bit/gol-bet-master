@@ -29,20 +29,37 @@ class UserProfileProvider extends ChangeNotifier {
 
   // ── Suscripción en tiempo real ─────────────────────────────────────────────
   void startListening() {
-    // Si ya hay datos en memoria (sesión activa), NO mostrar spinner.
-    // Con persistenceEnabled=true en Firestore Web, el stream emite
-    // inmediatamente desde la caché local de IndexedDB, así que el
-    // spinner apenas aparecerá incluso en la primera carga.
+    // Si ya hay una suscripción activa y tenemos datos, no hacer nada.
+    // Esto evita que llamadas repetidas desde build() reinicien el timeout
+    // y mantengan el spinner activo indefinidamente.
+    if (_profileSub != null && _profile != null) return;
+
+    // Si ya hay suscripción activa pero sin datos aún (carga en curso),
+    // no resetear el timeout — dejar que el que ya está corriendo actúe.
+    if (_profileSub != null && _loading) return;
+
     if (_profile == null) {
       _loading = true;
       _error   = null;
       notifyListeners();
     }
 
-    // Timeout reducido a 5 s: con caché local el stream responde en <500 ms.
-    // Los 5 s son solo para cubrir el caso extremo de primera carga sin red.
+    // Cargar inmediatamente con get() para respuesta instantánea,
+    // sin depender de que el stream emita a tiempo con Long Polling.
+    UserProfileService.fetchProfileOnce().then((profile) {
+      if (_loading && profile != null) {
+        _loadingTimeout?.cancel();
+        _profile = profile;
+        _loading = false;
+        notifyListeners();
+      }
+    }).catchError((e) {
+      if (kDebugMode) debugPrint('UserProfileProvider fetchOnce error: $e');
+    });
+
+    // Timeout de seguridad: 6 s máximo de spinner en cualquier circunstancia.
     _loadingTimeout?.cancel();
-    _loadingTimeout = Timer(const Duration(seconds: 5), () {
+    _loadingTimeout = Timer(const Duration(seconds: 6), () {
       if (_loading) {
         _loading = false;
         if (kDebugMode) debugPrint('UserProfileProvider: timeout → loading=false');
@@ -54,7 +71,8 @@ class UserProfileProvider extends ChangeNotifier {
     _profileSub = UserProfileService.profileStream().listen(
       (profile) {
         _loadingTimeout?.cancel();
-        _profile = profile;
+        // Nunca sobreescribir con null si ya tenemos datos en memoria
+        if (profile != null) _profile = profile;
         _loading = false;
         notifyListeners();
       },
@@ -83,8 +101,13 @@ class UserProfileProvider extends ChangeNotifier {
     _loadingTimeout?.cancel();
     _profileSub?.cancel();
     _coursesSub?.cancel();
-    _profileSub = null;
-    _coursesSub = null;
+    _profileSub  = null;
+    _coursesSub  = null;
+    // Resetear datos para que la próxima sesión empiece limpia
+    _profile     = null;
+    _favCourses  = [];
+    _loading     = false;
+    _error       = null;
   }
 
   @override
