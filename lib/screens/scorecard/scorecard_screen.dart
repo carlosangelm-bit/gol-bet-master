@@ -2858,11 +2858,99 @@ class _NassauLivePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status     = BetEngine.nassauLiveStatus(round, p1.id, p2.id, mod);
-    final n1         = p1.name.split(' ').first;
-    final n2         = p2.name.split(' ').first;
-    final openPresses = status.presses.where((p) => p.isOpen).length;
-    final totalPlayed = status.frontPlayed + status.backPlayed;
+    final n1 = p1.name.split(' ').first;
+    final n2 = p2.name.split(' ').first;
+
+    // Si tiene presiones activas, usar nassauPressLiveStatus para obtener
+    // frontPresses/backPresses separados y valores por segmento.
+    final NassauPressLiveStatus? pressStatus = mod.pressEnabled
+        ? BetEngine.nassauPressLiveStatus(round, p1.id, p2.id, mod)
+        : null;
+    final baseStatus = pressStatus == null
+        ? BetEngine.nassauLiveStatus(round, p1.id, p2.id, mod)
+        : null;
+
+    final int frontScore  = pressStatus?.front      ?? baseStatus!.front;
+    final int backScore   = pressStatus?.back       ?? baseStatus!.back;
+    final int totalScore  = pressStatus?.total      ?? baseStatus!.total;
+    final int frontPlayed = pressStatus?.frontPlayed ?? baseStatus!.frontPlayed;
+    final int backPlayed  = pressStatus?.backPlayed  ?? baseStatus!.backPlayed;
+    final double frontVal = pressStatus?.frontVal   ?? baseStatus!.frontVal;
+    final double backVal  = pressStatus?.backVal    ?? baseStatus!.backVal;
+    final double totalVal = pressStatus?.totalVal   ?? baseStatus!.totalVal;
+    final int totalPlayed = frontPlayed + backPlayed;
+
+    final List<NassauPress> frontPresses = pressStatus?.frontPresses ?? [];
+    final List<NassauPress> backPresses  = pressStatus?.backPresses  ?? [];
+    final double frontPressVal = pressStatus?.frontPressVal ?? mod.nassau.frontPressValue;
+    final double backPressVal  = pressStatus?.backPressVal  ?? mod.nassau.backPressValue;
+    final bool carryActive     = pressStatus?.carryActive   ?? false;
+
+    final openCount      = frontPresses.where((p) => p.isOpen).length
+                         + backPresses.where((p) => p.isOpen).length;
+    final totalPressCount = frontPresses.length + backPresses.length;
+
+    // ── helper: chip visual de cada presión ──────────────────────────────────
+    Widget pressChip(NassauPress press, double pressVal) {
+      final rawScore = press.loser == p1.id ? press.score : -press.score;
+      final color = rawScore == 0
+          ? t.sub
+          : rawScore > 0 ? t.profit : t.loss;
+      final scoreStr = rawScore == 0
+          ? 'AS'
+          : rawScore > 0
+              ? '$n1 +${rawScore.abs()}'
+              : '$n2 +${rawScore.abs()}';
+      return Container(
+        margin: const EdgeInsets.only(top: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: press.isOpen
+                ? t.accent.withValues(alpha: 0.55)
+                : color.withValues(alpha: 0.35),
+          ),
+        ),
+        child: Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: t.accent.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text('⚡ H${press.startHole}',
+                style: TextStyle(
+                    color: t.accent, fontSize: 9, fontWeight: FontWeight.w800)),
+          ),
+          const SizedBox(width: 6),
+          Text('(${press.loser == p1.id ? n1 : n2})',
+              style: TextStyle(
+                  color: t.sub.withValues(alpha: 0.7), fontSize: 9)),
+          const Spacer(),
+          Text(scoreStr,
+              style: TextStyle(
+                  color: color, fontSize: 11, fontWeight: FontWeight.w900)),
+          const SizedBox(width: 5),
+          Text('\$${pressVal.toStringAsFixed(0)}',
+              style: TextStyle(color: t.sub, fontSize: 9)),
+          if (press.isOpen) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: t.accent.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text('EN JUEGO',
+                  style: TextStyle(
+                      color: t.accent, fontSize: 8, fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ]),
+      );
+    }
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
@@ -2874,35 +2962,46 @@ class _NassauLivePanel extends StatelessWidget {
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-          // \u2500\u2500 Header compacto \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+          // ── Header ────────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
             child: Row(children: [
               Text('NASSAU',
                   style: TextStyle(color: t.sub, fontSize: 10,
                       fontWeight: FontWeight.w800, letterSpacing: 1.2)),
+              if (carryActive) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: t.profit.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'CARRY ×${mod.nassau.carryFactor.toStringAsFixed(0)}',
+                    style: TextStyle(color: t.profit, fontSize: 8,
+                        fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
               const Spacer(),
-              // Thru
               if (totalPlayed > 0)
                 Text('$totalPlayed/18 hoyos',
                     style: TextStyle(color: t.sub, fontSize: 10)),
-              // Presiones
               if (mod.pressEnabled) ...[
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
-                    color: openPresses > 0
+                    color: openCount > 0
                         ? t.accent.withValues(alpha: 0.12)
                         : t.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    openPresses > 0
-                        ? '$openPresses press\u2009\ud83d\udd25'
-                        : 'Press ON',
+                    openCount > 0 ? '$openCount press\u2009🔥' : 'Press ON',
                     style: TextStyle(
-                        color: openPresses > 0 ? t.accent : t.primary,
+                        color: openCount > 0 ? t.accent : t.primary,
                         fontSize: 9, fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -2911,89 +3010,52 @@ class _NassauLivePanel extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          // \u2500\u2500 Tres sub-cards quick-glance \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+          // ── Tres bloques F9 / B9 / Total ──────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
             child: Row(children: [
               Expanded(child: _NassauSegment(
-                label: 'F9', played: status.frontPlayed, total: 9,
-                score: status.front, value: status.frontVal,
+                label: 'F9', played: frontPlayed, total: 9,
+                score: frontScore, value: frontVal,
                 p1Name: n1, p2Name: n2, t: t,
               )),
               const SizedBox(width: 6),
               Expanded(child: _NassauSegment(
-                label: 'B9', played: status.backPlayed, total: 9,
-                score: status.back, value: status.backVal,
+                label: 'B9', played: backPlayed, total: 9,
+                score: backScore, value: backVal,
                 p1Name: n1, p2Name: n2, t: t,
               )),
               const SizedBox(width: 6),
               Expanded(child: _NassauSegment(
                 label: '18', played: totalPlayed, total: 18,
-                score: status.total, value: status.totalVal,
+                score: totalScore, value: totalVal,
                 p1Name: n1, p2Name: n2, t: t,
               )),
             ]),
           ),
 
-          // \u2500\u2500 Presiones: fila compacta \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-          if (status.presses.isNotEmpty) ...[
+          // ── Presiones: bloques visuales por segmento ──────────────────────
+          if (totalPressCount > 0) ...[
             Divider(color: t.divider.withValues(alpha: 0.5), height: 1),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: status.presses.map((press) {
-                  final pressLoserName = press.loser == p1.id ? n1 : n2;
-                  final pressScore = press.loser == p1.id
-                      ? press.score : -press.score;
-                  final Color pColor = pressScore == 0
-                      ? t.sub
-                      : pressScore > 0
-                          ? const Color(0xFF2E7D32)
-                          : const Color(0xFFC62828);
-                  final String pLabel = pressScore == 0
-                      ? 'AS'
-                      : pressScore > 0
-                          ? '$n1  +$pressScore'
-                          : '$n2  +${pressScore.abs()}';
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(children: [
-                      Container(
-                        width: 6, height: 6,
-                        decoration: BoxDecoration(
-                          color: press.isOpen ? t.accent : t.divider,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text('Press H${press.startHole}\u2013${press.endHole}',
-                          style: TextStyle(color: t.sub, fontSize: 10)),
-                      const SizedBox(width: 4),
-                      Text('($pressLoserName)',
-                          style: TextStyle(color: t.sub.withValues(alpha: 0.6),
-                              fontSize: 10)),
-                      const Spacer(),
-                      Text(pLabel,
-                          style: TextStyle(color: pColor,
-                              fontSize: 11, fontWeight: FontWeight.w800)),
-                      if (press.isOpen) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: t.accent.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text('EN JUEGO',
-                              style: TextStyle(color: t.accent,
-                                  fontSize: 8, fontWeight: FontWeight.w800)),
-                        ),
-                      ],
-                    ]),
-                  );
-                }).toList(),
+                children: [
+                  if (frontPresses.isNotEmpty) ...[
+                    Text('PRESIONES  F9',
+                        style: TextStyle(color: t.sub, fontSize: 9,
+                            fontWeight: FontWeight.w700, letterSpacing: 0.6)),
+                    ...frontPresses.map((p) => pressChip(p, frontPressVal)),
+                  ],
+                  if (backPresses.isNotEmpty) ...[
+                    if (frontPresses.isNotEmpty) const SizedBox(height: 10),
+                    Text('PRESIONES  B9',
+                        style: TextStyle(color: t.sub, fontSize: 9,
+                            fontWeight: FontWeight.w700, letterSpacing: 0.6)),
+                    ...backPresses.map((p) => pressChip(p, backPressVal)),
+                  ],
+                ],
               ),
             ),
           ],
