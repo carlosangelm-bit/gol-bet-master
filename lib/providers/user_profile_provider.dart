@@ -29,19 +29,20 @@ class UserProfileProvider extends ChangeNotifier {
 
   // ── Suscripción en tiempo real ─────────────────────────────────────────────
   void startListening() {
-    // Si ya hay datos en caché, NO mostrar spinner — evita parpadeo al
-    // re-suscribirse (p.ej. al volver a la pantalla de Ajustes).
+    // Si ya hay datos en memoria (sesión activa), NO mostrar spinner.
+    // Con persistenceEnabled=true en Firestore Web, el stream emite
+    // inmediatamente desde la caché local de IndexedDB, así que el
+    // spinner apenas aparecerá incluso en la primera carga.
     if (_profile == null) {
       _loading = true;
       _error   = null;
       notifyListeners();
     }
 
-    // Timeout de seguridad: si el stream no emite en 8 s, quitar el spinner.
-    // Previene que la tarjeta quede cargando indefinidamente ante errores
-    // de red, Firestore WebChannel o token no propagado aún.
+    // Timeout reducido a 5 s: con caché local el stream responde en <500 ms.
+    // Los 5 s son solo para cubrir el caso extremo de primera carga sin red.
     _loadingTimeout?.cancel();
-    _loadingTimeout = Timer(const Duration(seconds: 8), () {
+    _loadingTimeout = Timer(const Duration(seconds: 5), () {
       if (_loading) {
         _loading = false;
         if (kDebugMode) debugPrint('UserProfileProvider: timeout → loading=false');

@@ -46,10 +46,14 @@ void main() {
       // "WebChannelConnection RPC 'Listen' stream transport errored"
       // autoDetect no es suficiente — forzamos Long Polling directamente.
       // Esto garantiza compatibilidad con cualquier red/proxy/Safari.
+      // persistenceEnabled: true → caché local IndexedDB en Web.
+      // Permite que el perfil y los campos favoritos se sirvan desde
+      // caché local sin esperar respuesta de red en cada apertura de
+      // Ajustes, eliminando el spinner de "Cargando perfil…".
       if (kIsWeb) {
         FirebaseFirestore.instance.settings = const Settings(
           webExperimentalForceLongPolling: true,
-          persistenceEnabled: false,
+          persistenceEnabled: true,
           ignoreUndefinedProperties: true,
         );
       }

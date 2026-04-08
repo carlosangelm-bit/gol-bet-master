@@ -231,12 +231,18 @@ class UserProfileService {
       _userDoc().collection('favoriteCourses');
 
   // ── Stream del perfil ──────────────────────────────────────────────────────
+  // snapshots(includeMetadataChanges: false) → solo emite cuando los datos
+  // cambian de verdad (ignora eventos de metadata como hasPendingWrites).
+  // Con persistenceEnabled=true en Firestore Web, el primer evento llega
+  // desde IndexedDB (<50 ms) sin esperar a la red.
   static Stream<UserProfile?> profileStream() {
     if (AuthService.uid == null) return Stream.value(null);
-    return _userDoc().snapshots().map((snap) {
-      if (!snap.exists) return null;
-      return UserProfile.fromFirestore(snap.data()!, snap.id);
-    });
+    return _userDoc()
+        .snapshots(includeMetadataChanges: false)
+        .map((snap) {
+          if (!snap.exists) return null;
+          return UserProfile.fromFirestore(snap.data()!, snap.id);
+        });
   }
 
   // ── Guardar perfil ─────────────────────────────────────────────────────────
@@ -258,9 +264,11 @@ class UserProfileService {
 
   static Stream<List<FavoriteCourse>> favCoursesStream() {
     if (AuthService.uid == null) return Stream.value([]);
-    // Sin orderBy para evitar índice compuesto — ordenamos en memoria
+    // includeMetadataChanges: false → solo emite cuando los datos cambian,
+    // no en cada hasPendingWrites/fromCache toggle. Reduce rebuilds innecesarios.
+    // Con persistenceEnabled=true el primer evento sale de IndexedDB en <50 ms.
     return _favCourses()
-        .snapshots()
+        .snapshots(includeMetadataChanges: false)
         .map((snap) {
           final list = snap.docs
               .map((d) => FavoriteCourse.fromFirestore(d.data(), d.id))
