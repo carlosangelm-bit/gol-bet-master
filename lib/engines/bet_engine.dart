@@ -340,11 +340,23 @@ class BetEngine {
     final allHoles    = round.course.holes;
     final holeMap     = { for (final ch in allHoles) ch.hole: ch };
 
+    // ── Determinar rango de hoyos según startingNine ─────────────────────────
+    // Si la ronda empieza en el back (hoyos 10-18), los "9 hoyos del front"
+    // son en realidad los hoyos 10-18 físicamente.
+    final bool isBackStart = round.startingNine == StartingNine.back;
+    // holeFrom1/holeTo1: primer segmento (lógicamente "front 9")
+    final int seg1From = isBackStart ? 10 : 1;
+    final int seg1To   = isBackStart ? 18 : 9;
+    // holeFrom2/holeTo2: segundo segmento (lógicamente "back 9") — solo para 18 hoyos
+    final int seg2From = isBackStart ? 1  : 10;
+    final int seg2To   = isBackStart ? 9  : 18;
+
     // ── Calcular deltas hoyo a hoyo ──────────────────────────────────────────
     // delta > 0 → p1 gana el hoyo; delta < 0 → p2 gana; 0 → empate
     final Map<int, int> deltaByHole = {};
-    for (int h = 1; h <= round.totalHoles; h++) {
-      final ch = holeMap[h]; if (ch == null) continue;
+    // Iterar sobre todos los hoyos del curso (no solo 1..totalHoles)
+    for (final ch in allHoles) {
+      final h = ch.hole;
       final sBase     = round.getScore(baseId, h);
       final sReceiver = round.getScore(receiverId, h);
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
@@ -360,9 +372,9 @@ class BetEngine {
       else                              deltaByHole[h] = 0;
     }
 
-    // ── Detectar carry (F9 empatado) ─────────────────────────────────────────
+    // ── Detectar carry (primer segmento empatado) ────────────────────────────
     int front = 0;
-    for (int h = 1; h <= 9; h++) front += (deltaByHole[h] ?? 0);
+    for (int h = seg1From; h <= seg1To; h++) front += (deltaByHole[h] ?? 0);
     final carryActive = cfg.carryEnabled && cfg.carryApplied && front == 0;
 
     // ── Liquidar segmento con presiones ─────────────────────────────────────
@@ -441,41 +453,42 @@ class BetEngine {
 
     // ── Aplicar segmentos ────────────────────────────────────────────────────
     if (round.totalHoles <= 9) {
-      // Solo 9 hoyos: un único segmento front
+      // Solo 9 hoyos: un único segmento usando el rango físico correcto
       liquidateSegment(
-        holeFrom: 1, holeTo: 9,
+        holeFrom: seg1From, holeTo: seg1To,
         segValue:   cfg.frontValue,
         pressValue: cfg.frontPressValue,
         segLabel:   'Nassau+Press 9H',
       );
     } else {
-      // Front 9
+      // Primer segmento (lógicamente "Front 9")
       liquidateSegment(
-        holeFrom: 1, holeTo: 9,
+        holeFrom: seg1From, holeTo: seg1To,
         segValue:   cfg.frontValue,
         pressValue: cfg.frontPressValue,
         segLabel:   'NP Front 9',
       );
-      // Back 9 (con carry si aplica)
+      // Segundo segmento (lógicamente "Back 9", con carry si aplica)
       final effBack      = carryActive ? cfg.backValue      * cfg.carryFactor : cfg.backValue;
       final effBackPress = carryActive ? cfg.backPressValue * cfg.carryFactor : cfg.backPressValue;
       liquidateSegment(
-        holeFrom: 10, holeTo: 18,
+        holeFrom: seg2From, holeTo: seg2To,
         segValue:   effBack,
         pressValue: effBackPress,
         segLabel:   'NP Back 9${carryActive ? ' (x${cfg.carryFactor.toStringAsFixed(0)})' : ''}',
       );
-      // Total 18
+      // Total 18: suma todos los deltas disponibles
       int total = 0;
-      for (int h = 1; h <= 18; h++) total += (deltaByHole[h] ?? 0);
+      for (final delta in deltaByHole.values) total += delta;
       final effTotal = carryActive ? cfg.totalValue * cfg.carryFactor : cfg.totalValue;
       void addTotal(int score, double val) {
-        if (score > 0)
+        if (score > 0) {
           entries.add(LedgerEntry(fromPlayerId: p2Id, toPlayerId: p1Id,
               amount: val, betType: BetModuleType.nassauPress, reason: 'NP Total 18'));
-        else if (score < 0)
+        } else if (score < 0) {
           entries.add(LedgerEntry(fromPlayerId: p1Id, toPlayerId: p2Id,
               amount: val, betType: BetModuleType.nassauPress, reason: 'NP Total 18'));
+        }
       }
       addTotal(total, effTotal);
     }
@@ -1724,13 +1737,21 @@ class BetEngine {
     final receiverId  = p1IsBase ? p2Id : p1Id;
     final allHoles    = round.course.holes;
 
+    // Respetar startingNine: si la ronda es back, el "primer segmento" es hoyos 10-18
+    final bool liveIsBack  = round.startingNine == StartingNine.back;
+    final int liveSeg1From = liveIsBack ? 10 : 1;
+    final int liveSeg1To   = liveIsBack ? 18 : 9;
+    final int liveSeg2From = liveIsBack ? 1  : 10;
+    final int liveSeg2To   = liveIsBack ? 9  : 18;
+
     int front = 0, back = 0;
     int frontPlayed = 0, backPlayed = 0;
     final List<int> frontHistory = [];
     final List<int> backHistory  = [];
 
-    for (int h = 1; h <= round.totalHoles; h++) {
-      final ch = round.course.holes.firstWhere((c) => c.hole == h, orElse: () => round.course.holes.first);
+    // Iterar sobre todos los hoyos del curso
+    for (final ch in allHoles) {
+      final h = ch.hole;
       final sBase     = round.getScore(baseId,     h);
       final sReceiver = round.getScore(receiverId, h);
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
@@ -1746,11 +1767,15 @@ class BetEngine {
       else if (grossBase > netReceiver) delta = p1IsBase ? -1 :  1;
       else                              delta = 0;
 
-      if (h <= 9) { front += delta; frontPlayed++; frontHistory.add(front); }
-      else        { back  += delta; backPlayed++;  backHistory.add(back);   }
+      // Asignar al segmento correcto según el rango físico de hoyos
+      if (h >= liveSeg1From && h <= liveSeg1To) {
+        front += delta; frontPlayed++; frontHistory.add(front);
+      } else if (h >= liveSeg2From && h <= liveSeg2To) {
+        back  += delta; backPlayed++;  backHistory.add(back);
+      }
     }
 
-    // Carry: F9 completo y empatado
+    // Carry: primer segmento completo y empatado
     final f9Complete  = frontPlayed == 9;
     final carryActive = cfg.carryEnabled && cfg.carryApplied && f9Complete && front == 0;
 
@@ -1759,13 +1784,13 @@ class BetEngine {
     final effBackPressVal  = carryActive ? cfg.backPressValue * cfg.carryFactor : cfg.backPressValue;
     final effTotalVal      = carryActive ? cfg.totalValue     * cfg.carryFactor : cfg.totalValue;
 
-    // Presiones F9
+    // Presiones primer segmento (físicamente liveSeg1From..liveSeg1To)
     final List<NassauPress> frontPresses = [];
-    _detectPresses(frontPresses, frontHistory, 1, 9, frontPlayed,
+    _detectPresses(frontPresses, frontHistory, liveSeg1From, liveSeg1To, frontPlayed,
         p1Id, p2Id, cfg.pressTriggerValue);
-    // Presiones B9
+    // Presiones segundo segmento (físicamente liveSeg2From..liveSeg2To)
     final List<NassauPress> backPresses  = [];
-    _detectPresses(backPresses, backHistory, 10, 18, backPlayed,
+    _detectPresses(backPresses, backHistory, liveSeg2From, liveSeg2To, backPlayed,
         p1Id, p2Id, cfg.pressTriggerValue);
 
     return NassauPressLiveStatus(
