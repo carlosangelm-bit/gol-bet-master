@@ -3113,109 +3113,118 @@ class _NassauSegment extends StatelessWidget {
 
     final isDone = played >= total;
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: grad,
-        ),
-        border: Border.all(color: baseColor.withValues(alpha: 0.45), width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: grad[0].withValues(alpha: 0.30),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+    // Altura fija para que las 3 cajas sean siempre iguales
+    return SizedBox(
+      height: 90,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: grad,
           ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          border: Border.all(color: baseColor.withValues(alpha: 0.45), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: grad[0].withValues(alpha: 0.28),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             // ── Etiqueta del segmento (F9 / B9 / 18) ──────────────────────
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.0,
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-              ),
-            ),
-            const SizedBox(height: 5),
-
-            // ── Número grande: ventaja o AS o – ───────────────────────────
-            Text(
-              bigNumber,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: bigNumber.length > 2 ? 18 : 22,
-                fontWeight: FontWeight.w900,
-                height: 1.0,
-              ),
-              textAlign: TextAlign.center,
-            ),
-
-            // ── Nombre del jugador líder ────────────────────────────────
-            if (playerName.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Text(
-                playerName,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.70),
-                  fontSize: 9,
-                  fontWeight: FontWeight.w600,
-                ),
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-              ),
-            ] else
-              const SizedBox(height: 4),
-
-            // ── Separador sutil ────────────────────────────────────────────
-            const SizedBox(height: 5),
-            Divider(height: 1, color: Colors.white.withValues(alpha: 0.15)),
-            const SizedBox(height: 5),
-
-            // ── Pie: progreso + valor ─────────────────────────────────────
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (!isDone) ...[
-                  Text(
-                    '$played/$total',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.45),
-                      fontSize: 8,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Text(
-                    '  ·  ',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.20),
-                      fontSize: 8,
-                    ),
-                  ),
-                ],
-                Text(
-                  '\$${value.toStringAsFixed(0)}',
+                child: Text(
+                  label,
                   style: TextStyle(
-                    color: isDone
-                        ? Colors.white.withValues(alpha: 0.95)
-                        : Colors.white.withValues(alpha: 0.65),
-                    fontSize: isDone ? 11 : 9,
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 9,
                     fontWeight: FontWeight.w800,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Centro: número grande + nombre (altura fija) ───────────────
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  bigNumber,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: bigNumber.length > 2 ? 18 : 22,
+                    fontWeight: FontWeight.w900,
+                    height: 1.0,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 2),
+                // Siempre reserva espacio para el nombre (visible o invisible)
+                Text(
+                  playerName.isNotEmpty ? playerName : ' ',
+                  style: TextStyle(
+                    color: Colors.white.withValues(
+                        alpha: playerName.isNotEmpty ? 0.70 : 0.0),
+                    fontSize: 9,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+
+            // ── Pie: progreso + valor (altura fija) ───────────────────────
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Divider(height: 1, color: Colors.white.withValues(alpha: 0.15)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (!isDone) ...[
+                        Text(
+                          '$played/$total',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.45),
+                            fontSize: 8,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          '  ·  ',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.20),
+                            fontSize: 8,
+                          ),
+                        ),
+                      ],
+                      Text(
+                        '\$${value.toStringAsFixed(0)}',
+                        style: TextStyle(
+                          color: isDone
+                              ? Colors.white.withValues(alpha: 0.95)
+                              : Colors.white.withValues(alpha: 0.65),
+                          fontSize: isDone ? 11 : 9,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
