@@ -2892,65 +2892,140 @@ class _NassauLivePanel extends StatelessWidget {
                          + backPresses.where((p) => p.isOpen).length;
     final totalPressCount = frontPresses.length + backPresses.length;
 
-    // ── helper: chip visual de cada presión ──────────────────────────────────
+    // ── helper: token redondo de presión ────────────────────────────────────
     Widget pressChip(NassauPress press, double pressVal) {
       final rawScore = press.loser == p1.id ? press.score : -press.score;
-      final color = rawScore == 0
-          ? t.sub
-          : rawScore > 0 ? t.profit : t.loss;
-      final scoreStr = rawScore == 0
-          ? 'AS'
-          : rawScore > 0
-              ? '$n1 +${rawScore.abs()}'
-              : '$n2 +${rawScore.abs()}';
+
+      // Misma paleta de gradientes que _NassauSegment
+      final List<Color> grad;
+      final Color baseColor;
+      final String bigLabel;
+      final String subLabel;
+
+      if (rawScore == 0) {
+        grad      = const [Color(0xFF1565C0), Color(0xFF0D47A1)];
+        baseColor = const Color(0xFF1976D2);
+        bigLabel  = 'AS';
+        subLabel  = '';
+      } else if (rawScore > 0) {
+        grad      = const [Color(0xFF388E3C), Color(0xFF1B5E20)];
+        baseColor = const Color(0xFF2E7D32);
+        bigLabel  = '+${rawScore.abs()}';
+        subLabel  = n1;
+      } else {
+        grad      = const [Color(0xFFD32F2F), Color(0xFF7F0000)];
+        baseColor = const Color(0xFFC62828);
+        bigLabel  = '+${rawScore.abs()}';
+        subLabel  = n2;
+      }
+
       return Container(
-        margin: const EdgeInsets.only(top: 5),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        width: 72,
+        height: 90,
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(10),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: grad,
+          ),
           border: Border.all(
             color: press.isOpen
-                ? t.accent.withValues(alpha: 0.55)
-                : color.withValues(alpha: 0.35),
+                ? Colors.white.withValues(alpha: 0.45)
+                : baseColor.withValues(alpha: 0.45),
+            width: press.isOpen ? 1.5 : 1,
           ),
-        ),
-        child: Row(children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: t.accent.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text('⚡ H${press.startHole}',
-                style: TextStyle(
-                    color: t.accent, fontSize: 9, fontWeight: FontWeight.w800)),
-          ),
-          const SizedBox(width: 6),
-          Text('(${press.loser == p1.id ? n1 : n2})',
-              style: TextStyle(
-                  color: t.sub.withValues(alpha: 0.7), fontSize: 9)),
-          const Spacer(),
-          Text(scoreStr,
-              style: TextStyle(
-                  color: color, fontSize: 11, fontWeight: FontWeight.w900)),
-          const SizedBox(width: 5),
-          Text('\$${pressVal.toStringAsFixed(0)}',
-              style: TextStyle(color: t.sub, fontSize: 9)),
-          if (press.isOpen) ...[
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-              decoration: BoxDecoration(
-                color: t.accent.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(5),
-              ),
-              child: Text('EN JUEGO',
-                  style: TextStyle(
-                      color: t.accent, fontSize: 8, fontWeight: FontWeight.w800)),
+          boxShadow: [
+            BoxShadow(
+              color: grad[0].withValues(alpha: 0.30),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
             ),
           ],
-        ]),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // ── Etiqueta del hoyo ───────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: press.isOpen ? 0.20 : 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'H${press.startHole}',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.90),
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Número grande + nombre ──────────────────────────────────
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  bigLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    height: 1.0,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subLabel.isNotEmpty ? subLabel : ' ',
+                  style: TextStyle(
+                    color: Colors.white.withValues(
+                        alpha: subLabel.isNotEmpty ? 0.70 : 0.0),
+                    fontSize: 9,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+
+            // ── Pie: valor + EN JUEGO ───────────────────────────────────
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Divider(height: 1, color: Colors.white.withValues(alpha: 0.15)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: press.isOpen
+                      ? Text(
+                          'EN JUEGO',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.90),
+                            fontSize: 8,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.5,
+                          ),
+                        )
+                      : Text(
+                          '\$${pressVal.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ],
+        ),
       );
     }
 
@@ -3036,11 +3111,11 @@ class _NassauLivePanel extends StatelessWidget {
             ]),
           ),
 
-          // ── Presiones: bloques visuales por segmento ──────────────────────
+          // ── Presiones: tokens visuales por segmento ──────────────────────
           if (totalPressCount > 0) ...[
             Divider(color: t.divider.withValues(alpha: 0.5), height: 1),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -3048,14 +3123,28 @@ class _NassauLivePanel extends StatelessWidget {
                     Text('PRESIONES  F9',
                         style: TextStyle(color: t.sub, fontSize: 9,
                             fontWeight: FontWeight.w700, letterSpacing: 0.6)),
-                    ...frontPresses.map((p) => pressChip(p, frontPressVal)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: frontPresses
+                          .map((p) => pressChip(p, frontPressVal))
+                          .toList(),
+                    ),
                   ],
                   if (backPresses.isNotEmpty) ...[
-                    if (frontPresses.isNotEmpty) const SizedBox(height: 10),
+                    if (frontPresses.isNotEmpty) const SizedBox(height: 12),
                     Text('PRESIONES  B9',
                         style: TextStyle(color: t.sub, fontSize: 9,
                             fontWeight: FontWeight.w700, letterSpacing: 0.6)),
-                    ...backPresses.map((p) => pressChip(p, backPressVal)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: backPresses
+                          .map((p) => pressChip(p, backPressVal))
+                          .toList(),
+                    ),
                   ],
                 ],
               ),
