@@ -1108,13 +1108,23 @@ class _OneVOneViewState extends State<_OneVOneView> {
   _DuelFilter  _duelFilter  = _DuelFilter.todos;
 
   // Resuelve quién es "mi jugador" en la ronda:
-  // 1. Jugador con linkedUserId == uid autenticado
-  // 2. Jugador con linkedUserId == ownerUid de la ronda
-  // 3. null → no se puede determinar automáticamente
+  // 1. _myPlayerId elegido MANUALMENTE por el usuario (máxima prioridad — el usuario sabe mejor que nadie)
+  // 2. Jugador con linkedUserId == uid autenticado
+  // 3. Jugador con linkedUserId == ownerUid de la ronda
+  // 4. null → no se puede determinar automáticamente
   Player? _resolveMyPlayer(Round round) {
+    // Prioridad 1: jugador elegido manualmente por el usuario con el picker
+    // SIEMPRE prevalece sobre la detección automática — es la selección explícita del usuario
+    if (_myPlayerId != null) {
+      final manual = round.players.where((p) => p.id == _myPlayerId).firstOrNull;
+      if (manual != null) return manual;
+      // Si el ID ya no existe en la ronda (caso raro), limpiar y continuar
+      _myPlayerId = null;
+    }
+
     final uid = AuthService.uid;
 
-    // Prioridad 1: linkedUserId == uid actual
+    // Prioridad 2: linkedUserId == uid actual
     if (uid != null) {
       final linked = round.players
           .where((p) => p.linkedUserId == uid)
@@ -1122,18 +1132,13 @@ class _OneVOneViewState extends State<_OneVOneView> {
       if (linked != null) return linked;
     }
 
-    // Prioridad 2: ownerUid de la ronda
+    // Prioridad 3: ownerUid de la ronda
     final ownerUid = round.ownerUid;
     if (ownerUid != null) {
       final owner = round.players
           .where((p) => p.linkedUserId == ownerUid)
           .firstOrNull;
       if (owner != null) return owner;
-    }
-
-    // Prioridad 3: _myPlayerId elegido manualmente por el usuario
-    if (_myPlayerId != null) {
-      return round.players.where((p) => p.id == _myPlayerId).firstOrNull;
     }
 
     return null;
