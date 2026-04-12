@@ -13,6 +13,7 @@ import '../../providers/round_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/live_round_service.dart';
 import '../../services/guest_invite_service.dart';
+import '../../services/caddie_service.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/bet_module_edit_sheet.dart';
 import '../../widgets/sliding_adjustment_dialog.dart';
@@ -2012,6 +2013,8 @@ class _ActiveRoundView extends StatelessWidget {
         if (prov.isLiveOwner && round.isLive && !round.isFinished) ...[
           const SizedBox(height: 12),
           _InviteGuestButton(round: round, t: t),
+          const SizedBox(height: 8),
+          _CaddieAccessButton(round: round, t: t),
         ],
 
         const SizedBox(height: 20),
@@ -3233,6 +3236,224 @@ class _InviteGuestButtonState extends State<_InviteGuestButton> {
             ])),
             if (!_limitReached)
               Icon(Icons.chevron_right_rounded, color: t.sub),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _CaddieAccessButton — genera y comparte el enlace de acceso caddie
+// Solo visible para el owner de la ronda live, sin límite de usos
+// ─────────────────────────────────────────────────────────────────────────────
+class _CaddieAccessButton extends StatefulWidget {
+  final Round round;
+  final GolfTheme t;
+  const _CaddieAccessButton({required this.round, required this.t});
+
+  @override
+  State<_CaddieAccessButton> createState() => _CaddieAccessButtonState();
+}
+
+class _CaddieAccessButtonState extends State<_CaddieAccessButton> {
+  bool _loading = false;
+
+  static const _teal = Color(0xFF00BCD4);
+
+  Future<void> _generateLink() async {
+    setState(() => _loading = true);
+    final link = await CaddieService.createCaddieLink(widget.round);
+    if (!mounted) return;
+    setState(() => _loading = false);
+
+    if (link == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('No se pudo generar el enlace de caddie. Intenta de nuevo.'),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+      return;
+    }
+    _showLinkDialog(link);
+  }
+
+  void _showLinkDialog(String link) {
+    final t = widget.t;
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: t.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+            // Título
+            Row(children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: _teal.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.visibility_rounded, color: _teal, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text('Acceso Caddie',
+                    style: TextStyle(
+                        color: t.text,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800)),
+              ),
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: Icon(Icons.close_rounded, color: t.sub),
+              ),
+            ]),
+            const SizedBox(height: 14),
+
+            // Descripción
+            Text(
+              'Comparte este enlace con el caddie o espectador. '
+              'Solo podrá ver la ronda en tiempo real, sin modificar nada. '
+              'El enlace es reutilizable (varios caddies pueden usarlo).',
+              style: TextStyle(color: t.sub, fontSize: 13, height: 1.5),
+            ),
+            const SizedBox(height: 16),
+
+            // Chip de característica clave
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: _teal.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _teal.withValues(alpha: 0.30)),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.repeat_rounded, color: _teal, size: 14),
+                const SizedBox(width: 7),
+                Text('Sin límite de usos — no ocupa cupo de jugador',
+                    style: TextStyle(
+                        color: _teal,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+              ]),
+            ),
+            const SizedBox(height: 16),
+
+            // URL
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: t.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: t.divider),
+              ),
+              child: Text(link,
+                  style: TextStyle(color: t.sub, fontSize: 12),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 3),
+            ),
+            const SizedBox(height: 16),
+
+            // Botones
+            Row(children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: link));
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content:
+                          const Text('Enlace de caddie copiado'),
+                      backgroundColor: const Color(0xFF006064),
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      duration: const Duration(seconds: 2),
+                    ));
+                    Navigator.pop(ctx);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: _teal),
+                    foregroundColor: _teal,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  icon: const Icon(Icons.copy_rounded, size: 16),
+                  label: const Text('Copiar enlace',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    return GCard(
+      child: InkWell(
+        onTap: _loading ? null : _generateLink,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(children: [
+            // Ícono
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                color: _teal.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: _loading
+                  ? const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.5, color: _teal),
+                    )
+                  : const Icon(Icons.visibility_rounded,
+                      color: _teal, size: 20),
+            ),
+            const SizedBox(width: 12),
+            // Texto
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('Acceso Caddie',
+                    style: TextStyle(
+                        color: t.text,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14)),
+                Text('Solo visualización · Sin cupo de jugador',
+                    style: TextStyle(color: t.sub, fontSize: 11)),
+              ]),
+            ),
+            // Badge
+            Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _teal.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('VER',
+                  style: TextStyle(
+                      color: _teal,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5)),
+            ),
           ]),
         ),
       ),

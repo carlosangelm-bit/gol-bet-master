@@ -17,6 +17,7 @@ import 'providers/user_profile_provider.dart';
 import 'providers/handicap_provider.dart';
 import 'app_shell.dart';
 import 'screens/guest/guest_join_screen.dart';
+import 'screens/caddie/caddie_join_screen.dart';
 
 void main() {
   // Capturar y mostrar errores de framework (incluido release)
@@ -98,12 +99,11 @@ void main() {
 class GolfBetApp extends StatelessWidget {
   const GolfBetApp({super.key});
 
-  // ── Detectar ruta /guest/:token en la URL del navegador ──────────────────
+  // ── Detectar ruta /guest/:token o /caddie/:token en la URL del navegador ────
   static String? _extractGuestToken() {
     if (!kIsWeb) return null;
     try {
-      // Usamos Uri para parsear la URL actual
-      final uri = Uri.base;
+      final uri      = Uri.base;
       final segments = uri.pathSegments;
       if (segments.length >= 2 && segments[0] == 'guest') {
         return segments[1];
@@ -112,10 +112,23 @@ class GolfBetApp extends StatelessWidget {
     return null;
   }
 
+  static String? _extractCaddieToken() {
+    if (!kIsWeb) return null;
+    try {
+      final uri      = Uri.base;
+      final segments = uri.pathSegments;
+      if (segments.length >= 2 && segments[0] == 'caddie') {
+        return segments[1];
+      }
+    } catch (_) {}
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final prov = context.watch<RoundProvider>();
-    final guestToken = _extractGuestToken();
+    final prov        = context.watch<RoundProvider>();
+    final guestToken  = _extractGuestToken();
+    final caddieToken = _extractCaddieToken();
 
     return MaterialApp(
       title: 'Golf Bet Master', // v1.1.0+5
@@ -128,12 +141,20 @@ class GolfBetApp extends StatelessWidget {
         };
         return child ?? const SizedBox.shrink();
       },
-      // Si la URL contiene /guest/:token, ir directo a esa pantalla
-      home: guestToken != null
-          ? GuestJoinScreen(token: guestToken)
-          : const AppShell(),
+      // Prioridad: caddie > guest > app normal
+      home: caddieToken != null
+          ? CaddieJoinScreen(token: caddieToken)
+          : guestToken != null
+              ? GuestJoinScreen(token: guestToken)
+              : const AppShell(),
       onGenerateRoute: (settings) {
         final name = settings.name ?? '';
+        if (name.startsWith('/caddie/')) {
+          final token = name.replaceFirst('/caddie/', '');
+          return MaterialPageRoute(
+            builder: (_) => CaddieJoinScreen(token: token),
+          );
+        }
         if (name.startsWith('/guest/')) {
           final token = name.replaceFirst('/guest/', '');
           return MaterialPageRoute(
