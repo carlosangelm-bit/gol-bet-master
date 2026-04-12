@@ -54,12 +54,25 @@ class SlidingAdjustmentSuggestion {
   final String playerId;
   final String opponentId;
   final String opponentName;
+  final int    opponentColorIndex;
+  /// Handicap base del oponente (para mostrar info en UI).
+  final double opponentHandicap;
   final double currentAdjustment;
   final int    delta;               // +1 o -1 o 0 (empate)
   final DuelResult duelResult;
   /// true si el oponente tiene linkedUserId → ajuste bilateral posible.
   final bool opponentIsLinked;
+  /// true si el jugador existe en el directorio del usuario (tiene PlayerLink).
+  final bool opponentInDirectory;
   bool accepted;
+  /// Valor ajustado manualmente por el usuario (override del suggestedAdjustment).
+  double? manualOverride;
+
+  /// Sliding que el oponente tiene hacia mí (desde la perspectiva del oponente),
+  /// leído del manualHandicap de la ronda (o del PlayerLink del oponente como fallback).
+  /// Se usa para el ajuste BILATERAL, garantizando que el baseline sea el de la ronda
+  /// independientemente de lo que cada usuario tenga guardado en su PlayerLink.
+  final double? opponentCurrentAdjustment;
 
   SlidingAdjustmentSuggestion({
     required this.playerId,
@@ -68,11 +81,29 @@ class SlidingAdjustmentSuggestion {
     required this.currentAdjustment,
     required this.delta,
     required this.duelResult,
-    this.opponentIsLinked = false,
-    this.accepted = true,
+    this.opponentIsLinked    = false,
+    this.opponentInDirectory = false,
+    this.opponentColorIndex  = 0,
+    this.opponentHandicap    = 0,
+    this.accepted            = true,
+    this.opponentCurrentAdjustment,
+    this.manualOverride,
   });
 
+  /// Valor efectivo de sliding: override manual si fue tocado, sino la sugerencia automática.
+  double get effectiveAdjustment => manualOverride ?? suggestedAdjustment;
+
   double get suggestedAdjustment => currentAdjustment + delta;
+
+  /// Nuevo valor que se debe guardar en el link del oponente hacia mí.
+  /// Usa el baseline de la ronda (opponentCurrentAdjustment) si está disponible.
+  double get opponentSuggestedAdjustment {
+    // Si hubo override manual, ajustar bilateralmente desde el override.
+    // El valor del oponente siempre es el simétrico del mío:
+    // si yo recibo X strokes del oponente → oponente da X → oponente[yo] = -X
+    final myFinalAdj = manualOverride ?? suggestedAdjustment;
+    return -myFinalAdj;
+  }
 }
 
 class SlidingAdjustmentEngine {
@@ -93,6 +124,11 @@ class SlidingAdjustmentEngine {
     // Computar todos los entries de la ronda una sola vez
     final allEntries = BetEngine.computeAll(round);
 
+    // RoundPlayer de mi jugador para leer manualHandicaps reales de la ronda
+    final myRoundPlayer = round.roundPlayers
+        .where((rp) => rp.playerId == myPlayer.id)
+        .firstOrNull;
+
     final suggestions = <SlidingAdjustmentSuggestion>[];
 
     for (final player in round.players) {
@@ -109,8 +145,22 @@ class SlidingAdjustmentEngine {
       );
       if (duel == null) continue;
 
-      final link       = playerLinks[player.id];
-      final currentAdj = link?.defaultSlidingAdjustment ?? 0.0;
+      // ── Baseline de sliding: el manualHandicap REAL que se usó en la ronda ──
+      //
+      // FUENTE DE VERDAD: round.roundPlayers[myPlayer].manualHandicaps[opponent]
+      // Este valor es idéntico para cualquier usuario que abra la ronda porque
+      // está grabado en Firestore junto con la ronda misma.
+      //
+      // NO usar playerLinks[opponent].defaultSlidingAdjustment como baseline:
+      // ese valor depende de QUIÉN abre el diálogo y puede diferir si la ronda
+      // fue creada por otro usuario (ej. Carlos crea la ronda con sus ajustes,
+      // Alan la abre con los suyos → ajustes incorrectos).
+      //
+      // Fallback al PlayerLink si la ronda no tiene manualHandicap guardado
+      // (rondas antiguas o rondas sin sliding configurado).
+      final roundSliding = myRoundPlayer?.manualHandicaps[player.id];
+      final link         = playerLinks[player.id];
+      final currentAdj   = roundSliding ?? link?.defaultSlidingAdjustment ?? 0.0;
 
       final int delta;
       if (duel.isTie) {
@@ -121,15 +171,30 @@ class SlidingAdjustmentEngine {
         delta = 1;
       }
 
+      // Sliding del oponente hacia mí (perspectiva inversa de la ronda).
+      // manualHandicaps[myPlayer][opponent] = +X → yo recibo X de oponente
+      // → oponente da X a mí → oponente.manualHandicap[mí] = -X
+      // Si no está en la ronda, intentamos inferirlo del manualHandicap inverso.
+      final opponentRoundPlayer = round.roundPlayers
+          .where((rp) => rp.playerId == player.id)
+          .firstOrNull;
+      // La perspectiva del oponente es el simétrico del mío (convención bilateral)
+      final opponentCurrentAdj = opponentRoundPlayer?.manualHandicaps[myPlayer.id]
+          ?? (roundSliding != null ? -roundSliding : null);
+
       suggestions.add(SlidingAdjustmentSuggestion(
-        playerId:          myPlayer.id,
-        opponentId:        player.id,
-        opponentName:      player.name,
-        currentAdjustment: currentAdj,
-        delta:             delta,
-        duelResult:        duel,
-        opponentIsLinked:  player.hasLinkedAccount,
-        accepted:          true,
+        playerId:                   myPlayer.id,
+        opponentId:                 player.id,
+        opponentName:               player.name,
+        opponentColorIndex:         player.colorIndex,
+        opponentHandicap:           player.handicapBase,
+        currentAdjustment:          currentAdj,
+        delta:                      delta,
+        duelResult:                 duel,
+        opponentIsLinked:           player.hasLinkedAccount,
+        opponentInDirectory:        link != null,
+        accepted:                   true,
+        opponentCurrentAdjustment:  opponentCurrentAdj,
       ));
     }
 

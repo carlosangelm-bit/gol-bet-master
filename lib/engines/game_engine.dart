@@ -325,13 +325,66 @@ class GameEngine {
     return 0;                         // empate
   }
 
-  // ── HCP efectivo individual para modo equipo ──────────────────────────────
-  // En modo equipo, cada jugador usa su HCP individual vs par del hoyo.
-  // No hay sliding entre jugadores de equipos distintos en esta versión;
-  // el motor de equipo construye hcpMap con HCPs de ronda directos.
-  // (El sliding entre individuos se sigue usando en modo individual 1v1.)
+  // ── HCP efectivo para modo equipo BEST BALL ───────────────────────────────
+  // En Best Ball, cada jugador recibe strokes RELATIVOS al jugador con menor HCP.
+  // El jugador con menor HCP = 0 strokes.
+  // Los demás reciben la diferencia vs el jugador de menor HCP.
+  //
+  // Ejemplo:
+  //   Jugador A: HCP 5  → 0 strokes (es el mejor)
+  //   Jugador B: HCP 10 → 5 strokes
+  //   Jugador C: HCP 12 → 7 strokes
+  //   Jugador D: HCP 18 → 13 strokes
+  //
+  // Este mapa se usa en holeDeltaVs() para calcular scores netos.
   static Map<String, double> buildTeamHcpMap(Round round, List<String> playerIds) {
-    return { for (final pid in playerIds) pid: round.getHandicap(pid) };
+    if (playerIds.isEmpty) return {};
+    
+    // Encontrar el HCP más bajo (jugador mejor)
+    double lowestHcp = double.infinity;
+    for (final pid in playerIds) {
+      final hcp = round.getHandicap(pid);
+      if (hcp < lowestHcp) lowestHcp = hcp;
+    }
+    
+    // Calcular strokes relativos: cada jugador recibe (su HCP - menor HCP)
+    return {
+      for (final pid in playerIds)
+        pid: round.getHandicap(pid) - lowestHcp,
+    };
+  }
+
+  // ── Calcular handicap de equipo para modo SCRAMBLE ────────────────────────
+  // En Scramble, el equipo tiene UN solo handicap calculado según USGA:
+  //
+  // Para 2 jugadores:
+  //   HCP equipo = (35% del HCP más bajo) + (15% del HCP más alto)
+  //
+  // Ejemplo:
+  //   Jugador A: HCP 10
+  //   Jugador B: HCP 20
+  //   → HCP equipo = (0.35 × 10) + (0.15 × 20) = 3.5 + 3 = 6.5 ≈ 7
+  //
+  // Para 4 jugadores:
+  //   HCP equipo = (25% bajo) + (20% 2do) + (15% 3ro) + (10% alto)
+  static double calculateScrambleTeamHandicap(Round round, List<String> playerIds) {
+    if (playerIds.isEmpty) return 0.0;
+    if (playerIds.length == 1) return round.getHandicap(playerIds.first);
+
+    // Obtener handicaps de todos los jugadores y ordenar de menor a mayor
+    final hcps = playerIds.map((pid) => round.getHandicap(pid)).toList()
+      ..sort();
+
+    if (playerIds.length == 2) {
+      // 2 jugadores: 35% bajo + 15% alto
+      return (hcps[0] * 0.35) + (hcps[1] * 0.15);
+    } else if (playerIds.length == 3) {
+      // 3 jugadores: 30% bajo + 20% medio + 10% alto
+      return (hcps[0] * 0.30) + (hcps[1] * 0.20) + (hcps[2] * 0.10);
+    } else {
+      // 4 jugadores: 25% bajo + 20% 2do + 15% 3ro + 10% alto
+      return (hcps[0] * 0.25) + (hcps[1] * 0.20) + (hcps[2] * 0.15) + (hcps[3] * 0.10);
+    }
   }
 
   // ── todos los hoyos completados por todos los jugadores ───────────────────

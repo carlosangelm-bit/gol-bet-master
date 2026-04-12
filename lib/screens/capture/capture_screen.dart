@@ -52,14 +52,16 @@ class _CaptureScreenState extends State<CaptureScreen> {
       final sn    = round.startingNine;
       final order = [..._firstSegment(sn), ..._secondSegment(sn)];
       for (final h in order) {
-        if (!round.players.every((p) => round.getScore(p.id, h).hasScore)) {
+        final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
+        if (!activePlayers.every((p) => round.getScore(p.id, h).hasScore)) {
           _jumpToHole(h);
           break;
         }
       }
       // Activar el primer jugador por defecto
-      if (round.players.isNotEmpty) {
-        setState(() => _activePlayerId = round.players.first.id);
+      final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
+      if (activePlayers.isNotEmpty) {
+        setState(() => _activePlayerId = activePlayers.first.id);
       }
     });
   }
@@ -138,10 +140,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
         orElse: () => round.course.holes.first);
 
     // Asegurar que siempre hay un jugador activo válido
+    final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
     final activeId = (_activePlayerId != null &&
-            round.players.any((p) => p.id == _activePlayerId))
+            activePlayers.any((p) => p.id == _activePlayerId))
         ? _activePlayerId!
-        : round.players.first.id;
+        : activePlayers.first.id;
 
     return Scaffold(
       backgroundColor: t.bg,
@@ -297,9 +300,10 @@ class _CaptureHeader extends StatelessWidget {
 
   int _countCompleted(Round round) {
     final total = _effectiveTotal(round);
+    final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
     int c = 0;
     for (int h = 1; h <= total; h++) {
-      if (round.players.every((p) => round.getScore(p.id, h).hasScore)) c++;
+      if (activePlayers.every((p) => round.getScore(p.id, h).hasScore)) c++;
     }
     return c;
   }
@@ -349,8 +353,9 @@ class _HoleSelector extends StatelessWidget {
           }
           final h = order[i];
           final isSel   = h == currentHole;
-          final allDone = round.players.isNotEmpty &&
-              round.players.every((p) => round.getScore(p.id, h).hasScore);
+          final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
+          final allDone = activePlayers.isNotEmpty &&
+              activePlayers.every((p) => round.getScore(p.id, h).hasScore);
           final isPar3  = round.course.holes.firstWhere((c) => c.hole == h).isPar3;
 
           return GestureDetector(
@@ -468,7 +473,7 @@ class _PlayerTable extends StatelessWidget {
   });
 
   // Nombre corto: player.name ya contiene el displayName/apodo asignado al crear la ronda
-  String _shortName(Player p) => p.name.split(' ').first;
+  String _shortName(Player p) => p.isVirtual ? p.name : p.name.split(' ').first;
 
   // Progreso bruto acumulado vs par (solo hoyos completados hasta el actual)
   String _grossProgress(Round round, String playerId) {
@@ -504,7 +509,7 @@ class _PlayerTable extends StatelessWidget {
       ),
       clipBehavior: Clip.hardEdge,
       child: Column(
-        children: round.players.asMap().entries.map((entry) {
+        children: round.players.where((p) => round.scores.containsKey(p.id)).toList().asMap().entries.map((entry) {
           final idx    = entry.key;
           final player = entry.value;
           final isActive = player.id == activePlayerId;
@@ -814,7 +819,8 @@ class _ActivePlayerZoneState extends State<_ActivePlayerZone> {
         (p) => p.id == widget.activePlayerId);
 
     // Nombre corto: player.name ya contiene el apodo/displayName asignado al crear la ronda
-    final shortName = player.name.split(' ').first;
+    // Para equipos virtuales, usar nombre completo
+    final shortName = player.isVirtual ? player.name : player.name.split(' ').first;
 
     // Conteo de units activos
     final activeUnits = UnitEventType.values
@@ -1569,6 +1575,17 @@ class _HoleNavButtons extends StatelessWidget {
   Future<void> _finishRound(BuildContext context) async {
     final prov = context.read<RoundProvider>();
     final t    = prov.theme;
+
+    // Solo el owner/admin puede finalizar una ronda en vivo
+    if (prov.isLiveRound && !prov.isLiveOwner) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Solo el organizador puede finalizar la ronda.'),
+        backgroundColor: Colors.red.shade700,
+        duration: const Duration(seconds: 3),
+      ));
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

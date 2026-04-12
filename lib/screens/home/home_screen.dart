@@ -5,17 +5,20 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/live_round_service.dart';
+import '../../services/guest_invite_service.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/bet_module_edit_sheet.dart';
 import '../../widgets/sliding_adjustment_dialog.dart';
 import '../setup/setup_screen.dart';
 import '../templates/templates_screen.dart';
+import '../../debug/test_round.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -203,6 +206,54 @@ class _HomeHeader extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        // Código de ronda (solo si es live y el usuario es owner)
+                        if (prov.isLiveRound &&
+                            prov.isLiveOwner &&
+                            (prov.round?.liveCode ?? '').isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () {
+                              final code = prov.round!.liveCode!;
+                              // Copiar al portapapeles
+                              Clipboard.setData(ClipboardData(text: code));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Row(children: [
+                                    const Icon(Icons.check_circle_outline, color: Colors.white, size: 16),
+                                    const SizedBox(width: 8),
+                                    Text('Código $code copiado'),
+                                  ]),
+                                  backgroundColor: const Color(0xFF1A3A1C),
+                                  duration: const Duration(seconds: 2),
+                                  behavior: SnackBarBehavior.floating,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFD4A520).withValues(alpha: 0.25),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFD4A520).withValues(alpha: 0.5)),
+                              ),
+                              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                const Icon(Icons.tag_rounded, color: Color(0xFFD4A520), size: 11),
+                                const SizedBox(width: 3),
+                                Text(
+                                  prov.round!.liveCode!,
+                                  style: const TextStyle(
+                                    color: Color(0xFFD4A520),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1.5,
+                                  ),
+                                ),
+                              ]),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                         Text(
                           'EN CURSO',
                           style: TextStyle(
@@ -693,6 +744,293 @@ class _JoinRoundDialogState extends State<_JoinRoundDialog> {
   }
 }
 
+// ── Diálogo: Unirse a ronda por código ───────────────────────────────────────
+class _JoinByCodeDialog extends StatefulWidget {
+  final GolfTheme t;
+  final BuildContext parentContext;
+  const _JoinByCodeDialog({required this.t, required this.parentContext});
+  @override State<_JoinByCodeDialog> createState() => _JoinByCodeDialogState();
+}
+
+class _JoinByCodeDialogState extends State<_JoinByCodeDialog> {
+  final _ctrl = TextEditingController();
+  bool _loading = false;
+  String? _error;
+
+  // Resultado de la búsqueda
+  Round? _foundRound;
+  Player? _myPlayer;
+  List<Player> _unlinked = [];
+  Player? _chosen;   // jugador seleccionado cuando hay que elegir
+
+  GolfTheme get t => widget.t;
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  Future<void> _search() async {
+    setState(() { _loading = true; _error = null; _foundRound = null; _myPlayer = null; _unlinked = []; _chosen = null; });
+    final result = await LiveRoundService.findRoundByCode(_ctrl.text);
+    if (!mounted) return;
+    if (result.error != null) {
+      setState(() { _loading = false; _error = result.error; });
+      return;
+    }
+    setState(() {
+      _loading    = false;
+      _foundRound = result.round;
+      _myPlayer   = result.myPlayer;
+      _unlinked   = result.unlinkedPlayers;
+      // Si ya está ligado o solo hay un jugador sin ligar, preseleccionar
+      _chosen     = result.myPlayer ?? (result.unlinkedPlayers.length == 1 ? result.unlinkedPlayers.first : null);
+    });
+  }
+
+  Future<void> _join() async {
+    final round  = _foundRound;
+    final player = _chosen ?? _myPlayer;
+    if (round == null || player == null) return;
+
+    setState(() { _loading = true; _error = null; });
+    try {
+      final joined = await LiveRoundService.joinRoundByCode(round: round, chosenPlayer: player);
+      if (!mounted) return;
+      if (joined != null) {
+        Navigator.of(context).pop();
+        await Future.delayed(const Duration(milliseconds: 150));
+        if (widget.parentContext.mounted) {
+          widget.parentContext.read<RoundProvider>().joinLiveRound(joined);
+        }
+      } else {
+        setState(() { _loading = false; _error = 'No se pudo unir a la ronda. Intenta de nuevo.'; });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Error: $e'; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: t.card,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Título
+            Row(children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: t.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.tag_rounded, color: t.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Text('Unirse con código',
+                style: TextStyle(color: t.text, fontSize: 17, fontWeight: FontWeight.w800)),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Icon(Icons.close_rounded, color: t.sub, size: 22),
+              ),
+            ]),
+            const SizedBox(height: 20),
+
+            // Campo de código
+            TextField(
+              controller: _ctrl,
+              textCapitalization: TextCapitalization.characters,
+              maxLength: 6,
+              style: TextStyle(
+                color: t.text, fontSize: 22,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 6,
+              ),
+              decoration: InputDecoration(
+                hintText: 'XXXXXX',
+                hintStyle: TextStyle(color: t.sub.withValues(alpha: 0.5), letterSpacing: 6, fontSize: 22),
+                counterText: '',
+                filled: true,
+                fillColor: t.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: t.divider),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: t.primary, width: 2),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: t.divider),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+              onChanged: (_) => setState(() { _foundRound = null; _error = null; }),
+              onSubmitted: (_) => _search(),
+            ),
+            const SizedBox(height: 12),
+
+            // Error
+            if (_error != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13))),
+                ]),
+              ),
+
+            // Ronda encontrada
+            if (_foundRound != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: t.primary.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: t.primary.withValues(alpha: 0.25)),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Icon(Icons.sports_golf_rounded, color: t.primary, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_foundRound!.name,
+                      style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 15))),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text(_foundRound!.course.name,
+                    style: TextStyle(color: t.sub, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  Text('${_foundRound!.players.where((p) => !p.isVirtual).length} jugadores',
+                    style: TextStyle(color: t.sub, fontSize: 12)),
+                ]),
+              ),
+
+              // Si ya está ligado → solo mostrar su jugador
+              if (_myPlayer != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
+                    const SizedBox(width: 8),
+                    Text('Entrarás como ${_myPlayer!.name}',
+                      style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w700)),
+                  ]),
+                ),
+              ],
+
+              // Si no está ligado → elegir jugador
+              if (_myPlayer == null && _unlinked.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text('¿Cuál jugador eres tú?',
+                  style: TextStyle(color: t.sub, fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                ..._unlinked.map((p) {
+                  final sel = _chosen?.id == p.id;
+                  return GestureDetector(
+                    onTap: () => setState(() => _chosen = p),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: sel ? t.primary.withValues(alpha: 0.12) : t.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: sel ? t.primary : t.divider,
+                          width: sel ? 2 : 1,
+                        ),
+                      ),
+                      child: Row(children: [
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundColor: Color(0xFF1A3A1C),
+                          child: Text(p.name[0].toUpperCase(),
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text(p.name,
+                          style: TextStyle(color: t.text, fontWeight: FontWeight.w600))),
+                        Text('HCP ${p.handicapBase.toStringAsFixed(0)}',
+                          style: TextStyle(color: t.sub, fontSize: 12)),
+                        if (sel) ...[
+                          const SizedBox(width: 8),
+                          Icon(Icons.check_circle, color: t.primary, size: 18),
+                        ],
+                      ]),
+                    ),
+                  );
+                }),
+              ],
+
+              // Si no está ligado y no hay candidatos
+              if (_myPlayer == null && _unlinked.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('Todos los jugadores de esta ronda ya tienen cuenta ligada.',
+                    style: TextStyle(color: t.sub, fontSize: 13)),
+                ),
+            ],
+
+            const SizedBox(height: 20),
+
+            // Botones
+            if (_foundRound == null)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _loading || _ctrl.text.trim().length < 6 ? null : _search,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: t.primary,
+                    foregroundColor: const Color(0xFF0D2B0F),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _loading
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Buscar ronda', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                ),
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _loading || (_myPlayer == null && _chosen == null) ? null : _join,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: t.primary,
+                    foregroundColor: const Color(0xFF0D2B0F),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _loading
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Entrar a la ronda', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ── Vista sin ronda activa ────────────────────────────────────────────────────
 class _EmptyView extends StatelessWidget {
   final GolfTheme t;
@@ -768,6 +1106,61 @@ class _EmptyView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
+
+                // Botón secundario – Unirse con código
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => showDialog(
+                      context: context,
+                      builder: (_) => _JoinByCodeDialog(t: t, parentContext: context),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: t.primary.withValues(alpha: 0.6)),
+                      foregroundColor: t.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    icon: Icon(Icons.tag_rounded, size: 18, color: t.primary),
+                    label: Text(
+                      'Unirse con código',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: t.primary),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // ── DEBUG: Botón de ronda de prueba Best Ball ──────────────
+                if (kDebugMode)
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        final round = createTestBestBallRound();
+                        // Verificación matemática en consola
+                        final report = verifyBestBallCalculations(round);
+                        debugPrint(report);
+                        // Cargar en el provider
+                        context.read<RoundProvider>().startRound(round);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text('✅ Ronda de prueba Best Ball cargada — ver consola para verificación'),
+                            backgroundColor: Colors.green.shade700,
+                            duration: const Duration(seconds: 4),
+                          ),
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange,
+                        side: const BorderSide(color: Colors.orange),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.science_outlined, size: 18),
+                      label: const Text('TEST: Cargar Ronda Best Ball',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                    ),
+                  ),
 
                 // Botón secundario – Usar plantilla
                 SizedBox(
@@ -1581,7 +1974,8 @@ class _ActiveRoundView extends StatelessWidget {
         GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Expanded(child: Text(round.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 18))),
-            if (!round.isFinished)
+            // Botón finalizar — solo para el owner/admin de la ronda live
+            if (!round.isFinished && (prov.isLiveOwner || !round.isLive))
               GestureDetector(
                 onTap: () => _confirmFinish(context, prov, t),
                 child: Container(
@@ -1595,7 +1989,7 @@ class _ActiveRoundView extends StatelessWidget {
           Row(children: [
             Icon(Icons.sports_golf, color: t.sub, size: 14),
             const SizedBox(width: 4),
-            Text('${round.players.length} jugadores', style: TextStyle(color: t.sub, fontSize: 12)),
+            Text('${round.players.where((p) => round.scores.containsKey(p.id)).length} jugadores', style: TextStyle(color: t.sub, fontSize: 12)),
             const SizedBox(width: 16),
             Icon(Icons.flag, color: t.sub, size: 14),
             const SizedBox(width: 4),
@@ -1614,11 +2008,17 @@ class _ActiveRoundView extends StatelessWidget {
           ),
         ])),
 
+        // ── Invitar jugador (solo admin de ronda live, max 5 jugadores) ──────
+        if (prov.isLiveOwner && round.isLive && !round.isFinished) ...[
+          const SizedBox(height: 12),
+          _InviteGuestButton(round: round, t: t),
+        ],
+
         const SizedBox(height: 20),
         GSectionHeader(title: 'BALANCE ACTUAL'),
 
-        // Player balances
-        ...round.players.map((p) {
+        // Player balances (solo jugadores activos - excluir miembros de equipos Scramble)
+        ...round.players.where((p) => round.scores.containsKey(p.id)).map((p) {
           final bal = balances[p.id] ?? 0.0;
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -1657,9 +2057,9 @@ class _ActiveRoundView extends StatelessWidget {
         ]),
         const SizedBox(height: 6),
         ...(() {
-          // Generar pares únicos de jugadores
+          // Generar pares únicos de jugadores (solo activos)
           final pairs = <Widget>[];
-          final players = round.players;
+          final players = round.players.where((p) => round.scores.containsKey(p.id)).toList();
           for (int i = 0; i < players.length; i++) {
             for (int j = i + 1; j < players.length; j++) {
               final pA = players[i];
@@ -1719,26 +2119,7 @@ class _ActiveRoundView extends StatelessWidget {
             Text(g.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 14)),
             const SizedBox(height: 8),
             Wrap(spacing: 6, runSpacing: 6, children: [
-              ...g.modules.map((m) => GestureDetector(
-                onTap: () => _openBetEdit(context, prov, g, m, t),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: t.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: t.primary.withValues(alpha: 0.35)),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text(m.type.icon, style: const TextStyle(fontSize: 13)),
-                    const SizedBox(width: 5),
-                    Text(m.type.label, style: TextStyle(color: t.primary, fontWeight: FontWeight.w700, fontSize: 12)),
-                    const SizedBox(width: 4),
-                    Text('\$${m.value.toStringAsFixed(0)}', style: TextStyle(color: t.primary.withValues(alpha: 0.75), fontSize: 11)),
-                    const SizedBox(width: 4),
-                    Icon(Icons.edit_outlined, color: t.primary.withValues(alpha: 0.6), size: 11),
-                  ]),
-                ),
-              )),
+              ...g.modules.map((m) => _buildBetModuleChip(m, g, prov, context, t)),
               // ── Chip + Añadir apuesta ──────────────────────────────────
               GestureDetector(
                 onTap: () => _openAddBet(context, prov, g, t),
@@ -1761,12 +2142,22 @@ class _ActiveRoundView extends StatelessWidget {
         )),
 
         const SizedBox(height: 20),
-        // Action buttons
-        GPrimaryButton(
-          label: '+ Capturar Score',
-          icon: Icons.edit,
-          onTap: () => context.read<RoundProvider>().setTab(1),
-        ),
+        // Action buttons — ocultar Capturar Score si no-admin en ronda live cerrada
+        if (!round.isLive || prov.isLiveOwner || round.scoringMode == 'open')
+          GPrimaryButton(
+            label: '+ Capturar Score',
+            icon: Icons.edit,
+            onTap: () => context.read<RoundProvider>().setTab(1),
+          ),
+        if (round.isLive && !prov.isLiveOwner && round.scoringMode == 'admin')
+          GCard(child: Row(children: [
+            Icon(Icons.visibility_rounded, color: prov.theme.sub, size: 20),
+            const SizedBox(width: 10),
+            Expanded(child: Text(
+              'El admin captura los scores de esta ronda',
+              style: TextStyle(color: prov.theme.sub, fontSize: 13),
+            )),
+          ])),
         const SizedBox(height: 10),
         GSecButton(
           label: '📋  Guardar como plantilla',
@@ -1972,6 +2363,67 @@ class _ActiveRoundView extends StatelessWidget {
     ),
   );
 
+  Widget _buildBetModuleChip(BetModuleInstance m, BetGroup group, RoundProvider prov, BuildContext context, GolfTheme t) {
+    final hasTeams = m.hasTeamSides;
+    
+    return GestureDetector(
+      onTap: () => _openBetEdit(context, prov, group, m, t),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 10, vertical: hasTeams ? 8 : 5),
+        decoration: BoxDecoration(
+          color: hasTeams 
+              ? t.accent.withValues(alpha: 0.12) 
+              : t.primary.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: hasTeams 
+                ? t.accent.withValues(alpha: 0.45) 
+                : t.primary.withValues(alpha: 0.35)
+          ),
+        ),
+        child: hasTeams 
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Primera fila: tipo y valor
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.groups_rounded, color: t.accent, size: 14),
+                    const SizedBox(width: 5),
+                    Text(m.type.label, style: TextStyle(color: t.accent, fontWeight: FontWeight.w700, fontSize: 12)),
+                    const SizedBox(width: 4),
+                    Text('\$${m.value.toStringAsFixed(0)}', style: TextStyle(color: t.accent.withValues(alpha: 0.75), fontSize: 11)),
+                  ]),
+                  const SizedBox(height: 4),
+                  // Segunda fila: equipos
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text(
+                      '${m.sideA.name} (${m.sideA.playerIds.length})',
+                      style: TextStyle(color: t.accent.withValues(alpha: 0.9), fontSize: 10, fontWeight: FontWeight.w600),
+                    ),
+                    Text(' vs ', style: TextStyle(color: t.sub, fontSize: 9)),
+                    Text(
+                      '${m.sideB.name} (${m.sideB.playerIds.length})',
+                      style: TextStyle(color: t.accent.withValues(alpha: 0.9), fontSize: 10, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.edit_outlined, color: t.accent.withValues(alpha: 0.6), size: 11),
+                  ]),
+                ],
+              )
+            : Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(m.type.icon, style: const TextStyle(fontSize: 13)),
+                const SizedBox(width: 5),
+                Text(m.type.label, style: TextStyle(color: t.primary, fontWeight: FontWeight.w700, fontSize: 12)),
+                const SizedBox(width: 4),
+                Text('\$${m.value.toStringAsFixed(0)}', style: TextStyle(color: t.primary.withValues(alpha: 0.75), fontSize: 11)),
+                const SizedBox(width: 4),
+                Icon(Icons.edit_outlined, color: t.primary.withValues(alpha: 0.6), size: 11),
+              ]),
+      ),
+    );
+  }
+
   void _openBetEdit(BuildContext context, RoundProvider prov, BetGroup group, BetModuleInstance mod, GolfTheme t) {
     showModalBottomSheet(
       context: context,
@@ -2116,13 +2568,23 @@ class _ActiveRoundView extends StatelessWidget {
 
   int _countCompletedHoles(Round round) {
     final maxHole = round.totalHoles;
+    final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
     for (int h = maxHole; h >= 1; h--) {
-      if (round.players.every((p) => round.getScore(p.id, h).hasScore)) return h;
+      if (activePlayers.every((p) => round.getScore(p.id, h).hasScore)) return h;
     }
     return 0;
   }
 
   void _confirmFinish(BuildContext context, RoundProvider prov, GolfTheme t) {
+    // Solo el owner/admin puede finalizar una ronda en vivo
+    if (prov.isLiveRound && !prov.isLiveOwner) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Solo el organizador puede finalizar la ronda.'),
+        backgroundColor: Colors.red.shade700,
+        duration: const Duration(seconds: 3),
+      ));
+      return;
+    }
     final completed = _countCompletedHoles(prov.round!);
     final total = prov.round!.totalHoles;
     showDialog(context: context, builder: (ctx) => AlertDialog(
@@ -2226,7 +2688,8 @@ class _ScoreEntryNavigatorState extends State<_ScoreEntryNavigator> {
             itemCount: 18,
             itemBuilder: (context, i) {
               final h = i + 1;
-              final allDone = round.players.every((p) => round.getScore(p.id, h).hasScore);
+              final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
+              final allDone = activePlayers.every((p) => round.getScore(p.id, h).hasScore);
               final isSel = h == _selectedHole;
               return GestureDetector(
                 onTap: () => setState(() => _selectedHole = h),
@@ -2290,8 +2753,8 @@ class _HoleEntryPanel extends StatelessWidget {
         ])),
         const SizedBox(height: 16),
 
-        // Per player entry
-        ...round.players.map((p) => _PlayerEntry(player: p, hole: hole, ch: ch, t: t)),
+        // Per player entry (solo jugadores activos)
+        ...round.players.where((p) => round.scores.containsKey(p.id)).map((p) => _PlayerEntry(player: p, hole: hole, ch: ch, t: t)),
 
         // Oyese ranking (only for par 3s)
         if (ch.isPar3) ...[
@@ -2589,6 +3052,191 @@ class _ThemeToggle extends StatelessWidget {
       case AppThemeMode.dark:    return 'Fondo carbón · Verde brillante';
       case AppThemeMode.classic: return 'Verde fairway · Crema · Dorado';
     }
+  }
+}
+
+// ── Botón de invitar jugador como invitado temporal ───────────────────────────
+class _InviteGuestButton extends StatefulWidget {
+  final Round round;
+  final GolfTheme t;
+  const _InviteGuestButton({required this.round, required this.t});
+
+  @override
+  State<_InviteGuestButton> createState() => _InviteGuestButtonState();
+}
+
+class _InviteGuestButtonState extends State<_InviteGuestButton> {
+  bool _loading = false;
+
+  int get _realPlayerCount =>
+      widget.round.players.where((p) => !p.isVirtual).length;
+  bool get _limitReached => _realPlayerCount >= 5;
+
+  Future<void> _invite() async {
+    setState(() => _loading = true);
+    final token = await GuestInviteService.createGuestInvite(widget.round);
+    if (!mounted) return;
+    setState(() => _loading = false);
+
+    if (token == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_limitReached
+              ? 'La ronda ya tiene el máximo de 5 jugadores'
+              : 'No se pudo generar el enlace. Intenta de nuevo.'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
+
+    // Mostrar diálogo con el enlace generado
+    // Construir URL base dinámicamente (funciona en sandbox y en producción)
+    final baseUrl = kIsWeb
+        ? '${Uri.base.scheme}://${Uri.base.host}${Uri.base.port != 80 && Uri.base.port != 443 ? ':${Uri.base.port}' : ''}'
+        : 'https://golfbetmaster.app';
+    final link = '$baseUrl/guest/$token';
+    if (mounted) _showLinkDialog(token, link);
+  }
+
+  void _showLinkDialog(String token, String link) {
+    final t = widget.t;
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: t.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: t.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.person_add_rounded, color: t.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Enlace de invitación',
+                style: TextStyle(color: t.text, fontSize: 16, fontWeight: FontWeight.w800))),
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: Icon(Icons.close_rounded, color: t.sub),
+              ),
+            ]),
+            const SizedBox(height: 16),
+            Text('Comparte este enlace con el jugador. Al abrirlo podrá unirse a la ronda directamente.',
+              style: TextStyle(color: t.sub, fontSize: 13, height: 1.5)),
+            const SizedBox(height: 16),
+
+            // Token visual
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: t.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: t.divider),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Icon(Icons.tag_rounded, color: t.primary, size: 14),
+                  const SizedBox(width: 6),
+                  Text('Token: $token',
+                    style: TextStyle(color: t.primary, fontWeight: FontWeight.w800, fontSize: 14, letterSpacing: 2)),
+                ]),
+                const SizedBox(height: 8),
+                Text(link,
+                  style: TextStyle(color: t.sub, fontSize: 11),
+                  overflow: TextOverflow.ellipsis, maxLines: 2),
+              ]),
+            ),
+            const SizedBox(height: 16),
+
+            // Botones
+            Row(children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: link));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text('Enlace copiado al portapapeles'),
+                        backgroundColor: const Color(0xFF1A3A1C),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                    Navigator.pop(ctx);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: t.primary),
+                    foregroundColor: t.primary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  icon: const Icon(Icons.copy_rounded, size: 16),
+                  label: const Text('Copiar enlace', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    return GCard(
+      child: InkWell(
+        onTap: _limitReached || _loading ? null : _invite,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                color: _limitReached
+                    ? t.divider
+                    : t.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: _loading
+                  ? Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: t.primary))
+                  : Icon(
+                      Icons.person_add_rounded,
+                      color: _limitReached ? t.sub : t.primary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                _limitReached ? 'Máximo de jugadores alcanzado' : 'Invitar jugador',
+                style: TextStyle(
+                  color: _limitReached ? t.sub : t.text,
+                  fontWeight: FontWeight.w700, fontSize: 14),
+              ),
+              Text(
+                _limitReached
+                    ? '5/5 jugadores en la ronda'
+                    : '${_realPlayerCount}/5 jugadores · Genera un enlace de invitación',
+                style: TextStyle(color: t.sub, fontSize: 11),
+              ),
+            ])),
+            if (!_limitReached)
+              Icon(Icons.chevron_right_rounded, color: t.sub),
+          ]),
+        ),
+      ),
+    );
   }
 }
 

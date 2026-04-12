@@ -33,6 +33,7 @@ Map<String, dynamic> roundToJson(Round r) {
   'isLive': r.isLive,
   if (r.ownerUid != null) 'ownerUid': r.ownerUid,
   if (r.liveCode != null) 'liveCode': r.liveCode,
+  'scoringMode': r.scoringMode,
   if (participantUids.isNotEmpty) 'participantUids': participantUids,
   'course': r.course.toJson(),
   'players': r.players.map((p) => p.toJson()).toList(),
@@ -129,6 +130,7 @@ Round roundFromJson(Map<String, dynamic> j) {
     isLive:      j['isLive']      == true,
     ownerUid:    (j['ownerUid']   as Object?)?.toString(),
     liveCode:    (j['liveCode']   as Object?)?.toString(),
+    scoringMode: (j['scoringMode'] as Object?)?.toString() ?? 'open',
     players: players, roundPlayers: roundPlayers,
     betGroups: betGroups,
     course: j['course'] != null

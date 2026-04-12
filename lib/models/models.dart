@@ -23,7 +23,38 @@ DateTime _parseDate(dynamic value) {
 // ── Enums ─────────────────────────────────────────────────────────────────────
 enum BetModuleType { skins, nassau, matchAutoPress, medal, putts, oyeses, units }
 enum UnitEventType { birdie, eagle, sandyPar, parUnico, birdieUnico, holeOut }
-enum PartidaFormat { allInOnePot, oneVsOne, groupVsGroup }
+enum PartidaFormat { 
+  allInOnePot,    // Todos en un solo pozo grupal
+  oneVsOne,       // Cada pareja tiene su duelo independiente
+  groupVsGroup,   // Grupo vs Grupo (legacy)
+  teams2v2,       // Equipos 2 vs 2 (best-ball)
+  teams3v3,       // Equipos 3 vs 3 (best-ball)
+}
+
+extension PartidaFormatExt on PartidaFormat {
+  bool get isTeamFormat => this == PartidaFormat.teams2v2 || this == PartidaFormat.teams3v3;
+  int get teamSize => this == PartidaFormat.teams2v2 ? 2 : (this == PartidaFormat.teams3v3 ? 3 : 0);
+  
+  String get label {
+    switch (this) {
+      case PartidaFormat.allInOnePot: return '1 Pot';
+      case PartidaFormat.oneVsOne: return 'Todos vs Todos';
+      case PartidaFormat.groupVsGroup: return 'Grupo vs Grupo';
+      case PartidaFormat.teams2v2: return 'Equipos 2v2';
+      case PartidaFormat.teams3v3: return 'Equipos 3v3';
+    }
+  }
+  
+  String get description {
+    switch (this) {
+      case PartidaFormat.allInOnePot: return 'Un solo pozo grupal. El ganador cobra a todos.';
+      case PartidaFormat.oneVsOne: return 'Cada pareja tiene su duelo independiente.';
+      case PartidaFormat.groupVsGroup: return 'Grupo vs Grupo';
+      case PartidaFormat.teams2v2: return 'Dos equipos de 2 jugadores (best-ball)';
+      case PartidaFormat.teams3v3: return 'Dos equipos de 3 jugadores (best-ball)';
+    }
+  }
+}
 
 /// Modo de estructura de la apuesta dentro de un grupo de jugadores.
 /// - [onePot]: todos los jugadores comparten un solo pozo/duelo grupal.
@@ -56,17 +87,48 @@ enum StartingNine {
 //
 // Modo de scoring de equipo:
 //   • bestBall (default): el menor score del equipo en el hoyo representa al lado.
-//   • No se implementa aggregate en esta versión.
+//   • scramble: el equipo juega UNA bola. Se crea un "jugador virtual" que representa al equipo.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Modo de juego para equipos (Best Ball vs Scramble)
+enum TeamPlayMode {
+  /// Best Ball: cada jugador juega su propia bola, se toma el mejor score del equipo.
+  /// Todos los jugadores registran scores individuales.
+  bestBall,
+  
+  /// Scramble: el equipo juega UNA sola bola como unidad.
+  /// Se crea un "jugador virtual" que representa al equipo.
+  /// Solo se registra UN score por equipo por hoyo.
+  scramble,
+}
+
+extension TeamPlayModeLabel on TeamPlayMode {
+  String get label {
+    switch (this) {
+      case TeamPlayMode.bestBall:   return 'Best Ball';
+      case TeamPlayMode.scramble:    return 'Scramble';
+    }
+  }
+  
+  String get description {
+    switch (this) {
+      case TeamPlayMode.bestBall:   return 'Cada jugador juega su bola. Se usa el mejor score del equipo.';
+      case TeamPlayMode.scramble:    return 'El equipo juega UNA bola. Se registra un score por equipo.';
+    }
+  }
+}
+
 class BetSide {
   final String id;        // UUID único dentro del módulo
   final String name;      // Nombre visible: "Team A", "CAM + RICH", etc.
   final List<String> playerIds; // ≥1 player
+  final TeamPlayMode playMode;  // Best Ball o Scramble (default: bestBall)
 
   const BetSide({
     required this.id,
     required this.name,
     required this.playerIds,
+    this.playMode = TeamPlayMode.bestBall,
   });
 
   /// Lado individual: un solo jugador (retrocompatibilidad).
@@ -74,17 +136,25 @@ class BetSide {
 
   /// Validar que el lado tiene al menos un jugador.
   bool get isValid => playerIds.isNotEmpty;
+  
+  /// Indica si este lado está en modo Scramble (jugador virtual).
+  bool get isScramble => playMode == TeamPlayMode.scramble && playerIds.length > 1;
 
   Map<String, dynamic> toJson() => {
     'id':        id,
     'name':      name,
     'playerIds': playerIds,
+    'playMode':  playMode.name,
   };
 
   factory BetSide.fromJson(Map<String, dynamic> j) => BetSide(
     id:        (j['id']   as String?) ?? 'side_${DateTime.now().millisecondsSinceEpoch}',
     name:      (j['name'] as String?) ?? 'Lado',
     playerIds: List<String>.from((j['playerIds'] as List?) ?? []),
+    playMode:  TeamPlayMode.values.firstWhere(
+      (e) => e.name == (j['playMode'] as String?),
+      orElse: () => TeamPlayMode.bestBall,
+    ),
   );
 
   /// Crea un lado individual a partir de un playerId (helper de migración).
@@ -92,6 +162,7 @@ class BetSide {
     id:        'side_$playerId',
     name:      playerName,
     playerIds: [playerId],
+    playMode:  TeamPlayMode.bestBall, // Individuales siempre son best ball (no aplica scramble)
   );
 
   // ── Validación de integridad para una lista de dos lados ──────────────────
@@ -256,6 +327,14 @@ class Player {
   int colorIndex;
   /// UID de Firebase Auth del jugador si tiene cuenta vinculada (null si no tiene)
   final String? linkedUserId;
+  /// Indica si es un jugador virtual (equipo Scramble). Default: false.
+  final bool isVirtual;
+  /// Lista de playerIds que componen este equipo virtual (solo para isVirtual=true)
+  final List<String> teamMemberIds;
+  /// Iniciales personalizadas del jugador (máx 4 chars). Usado donde el espacio
+  /// es limitado (columnas de scorecard, chips). Si es null se generan
+  /// automáticamente de la primera letra de cada palabra del nombre.
+  final String? initials;
 
   Player({
     required this.id,
@@ -263,21 +342,41 @@ class Player {
     this.handicapBase = 0,
     this.colorIndex = 0,
     this.linkedUserId,
+    this.isVirtual = false,
+    this.teamMemberIds = const [],
+    this.initials,
   });
 
   bool get hasLinkedAccount => linkedUserId != null && linkedUserId!.isNotEmpty;
 
-  Player copyWith({String? name, double? handicapBase, int? colorIndex, String? linkedUserId}) => Player(
+  /// Nombre corto para espacios limitados (≤4 chars):
+  /// 1. Si tiene initials personalizadas → las usa
+  /// 2. Si el primer nombre tiene ≤8 chars → primer nombre
+  /// 3. En otro caso → primeras 2 iniciales del nombre completo
+  String get shortName {
+    if (initials != null && initials!.isNotEmpty) return initials!;
+    final first = name.split(' ').first;
+    if (first.length <= 8) return first;
+    return name.trim().split(' ').map((w) => w.isNotEmpty ? w[0] : '').take(2).join().toUpperCase();
+  }
+
+  Player copyWith({String? name, double? handicapBase, int? colorIndex, String? linkedUserId, bool? isVirtual, List<String>? teamMemberIds, String? initials}) => Player(
     id: id,
     name: name ?? this.name,
     handicapBase: handicapBase ?? this.handicapBase,
     colorIndex: colorIndex ?? this.colorIndex,
     linkedUserId: linkedUserId ?? this.linkedUserId,
+    isVirtual: isVirtual ?? this.isVirtual,
+    teamMemberIds: teamMemberIds ?? this.teamMemberIds,
+    initials: initials ?? this.initials,
   );
 
   Map<String, dynamic> toJson() => {
     'id': id, 'name': name, 'handicapBase': handicapBase, 'colorIndex': colorIndex,
     if (linkedUserId != null && linkedUserId!.isNotEmpty) 'linkedUserId': linkedUserId,
+    if (isVirtual) 'isVirtual': true,
+    if (teamMemberIds.isNotEmpty) 'teamMemberIds': teamMemberIds,
+    if (initials != null && initials!.isNotEmpty) 'initials': initials,
   };
   factory Player.fromJson(Map<String, dynamic> j) => Player(
     id: (j['id'] as String?) ?? '',
@@ -285,6 +384,9 @@ class Player {
     handicapBase: (j['handicapBase'] as num?)?.toDouble() ?? 0.0,
     colorIndex: (j['colorIndex'] as int?) ?? 0,
     linkedUserId: j['linkedUserId'] as String?,
+    isVirtual: j['isVirtual'] as bool? ?? false,
+    teamMemberIds: j['teamMemberIds'] != null ? List<String>.from(j['teamMemberIds'] as List) : [],
+    initials: j['initials'] as String?,
   );
 }
 
@@ -851,7 +953,7 @@ class OyesesConfig {
     this.payoutRule = PayoutRule.winnerTakesAll,
     this.zapatoEnabled    = false,
     this.zapatoValue      = 0,
-    this.zapatoRequires18 = true,
+    this.zapatoRequires18 = false,  // default false: aplica cuando se completan todos los oyeses del módulo
   });
 
   /// Valor efectivo del zapato dado un número de oyeses totales disponibles.
@@ -889,7 +991,7 @@ class OyesesConfig {
         orElse: () => PayoutRule.winnerTakesAll),
     zapatoEnabled:    j['zapatoEnabled']    as bool?   ?? false,
     zapatoValue:      (j['zapatoValue']     as num?)?.toDouble() ?? 0,
-    zapatoRequires18: j['zapatoRequires18'] as bool?   ?? true,
+    zapatoRequires18: j['zapatoRequires18'] as bool?   ?? false,
   );
   static const def = OyesesConfig();
 }
@@ -1451,6 +1553,10 @@ class Round {
   final String? ownerUid;
   /// Código de 6 chars para identificar la ronda (ej: "GOLF42")
   final String? liveCode;
+  /// Modo de captura: 'admin' = solo admin captura; 'open' = todos capturan
+  final String scoringMode;
+  /// true si solo el admin puede capturar scores
+  bool get isAdminScoring => scoringMode == 'admin';
 
   Round({
     required this.id, required this.name, required this.course,
@@ -1464,6 +1570,7 @@ class Round {
     this.isLive = false,
     this.ownerUid,
     this.liveCode,
+    this.scoringMode = 'open',
   });
 
   HoleScore getScore(String playerId, int hole) =>
@@ -1505,6 +1612,7 @@ class Round {
     bool? isLive,
     String? ownerUid,
     String? liveCode,
+    String? scoringMode,
   }) => Round(
     id: id, name: name, course: course,
     players: players ?? this.players,
@@ -1521,5 +1629,6 @@ class Round {
     isLive: isLive ?? this.isLive,
     ownerUid: ownerUid ?? this.ownerUid,
     liveCode: liveCode ?? this.liveCode,
+    scoringMode: scoringMode ?? this.scoringMode,
   );
 }

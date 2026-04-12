@@ -428,6 +428,135 @@ class LiveRoundService {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  // UNIÓN POR CÓDIGO — Entrar a ronda sin invitación previa
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Resultado de intentar unirse a una ronda por código.
+  /// - [round]        : ronda encontrada (siempre presente si no es error)
+  /// - [myPlayer]     : jugador ya ligado a este uid (puede ser null)
+  /// - [unlinkedPlayers]: jugadores de la ronda sin linkedUserId (para elegir)
+  /// - [error]        : mensaje de error si algo falló
+  static Future<({
+    Round? round,
+    Player? myPlayer,
+    List<Player> unlinkedPlayers,
+    String? error,
+  })> findRoundByCode(String code) async {
+    final uid = AuthService.uid;
+    if (uid == null) {
+      return (round: null, myPlayer: null, unlinkedPlayers: <Player>[], error: 'No autenticado');
+    }
+
+    final trimmed = code.trim().toUpperCase();
+    if (trimmed.length != 6) {
+      return (round: null, myPlayer: null, unlinkedPlayers: <Player>[], error: 'El código debe tener 6 caracteres');
+    }
+
+    try {
+      // Buscar en liveRounds por liveCode
+      final snap = await _liveRounds
+          .where('liveCode', isEqualTo: trimmed)
+          .where('isFinished', isEqualTo: false)
+          .limit(1)
+          .get();
+
+      if (snap.docs.isEmpty) {
+        return (round: null, myPlayer: null, unlinkedPlayers: <Player>[], error: 'Código incorrecto o la ronda ya terminó');
+      }
+
+      final round = roundFromJson(snap.docs.first.data());
+
+      // ¿Ya hay un jugador ligado a este uid?
+      final myPlayer = round.players
+          .where((p) => p.linkedUserId == uid && !p.isVirtual)
+          .firstOrNull;
+
+      // Jugadores reales sin ligar (candidatos para que el usuario elija)
+      final unlinkedPlayers = round.players
+          .where((p) => !p.isVirtual &&
+              (p.linkedUserId == null || p.linkedUserId!.isEmpty))
+          .toList();
+
+      return (round: round, myPlayer: myPlayer, unlinkedPlayers: unlinkedPlayers, error: null);
+    } catch (e) {
+      if (kDebugMode) debugPrint('[LiveRound] findRoundByCode error: $e');
+      return (round: null, myPlayer: null, unlinkedPlayers: <Player>[], error: 'Error al buscar la ronda');
+    }
+  }
+
+  /// Confirma la unión a la ronda: liga al jugador elegido con el uid actual
+  /// y escribe los documentos necesarios para que la ronda aparezca en home.
+  static Future<Round?> joinRoundByCode({
+    required Round round,
+    required Player chosenPlayer,
+  }) async {
+    final uid = AuthService.uid;
+    if (uid == null) return null;
+
+    try {
+      final batch = _db.batch();
+
+      // 1. Actualizar linkedUserId en el jugador global (players/{id})
+      batch.update(_db.collection('players').doc(chosenPlayer.id), {
+        'linkedUserId': uid,
+        'updatedAt': DateTime.now().toIso8601String(),
+      });
+
+      // 2. Actualizar players[] dentro del documento liveRounds/{roundId}
+      final updatedPlayers = round.players.map((p) {
+        if (p.id == chosenPlayer.id) {
+          return {...p.toJson(), 'linkedUserId': uid};
+        }
+        return p.toJson();
+      }).toList();
+      batch.update(_liveRounds.doc(round.id), {
+        'players': updatedPlayers,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // 3. Crear/actualizar invitación en liveRounds/{id}/invitations/{uid}
+      final invRef = _invitations(round.id).doc(uid);
+      batch.set(invRef, {
+        'roundId':    round.id,
+        'roundName':  round.name,
+        'liveCode':   round.liveCode ?? '',
+        'ownerUid':   round.ownerUid ?? '',
+        'ownerName':  '',
+        'playerNames': round.players.map((p) => p.name).toList(),
+        'courseName': round.course.name,
+        'myPlayerId': chosenPlayer.id,
+        'role':       'invited',
+        'status':     'accepted',
+        'createdAt':  FieldValue.serverTimestamp(),
+        'acceptedAt': FieldValue.serverTimestamp(),
+      });
+
+      // 4. Crear liveRoundRef en users/{uid}/liveRoundRefs/{roundId}
+      batch.set(_myRefs().doc(round.id), {
+        'roundId':    round.id,
+        'liveCode':   round.liveCode ?? '',
+        'role':       'invited',
+        'status':     'accepted',
+        'myPlayerId': chosenPlayer.id,
+        'invitedAt':  FieldValue.serverTimestamp(),
+        'acceptedAt': FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+
+      // 5. Releer la ronda actualizada para devolverla con linkedUserId correcto
+      final updated = await _liveRounds.doc(round.id).get();
+      if (updated.exists && updated.data() != null) {
+        return roundFromJson(updated.data()!);
+      }
+      return round;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[LiveRound] joinRoundByCode error: $e');
+      return null;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // BÚSQUEDA DE USUARIO — Para vincular jugador a cuenta
   // ══════════════════════════════════════════════════════════════════════════
 

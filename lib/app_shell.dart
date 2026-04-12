@@ -97,10 +97,19 @@ class _AppShellState extends State<AppShell> {
 
     final hasRound = prov.hasRound;
 
+    // Determinar si se muestra el tab de Score:
+    // Se oculta cuando la ronda es live, en modo 'admin', y el usuario NO es el owner.
+    final round = prov.round;
+    final hideScoreTab = hasRound &&
+        (round?.isLive ?? false) &&
+        (round?.isAdminScoring ?? false) &&
+        !prov.isLiveOwner;
+
     final tabs = <_TabEntry>[
       _TabEntry(label: 'Inicio',       icon: Icons.home_outlined,                   activeIcon: Icons.home,                      screen: const HomeScreen()),
       if (hasRound) ...[
-        _TabEntry(label: 'Score',      icon: Icons.edit_outlined,                   activeIcon: Icons.edit,                      screen: const CaptureScreen()),
+        if (!hideScoreTab)
+          _TabEntry(label: 'Score',    icon: Icons.edit_outlined,                   activeIcon: Icons.edit,                      screen: const CaptureScreen()),
         _TabEntry(label: 'Tarjeta',    icon: Icons.grid_on_outlined,                activeIcon: Icons.grid_on,                   screen: const ScorecardScreen()),
         _TabEntry(label: 'Resultados', icon: Icons.account_balance_wallet_outlined, activeIcon: Icons.account_balance_wallet,    screen: const ResultsScreen()),
       ],

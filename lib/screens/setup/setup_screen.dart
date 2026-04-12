@@ -1,6 +1,6 @@
 // SETUP SCREEN — Configurar jugadores, partidas y módulos de apuesta
 import 'package:flutter/material.dart';
-
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/app_theme.dart';
@@ -247,12 +247,6 @@ class _SetupScreenState extends State<SetupScreen> {
             // Validaciones por paso
             if (_step == 0) {
               // Campo es opcional — cualquier cosa está bien
-            } else if (_step == 1 && _players.length < 2) {
-              ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                backgroundColor: t.loss,
-                content: const Text('Agrega al menos 2 jugadores'),
-              ));
-              return;
             } else if (_step == 2 && _groups.isEmpty) {
               _addDefaultGroup();
             }
@@ -266,11 +260,16 @@ class _SetupScreenState extends State<SetupScreen> {
 
   void _addDefaultGroup() {
     final allPids = _players.map((p) => p.id).toList();
+    // Con 1 o 0 jugadores no se pueden crear módulos de apuesta (nassau requiere 2+)
+    // Se crea un grupo vacío solo para seguimiento de scores
+    final modules = allPids.length >= 2
+        ? [BetModuleInstance.defaultFor(BetModuleType.nassau, allPids, id: 'nassau_default')]
+        : <BetModuleInstance>[];
     _groups.add(BetGroup(
       id: _uuid.v4(), name: 'Partida Principal',
       format: PartidaFormat.allInOnePot,
       playerIds: allPids,
-      modules: [BetModuleInstance.defaultFor(BetModuleType.nassau, allPids, id: 'nassau_default')],
+      modules: modules,
     ));
   }
 
@@ -1503,7 +1502,10 @@ class _SetupScreenState extends State<SetupScreen> {
             ])),
             // ── Botón editar ────────────────────────────────────────────
             GestureDetector(
-              onTap: () => _editModuleInstance(groupIdx, modIdx, mod, g, t),
+              onTap: () {
+                // Usamos _openModuleEdit que incluye la sección de equipos
+                _openModuleEdit(context, g, mod, t);
+              },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(color: t.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
@@ -1685,8 +1687,8 @@ class _SetupScreenState extends State<SetupScreen> {
 
   // ── Widgets de config según tipo ─────────────────────────────────────────
   List<Widget> _configWidgets(BetModuleInstance cfg, GolfTheme t, StateSetter setSt, void Function(BetModuleInstance) update) {
-    // Tipos donde el selector de formato aplica (no Oyeses ni Units que son siempre grupales)
-    final showFormatSelector = cfg.type != BetModuleType.oyeses && cfg.type != BetModuleType.units;
+    // Tipos donde el selector de formato aplica (no Units, que son siempre individuales)
+    final showFormatSelector = cfg.type != BetModuleType.units;
 
     final formatSelector = !showFormatSelector ? <Widget>[] : [
       _sectionLabel('ESTRUCTURA DE APUESTA', t),
@@ -1841,10 +1843,66 @@ class _SetupScreenState extends State<SetupScreen> {
             setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(mode: i == 1 ? GrossNetMode.net : GrossNetMode.gross))));
           }),
           const SizedBox(height: 16),
+
+          // ── Regla de empate ────────────────────────────────────────────────
+          _sectionLabel('EMPATE EN SEGMENTO', t),
+          const SizedBox(height: 8),
+          _segmentedRow(['Push (devuelve)', 'Carry (acumula)'],
+              n.tieRule == TieRule.carryOver ? 1 : 0, t, (i) {
+            setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(
+              tieRule: i == 1 ? TieRule.carryOver : TieRule.push,
+              carryEnabled: i == 1 ? true : n.carryEnabled,
+            ))));
+          }),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Text(
+              n.tieRule == TieRule.carryOver
+                  ? 'El valor del segmento empatado se acumula al siguiente automáticamente.'
+                  : 'El valor del segmento empatado se devuelve (nadie gana ese segmento).',
+              style: TextStyle(color: t.sub, fontSize: 11),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Carry en Back 9 (independiente del press) ──────────────────────
+          _toggleRow(
+            title: 'Carry en Back 9',
+            subtitle: n.carryEnabled
+                ? 'Si el F9 termina empatado, el B9 vale x${n.carryFactor.toStringAsFixed(0)}'
+                : 'Sin carry — el B9 siempre vale su monto normal',
+            value: n.carryEnabled,
+            onChanged: (v) => setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(carryEnabled: v)))),
+            t: t,
+          ),
+          if (n.carryEnabled) ...[
+            const SizedBox(height: 12),
+            _sectionLabel('MULTIPLICADOR CARRY', t),
+            const SizedBox(height: 8),
+            _segmentedRow(['x2', 'x3', 'x4'],
+                n.carryFactor >= 4 ? 2 : n.carryFactor >= 3 ? 1 : 0, t, (i) {
+              setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(
+                carryFactor: (i + 2).toDouble(),
+              ))));
+            }),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Text(
+                'Si el F9 termina igualado, el B9 (\$${n.backValue.toStringAsFixed(0)}) '
+                'pasa a valer \$${(n.backValue * n.carryFactor).toStringAsFixed(0)}.',
+                style: TextStyle(color: t.sub, fontSize: 11),
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+
+          // ── Press automático ───────────────────────────────────────────────
           _toggleRow(
             title: 'Activar presiones (Press)',
             subtitle: n.pressEnabled
-                ? 'Si vas ${n.autoPressTrigger} down se abre una presión automáticamente'
+                ? 'Trigger: ${n.autoPressTrigger} down'
                 : 'Sin presiones — solo Front 9, Back 9 y Total',
             value: n.pressEnabled,
             onChanged: (v) => setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(pressEnabled: v)))),
@@ -1876,16 +1934,16 @@ class _SetupScreenState extends State<SetupScreen> {
               onChanged: (v) => setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(allowMultiplePresses: v)))),
               t: t,
             ),
-            const SizedBox(height: 16),
-            _toggleRow(
-              title: 'Carry en Back 9',
-              subtitle: n.carryEnabled
-                  ? 'Si el F9 termina empatado, el B9 (y sus presiones) valen x${n.carryFactor.toStringAsFixed(0)}'
-                  : 'Sin carry — el B9 siempre vale su valor normal',
-              value: n.carryEnabled,
-              onChanged: (v) => setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(carryEnabled: v)))),
-              t: t,
-            ),
+            if (!n.allowMultiplePresses) ...[
+              const SizedBox(height: 12),
+              _sectionLabel('MÁX. PRESIONES POR SEGMENTO', t),
+              const SizedBox(height: 8),
+              _segmentedRow(['1', '2', '3'],
+                  (n.maxPresses == null || n.maxPresses! <= 1) ? 0
+                  : n.maxPresses! == 2 ? 1 : 2, t, (i) {
+                setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(maxPresses: i + 1))));
+              }),
+            ],
           ],
         ];
 
@@ -1995,11 +2053,20 @@ class _SetupScreenState extends State<SetupScreen> {
           // ── ZAPATO ──────────────────────────────────────────────────────
           _sectionLabel('👟 ZAPATO', t),
           const SizedBox(height: 6),
-          Text('El jugador que gana TODOS los oyeses cobra el zapato.', style: TextStyle(color: t.sub, fontSize: 11)),
+          Text(
+            cfg.isAllVsAll
+                ? 'En Todos vs Todos: si A le gana TODOS los oyeses a B, A hace zapato vs B (puede haber varios zapatos).'
+                : 'En 1 Pot: solo si un jugador gana TODOS los oyeses del campo, cobra el zapato al grupo.',
+            style: TextStyle(color: t.sub, fontSize: 11),
+          ),
           const SizedBox(height: 10),
           _toggleRow(
             title: 'Activar zapato',
-            subtitle: o.zapatoEnabled ? 'El ganador de todos los oyeses cobra extra' : 'Sin regla de zapato',
+            subtitle: o.zapatoEnabled
+                ? (cfg.isAllVsAll
+                    ? 'Zapato por pareja: quien gane todos los oyeses vs otro cobra extra'
+                    : 'Zapato grupal: el ganador absoluto de todos los oyeses cobra a todos')
+                : 'Sin regla de zapato',
             value: o.zapatoEnabled,
             onChanged: (v) => setSt(() => update(cfg.copyWith(oyesesConfig: o.copyWith(zapatoEnabled: v)))),
             t: t,
@@ -2016,7 +2083,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 const SizedBox(height: 6),
                 Text(
                   auto
-                      ? 'Automático: $par3count oyeses × \$${o.value.toStringAsFixed(0)} = \$${autoAmt.toStringAsFixed(0)}'
+                      ? 'Automático: $par3count oyeses × \$${o.value.toStringAsFixed(0)} = \$${autoAmt.toStringAsFixed(0)} por par afectado'
                       : 'Valor fijo: \$${o.zapatoValue.toStringAsFixed(0)}',
                   style: TextStyle(color: t.sub, fontSize: 11),
                 ),
@@ -2041,14 +2108,14 @@ class _SetupScreenState extends State<SetupScreen> {
                 const SizedBox(height: 12),
                 _sectionLabel('APLICA EN', t),
                 const SizedBox(height: 8),
-                _segmentedRow(['Solo 18 hoyos', 'También 9 hoyos'], o.zapatoRequires18 ? 0 : 1, t, (i) {
+                _segmentedRow(['Solo campo 18H', 'Cualquier ronda'], o.zapatoRequires18 ? 0 : 1, t, (i) {
                   setSt(() => update(cfg.copyWith(oyesesConfig: o.copyWith(zapatoRequires18: i == 0))));
                 }),
                 const SizedBox(height: 6),
                 Text(
                   o.zapatoRequires18
-                      ? 'El zapato solo aplica si se juegan todos los par-3 del campo.'
-                      : 'El zapato aplica con 2 o más oyeses registrados (válido en 9 hoyos).',
+                      ? 'Solo aplica en campos con 3+ par-3s (rondas de 18 hoyos).'
+                      : 'Aplica en cualquier campo al completarse todos sus par-3s.',
                   style: TextStyle(color: t.sub, fontSize: 11),
                 ),
               ]);
@@ -2455,9 +2522,14 @@ class _SetupScreenState extends State<SetupScreen> {
   Widget _stepReview(GolfTheme t) {
     final allPids = _players.map((p) => p.id).toList();
     final effectiveGroups = _groups.isEmpty
-        ? [BetGroup(id: 'auto', name: 'Partida Principal', format: PartidaFormat.allInOnePot,
+        ? [BetGroup(
+            id: 'auto', name: 'Partida Principal', format: PartidaFormat.allInOnePot,
             playerIds: allPids,
-            modules: [BetModuleInstance.defaultFor(BetModuleType.nassau, allPids)])]
+            // Nassau requiere 2+ jugadores; con 1 o 0 se deja sin módulos
+            modules: allPids.length >= 2
+                ? [BetModuleInstance.defaultFor(BetModuleType.nassau, allPids)]
+                : [],
+          )]
         : _groups;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -2541,7 +2613,12 @@ class _SetupScreenState extends State<SetupScreen> {
             Text(_nameCtrl.text, style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16))]),
           const SizedBox(height: 4),
           if (_selectedCourse != null) Text(_selectedCourse!.name, style: TextStyle(color: t.accent, fontSize: 12)),
-          Text('${_players.length} jugadores · ${effectiveGroups.length} partidas · $_totalHoles hoyos', style: TextStyle(color: t.sub, fontSize: 13)),
+          Text(
+            _players.isEmpty
+                ? 'Solo invitados · ${effectiveGroups.length} partidas · $_totalHoles hoyos'
+                : '${_players.length} jugador${_players.length == 1 ? "" : "es"} · ${effectiveGroups.length} partidas · $_totalHoles hoyos',
+            style: TextStyle(color: t.sub, fontSize: 13),
+          ),
         ])),
         const SizedBox(height: 16),
         // Jugadores con tees y HCP de juego
@@ -2772,13 +2849,13 @@ class _SetupScreenState extends State<SetupScreen> {
         isAuth: auth.isAuth,
         players: _players,
         groups: _groups,
-        onStart: (startingNine, {bool startLive = false}) {
+        onStart: (startingNine, {bool startLive = false, String scoringMode = 'open'}) {
           Navigator.pop(sheetCtx);
-          _createAndStartRound(startingNine, startLive: startLive);
+          _createAndStartRound(startingNine, startLive: startLive, scoringMode: scoringMode);
         },
-        onStartWithTemplate: (startingNine, name, emoji, desc, {bool startLive = false}) {
+        onStartWithTemplate: (startingNine, name, emoji, desc, {bool startLive = false, String scoringMode = 'open'}) {
           Navigator.pop(sheetCtx);
-          _createAndStartRound(startingNine, startLive: startLive);
+          _createAndStartRound(startingNine, startLive: startLive, scoringMode: scoringMode);
           // Guardar plantilla tras iniciar ronda
           _saveTemplateNow(name: name, emoji: emoji, desc: desc);
         },
@@ -3096,20 +3173,128 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
-  void _createAndStartRound(StartingNine startingNine, {bool startLive = false}) {
+  void _createAndStartRound(StartingNine startingNine, {bool startLive = false, String scoringMode = 'open'}) {
     final allPidsLaunch = _players.map((p) => p.id).toList();
-    final effectiveGroups = _groups.isEmpty
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PASO 1: Escanear módulos con sides → crear virtuales para Scramble y Best Ball
+    // ─────────────────────────────────────────────────────────────────────────
+    final virtualPlayers    = <Player>[];
+    final scrambleTeamIds   = <String>{};
+    final sideIdToVirtualId = <String, String>{};  // Scramble sideId → virtualId
+    final sideIdToBBTeamId  = <String, String>{};  // BestBall sideId → bbTeamId
+    final virtualPlayerTees = <String, TeeInfo>{}; // virtualId → tee
+
+    for (final group in (_groups.isEmpty ? [] : _groups)) {
+      for (final mod in group.modules) {
+        if (mod.sides == null || mod.sides!.isEmpty) continue;
+        for (final side in mod.sides!) {
+          if (side.playerIds.length < 2) continue;
+
+          final members = _players.where((p) => side.playerIds.contains(p.id)).toList();
+          if (members.isEmpty) continue;
+
+          final hcps      = members.map((p) => _teeOf(p.id).playingHandicap(p.handicapBase)).toList()..sort();
+          final tees      = members.map((p) => _teeOf(p.id)).toList();
+          final hardestTee = tees.reduce((a, b) => a.courseRating > b.courseRating ? a : b);
+          final teamHcp   = (hcps.first * 0.35 + hcps.last * 0.15).round().toDouble();
+
+          if (side.playMode == TeamPlayMode.scramble) {
+            if (sideIdToVirtualId.containsKey(side.id)) continue;
+            final virtualId = 'team_${side.id}';
+            virtualPlayers.add(Player(
+              id: virtualId, name: side.name,
+              handicapBase: teamHcp,
+              colorIndex: members.first.colorIndex,
+              isVirtual: true, teamMemberIds: side.playerIds,
+            ));
+            scrambleTeamIds.addAll(side.playerIds);
+            sideIdToVirtualId[side.id] = virtualId;
+            virtualPlayerTees[virtualId] = hardestTee;
+
+          } else if (side.playMode == TeamPlayMode.bestBall) {
+            if (sideIdToBBTeamId.containsKey(side.id)) continue;
+            // Best Ball: jugador virtual de equipo para visualización/apuestas
+            // Los reales SIGUEN en la ronda para capturar scores individuales
+            final bbTeamId = 'bb_team_${side.id}';
+            virtualPlayers.add(Player(
+              id: bbTeamId, name: side.name,
+              handicapBase: teamHcp,
+              colorIndex: members.first.colorIndex,
+              isVirtual: true, teamMemberIds: side.playerIds,
+            ));
+            sideIdToBBTeamId[side.id] = bbTeamId;
+            virtualPlayerTees[bbTeamId] = hardestTee;
+          }
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PASO 2: Lista de jugadores de la ronda
+    //  - Scramble real → excluidos (reemplazados por virtual)
+    //  - Best Ball real → incluidos (capturan scores individuales)
+    //  - Virtuales     → incluidos (para apuestas y visualización de equipos)
+    // ─────────────────────────────────────────────────────────────────────────
+    final realPlayersNotInScramble = _players.where((p) => !scrambleTeamIds.contains(p.id)).toList();
+    final allPlayersForRound = [...realPlayersNotInScramble, ...virtualPlayers];
+    // Lista completa (incluye reales de Scramble) para guardar referencias de nombres
+    final allPlayersIncludingScrambleMembers = [..._players, ...virtualPlayers];
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PASO 3: Actualizar grupos — participantIds usan IDs virtuales
+    // ─────────────────────────────────────────────────────────────────────────
+    final effectiveGroups = (_groups.isEmpty
         ? [BetGroup(
             id: _uuid.v4(), name: 'Partida Principal',
             format: PartidaFormat.allInOnePot,
             playerIds: allPidsLaunch,
             modules: [BetModuleInstance.defaultFor(BetModuleType.nassau, allPidsLaunch)],
           )]
-        : _groups;
+        : _groups).map((group) {
 
-    final roundPlayers = _players.map((p) {
-      final tee = _teeOf(p.id);
-      final phcp = tee.playingHandicap(p.handicapBase);
+      // playerIds del grupo: quitar reales de Scramble, agregar todos los virtuales
+      final updatedGroupPlayerIds = group.playerIds
+          .where((pid) => !scrambleTeamIds.contains(pid))
+          .toList();
+      final groupVirtualIds = <String>{};
+      for (final mod in group.modules) {
+        if (mod.sides != null) {
+          for (final side in mod.sides!) {
+            final vId = sideIdToVirtualId[side.id] ?? sideIdToBBTeamId[side.id];
+            if (vId != null) groupVirtualIds.add(vId);
+          }
+        }
+      }
+      updatedGroupPlayerIds.addAll(groupVirtualIds);
+
+      // participantIds por módulo → un ID por equipo
+      final updatedModules = group.modules.map((mod) {
+        if (mod.sides == null || mod.sides!.isEmpty) return mod;
+        final hasTeamSides = mod.sides!.any((s) =>
+            sideIdToVirtualId.containsKey(s.id) || sideIdToBBTeamId.containsKey(s.id));
+        if (!hasTeamSides) return mod;
+
+        final newParticipantIds = <String>[];
+        for (final side in mod.sides!) {
+          if (sideIdToVirtualId.containsKey(side.id)) {
+            newParticipantIds.add(sideIdToVirtualId[side.id]!);
+          } else if (sideIdToBBTeamId.containsKey(side.id)) {
+            newParticipantIds.add(sideIdToBBTeamId[side.id]!);
+          } else {
+            newParticipantIds.addAll(side.playerIds);
+          }
+        }
+        return mod.copyWith(participantIds: newParticipantIds);
+      }).toList();
+
+      return group.copyWith(modules: updatedModules, playerIds: updatedGroupPlayerIds);
+    }).toList();
+
+    final roundPlayers = allPlayersForRound.map((p) {
+      // Para jugadores virtuales, usar el tee guardado; para reales, _teeOf(p.id)
+      final tee = p.isVirtual ? (virtualPlayerTees[p.id] ?? TeeInfo.standard) : _teeOf(p.id);
+      final phcp = p.isVirtual ? p.handicapBase : tee.playingHandicap(p.handicapBase);
       final manual = Map<String, double>.from(_manualHandicaps[p.id] ?? {});
       return RoundPlayer(
         playerId: p.id,
@@ -3123,9 +3308,11 @@ class _SetupScreenState extends State<SetupScreen> {
     // vinculamos automáticamente su UID al primer jugador de la lista
     // (convención: el creador es quien agrega la ronda).
     final creatorUid = AuthService.uid;
-    final linkedPlayers = _players.map((p) {
+    
+    final linkedPlayers = allPlayersIncludingScrambleMembers.map((p) {
       // Si el jugador ya tiene linkedUserId, respetar; si es el primero y no tiene, vincular.
-      if (p.linkedUserId == null && creatorUid != null && p == _players.first) {
+      // No vincular jugadores virtuales
+      if (!p.isVirtual && p.linkedUserId == null && creatorUid != null && p == _players.first) {
         return p.copyWith(linkedUserId: creatorUid);
       }
       return p;
@@ -3138,14 +3325,19 @@ class _SetupScreenState extends State<SetupScreen> {
       players: linkedPlayers,
       roundPlayers: roundPlayers,
       betGroups: effectiveGroups,
-      scores: {for (final p in _players) p.id: {}},
-      events: {for (final p in _players) p.id: {}},
+      // Inicializar scores para todos los jugadores que necesitan capturar scores:
+      // - Jugadores reales no-Scramble
+      // - Jugadores reales de Best Ball (todos los del equipo)
+      // - Jugadores virtuales de Scramble
+      scores: {for (final p in allPlayersForRound) p.id: {}},
+      events: {for (final p in allPlayersForRound) p.id: {}},
       oyeseRankings: {},
       sliding: [],
       createdAt: DateTime.now(),
       startingNine: startingNine,
       totalHoles: _totalHoles,
       ownerUid: creatorUid,
+      scoringMode: startLive ? scoringMode : 'open',
     );
 
     if (startLive) {
@@ -3510,8 +3702,8 @@ class _LaunchSheet extends StatefulWidget {
   final bool isAuth;
   final List<Player> players;
   final List<BetGroup> groups;
-  final void Function(StartingNine, {bool startLive}) onStart;
-  final void Function(StartingNine, String name, String emoji, String desc, {bool startLive}) onStartWithTemplate;
+  final void Function(StartingNine, {bool startLive, String scoringMode}) onStart;
+  final void Function(StartingNine, String name, String emoji, String desc, {bool startLive, String scoringMode}) onStartWithTemplate;
 
   const _LaunchSheet({
     required this.t,
@@ -3527,8 +3719,9 @@ class _LaunchSheet extends StatefulWidget {
 }
 
 class _LaunchSheetState extends State<_LaunchSheet> {
-  bool _saveTemplate = false;
-  bool _startLive    = false;
+  bool _saveTemplate  = false;
+  bool _startLive     = false;
+  String _scoringMode = 'open'; // 'admin' | 'open'
   final _nameCtrl  = TextEditingController();
   final _emojiCtrl = TextEditingController(text: '⛳️');
   final _descCtrl  = TextEditingController();
@@ -3550,9 +3743,9 @@ class _LaunchSheetState extends State<_LaunchSheet> {
         return;
       }
       widget.onStartWithTemplate(nine, name, _emojiCtrl.text.trim(), _descCtrl.text.trim(),
-          startLive: _startLive);
+          startLive: _startLive, scoringMode: _scoringMode);
     } else {
-      widget.onStart(nine, startLive: _startLive);
+      widget.onStart(nine, startLive: _startLive, scoringMode: _scoringMode);
     }
   }
 
@@ -3561,106 +3754,191 @@ class _LaunchSheetState extends State<_LaunchSheet> {
     final t = widget.t;
     return Padding(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-        left: 20, right: 20, top: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        left: 20, right: 20, top: 20,
       ),
-      child: SingleChildScrollView(
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Cabecera fija ────────────────────────────────────────────────
           Row(children: [
-            Text('Iniciar Ronda', style: TextStyle(color: t.text, fontSize: 20, fontWeight: FontWeight.w900)),
+            Text('Iniciar Ronda',
+                style: TextStyle(color: t.text, fontSize: 20, fontWeight: FontWeight.w900)),
             const Spacer(),
-            GestureDetector(onTap: () => Navigator.pop(context), child: Icon(Icons.close, color: t.sub)),
+            GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Icon(Icons.close, color: t.sub)),
           ]),
           const SizedBox(height: 4),
-          Text('${widget.players.length} jugadores · ${widget.groups.isEmpty ? "Nassau auto" : "${widget.groups.length} partida${widget.groups.length > 1 ? "s" : ""}"}',
-              style: TextStyle(color: t.sub, fontSize: 13)),
-          const SizedBox(height: 20),
+          Text(
+            '${widget.players.isEmpty ? "Solo invitados" : "${widget.players.length} jugador${widget.players.length == 1 ? "" : "es"}"} · ${widget.groups.isEmpty ? (widget.players.length >= 2 ? "Nassau auto" : "Sin apuestas") : "${widget.groups.length} partida${widget.groups.length > 1 ? "s" : ""}"}',
+            style: TextStyle(color: t.sub, fontSize: 13),
+          ),
+          const SizedBox(height: 14),
 
-          // Elección de salida
-          Text('¿DESDE QUÉ LADO EMPEZÁIS?',
-              style: TextStyle(color: t.sub, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
-          const SizedBox(height: 10),
-          Row(children: [
-            Expanded(child: _startBtn(t, '1️⃣', 'Front 9 primero', 'Hoyos 1–9 con stroke extra', () => _launch(StartingNine.front))),
-            const SizedBox(width: 10),
-            Expanded(child: _startBtn(t, '2️⃣', 'Back 9 primero', 'Hoyos 10–18 con stroke extra', () => _launch(StartingNine.back))),
-          ]),
-          const SizedBox(height: 16),
-
-          // Guardar como plantilla
-          // Opción En Vivo
-          if (widget.isAuth && _hasLinkedPlayers) ...[
-            const SizedBox(height: 8),
-            GestureDetector(
-              onTap: () => setState(() => _startLive = !_startLive),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: _startLive
-                      ? Colors.red.withValues(alpha: 0.08)
-                      : widget.t.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _startLive ? Colors.red : widget.t.divider,
-                    width: _startLive ? 1.5 : 1,
-                  ),
-                ),
-                child: Row(children: [
-                  Container(
-                    width: 36, height: 36,
-                    decoration: BoxDecoration(
-                      color: _startLive
-                          ? Colors.red.withValues(alpha: 0.15)
-                          : widget.t.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.wifi_tethering_rounded,
-                      color: _startLive ? Colors.red : widget.t.sub,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Text('Activar en Vivo',
-                          style: TextStyle(
-                            color: _startLive ? Colors.red : widget.t.text,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                          )),
-                      if (_startLive) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(4)),
-                          child: const Text('EN VIVO',
-                              style: TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+          // ── Opciones scrollables (Live + ScoringMode) ───────────────────
+          // Mostrar opciones de ronda EN VIVO si el usuario está autenticado.
+          // No requiere que haya jugadores vinculados: puede ser ronda solo invitados.
+          if (widget.isAuth)
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Toggle EN VIVO
+                    GestureDetector(
+                      onTap: () => setState(() => _startLive = !_startLive),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _startLive
+                              ? Colors.red.withValues(alpha: 0.08)
+                              : t.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _startLive ? Colors.red : t.divider,
+                            width: _startLive ? 1.5 : 1,
+                          ),
                         ),
-                      ],
-                    ]),
-                    Text(
-                      'Los jugadores invitados verán y editarán scores en tiempo real',
-                      style: TextStyle(color: widget.t.sub, fontSize: 11),
+                        child: Row(children: [
+                          Container(
+                            width: 36, height: 36,
+                            decoration: BoxDecoration(
+                              color: _startLive
+                                  ? Colors.red.withValues(alpha: 0.15)
+                                  : t.primary.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(Icons.wifi_tethering_rounded,
+                                color: _startLive ? Colors.red : t.sub, size: 20),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(children: [
+                                Text('Activar en Vivo',
+                                    style: TextStyle(
+                                      color: _startLive ? Colors.red : t.text,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                    )),
+                                if (_startLive) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                    decoration: BoxDecoration(
+                                        color: Colors.red,
+                                        borderRadius: BorderRadius.circular(4)),
+                                    child: const Text('EN VIVO',
+                                        style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 7,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 0.8)),
+                                  ),
+                                ],
+                              ]),
+                              Text(
+                                'Los jugadores con cuenta verán la ronda en tiempo real',
+                                style: TextStyle(color: t.sub, fontSize: 11),
+                              ),
+                            ],
+                          )),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            width: 22, height: 22,
+                            decoration: BoxDecoration(
+                              color: _startLive ? Colors.red : Colors.transparent,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                  color: _startLive ? Colors.red : t.sub),
+                            ),
+                            child: _startLive
+                                ? const Icon(Icons.check,
+                                    color: Colors.white, size: 14)
+                                : null,
+                          ),
+                        ]),
+                      ),
                     ),
-                  ])),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    width: 22, height: 22,
-                    decoration: BoxDecoration(
-                      color: _startLive ? Colors.red : Colors.transparent,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: _startLive ? Colors.red : widget.t.sub),
-                    ),
-                    child: _startLive
-                        ? const Icon(Icons.check, color: Colors.white, size: 14)
-                        : null,
-                  ),
-                ]),
+                    // Selector de scoring mode (solo si live activo)
+                    if (_startLive) ..._buildScoringModeSelector(t),
+                    const SizedBox(height: 4),
+                  ],
+                ),
               ),
             ),
-          ],
+
+          // ── Botones de inicio — SIEMPRE VISIBLES al fondo ───────────────
+          const SizedBox(height: 16),
+          Text('¿DESDE QUÉ LADO EMPEZÁIS?',
+              style: TextStyle(
+                  color: t.sub,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8)),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(child: _startBtn(t, '1️⃣', 'Front 9 primero',
+                'Hoyos 1–9 con stroke extra', () => _launch(StartingNine.front))),
+            const SizedBox(width: 10),
+            Expanded(child: _startBtn(t, '2️⃣', 'Back 9 primero',
+                'Hoyos 10–18 con stroke extra', () => _launch(StartingNine.back))),
+          ]),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildScoringModeSelector(GolfTheme t) {
+    return [
+      const SizedBox(height: 12),
+      Text('¿QUIÉN CAPTURA LOS SCORES?',
+          style: TextStyle(color: t.sub, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: _scoringModeBtn(
+          t,
+          icon: Icons.person_rounded,
+          title: 'Solo el admin',
+          subtitle: 'Tú capturas todo',
+          value: 'admin',
+        )),
+        const SizedBox(width: 10),
+        Expanded(child: _scoringModeBtn(
+          t,
+          icon: Icons.group_rounded,
+          title: 'Todos',
+          subtitle: 'Cada quien el suyo',
+          value: 'open',
+        )),
+      ]),
+    ];
+  }
+
+  Widget _scoringModeBtn(GolfTheme t, {required IconData icon, required String title, required String subtitle, required String value}) {
+    final sel = _scoringMode == value;
+    return GestureDetector(
+      onTap: () => setState(() => _scoringMode = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: sel ? t.primary.withValues(alpha: 0.10) : t.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: sel ? t.primary : t.divider, width: sel ? 1.5 : 1),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(icon, color: sel ? t.primary : t.sub, size: 20),
+          const SizedBox(height: 6),
+          Text(title, style: TextStyle(color: sel ? t.primary : t.text, fontWeight: FontWeight.w700, fontSize: 13)),
+          Text(subtitle, style: TextStyle(color: t.sub, fontSize: 11)),
+          if (sel) ...[const SizedBox(height: 4), Icon(Icons.check_circle, color: t.primary, size: 14)],
         ]),
       ),
     );

@@ -143,7 +143,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
     final balances = prov.balances;
     final netDebts = prov.netDebts;
 
-    final sortedPlayers = round.players.toList()
+    final sortedPlayers = getDisplayPlayers(round)
       ..sort((a, b) => (balances[b.id] ?? 0).compareTo(balances[a.id] ?? 0));
 
     final g = _ThemeGrad(t);
@@ -160,7 +160,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // NIVEL 1: Podio PGA
-                  _PGAPodium(players: sortedPlayers, balances: balances, t: t, g: g),
+                  _PGAPodium(players: sortedPlayers, round: round, balances: balances, t: t, g: g),
                   const SizedBox(height: 28),
 
                   // NIVEL 2: Pagos directos
@@ -273,23 +273,24 @@ class _PGAHeader extends StatelessWidget {
             style: TextStyle(color: g.headerSub, fontSize: 11),
             overflow: TextOverflow.ellipsis),
         ])),
-        // Botón cerrar ronda
-        GestureDetector(
-          onTap: () => onFinish(context, round, prov, t),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: g.closeRoundGrad),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(
-                color: Colors.black.withValues(alpha: 0.20),
-                blurRadius: 8, offset: const Offset(0, 2),
-              )],
+        // Botón cerrar ronda — solo visible para el owner/admin de la ronda
+        if (prov.isLiveOwner || !round.isLive)
+          GestureDetector(
+            onTap: () => onFinish(context, round, prov, t),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: g.closeRoundGrad),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.20),
+                  blurRadius: 8, offset: const Offset(0, 2),
+                )],
+              ),
+              child: Text('Cerrar ronda',
+                style: TextStyle(color: g.closeRoundText, fontWeight: FontWeight.w800, fontSize: 12)),
             ),
-            child: Text('Cerrar ronda',
-              style: TextStyle(color: g.closeRoundText, fontWeight: FontWeight.w800, fontSize: 12)),
           ),
-        ),
       ]),
     );
   }
@@ -321,22 +322,23 @@ class _PGASectionLabel extends StatelessWidget {
 // ── Podio PGA ─────────────────────────────────────────────────────────────────
 class _PGAPodium extends StatelessWidget {
   final List<Player> players;
+  final Round round;
   final Map<String, double> balances;
   final GolfTheme t;
   final _ThemeGrad g;
-  const _PGAPodium({required this.players, required this.balances, required this.t, required this.g});
+  const _PGAPodium({required this.players, required this.round, required this.balances, required this.t, required this.g});
 
   @override
   Widget build(BuildContext context) {
     return Column(children: [
       if (players.isNotEmpty)
-        _WinnerHeroCard(player: players[0], balance: balances[players[0].id] ?? 0, rank: 1, t: t, g: g),
+        _WinnerHeroCard(player: players[0], round: round, balance: balances[players[0].id] ?? 0, rank: 1, t: t, g: g),
       if (players.length > 1) const SizedBox(height: 8),
       ...players.skip(1).toList().asMap().entries.map((e) {
         final rank = e.key + 2;
         final p    = e.value;
         final bal  = balances[p.id] ?? 0.0;
-        return _RankingRow(rank: rank, player: p, balance: bal, t: t, g: g);
+        return _RankingRow(rank: rank, player: p, round: round, balance: bal, t: t, g: g);
       }),
     ]);
   }
@@ -345,11 +347,12 @@ class _PGAPodium extends StatelessWidget {
 // ── Tarjeta hero: fondo de color sólido intenso, texto blanco ────────────────
 class _WinnerHeroCard extends StatelessWidget {
   final Player player;
+  final Round round;
   final double balance;
   final int rank;
   final GolfTheme t;
   final _ThemeGrad g;
-  const _WinnerHeroCard({required this.player, required this.balance, required this.rank,
+  const _WinnerHeroCard({required this.player, required this.round, required this.balance, required this.rank,
       required this.t, required this.g});
 
   @override
@@ -395,11 +398,18 @@ class _WinnerHeroCard extends StatelessWidget {
         GAvatar(name: player.name, colorIndex: player.colorIndex, size: 52),
         const SizedBox(width: 14),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(player.name,
-            style: TextStyle(color: g.heroText, fontWeight: FontWeight.w800, fontSize: 16)),
+          playerOrTeamName(
+            player,
+            round,
+            style: TextStyle(color: g.heroText, fontWeight: FontWeight.w800, fontSize: 16),
+            showTeamIcon: true,
+          ),
           const SizedBox(height: 2),
-          Text('HCP ${player.handicapBase.toStringAsFixed(0)}',
-            style: TextStyle(color: g.heroSub, fontSize: 11)),
+          if (teamMembersFootnote(player, round, style: TextStyle(color: g.heroSub, fontSize: 10)) != null)
+            teamMembersFootnote(player, round, style: TextStyle(color: g.heroSub, fontSize: 10))!
+          else
+            Text('HCP ${player.handicapBase.toStringAsFixed(0)}',
+              style: TextStyle(color: g.heroSub, fontSize: 11)),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
@@ -441,10 +451,11 @@ class _WinnerHeroCard extends StatelessWidget {
 class _RankingRow extends StatelessWidget {
   final int rank;
   final Player player;
+  final Round round;
   final double balance;
   final GolfTheme t;
   final _ThemeGrad g;
-  const _RankingRow({required this.rank, required this.player, required this.balance,
+  const _RankingRow({required this.rank, required this.player, required this.round, required this.balance,
       required this.t, required this.g});
 
   @override
@@ -483,10 +494,17 @@ class _RankingRow extends StatelessWidget {
           GAvatar(name: player.name, colorIndex: player.colorIndex, size: 38),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(player.name,
-              style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 14)),
-            Text('HCP ${player.handicapBase.toStringAsFixed(0)}',
-              style: TextStyle(color: t.sub, fontSize: 10)),
+            playerOrTeamName(
+              player,
+              round,
+              style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 14),
+              showTeamIcon: false,
+            ),
+            if (teamMembersFootnote(player, round, style: TextStyle(color: t.sub, fontSize: 9)) != null)
+              teamMembersFootnote(player, round, style: TextStyle(color: t.sub, fontSize: 9))!
+            else
+              Text('HCP ${player.handicapBase.toStringAsFixed(0)}',
+                style: TextStyle(color: t.sub, fontSize: 10)),
           ])),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Text(
@@ -546,6 +564,7 @@ class _PGAPaymentCard extends StatelessWidget {
               // ── Pagador ──────────────────────────────────────────────────
               _TransferPlayer(
                 player: payer,
+                round: round,
                 label: 'PAGA',
                 labelColor: t.loss,
                 t: t,
@@ -600,6 +619,7 @@ class _PGAPaymentCard extends StatelessWidget {
               // ── Cobrador ─────────────────────────────────────────────────
               _TransferPlayer(
                 player: receiver,
+                round: round,
                 label: 'COBRA',
                 labelColor: t.profit,
                 t: t,
@@ -615,12 +635,13 @@ class _PGAPaymentCard extends StatelessWidget {
 
 class _TransferPlayer extends StatelessWidget {
   final Player player;
+  final Round round;
   final String label;
   final Color labelColor;
   final GolfTheme t;
   final _ThemeGrad g;
   const _TransferPlayer({
-    required this.player, required this.label, required this.labelColor,
+    required this.player, required this.round, required this.label, required this.labelColor,
     required this.t, required this.g,
   });
 
@@ -636,11 +657,13 @@ class _TransferPlayer extends StatelessWidget {
         child: GAvatar(name: player.name, colorIndex: player.colorIndex, size: 42),
       ),
       const SizedBox(height: 6),
-      Text(
-        player.name.split(' ').first,
+      playerOrTeamName(
+        player,
+        round,
         style: TextStyle(
           color: t.text, fontSize: 12, fontWeight: FontWeight.w700,
         ),
+        showTeamIcon: false,
       ),
       const SizedBox(height: 2),
       Container(
@@ -712,8 +735,12 @@ class _PlayerDetailSection extends StatelessWidget {
                 child: Row(children: [
                   GAvatar(name: player.name, colorIndex: player.colorIndex, size: 36),
                   const SizedBox(width: 12),
-                  Expanded(child: Text(player.name,
-                    style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 14))),
+                  Expanded(child: playerOrTeamName(
+                    player,
+                    round,
+                    style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 14),
+                    showTeamIcon: false,
+                  )),
                   AnimatedRotation(
                     turns: isExpanded ? 0.5 : 0,
                     duration: const Duration(milliseconds: 220),
@@ -810,6 +837,8 @@ class _PlayerFaceToFace extends StatelessWidget {
                       if (st.total < 0) npLiveBal -= st.totalVal;
                     }
                     for (final p in [...st.frontPresses, ...st.backPresses]) {
+                      // Solo liquidar presses CERRADAS; las abiertas son apuestas pendientes
+                      if (p.isOpen) continue;
                       final inSeg1   = p.startHole >= seg1From && p.startHole <= seg1To;
                       final pressVal = inSeg1 ? mod.nassau.frontPressValue : mod.nassau.backPressValue;
                       if (p.score > 0) npLiveBal += pressVal;
@@ -939,27 +968,81 @@ class _DuelCard extends StatelessWidget {
                       ? 'AS'
                       : '${amount >= 0 ? '+' : ''}\$${amount.toStringAsFixed(0)}';
 
+                  // Sub-detalle para Oyeses: marcador + zapato
+                  String? oyesesDetail;
+                  if (betType == BetModuleType.oyeses) {
+                    // Buscar módulo de oyeses que incluya a ambos jugadores
+                    BetModuleInstance? oyesMod;
+                    for (final gr in round.betGroups) {
+                      if (!gr.playerIds.contains(player.id) || !gr.playerIds.contains(opponent.id)) continue;
+                      final found = gr.modules.where((m) => m.type == BetModuleType.oyeses).toList();
+                      if (found.isNotEmpty) { oyesMod = found.first; break; }
+                    }
+                    if (oyesMod != null) {
+                      final o = oyesMod.oyeses;
+                      final par3Holes = round.course.holes.where((h) => h.isPar3).toList();
+                      final eligible  = o.eligibleHoles.isNotEmpty
+                          ? par3Holes.where((h) => o.eligibleHoles.contains(h.hole)).toList()
+                          : par3Holes;
+                      final totalEligible = eligible.length;
+                      int oyes1 = 0, oyes2 = 0, holesPlayed = 0;
+                      int winsP1vsP2 = 0, winsP2vsP1 = 0;
+                      for (final ch in eligible) {
+                        final ranking = round.getOyese(ch.hole);
+                        if (ranking == null || ranking.ranking.isEmpty) continue;
+                        final ordered = ranking.ranking.where((pid) => [player.id, opponent.id].contains(pid)).toList();
+                        if (ordered.length < 2) continue;
+                        holesPlayed++;
+                        if (ordered[0] == player.id) { oyes1++; winsP1vsP2++; }
+                        else { oyes2++; winsP2vsP1++; }
+                      }
+                      final pName = player.shortName;
+                      final oName = opponent.shortName;
+                      String scoreLine = '$pName $oyes1 · $oyes2 $oName';
+                      if (o.zapatoEnabled && holesPlayed == totalEligible && totalEligible > 0) {
+                        final enoughHoles = o.zapatoRequires18 ? (totalEligible >= 3) : true;
+                        if (enoughHoles) {
+                          final zapatoAmt = o.zapatoValue > 0 ? o.zapatoValue : (totalEligible * o.value);
+                          if (winsP1vsP2 == holesPlayed) {
+                            scoreLine += '  ·  👟 +\$${zapatoAmt.toStringAsFixed(0)}';
+                          } else if (winsP2vsP1 == holesPlayed) {
+                            scoreLine += '  ·  👟 -\$${zapatoAmt.toStringAsFixed(0)}';
+                          }
+                        }
+                      }
+                      oyesesDetail = scoreLine;
+                    }
+                  }
+
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 5),
-                    child: Row(children: [
-                      // Icono y nombre del tipo de apuesta
-                      Text('${betType.icon}', style: const TextStyle(fontSize: 12)),
-                      const SizedBox(width: 6),
-                      Expanded(child: Text(betType.label,
-                        style: TextStyle(color: t.sub, fontSize: 11, fontWeight: FontWeight.w500))),
-                      // Barra de monto
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: amtColor.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(8),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        // Icono y nombre del tipo de apuesta
+                        Text('${betType.icon}', style: const TextStyle(fontSize: 12)),
+                        const SizedBox(width: 6),
+                        Expanded(child: Text(betType.label,
+                          style: TextStyle(color: t.sub, fontSize: 11, fontWeight: FontWeight.w500))),
+                        // Barra de monto
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: amtColor.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(amtText,
+                            style: TextStyle(
+                              color: amtColor,
+                              fontWeight: FontWeight.w800, fontSize: 12,
+                            )),
                         ),
-                        child: Text(amtText,
-                          style: TextStyle(
-                            color: amtColor,
-                            fontWeight: FontWeight.w800, fontSize: 12,
-                          )),
-                      ),
+                      ]),
+                      if (oyesesDetail != null)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 18, top: 2),
+                          child: Text(oyesesDetail,
+                            style: TextStyle(color: t.sub, fontSize: 10)),
+                        ),
                     ]),
                   );
                 }).toList(),
@@ -1122,7 +1205,7 @@ class _ResultsBodyState extends State<ResultsBody> {
     final round = widget.round;
     final balances = LedgerEngine.playerBalances(round);
     final netDebts = LedgerEngine.compute(round);
-    final sortedPlayers = round.players.toList()
+    final sortedPlayers = getDisplayPlayers(round)
       ..sort((a, b) => (balances[b.id] ?? 0).compareTo(balances[a.id] ?? 0));
 
     return SingleChildScrollView(
@@ -1130,7 +1213,7 @@ class _ResultsBodyState extends State<ResultsBody> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _PGASectionLabel(label: 'BALANCE FINAL', icon: Icons.emoji_events_rounded, g: g),
         const SizedBox(height: 10),
-        _PGAPodium(players: sortedPlayers, balances: balances, t: t, g: g),
+        _PGAPodium(players: sortedPlayers, round: round, balances: balances, t: t, g: g),
         const SizedBox(height: 20),
         if (netDebts.isNotEmpty) ...[
           _PGASectionLabel(label: 'TRANSFERENCIAS', icon: Icons.currency_exchange_rounded, g: g),

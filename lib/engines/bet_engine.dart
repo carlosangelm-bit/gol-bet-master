@@ -431,12 +431,16 @@ class BetEngine {
 
       addEntry(segScore, segValue, segLabel);
 
-      // Liquidar cada presión
-      for (final ps in pressStarts) {
-        int pressScore = 0;
-        for (int idx = ps.startIdx; idx < history.length; idx++) {
-          pressScore = history[idx] - history[ps.startIdx - 1];
-        }
+      // Liquidar cada presión.
+      // CORRECCIÓN: cada press cierra cuando empieza la SIGUIENTE press,
+      // no al final del segmento. Así el score refleja solo el tramo de esa press.
+      for (int k = 0; k < pressStarts.length; k++) {
+        final ps = pressStarts[k];
+        // Endpoint: inicio de la siguiente press (exclusive) o fin del segmento.
+        final endIdx = (k + 1 < pressStarts.length)
+            ? pressStarts[k + 1].startIdx - 1
+            : history.length - 1;
+        final pressScore = history[endIdx] - history[ps.startIdx - 1];
         addEntry(pressScore, pressValue,
             'Press H${ps.startHole}–H$holeTo ($segLabel)');
       }
@@ -633,7 +637,9 @@ class BetEngine {
   // ── OYESES ────────────────────────────────────────────────────────────────
   static List<LedgerEntry> _oyeses(Round round, List<String> pids, BetModuleInstance mod) {
     final entries = <LedgerEntry>[];
-    final cfg = mod.oyeses;
+    final cfg        = mod.oyeses;
+    final isAllVsAll = mod.isAllVsAll; // onePot vs allVsAll
+
     final par3Holes = round.course.holes.where((h) => h.isPar3).toList();
 
     // Filtrar por hoyos elegibles
@@ -641,12 +647,18 @@ class BetEngine {
         ? par3Holes.where((h) => cfg.eligibleHoles.contains(h.hole)).toList()
         : par3Holes;
 
-    // ── Cobros hoyo a hoyo ─────────────────────────────────────────────────
-    // Para el zapato: rastrear quién gana cada oyés
-    // winner[playerId] = número de oyeses ganados como PRIMERO (1°)
-    final Map<String, int> firstPlaceCount = { for (final p in pids) p: 0 };
-    int holesWithRanking = 0; // oyeses donde hay ranking registrado
+    final totalEligible = eligible.length;
 
+    // ── Estructuras para zapato ────────────────────────────────────────────
+    // onePot  → firstPlaceCount[pid]: cuántos oyeses fue PRIMERO absoluto
+    // allVsAll → winsVs[A][B]: cuántos oyeses A quedó por delante de B
+    final Map<String, int> firstPlaceCount = { for (final p in pids) p: 0 };
+    final Map<String, Map<String, int>> winsVs = {
+      for (final p in pids) p: { for (final q in pids) q: 0 },
+    };
+    int holesWithRanking = 0;
+
+    // ── Cobros hoyo a hoyo ─────────────────────────────────────────────────
     for (final ch in eligible) {
       final ranking = round.getOyese(ch.hole);
       if (ranking == null || ranking.ranking.isEmpty) continue;
@@ -654,44 +666,88 @@ class BetEngine {
       if (orderedPids.length < 2) continue;
 
       holesWithRanking++;
-      // El primero gana el oyés de este hoyo
+
+      // 1° absoluto (para onePot zapato)
       firstPlaceCount[orderedPids[0]] = (firstPlaceCount[orderedPids[0]] ?? 0) + 1;
 
+      // Cobros par a par y conteo para allVsAll zapato
       for (int i = 0; i < orderedPids.length - 1; i++) {
         for (int j = i + 1; j < orderedPids.length; j++) {
+          final winner = orderedPids[i];
+          final loser  = orderedPids[j];
           entries.add(LedgerEntry(
-            fromPlayerId: orderedPids[j], toPlayerId: orderedPids[i],
+            fromPlayerId: loser, toPlayerId: winner,
             amount: cfg.value, betType: BetModuleType.oyeses,
             reason: 'Oyés H${ch.hole} (${i + 1}° vs ${j + 1}°)', hole: ch.hole,
           ));
+          // allVsAll: acumular victorias de winner sobre loser
+          winsVs[winner]![loser] = (winsVs[winner]![loser] ?? 0) + 1;
         }
       }
     }
 
     // ── Zapato ─────────────────────────────────────────────────────────────
-    if (cfg.zapatoEnabled && holesWithRanking >= 2) {
-      // Condición de 18 hoyos: verificar si se jugaron todos los par-3 elegibles
-      final totalEligible = eligible.length;
-      final allPlayed = holesWithRanking == totalEligible;
+    // REGLA:
+    //   El zapato SIEMPRE requiere que se hayan completado TODOS los par-3
+    //   elegibles del campo (holesWithRanking == totalEligible).
+    //
+    //   onePot   → Un solo zapato grupal: el jugador que fue 1° ABSOLUTO en
+    //              todos los oyeses cobra a todos los demás.
+    //              Monto = totalEligible × value (cobra a cada rival).
+    //
+    //   allVsAll → Zapato por par: para cada par (A, B), si A quedó por
+    //              delante de B en TODOS los oyeses → A hace zapato vs B.
+    //              Monto = totalEligible × value (por cada par afectado).
+    //              Pueden ocurrir varios zapatos simultáneos.
+    //
+    //   zapatoRequires18 = true → además exige campo con 3+ par-3s.
+    if (cfg.zapatoEnabled && holesWithRanking >= 1) {
+      final allPlayed   = holesWithRanking == totalEligible;
+      final enoughHoles = cfg.zapatoRequires18 ? (totalEligible >= 3) : true;
 
-      // zapatoRequires18 = true → necesita que TODOS los oyeses estén jugados
-      // zapatoRequires18 = false → basta con 2+ oyeses registrados
-      final conditionMet = cfg.zapatoRequires18 ? allPlayed : holesWithRanking >= 2;
+      if (allPlayed && enoughHoles) {
+        final zapatoAmt = cfg.zapatoAmount(totalEligible);
 
-      if (conditionMet) {
-        // ¿Algún jugador ganó TODOS los oyeses con ranking?
-        for (final pid in pids) {
-          if ((firstPlaceCount[pid] ?? 0) == holesWithRanking) {
-            // Este jugador hizo zapato — cobra a todos los demás
-            final zapatoAmt = cfg.zapatoAmount(holesWithRanking);
-            for (final other in pids.where((p) => p != pid)) {
-              entries.add(LedgerEntry(
-                fromPlayerId: other, toPlayerId: pid,
-                amount: zapatoAmt, betType: BetModuleType.oyeses,
-                reason: '👟 Zapato ($holesWithRanking oyeses)',
-              ));
+        if (!isAllVsAll) {
+          // ── 1 Pot: un solo zapato grupal ────────────────────────────────
+          for (final pid in pids) {
+            if ((firstPlaceCount[pid] ?? 0) == holesWithRanking) {
+              for (final other in pids.where((p) => p != pid)) {
+                entries.add(LedgerEntry(
+                  fromPlayerId: other, toPlayerId: pid,
+                  amount: zapatoAmt, betType: BetModuleType.oyeses,
+                  reason: '👟 Zapato 1Pot ($holesWithRanking oyeses)',
+                ));
+              }
+              break; // un solo zapato posible en onePot
             }
-            break; // solo puede haber un zapato
+          }
+        } else {
+          // ── Todos vs Todos: zapato por cada par (A, B) ──────────────────
+          // A hace zapato vs B si quedó por delante de B en TODOS los oyeses.
+          for (int i = 0; i < pids.length; i++) {
+            for (int j = i + 1; j < pids.length; j++) {
+              final a = pids[i];
+              final b = pids[j];
+              final aWinsVsB = winsVs[a]![b] ?? 0;
+              final bWinsVsA = winsVs[b]![a] ?? 0;
+
+              if (aWinsVsB == holesWithRanking) {
+                // A le ganó todos los oyeses a B → zapato de A vs B
+                entries.add(LedgerEntry(
+                  fromPlayerId: b, toPlayerId: a,
+                  amount: zapatoAmt, betType: BetModuleType.oyeses,
+                  reason: '👟 Zapato AvA ($holesWithRanking oyeses)',
+                ));
+              } else if (bWinsVsA == holesWithRanking) {
+                // B le ganó todos los oyeses a A → zapato de B vs A
+                entries.add(LedgerEntry(
+                  fromPlayerId: a, toPlayerId: b,
+                  amount: zapatoAmt, betType: BetModuleType.oyeses,
+                  reason: '👟 Zapato AvA ($holesWithRanking oyeses)',
+                ));
+              }
+            }
           }
         }
       }
@@ -1676,6 +1732,7 @@ class BetEngine {
 
     int front = 0, back = 0;
     int frontPlayed = 0, backPlayed = 0;
+    int holesWonP1 = 0, holesWonP2 = 0;
     final List<int> frontHistory = [];
     final List<int> backHistory  = [];
 
@@ -1701,6 +1758,10 @@ class BetEngine {
       else if (grossBase > netReceiver) delta = p1IsBase ? -1 :  1;
       else                              delta = 0;
 
+      // Conteo individual de hoyos ganados (para el badge visual)
+      if (delta > 0) holesWonP1++;
+      else if (delta < 0) holesWonP2++;
+
       if (h >= seg1From && h <= seg1To) {
         front += delta; frontPlayed++; frontHistory.add(front);
       } else if (h >= seg2From && h <= seg2To) {
@@ -1708,11 +1769,17 @@ class BetEngine {
       }
     }
 
+    // Normalizar history a perspectiva de p1: positivo = p1 arriba.
+    // Si p1 no es el base, el delta fue calculado con signo invertido,
+    // por lo que hay que multiplicar por -1 antes de detectar presiones.
+    final List<int> normFrontHistory = p1IsBase ? frontHistory : frontHistory.map((v) => -v).toList();
+    final List<int> normBackHistory  = p1IsBase ? backHistory  : backHistory.map((v) => -v).toList();
+
     final List<NassauPress> presses = [];
     if (cfg.pressEnabled) {
-      _detectPresses(presses, frontHistory, seg1From, seg1To, frontPlayed,
+      _detectPresses(presses, normFrontHistory, seg1From, seg1To, frontPlayed,
           p1Id, p2Id, cfg.autoPressTrigger);
-      _detectPresses(presses, backHistory, seg2From, seg2To, backPlayed,
+      _detectPresses(presses, normBackHistory, seg2From, seg2To, backPlayed,
           p1Id, p2Id, cfg.autoPressTrigger);
     }
 
@@ -1723,6 +1790,8 @@ class BetEngine {
       frontVal: cfg.frontValue,
       backVal:  cfg.effectiveBackValue,
       totalVal: cfg.effectiveTotalValue,
+      holesWonP1: holesWonP1,
+      holesWonP2: holesWonP2,
     );
   }
 
@@ -1788,13 +1857,18 @@ class BetEngine {
     final effBackPressVal  = carryActive ? cfg.backPressValue * cfg.carryFactor : cfg.backPressValue;
     final effTotalVal      = carryActive ? cfg.totalValue     * cfg.carryFactor : cfg.totalValue;
 
+    // Normalizar history a perspectiva de p1: positivo = p1 arriba.
+    // Si p1 no es el base, el delta fue calculado con signo invertido.
+    final List<int> normFrontHistoryP = p1IsBase ? frontHistory : frontHistory.map((v) => -v).toList();
+    final List<int> normBackHistoryP  = p1IsBase ? backHistory  : backHistory.map((v) => -v).toList();
+
     // Presiones primer segmento (físicamente liveSeg1From..liveSeg1To)
     final List<NassauPress> frontPresses = [];
-    _detectPresses(frontPresses, frontHistory, liveSeg1From, liveSeg1To, frontPlayed,
+    _detectPresses(frontPresses, normFrontHistoryP, liveSeg1From, liveSeg1To, frontPlayed,
         p1Id, p2Id, cfg.autoPressTrigger);
     // Presiones segundo segmento (físicamente liveSeg2From..liveSeg2To)
     final List<NassauPress> backPresses  = [];
-    _detectPresses(backPresses, backHistory, liveSeg2From, liveSeg2To, backPlayed,
+    _detectPresses(backPresses, normBackHistoryP, liveSeg2From, liveSeg2To, backPlayed,
         p1Id, p2Id, cfg.autoPressTrigger);
 
     return NassauPressLiveStatus(
@@ -1824,25 +1898,49 @@ class BetEngine {
     // el trigger se mide desde el inicio del segmento o desde el último press,
     // no desde el acumulado absoluto. Así se evitan presiones duplicadas
     // cuando el marcador se mantiene en el umbral varios hoyos seguidos.
-    int refIdx = 0; // índice desde donde medimos el marcador relativo
+    //
+    // IMPORTANTE: cada presión termina cuando empieza la SIGUIENTE presión
+    // (no al final del segmento completo). Usamos dos pasadas:
+    // 1ª pasada: detectar todos los índices de trigger y el loser de cada press.
+    // 2ª pasada: calcular el pressScore de cada press usando como endpoint
+    //            el índice donde empieza la siguiente press (o history.last si es la última).
+    final List<({int trigIdx, String loser, int startHole})> triggers = [];
+
+    int refIdx = 0;
     for (int i = 0; i < history.length; i++) {
       final relDiff = history[i] - (refIdx == 0 ? 0 : history[refIdx - 1]);
       if (relDiff.abs() >= trigger) {
         final startHole = holeStart + i + 1;
         if (startHole <= holeEnd) {
-          // Score de la presión: diferencia desde su punto de inicio hasta ahora
-          final pressScore = history.length > i + 1
-              ? history.last - history[i]
-              : 0;
           final loser = relDiff < 0 ? p1Id : p2Id;
-          out.add(NassauPress(
-            loser: loser, startHole: startHole, endHole: holeEnd,
-            score: pressScore,
-            isOpen: played < (holeEnd - holeStart + 1),
-          ));
-          refIdx = i + 1; // mover referencia al hoyo que disparó la press
+          triggers.add((trigIdx: i, loser: loser, startHole: startHole));
+          refIdx = i + 1;
         }
       }
+    }
+
+    final segmentHoles = holeEnd - holeStart + 1;
+    for (int k = 0; k < triggers.length; k++) {
+      final t = triggers[k];
+      // La press cierra justo antes de que empiece la siguiente; si es la última,
+      // cierra al final del segmento (history.last).
+      final endIdx = (k + 1 < triggers.length)
+          ? triggers[k + 1].trigIdx - 1
+          : history.length - 1;
+      // pressScore: cambio desde el punto de disparo hasta el cierre de la press.
+      // Positivo → p1 arriba → p1 ganó la press.
+      // Para presses ABIERTAS: se muestra el marcador en tiempo real (último hoyo jugado).
+      // Para presses CERRADAS: se usa el índice donde empieza la siguiente press (o el final).
+      final isOpen = played < segmentHoles;
+      final scoreEndIdx = isOpen ? history.length - 1 : endIdx;
+      final pressScore = scoreEndIdx < history.length
+          ? history[scoreEndIdx] - history[t.trigIdx]
+          : 0;
+      out.add(NassauPress(
+        loser: t.loser, startHole: t.startHole, endHole: holeEnd,
+        score: pressScore,
+        isOpen: played < segmentHoles,
+      ));
     }
   }
 }
@@ -1894,12 +1992,17 @@ class NassauLiveStatus {
   final double frontVal;
   final double backVal;
   final double totalVal;
+  // Hoyos ganados individualmente (independiente del sentido del segmento)
+  final int holesWonP1;
+  final int holesWonP2;
 
   const NassauLiveStatus({
     required this.front, required this.back, required this.total,
     required this.frontPlayed, required this.backPlayed,
     required this.presses,
     required this.frontVal, required this.backVal, required this.totalVal,
+    this.holesWonP1 = 0,
+    this.holesWonP2 = 0,
   });
 }
 

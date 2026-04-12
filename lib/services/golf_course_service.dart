@@ -345,6 +345,10 @@ class GolfCourseService {
   static const _baseUrl = 'https://api.golfcourseapi.com';
   static const _apiKey  = 'DLZRFGWXFTHO6QNK3ZIOVL5I2Q';
 
+  // ── Caché en memoria por sesión (evita llamadas repetidas al mismo campo) ──
+  static final Map<int, ApiCourse> _detailCache = {};
+  static final Map<String, List<ApiCourse>> _searchCache = {};
+
   static Map<String, String> get _headers => {
     'Authorization': 'Key $_apiKey',
     'Content-Type': 'application/json',
@@ -353,10 +357,16 @@ class GolfCourseService {
   // ── Buscar campos por nombre ──────────────────────────────────────────────
   // Respuesta: { "courses": [ {...}, ... ] }
   static Future<List<ApiCourse>> search(String query) async {
-    if (query.trim().isEmpty) return [];
+    final q = query.trim();
+    if (q.isEmpty) return [];
+
+    // Devolver caché si existe
+    if (_searchCache.containsKey(q.toLowerCase())) {
+      return _searchCache[q.toLowerCase()]!;
+    }
 
     final uri = Uri.parse('$_baseUrl/v1/search')
-        .replace(queryParameters: {'search_query': query.trim()});
+        .replace(queryParameters: {'search_query': q});
 
     final resp = await http.get(uri, headers: _headers)
         .timeout(const Duration(seconds: 12));
@@ -367,14 +377,22 @@ class GolfCourseService {
 
     final body = json.decode(resp.body) as Map<String, dynamic>;
     final courses = (body['courses'] as List?) ?? [];
-    return courses
+    final result = courses
         .map((c) => ApiCourse.fromJson(c as Map<String, dynamic>))
         .toList();
+
+    _searchCache[q.toLowerCase()] = result;
+    return result;
   }
 
   // ── Obtener campo completo (con hoyos) por ID ─────────────────────────────
   // Respuesta: { "course": { ... } }   ← wrapper singular "course"
   static Future<ApiCourse> getById(int id) async {
+    // Devolver caché si existe (evita llamada a la API en visitas repetidas)
+    if (_detailCache.containsKey(id)) {
+      return _detailCache[id]!;
+    }
+
     final uri = Uri.parse('$_baseUrl/v1/courses/$id');
 
     final resp = await http.get(uri, headers: _headers)
@@ -388,6 +406,18 @@ class GolfCourseService {
 
     // ⚠️ El wrapper es "course" (singular), NO el objeto directo
     final courseJson = body['course'] as Map<String, dynamic>? ?? body;
-    return ApiCourse.fromJson(courseJson);
+    final course = ApiCourse.fromJson(courseJson);
+    _detailCache[id] = course;
+    return course;
+  }
+
+  /// Pre-carga en paralelo los detalles de varios campos (para favoritos).
+  /// No lanza excepciones — fallos silenciosos.
+  static Future<void> prefetchByIds(List<int> ids) async {
+    final missing = ids.where((id) => !_detailCache.containsKey(id)).toList();
+    if (missing.isEmpty) return;
+    await Future.wait(
+      missing.map((id) => getById(id).then((_) {}).catchError((_) {})),
+    );
   }
 }

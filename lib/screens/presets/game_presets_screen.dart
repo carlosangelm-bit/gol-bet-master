@@ -924,40 +924,127 @@ class _PresetConfigWidgets {
     final cFront = TextEditingController(text: n.frontValue.toStringAsFixed(0));
     final cBack  = TextEditingController(text: n.backValue.toStringAsFixed(0));
     final cTotal = TextEditingController(text: n.totalValue.toStringAsFixed(0));
+    final cPF    = TextEditingController(text: n.frontPressValue.toStringAsFixed(0));
+    final cPB    = TextEditingController(text: n.backPressValue.toStringAsFixed(0));
     void save() {
-      final fv = double.tryParse(cFront.text) ?? n.frontValue;
-      final bv = double.tryParse(cBack.text)  ?? n.backValue;
-      final tv = double.tryParse(cTotal.text) ?? n.totalValue;
-      update(cfg.copyWith(nassauConfig: n.copyWith(frontValue: fv, backValue: bv, totalValue: tv)));
+      final fv  = double.tryParse(cFront.text) ?? n.frontValue;
+      final bv  = double.tryParse(cBack.text)  ?? n.backValue;
+      final tv  = double.tryParse(cTotal.text) ?? n.totalValue;
+      final pfv = double.tryParse(cPF.text)    ?? n.frontPressValue;
+      final pbv = double.tryParse(cPB.text)    ?? n.backPressValue;
+      update(cfg.copyWith(nassauConfig: n.copyWith(
+        frontValue: fv, backValue: bv, totalValue: tv,
+        frontPressValue: pfv, backPressValue: pbv,
+      )));
     }
     cFront.addListener(save); cBack.addListener(save); cTotal.addListener(save);
+    cPF.addListener(save); cPB.addListener(save);
     return [
       ..._formatSelector(cfg, t, setSt, update),
+
+      // ── Valores base ──────────────────────────────────────────────────────
       _label('VALORES', t), const SizedBox(height: 8),
       _amountField('Front 9', cFront, t), const SizedBox(height: 8),
       _amountField('Back 9', cBack, t), const SizedBox(height: 8),
       _amountField('Total 18', cTotal, t),
       const SizedBox(height: 16),
+
+      // ── Modo de juego ─────────────────────────────────────────────────────
       _label('JUEGO', t), const SizedBox(height: 8),
       _segmented(['Gross', 'Net'], n.mode == GrossNetMode.net ? 1 : 0, t, (i) {
         setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(mode: i == 1 ? GrossNetMode.net : GrossNetMode.gross))));
       }),
       const SizedBox(height: 16),
+
+      // ── Regla de empate ───────────────────────────────────────────────────
+      _label('EMPATE EN SEGMENTO', t), const SizedBox(height: 8),
+      _segmented(['Push (devuelve)', 'Carry (acumula)'],
+          n.tieRule == TieRule.carryOver ? 1 : 0, t, (i) {
+        setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(
+          tieRule: i == 1 ? TieRule.carryOver : TieRule.push,
+          carryEnabled: i == 1 ? true : n.carryEnabled,
+        ))));
+      }),
+      const SizedBox(height: 4),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Text(
+          n.tieRule == TieRule.carryOver
+              ? 'El valor del segmento empatado se acumula al siguiente automáticamente.'
+              : 'El valor del segmento empatado se devuelve (nadie gana ese segmento).',
+          style: TextStyle(color: t.sub, fontSize: 11),
+        ),
+      ),
+      const SizedBox(height: 16),
+
+      // ── Carry en Back 9 ───────────────────────────────────────────────────
       _toggleRow(
-        title: 'Presiones (Press)',
-        subtitle: n.pressEnabled
-            ? 'Si vas ${n.autoPressTrigger} down se activa automáticamente'
-            : 'Sin presiones',
+        title: 'Carry en Back 9',
+        subtitle: n.carryEnabled
+            ? 'Si el F9 termina empatado, el B9 vale x${n.carryFactor.toStringAsFixed(0)}'
+            : 'Sin carry — el B9 siempre vale su monto normal',
+        value: n.carryEnabled,
+        onChanged: (v) => setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(carryEnabled: v)))),
+        t: t,
+      ),
+      if (n.carryEnabled) ...[
+        const SizedBox(height: 12),
+        _label('MULTIPLICADOR CARRY', t), const SizedBox(height: 8),
+        _segmented(['x2', 'x3', 'x4'],
+            n.carryFactor >= 4 ? 2 : n.carryFactor >= 3 ? 1 : 0, t, (i) {
+          setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(
+            carryFactor: (i + 2).toDouble(),
+          ))));
+        }),
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Text(
+            'Si el F9 termina igualado, el B9 (\$${n.backValue.toStringAsFixed(0)}) '
+            'pasa a valer \$${(n.backValue * n.carryFactor).toStringAsFixed(0)}.',
+            style: TextStyle(color: t.sub, fontSize: 11),
+          ),
+        ),
+      ],
+      const SizedBox(height: 16),
+
+      // ── Press automático ──────────────────────────────────────────────────
+      _toggleRow(
+        title: 'Activar Press automático',
+        subtitle: n.pressEnabled ? 'Trigger: ${n.autoPressTrigger} down' : 'Sin press',
         value: n.pressEnabled,
         onChanged: (v) => setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(pressEnabled: v)))),
         t: t,
       ),
       if (n.pressEnabled) ...[
         const SizedBox(height: 12),
-        _label('TRIGGER DE PRESIÓN', t), const SizedBox(height: 8),
+        _label('TRIGGER', t), const SizedBox(height: 8),
         _segmented(['1 down', '2 down', '3 down'], n.autoPressTrigger - 1, t, (i) {
           setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(autoPressTrigger: i + 1))));
         }),
+        const SizedBox(height: 16),
+        _label('VALOR PRESS', t), const SizedBox(height: 8),
+        _amountField('Press Front 9', cPF, t), const SizedBox(height: 8),
+        _amountField('Press Back 9', cPB, t),
+        const SizedBox(height: 16),
+        _toggleRow(
+          title: 'Presiones múltiples',
+          subtitle: n.allowMultiplePresses
+              ? 'Puede haber más de una por segmento'
+              : 'Solo 1 por segmento',
+          value: n.allowMultiplePresses,
+          onChanged: (v) => setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(allowMultiplePresses: v)))),
+          t: t,
+        ),
+        if (!n.allowMultiplePresses) ...[
+          const SizedBox(height: 12),
+          _label('MÁX. PRESIONES POR SEGMENTO', t), const SizedBox(height: 8),
+          _segmented(['1', '2', '3'],
+              (n.maxPresses == null || n.maxPresses! <= 1) ? 0
+              : n.maxPresses! == 2 ? 1 : 2, t, (i) {
+            setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(maxPresses: i + 1))));
+          }),
+        ],
       ],
     ];
   }
@@ -1039,19 +1126,70 @@ class _PresetConfigWidgets {
   // ── Oyeses ─────────────────────────────────────────────────────────────────
   static List<Widget> _oyesesWidgets(BetModuleInstance cfg, GolfTheme t, StateSetter setSt, void Function(BetModuleInstance) update) {
     final o = cfg.oyeses;
+    final isAllVsAll = cfg.isAllVsAll;
     final ctrl = TextEditingController(text: o.value.toStringAsFixed(0));
     ctrl.addListener(() { final v = double.tryParse(ctrl.text); if (v != null) update(cfg.copyWith(oyesesConfig: o.copyWith(value: v))); });
+    final zapatoCtrl = TextEditingController(text: o.zapatoValue > 0 ? o.zapatoValue.toStringAsFixed(0) : '');
+    zapatoCtrl.addListener(() {
+      final v = double.tryParse(zapatoCtrl.text) ?? 0;
+      update(cfg.copyWith(oyesesConfig: o.copyWith(zapatoValue: v)));
+    });
     return [
+      // ── Formato ────────────────────────────────────────────────────────────
+      ..._formatSelector(cfg, t, setSt, update),
+
+      // ── Valor por oyés ─────────────────────────────────────────────────────
       _label('VALOR POR OYÉS', t), const SizedBox(height: 8),
       _amountField('Monto por oyés', ctrl, t),
-      const SizedBox(height: 16),
+      const SizedBox(height: 20),
+
+      // ── Zapato ─────────────────────────────────────────────────────────────
+      _label('👟 ZAPATO', t),
+      const SizedBox(height: 6),
+      Text(
+        isAllVsAll
+            ? 'Todos vs Todos: si A le gana TODOS los oyeses a B, A hace zapato vs B (puede haber varios zapatos).'
+            : '1 Pot: si un jugador gana TODOS los oyeses del campo, cobra el zapato a todo el grupo.',
+        style: TextStyle(color: t.sub, fontSize: 11),
+      ),
+      const SizedBox(height: 10),
       _toggleRow(
         title: 'Activar zapato 👟',
-        subtitle: o.zapatoEnabled ? 'El ganador de todos los oyeses cobra extra' : 'Sin regla de zapato',
+        subtitle: o.zapatoEnabled
+            ? (isAllVsAll
+                ? 'Zapato por pareja: quien gane todos los oyeses vs otro cobra extra'
+                : 'Zapato grupal: el ganador absoluto cobra a todos')
+            : 'Sin regla de zapato',
         value: o.zapatoEnabled,
         onChanged: (v) => setSt(() => update(cfg.copyWith(oyesesConfig: o.copyWith(zapatoEnabled: v)))),
         t: t,
       ),
+      if (o.zapatoEnabled) ...[
+        const SizedBox(height: 12),
+        _label('VALOR DEL ZAPATO', t),
+        const SizedBox(height: 6),
+        Text(
+          o.zapatoValue == 0
+              ? 'Automático = total oyeses × valor por oyés'
+              : 'Valor fijo configurado',
+          style: TextStyle(color: t.sub, fontSize: 11),
+        ),
+        const SizedBox(height: 8),
+        _amountField('Monto fijo (vacío = automático)', zapatoCtrl, t),
+        const SizedBox(height: 12),
+        _label('APLICA EN', t),
+        const SizedBox(height: 8),
+        _segmented(['Solo campo 18H', 'Cualquier ronda'], o.zapatoRequires18 ? 0 : 1, t, (i) {
+          setSt(() => update(cfg.copyWith(oyesesConfig: o.copyWith(zapatoRequires18: i == 0))));
+        }),
+        const SizedBox(height: 6),
+        Text(
+          o.zapatoRequires18
+              ? 'Solo aplica en campos con 3+ par-3s (rondas de 18 hoyos).'
+              : 'Aplica en cualquier campo al completarse todos sus par-3s.',
+          style: TextStyle(color: t.sub, fontSize: 11),
+        ),
+      ],
     ];
   }
 

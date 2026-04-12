@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:flutter/material.dart';
 import '../core/app_theme.dart';
+import '../models/models.dart';
 
 // ── Tarjeta contenedora ───────────────────────────────────────────────────────
 class GCard extends StatelessWidget {
@@ -279,4 +280,177 @@ PreferredSizeWidget gAppBar(String title, GolfTheme t, {List<Widget>? actions, b
     actions: actions,
     bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.divider)),
   );
+}
+
+// ── Helper para nombre de jugador/equipo ──────────────────────────────────────
+/// Renderiza el nombre del jugador/equipo.
+/// Funciona para equipos Scramble (virtuales) y Best Ball (reales)
+Widget playerOrTeamName(
+  Player player,
+  Round round, {
+  required TextStyle style,
+  bool showTeamIcon = true,
+}) {
+  // Para cualquier jugador virtual (Scramble o Best Ball)
+  if (player.isVirtual) {
+    final icon = isBBVirtual(player) ? Icons.group_rounded : Icons.groups_rounded;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (showTeamIcon) ...[
+          Icon(icon, size: style.fontSize, color: style.color),
+          const SizedBox(width: 4),
+        ],
+        Flexible(
+          child: Text(player.name, style: style, overflow: TextOverflow.ellipsis),
+        ),
+      ],
+    );
+  }
+  // Jugador individual normal
+  return Text(player.name, style: style, overflow: TextOverflow.ellipsis);
+}
+
+/// Renderiza los miembros del equipo como texto secundario
+/// Funciona tanto para equipos Scramble (virtuales) como Best Ball
+Widget? teamMembersFootnote(
+  Player player,
+  Round round, {
+  required TextStyle style,
+}) {
+  // Para cualquier jugador virtual con miembros (Scramble o Best Ball)
+  if (player.isVirtual && player.teamMemberIds.isNotEmpty) {
+    final memberNames = player.teamMemberIds
+        .map((id) => round.players.firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id)))
+        .map((p) => p.name.split(' ').first)
+        .join(', ');
+    final label = isBBVirtual(player) ? 'Best Ball' : 'Miembros';
+    return Text(
+      '$label: $memberNames',
+      style: style,
+      overflow: TextOverflow.ellipsis,
+      maxLines: 1,
+    );
+  }
+  return null; // No es un equipo
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TEAM HELPERS — Scramble y Best Ball
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Indica si un jugador virtual es de tipo Best Ball (prefix "bb_team_")
+bool isBBVirtual(Player p) => p.isVirtual && p.id.startsWith('bb_team_');
+
+/// Indica si un jugador virtual es de tipo Scramble (prefix "team_")
+bool isScrambleVirtual(Player p) => p.isVirtual && p.id.startsWith('team_');
+
+/// Obtiene los jugadores/equipos que deben mostrarse en Tarjeta y Resultados.
+/// - Scramble: solo el virtual (team_...)
+/// - Best Ball: solo el virtual de equipo (bb_team_...) — los reales se usan solo en Score
+/// - Individual: el jugador real si tiene scores
+List<Player> getDisplayPlayers(Round round) {
+  final displayPlayers = <Player>[];
+  final coveredMemberIds = <String>{};
+
+  // 1. Agregar todos los jugadores virtuales que tienen scores
+  //    (Scramble con scores, o Best Ball bb_team_ que tienen scores)
+  for (final player in round.players.where((p) => p.isVirtual && round.scores.containsKey(p.id))) {
+    displayPlayers.add(player);
+    coveredMemberIds.addAll(player.teamMemberIds);
+  }
+
+  // 2. Agregar jugadores reales que no están cubiertos por ningún equipo virtual
+  for (final player in round.players.where((p) => !p.isVirtual && round.scores.containsKey(p.id))) {
+    if (!coveredMemberIds.contains(player.id)) {
+      displayPlayers.add(player);
+    }
+  }
+
+  return displayPlayers;
+}
+
+/// Obtiene el score bruto de un jugador/equipo para un hoyo.
+/// - Virtual Scramble: score directo del virtual
+/// - Virtual Best Ball: mejor grossScore entre los miembros del equipo
+/// - Individual: score directo del jugador
+HoleScore getBestScore(Round round, Player player, int hole) {
+  if (isBBVirtual(player)) {
+    // Best Ball virtual: mejor score bruto entre miembros
+    final teamScores = player.teamMemberIds
+        .map((id) => round.getScore(id, hole))
+        .where((s) => s.hasScore)
+        .toList();
+    if (teamScores.isEmpty) return HoleScore(playerId: player.id, hole: hole);
+    teamScores.sort((a, b) => a.grossScore!.compareTo(b.grossScore!));
+    return teamScores.first;
+  }
+  // Scramble virtual o individual: score propio
+  return round.getScore(player.id, hole);
+}
+
+/// Para un equipo Best Ball virtual, obtiene el mejor NET score de sus miembros
+/// en un hoyo dado, aplicando la ventaja de cada miembro.
+/// La ventaja se calcula relativa al jugador con menos handicap del duelo (baseHandicap).
+///
+/// [baseHandicap] = handicap del jugador base del duelo (el que tiene 0 golpes extra)
+/// Cada miembro recibe golpes en los hoyos según su diferencia con ese base.
+int? getBestBallNetScore(Round round, Player bbVirtual, int hole, double baseHandicap) {
+  if (!isBBVirtual(bbVirtual)) return null;
+
+  int? bestNet;
+  for (final memberId in bbVirtual.teamMemberIds) {
+    final sc = round.getScore(memberId, hole);
+    if (!sc.hasScore) continue;
+
+    final memberHcp = round.getHandicap(memberId);
+    // Strokes que recibe este miembro en este hoyo respecto al base
+    final diff = (memberHcp - baseHandicap).round().clamp(0, 18);
+    final courseHole = round.course.holes.firstWhere((h) => h.hole == hole, orElse: () => CourseHole(hole: hole, par: 4, strokeIndex: 18));
+    final si = courseHole.strokeIndex;
+    final strokesHere = diff >= si ? 1 : 0;
+    final net = sc.grossScore! - strokesHere;
+    if (bestNet == null || net < bestNet) bestNet = net;
+  }
+  return bestNet;
+}
+
+// ── Compatibilidad con código legacy que usa getPlayerBestBallTeam ─────────
+/// Clase de compatibilidad para partes del UI que todavía usan la API antigua
+class BestBallTeam {
+  final String teamId;
+  final String teamName;
+  final List<String> memberIds;
+  final List<Player> members;
+
+  const BestBallTeam({
+    required this.teamId,
+    required this.teamName,
+    required this.memberIds,
+    required this.members,
+  });
+}
+
+/// Obtiene el jugador virtual Best Ball que "representa" a un jugador real,
+/// o null si no está en ningún equipo Best Ball.
+BestBallTeam? getPlayerBestBallTeam(Round round, String playerId) {
+  for (final player in round.players.where(isBBVirtual)) {
+    if (player.teamMemberIds.contains(playerId)) {
+      final members = player.teamMemberIds
+          .map((id) => round.players.firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id)))
+          .toList();
+      return BestBallTeam(
+        teamId: player.id,
+        teamName: player.name,
+        memberIds: player.teamMemberIds,
+        members: members,
+      );
+    }
+  }
+  return null;
+}
+
+/// Verifica si una ronda tiene equipos Best Ball activos
+bool hasBestBallTeams(Round round) {
+  return round.players.any(isBBVirtual);
 }

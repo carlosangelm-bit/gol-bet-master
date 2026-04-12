@@ -39,6 +39,11 @@ class CourseCorrection {
 class CourseCorrectionsService {
   static final _db = FirebaseFirestore.instance;
 
+  // Caché en memoria: evita consultar Firestore dos veces para el mismo campo
+  // null  → se consultó y no hay corrección
+  // valor → corrección encontrada
+  static final Map<String, CourseCorrection?> _cache = {};
+
   static CollectionReference<Map<String, dynamic>> get _corrections =>
       _db.collection('courseCorrections');
 
@@ -48,11 +53,16 @@ class CourseCorrectionsService {
   /// No depende del usuario ni de sus favoritos.
   /// Retorna null si no hay corrección registrada para ese campo.
   static Future<CourseCorrection?> getForCourse(String courseId) async {
+    // Devolver desde caché (incluye el caso null = "no hay corrección")
+    if (_cache.containsKey(courseId)) {
+      return _cache[courseId];
+    }
     try {
       debugPrint('[Corrections] Consultando courseCorrections/$courseId…');
       final snap = await _corrections.doc(courseId).get();
       if (!snap.exists) {
         debugPrint('[Corrections] courseCorrections/$courseId NO existe en Firestore');
+        _cache[courseId] = null;
         return null;
       }
 
@@ -65,6 +75,7 @@ class CourseCorrectionsService {
       } else {
         debugPrint('[Corrections] _parse devolvió null para $courseId');
       }
+      _cache[courseId] = result; // guardar en caché (incluso null)
       return result;
     } catch (e) {
       debugPrint('[Corrections] ERROR en getForCourse($courseId): $e');

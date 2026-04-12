@@ -140,14 +140,15 @@ class _ScorecardGrid extends StatelessWidget {
   final bool useNet;
   const _ScorecardGrid({required this.round, required this.t, required this.useNet});
 
-  String _first(String name) => name.split(' ').first;
+  String _first(Player p) => p.shortName;
 
   int _strokes(Player p, CourseHole h) =>
       GameEngine.strokesReceived(round.getHandicap(p.id), h);
 
   @override
   Widget build(BuildContext context) {
-    final players = round.players;
+    // Obtener jugadores/equipos para visualización (agrupa Best Ball)
+    final players = getDisplayPlayers(round);
 
     final isDark = t.brightness == Brightness.dark;
 
@@ -377,7 +378,7 @@ class _ScorecardGrid extends StatelessWidget {
     int segPutts  = 0;
 
     final cells = holes.map((h) {
-      final sc = round.getScore(p.id, h.hole);
+      final sc = getBestScore(round, p, h.hole);
       int? disp;
       int? rel;
       int putts = 0;
@@ -385,10 +386,26 @@ class _ScorecardGrid extends StatelessWidget {
         putts = sc.putts;
         segPutts += putts;
         if (useNet) {
-          final ctx = GameEngine.contextForHole(round, p.id, h.hole, true);
-          disp = ctx?.netScore;
-          rel  = ctx?.relativeToPar;
-          segTotal += ctx?.netScore ?? 0;
+          if (isBBVirtual(p)) {
+            // BB virtual: mejor neto entre los miembros del equipo
+            int? bestNet;
+            for (final memberId in p.teamMemberIds) {
+              final msc = round.getScore(memberId, h.hole);
+              if (!msc.hasScore) continue;
+              final ctx = GameEngine.contextForHole(round, memberId, h.hole, true);
+              if (ctx?.netScore != null) {
+                if (bestNet == null || (ctx?.netScore ?? 999) < bestNet) bestNet = ctx?.netScore;
+              }
+            }
+            disp = bestNet ?? sc.grossScore;
+            rel  = disp != null ? disp - h.par : null;
+            segTotal += disp ?? 0;
+          } else {
+            final ctx = GameEngine.contextForHole(round, p.id, h.hole, true);
+            disp = ctx?.netScore;
+            rel  = ctx?.relativeToPar;
+            segTotal += ctx?.netScore ?? 0;
+          }
         } else {
           disp = sc.grossScore;
           rel  = disp != null ? disp - h.par : null;
@@ -423,7 +440,7 @@ class _ScorecardGrid extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(_first(p.name),
+                  Text(_first(p),
                       style: TextStyle(
                           color: cText,
                           fontWeight: FontWeight.w800,
@@ -533,24 +550,73 @@ class _ScorecardGrid extends StatelessWidget {
 
     // Calcular datos por jugador
     final playerData = players.map((p) {
-      final total = useNet
-          ? GameEngine.netTotal(round, p.id, true)
-          : GameEngine.grossTotal(round, p.id);
+      // Para BB virtual: sumar el mejor score bruto/neto por hoyo del equipo
+      int total = 0;
+      if (isBBVirtual(p)) {
+        for (final h in round.course.holes.where((h) => h.hole <= round.totalHoles)) {
+          final sc = getBestScore(round, p, h.hole);
+          if (!sc.hasScore) continue;
+          if (useNet) {
+            // Neto: usar el mejor jugador del equipo con sus strokes aplicados
+            // Buscamos el miembro con mejor neto
+            int? bestNet;
+            for (final memberId in p.teamMemberIds) {
+              final msc = round.getScore(memberId, h.hole);
+              if (!msc.hasScore) continue;
+              final ctx = GameEngine.contextForHole(round, memberId, h.hole, true);
+              if (ctx?.netScore != null) {
+                if (bestNet == null || (ctx?.netScore ?? 999) < bestNet) bestNet = ctx?.netScore;
+              }
+            }
+            total += bestNet ?? sc.grossScore!;
+          } else {
+            total += sc.grossScore!;
+          }
+        }
+      } else {
+        total = useNet
+            ? GameEngine.netTotal(round, p.id, true)
+            : GameEngine.grossTotal(round, p.id);
+      }
       final hasAny = round.course.holes
-          .any((h) => round.getScore(p.id, h.hole).hasScore);
+          .any((h) => getBestScore(round, p, h.hole).hasScore);
       final totalPutts = round.course.holes.fold(0, (sum, h) {
-        final sc = round.getScore(p.id, h.hole);
+        final sc = getBestScore(round, p, h.hole);
         return sum + (sc.hasScore ? sc.putts : 0);
       });
       final playedHoles = round.course.holes
-          .where((h) => round.getScore(p.id, h.hole).hasScore)
+          .where((h) => getBestScore(round, p, h.hole).hasScore)
           .length;
-      final f9total = useNet
-          ? GameEngine.netTotal(round, p.id, true, from: 1, to: 9)
-          : GameEngine.grossTotal(round, p.id, from: 1, to: 9);
-      final b9total = useNet
-          ? GameEngine.netTotal(round, p.id, true, from: 10, to: 18)
-          : GameEngine.grossTotal(round, p.id, from: 10, to: 18);
+      // Calcular totales F9/B9 (para BB virtual: sumar mejor score por hoyo)
+      int calcSegTotal(int from, int to) {
+        if (!isBBVirtual(p)) {
+          return useNet
+              ? GameEngine.netTotal(round, p.id, true, from: from, to: to)
+              : GameEngine.grossTotal(round, p.id, from: from, to: to);
+        }
+        int seg = 0;
+        for (final h in round.course.holes.where((h) => h.hole >= from && h.hole <= to)) {
+          final sc = getBestScore(round, p, h.hole);
+          if (!sc.hasScore) continue;
+          if (useNet) {
+            int? bestNet;
+            for (final memberId in p.teamMemberIds) {
+              final msc = round.getScore(memberId, h.hole);
+              if (!msc.hasScore) continue;
+              final ctx = GameEngine.contextForHole(round, memberId, h.hole, true);
+              if (ctx?.netScore != null) {
+                if (bestNet == null || (ctx?.netScore ?? 999) < bestNet) bestNet = ctx?.netScore;
+              }
+            }
+            seg += bestNet ?? sc.grossScore!;
+          } else {
+            seg += sc.grossScore!;
+          }
+        }
+        return seg;
+      }
+      final f9total = calcSegTotal(1, 9);
+      final b9total = calcSegTotal(10, 18);
       return (
         player: p,
         total: total,
@@ -610,7 +676,8 @@ class _ScorecardGrid extends StatelessWidget {
                 if (!d.hasAny || d.total == 0) {
                   if (compact) {
                     // Compacto vacío: apodo (primer nombre) + guión
-                    final nickname = d.player.name.split(' ').first;
+                    // Para equipos virtuales, usar nombre completo
+                    final nickname = d.player.isVirtual ? d.player.name : d.player.shortName;
                     return Expanded(
                       child: Padding(
                         padding: gap,
@@ -652,6 +719,22 @@ class _ScorecardGrid extends StatelessWidget {
                           GAvatar(name: d.player.name,
                               colorIndex: d.player.colorIndex, size: 28),
                           const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                playerOrTeamName(
+                                  d.player,
+                                  round,
+                                  style: TextStyle(color: cSub, fontSize: 13, fontWeight: FontWeight.w700),
+                                  showTeamIcon: false,
+                                ),
+                                if (teamMembersFootnote(d.player, round, style: TextStyle(color: cSub.withValues(alpha: 0.6), fontSize: 9)) != null)
+                                  teamMembersFootnote(d.player, round, style: TextStyle(color: cSub.withValues(alpha: 0.6), fontSize: 9))!,
+                              ],
+                            ),
+                          ),
                           Text('—', style: TextStyle(color: cSub, fontSize: 20,
                               fontWeight: FontWeight.w900)),
                         ]),
@@ -675,7 +758,11 @@ class _ScorecardGrid extends StatelessWidget {
 
                 // ── Modo COMPACTO (5+ jugadores) ─────────────────────────
                 if (compact) {
-                  final nickname = d.player.name.split(' ').first;
+                  // Virtual (Scramble o BB): nombre completo del equipo
+                  // Individual: primer nombre
+                  final nickname = d.player.isVirtual
+                      ? d.player.name
+                      : d.player.shortName;
                   return Expanded(
                     child: Padding(
                       padding: gap,
@@ -690,7 +777,7 @@ class _ScorecardGrid extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            // Apodo (primer nombre) del jugador
+                            // Apodo (primer nombre) del jugador o nombre del equipo
                             Text(nickname,
                                 style: TextStyle(
                                     color: cText,
@@ -698,6 +785,20 @@ class _ScorecardGrid extends StatelessWidget {
                                     fontWeight: FontWeight.w800),
                                 textAlign: TextAlign.center,
                                 overflow: TextOverflow.ellipsis),
+                            // Miembros del equipo (BB o Scramble virtual)
+                            if (d.player.isVirtual && d.player.teamMemberIds.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                d.player.teamMemberIds
+                                    .map((id) => round.players.firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id)))
+                                    .map((p) => p.shortName)
+                                    .join(', '),
+                                style: TextStyle(color: cSub, fontSize: 7),
+                                textAlign: TextAlign.center,
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ],
                             const SizedBox(height: 4),
                             // Score medal grande
                             Text('${d.total}',
@@ -761,13 +862,22 @@ class _ScorecardGrid extends StatelessWidget {
                                 colorIndex: d.player.colorIndex, size: 24),
                             const SizedBox(width: 6),
                             Expanded(
-                              child: Text(
-                                d.player.name.split(' ').first,
-                                style: TextStyle(
-                                    color: cText,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700),
-                                overflow: TextOverflow.ellipsis,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  playerOrTeamName(
+                                    d.player,
+                                    round,
+                                    style: TextStyle(
+                                        color: cText,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700),
+                                    showTeamIcon: false,
+                                  ),
+                                  if (teamMembersFootnote(d.player, round, style: TextStyle(color: cSub, fontSize: 8)) != null)
+                                    teamMembersFootnote(d.player, round, style: TextStyle(color: cSub, fontSize: 8))!,
+                                ],
                               ),
                             ),
                           ]),
@@ -1049,8 +1159,11 @@ class _OneVOneViewState extends State<_OneVOneView> {
         if (m.type == BetModuleType.skins) {
           skinsMod = m;
           foundSkins = true;
-        } else if (m.type == BetModuleType.nassau ||
-                   m.type == BetModuleType.matchAutoPress) {
+        } else if (m.type == BetModuleType.nassau) {
+          // Usar hoyos ganados (mismo indicador que el badge visual)
+          final nst = BetEngine.nassauLiveStatus(round, p1.id, p2.id, m);
+          matchStatus = nst.holesWonP1 - nst.holesWonP2;
+        } else if (m.type == BetModuleType.matchAutoPress) {
           matchStatus = GameEngine.matchPlayStatus(round, p1.id, p2.id, true);
         }
       }
@@ -1095,8 +1208,9 @@ class _OneVOneViewState extends State<_OneVOneView> {
   Widget build(BuildContext context) {
     final t     = widget.t;
     final round = widget.round;
+    final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
 
-    if (round.players.length < 2) {
+    if (activePlayers.length < 2) {
       return Center(child: Text('Necesitas al menos 2 jugadores', style: TextStyle(color: t.sub)));
     }
 
@@ -1179,10 +1293,10 @@ class _OneVOneViewState extends State<_OneVOneView> {
   ///
   /// Estrategia en orden de prioridad:
   ///  1. BetGroups con exactamente 2 jugadores → duelo directo.
-  ///  2. Módulos 1v1 (nassau / matchAutoPress / skins) con participantIds de 2
+  ///  2. Módulos 1v1 (nassau / matchAutoPress) con participantIds de 2
   ///     dentro de grupos multi-jugador → cada par de participantIds = un duelo.
-  ///  3. Si sigue vacío, generar todos los pares posibles entre los jugadores
-  ///     de la ronda (round-robin) como fallback visual.
+  ///  3. BetGroups con más de 2 jugadores → round-robin entre todos ellos.
+  ///  4. Fallback: round-robin entre todos los displayPlayers de la ronda.
   List<(Player, Player)> _buildPairs(Round round) {
     final seen  = <String>{};
     final pairs = <(Player, Player)>[];
@@ -1198,6 +1312,14 @@ class _OneVOneViewState extends State<_OneVOneView> {
       } catch (_) {}
     }
 
+    void roundRobinFromIds(List<String> ids) {
+      for (int i = 0; i < ids.length; i++) {
+        for (int j = i + 1; j < ids.length; j++) {
+          addPair(ids[i], ids[j]);
+        }
+      }
+    }
+
     // ── Prioridad 1: grupos con exactamente 2 jugadores ──────────────────
     for (final g in round.betGroups) {
       if (g.playerIds.length == 2) {
@@ -1205,22 +1327,12 @@ class _OneVOneViewState extends State<_OneVOneView> {
       }
     }
 
-    // ── Prioridad 2: módulos 1v1 dentro de grupos multi-jugador ──────────
+    // ── Prioridad 2: módulos nassau/match con participantIds de exactamente 2 ─
     for (final g in round.betGroups) {
       for (final m in g.modules) {
-        // Tipos que implican duelo 1v1
         if (m.type == BetModuleType.nassau ||
-            m.type == BetModuleType.matchAutoPress ||
-            m.type == BetModuleType.skins) {
-          // Fuente de participantes: sides > participantIds > playerIds del grupo
-          List<String> pids;
-          if (m.hasTeamSides) {
-            // Cada "side" puede ser un equipo, pero tratamos el duelo como 1v1
-            // tomando el primer jugador de cada lado
-            pids = [m.sideA.playerIds.first, m.sideB.playerIds.first];
-          } else {
-            pids = m.participantIds.isNotEmpty ? m.participantIds : g.playerIds;
-          }
+            m.type == BetModuleType.matchAutoPress) {
+          final pids = m.participantIds.isNotEmpty ? m.participantIds : g.playerIds;
           if (pids.length == 2) {
             addPair(pids[0], pids[1]);
           }
@@ -1228,14 +1340,17 @@ class _OneVOneViewState extends State<_OneVOneView> {
       }
     }
 
-    // ── Prioridad 3: fallback round-robin si no se encontró ningún par ────
-    if (pairs.isEmpty && round.players.length >= 2) {
-      final players = round.players;
-      for (int i = 0; i < players.length; i++) {
-        for (int j = i + 1; j < players.length; j++) {
-          addPair(players[i].id, players[j].id);
-        }
+    // ── Prioridad 3: grupos con más de 2 jugadores → round-robin ─────────
+    for (final g in round.betGroups) {
+      if (g.playerIds.length > 2) {
+        roundRobinFromIds(g.playerIds);
       }
+    }
+
+    // ── Prioridad 4: fallback round-robin con todos los displayPlayers ────
+    final displayPlayers = getDisplayPlayers(round);
+    if (pairs.isEmpty && displayPlayers.length >= 2) {
+      roundRobinFromIds(displayPlayers.map((p) => p.id).toList());
     }
 
     return pairs;
@@ -1369,7 +1484,7 @@ class _FiltersBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final myName   = myPlayer?.name.split(' ').first;
+    final myName   = myPlayer?.shortName;
     final hasPlayer = myPlayer != null;
 
     // Chips: (filtro, icono, color, tooltip)
@@ -1593,7 +1708,7 @@ class _MyMatchesToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const activeGrad = [Color(0xFF1F8F3A), Color(0xFF0D5020)];
-    final myName = myPlayer?.name.split(' ').first;
+    final myName = myPlayer?.shortName;
     final hasPlayer = myPlayer != null;
 
     return Row(children: [
@@ -1790,6 +1905,7 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
     final skinsModules     = _findModules(BetModuleType.skins);
     final nassauModules    = _findModules(BetModuleType.nassau);
     final matchMods        = _findModules(BetModuleType.matchAutoPress);
+    final oyesModules      = _findModules(BetModuleType.oyeses);
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       // ── Badge resultado (siempre visible, tap para expandir) ──────
@@ -1803,6 +1919,7 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
               skinsModules:      skinsModules,
               nassauModules:     nassauModules,
               matchPressModules: matchMods,
+              oyesModules:       oyesModules,
             ),
             // Indicador de expansión (chevron) en la esquina inferior derecha
             Positioned(
@@ -1938,10 +2055,12 @@ class _MatchStatusCard extends StatelessWidget {
   final List<BetModuleInstance> skinsModules;
   final List<BetModuleInstance> nassauModules;
   final List<BetModuleInstance> matchPressModules;
+  final List<BetModuleInstance> oyesModules;
   const _MatchStatusCard({
     required this.round, required this.p1, required this.p2, required this.t,
     required this.skinsModules, required this.nassauModules,
     this.matchPressModules = const [],
+    this.oyesModules       = const [],
   });
 
   @override
@@ -1953,6 +2072,9 @@ class _MatchStatusCard extends StatelessWidget {
     if (nassauModules.isNotEmpty) {
       return _buildNassauCard(context);
     }
+    if (oyesModules.isNotEmpty) {
+      return _buildOyesesCard(context);
+    }
     return _buildMatchCard(context);
   }
 
@@ -1960,28 +2082,16 @@ class _MatchStatusCard extends StatelessWidget {
   Widget _buildNassauCard(BuildContext context) {
     final mod  = nassauModules.first;
     final st   = BetEngine.nassauLiveStatus(round, p1.id, p2.id, mod);
-    final n1   = p1.name.split(' ').first;
-    final n2   = p2.name.split(' ').first;
+    final n1   = p1.shortName;
+    final n2   = p2.shortName;
     final lastH       = GameEngine.lastCompletedHole(round, [p1.id, p2.id]);
     final playedCount = st.frontPlayed + st.backPlayed;
 
-    // ── Resultado global: segmentos COMPLETADOS ganados por cada jugador ───────
-    // Solo se cuenta un segmento cuando se jugaron sus 9 hoyos completos.
-    // Un segmento en curso (< 9 hoyos) no se asigna como ganado — influye
-    // solo como desempate visual cuando segsP1 == segsP2.
-    int segsP1 = 0, segsP2 = 0;
-    if (st.frontPlayed >= 9) {          // F9 completado
-      if (st.front > 0) segsP1++;
-      else if (st.front < 0) segsP2++;
-    }
-    if (st.backPlayed >= 9) {           // B9 completado
-      if (st.back > 0) segsP1++;
-      else if (st.back < 0) segsP2++;
-    }
-    if (playedCount >= 18) {            // Total completado
-      if (st.total > 0) segsP1++;
-      else if (st.total < 0) segsP2++;
-    }
+    // ── Hoyos ganados por cada jugador (indicador visual principal) ───────────
+    // Mismo concepto que skins: cuántos hoyos individuales ha ganado cada uno.
+    final holesP1 = st.holesWonP1;
+    final holesP2 = st.holesWonP2;
+    final lead    = holesP1 - holesP2;  // positivo = p1 va arriba
 
     // ── Balance en vivo (suma de segmentos + presiones) ───────────────────────
     double npBal = 0.0;
@@ -1993,30 +2103,23 @@ class _MatchStatusCard extends StatelessWidget {
       if (st.back > 0) npBal += st.backVal;
       if (st.back < 0) npBal -= st.backVal;
     }
-    // Total 18: se acumula en vivo desde el primer hoyo jugado (es una apuesta
-    // independiente al ganador global, no solo al terminar los 18 hoyos).
     if (playedCount > 0) {
       if (st.total > 0) npBal += st.totalVal;
       if (st.total < 0) npBal -= st.totalVal;
     }
-    // Presiones: usar valor correcto por segmento
+    // Presiones: usar valor correcto por segmento; solo liquidar presses CERRADAS
     final isBack   = round.startingNine == StartingNine.back;
     final seg1From = isBack ? 10 : 1;
     final seg1To   = isBack ? 18 : 9;
     for (final p in st.presses) {
+      if (p.isOpen) continue; // press abierta: apuesta pendiente, no liquidar
       final inSeg1   = p.startHole >= seg1From && p.startHole <= seg1To;
       final pressVal = inSeg1 ? mod.nassau.frontPressValue : mod.nassau.backPressValue;
       if (p.score > 0) npBal += pressVal;
       if (p.score < 0) npBal -= pressVal;
     }
 
-    // ── Etiquetas de estado ───────────────────────────────────────────────────
-    final Color accentColor;
-    final List<Color> gradColors;
-    final String stateWord;
-    final String diffLabel;
-
-    // diffLabel: resumen F9 / B9
+    // ── Estado de cada segmento (para el diffLabel) ───────────────────────────
     final fLabel = st.frontPlayed == 0
         ? 'F9: –'
         : st.front == 0
@@ -2027,46 +2130,47 @@ class _MatchStatusCard extends StatelessWidget {
         : st.back == 0
             ? 'B9: AS'
             : 'B9: ${st.back > 0 ? n1 : n2} ${st.back.abs()}UP';
-    diffLabel = '$fLabel  ·  $bLabel';
 
-    // ── Color basado en segmentos ganados (F9/B9/Total), no en balance monetario
-    // Esto es más intuitivo: verde = ganando más segmentos, rojo = perdiendo más
-    // El balance monetario (npBal) se usa solo para el chip de dinero
+    // ── Color y etiqueta basados en hoyos ganados (misma lógica que skins) ────
+    final Color accentColor;
+    final List<Color> gradColors;
+    final String stateWord;
+    final String diffLabel;
+
     if (playedCount == 0) {
       accentColor = const Color(0xFF607D8B);
       gradColors  = const [Color(0xFF37474F), Color(0xFF1C1C1E)];
       stateWord   = 'NASSAU';
-    } else if (segsP1 > segsP2) {
-      accentColor = const Color(0xFF35C759);
-      gradColors  = const [Color(0xFF1F8F3A), Color(0xFF0E3D1B)];
-      stateWord   = 'GANANDO';
-    } else if (segsP2 > segsP1) {
-      accentColor = const Color(0xFFFF453A);
-      gradColors  = const [Color(0xFF7A1E1E), Color(0xFF2A0E0E)];
-      stateWord   = 'PERDIENDO';
-    } else {
-      // segsP1 == segsP2: ninguno lleva ventaja en segmentos cerrados
+      diffLabel   = 'Esperando scores';
+    } else if (lead == 0) {
       accentColor = const Color(0xFF1565C0);
       gradColors  = const [Color(0xFF1A3A6B), Color(0xFF0D1F3C)];
       stateWord   = 'EMPATADO';
+      diffLabel   = '$fLabel  ·  $bLabel';
+    } else if (lead > 0) {
+      accentColor = const Color(0xFF35C759);
+      gradColors  = const [Color(0xFF1F8F3A), Color(0xFF0E3D1B)];
+      stateWord   = 'GANANDO';
+      diffLabel   = '$n1 +$lead  ·  $fLabel  ·  $bLabel';
+    } else {
+      accentColor = const Color(0xFFFF453A);
+      gradColors  = const [Color(0xFF7A1E1E), Color(0xFF2A0E0E)];
+      stateWord   = 'PERDIENDO';
+      diffLabel   = '$n2 +${lead.abs()}  ·  $fLabel  ·  $bLabel';
     }
 
     // subLabel: presiones activas
     String? subLabel;
-    final parts = <String>[];
-    if (st.frontPlayed > 0) parts.add(fLabel);
-    if (st.backPlayed > 0)  parts.add(bLabel);
     final totalPresses = st.presses.length;
     if (totalPresses > 0) {
-      parts.add('$totalPresses press${totalPresses > 1 ? 'iones' : 'ión'}');
+      subLabel = '$totalPresses press${totalPresses > 1 ? 'iones' : 'ión'} activa${totalPresses > 1 ? 's' : ''}';
     }
-    if (parts.length > 2) subLabel = parts.skip(2).join('  •  ');
 
     return _PremiumResultBadge(
       p1: p1, p2: p2, t: t,
       stateWord: stateWord,
-      score1: segsP1, score2: segsP2,
-      scoreLabel: 'segs',
+      score1: holesP1, score2: holesP2,
+      scoreLabel: 'hoyos',
       diffLabel: diffLabel,
       accentColor: accentColor,
       gradColors: gradColors,
@@ -2077,6 +2181,112 @@ class _MatchStatusCard extends StatelessWidget {
       round: round,
       subLabel: subLabel,
       liveBalance: npBal,
+    );
+  }
+
+  // ── Badge principal para Oyeses ───────────────────────────────────────────
+  Widget _buildOyesesCard(BuildContext context) {
+    final mod  = oyesModules.first;
+    final o    = mod.oyeses;
+    final n1   = p1.shortName;
+    final n2   = p2.shortName;
+
+    // Calcular oyeses ganados por cada jugador (1° en ranking de cada hoyo)
+    final par3Holes = round.course.holes.where((h) => h.isPar3).toList();
+    final eligible  = o.eligibleHoles.isNotEmpty
+        ? par3Holes.where((h) => o.eligibleHoles.contains(h.hole)).toList()
+        : par3Holes;
+    final totalEligible = eligible.length;
+
+    int oyes1 = 0, oyes2 = 0, holesPlayed = 0;
+    int winsP1vsP2 = 0, winsP2vsP1 = 0;
+    bool zapatoFired = false;
+
+    for (final ch in eligible) {
+      final ranking = round.getOyese(ch.hole);
+      if (ranking == null || ranking.ranking.isEmpty) continue;
+      final ordered = ranking.ranking.where((pid) => [p1.id, p2.id].contains(pid)).toList();
+      if (ordered.length < 2) continue;
+      holesPlayed++;
+      if (ordered[0] == p1.id) { oyes1++; winsP1vsP2++; }
+      else { oyes2++; winsP2vsP1++; }
+    }
+
+    // Verificar si el zapato se disparó
+    if (o.zapatoEnabled && holesPlayed == totalEligible && totalEligible > 0) {
+      final enoughHoles = o.zapatoRequires18 ? (totalEligible >= 3) : true;
+      if (enoughHoles) {
+        if (winsP1vsP2 == holesPlayed || winsP2vsP1 == holesPlayed) {
+          zapatoFired = true;
+        }
+      }
+    }
+
+    final lead  = oyes1 - oyes2;
+    final Color accentColor;
+    final List<Color> gradColors;
+    final String stateWord;
+    final String diffLabel;
+
+    if (holesPlayed == 0) {
+      accentColor = const Color(0xFF1565C0);
+      gradColors  = const [Color(0xFF1A3A6B), Color(0xFF0D1F3C)];
+      stateWord   = 'EN JUEGO';
+      diffLabel   = 'Esperando par-3s';
+    } else if (lead == 0) {
+      accentColor = const Color(0xFF1565C0);
+      gradColors  = const [Color(0xFF1A3A6B), Color(0xFF0D1F3C)];
+      stateWord   = 'EMPATADO';
+      diffLabel   = '$oyes1 oyés c/u';
+    } else if (lead > 0) {
+      accentColor = const Color(0xFF35C759);
+      gradColors  = const [Color(0xFF1F8F3A), Color(0xFF0E3D1B)];
+      stateWord   = 'GANANDO';
+      diffLabel   = '$n1 +$lead oyés${zapatoFired ? '  👟' : ''}';
+    } else {
+      accentColor = const Color(0xFFFF453A);
+      gradColors  = const [Color(0xFF7A1E1E), Color(0xFF2A0E0E)];
+      stateWord   = 'PERDIENDO';
+      diffLabel   = '$n2 +${lead.abs()} oyés${zapatoFired ? '  👟' : ''}';
+    }
+
+    // Sub-label: progreso + zapato pendiente
+    String? subLabel;
+    final remaining = totalEligible - holesPlayed;
+    if (o.zapatoEnabled && !zapatoFired && holesPlayed > 0) {
+      final ahead = lead > 0 ? n1 : (lead < 0 ? n2 : null);
+      if (ahead != null && remaining > 0) {
+        subLabel = '👟 Zapato: $ahead lidera · $remaining par-3${remaining > 1 ? 's' : ''} restante${remaining > 1 ? 's' : ''}';
+      }
+    }
+    if (zapatoFired) {
+      final winner = lead > 0 ? n1 : n2;
+      final zapatoAmt = o.zapatoValue > 0 ? o.zapatoValue : (totalEligible * o.value);
+      subLabel = '👟 Zapato: $winner ganó todos los oyeses (+\$${zapatoAmt.toStringAsFixed(0)})';
+    }
+
+    final lastPar3 = eligible.lastWhere(
+      (ch) {
+        final r = round.getOyese(ch.hole);
+        return r != null && r.ranking.isNotEmpty;
+      },
+      orElse: () => eligible.isNotEmpty ? eligible.first : round.course.holes.first,
+    ).hole;
+
+    return _PremiumResultBadge(
+      p1: p1, p2: p2, t: t,
+      stateWord: stateWord,
+      score1: oyes1, score2: oyes2,
+      scoreLabel: 'oyeses',
+      diffLabel: diffLabel,
+      accentColor: accentColor,
+      gradColors: gradColors,
+      playedCount: holesPlayed,
+      lastHole: holesPlayed > 0 ? lastPar3 : 1,
+      tieCount: null,
+      skinsInPot: null,
+      round: round,
+      subLabel: subLabel,
     );
   }
 
@@ -2095,8 +2305,8 @@ class _MatchStatusCard extends StatelessWidget {
     final String scoreLabel;
     final String diffLabel;
 
-    final n1 = p1.name.split(' ').first;
-    final n2 = p2.name.split(' ').first;
+    final n1 = p1.shortName;
+    final n2 = p2.shortName;
     if (status == 0) {
       accentColor = const Color(0xFF1565C0);
       gradColors  = const [Color(0xFF1A3A6B), Color(0xFF0D1F3C)];
@@ -2162,6 +2372,8 @@ class _MatchStatusCard extends StatelessWidget {
         if (st.total < 0) npBal -= st.totalVal;
       }
       for (final p in st.presses) {
+        // Solo liquidar presses CERRADAS; las abiertas son apuestas pendientes
+        if (p.isOpen) continue;
         // Determinar si la presión es del segmento 1 o 2 según startingNine
         final isBack   = round.startingNine == StartingNine.back;
         final seg1From = isBack ? 10 : 1;
@@ -2242,8 +2454,8 @@ class _SkinsGlanceCard extends StatelessWidget {
     final String stateWord;
     final String diffLabel;
 
-    final sn1 = p1.name.split(' ').first;
-    final sn2 = p2.name.split(' ').first;
+    final sn1 = p1.shortName;
+    final sn2 = p2.shortName;
     // ¿Hay skins acumulados en el bote? → sobreescribir gradiente con amarillo-alerta
     final bool hasCarry = skinsInPot > 1;
 
@@ -2341,8 +2553,8 @@ class _PremiumResultBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final n1 = p1.name.split(' ').first;
-    final n2 = p2.name.split(' ').first;
+    final n1 = p1.shortName;
+    final n2 = p2.shortName;
     final isWinning = score1 > score2;
     final isLosing  = score1 < score2;
 
@@ -2756,8 +2968,8 @@ class _SkinsMiniSummary extends StatelessWidget {
     final currentPot = results.isNotEmpty ? results.last.pot : mod.skins.valuePerSkin;
     final skinsInPot = (currentPot / mod.skins.valuePerSkin).round();
 
-    final n1 = p1.name.split(' ').first;
-    final n2 = p2.name.split(' ').first;
+    final n1 = p1.shortName;
+    final n2 = p2.shortName;
 
     return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
       // Encabezado skins
@@ -2860,8 +3072,8 @@ class _NassauLivePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final n1 = p1.name.split(' ').first;
-    final n2 = p2.name.split(' ').first;
+    final n1 = p1.shortName;
+    final n2 = p2.shortName;
 
     // Si tiene presiones activas, usar nassauPressLiveStatus para obtener
     // frontPresses/backPresses separados y valores por segmento.
@@ -2894,7 +3106,9 @@ class _NassauLivePanel extends StatelessWidget {
 
     // ── helper: token redondo de presión ────────────────────────────────────
     Widget pressChip(NassauPress press, double pressVal) {
-      final rawScore = press.loser == p1.id ? press.score : -press.score;
+      // press.score está normalizado en perspectiva de p1:
+      // positivo = p1 arriba (p1 gana la press), negativo = p2 arriba (p2 gana).
+      final rawScore = press.score;
 
       // Misma paleta de gradientes que _NassauSegment
       final List<Color> grad;
@@ -3338,8 +3552,8 @@ class _MatchPressLivePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cfg = mod.matchAutoPress;
-    final n1  = p1.name.split(' ').first;
-    final n2  = p2.name.split(' ').first;
+    final n1  = p1.shortName;
+    final n2  = p2.shortName;
 
     // Estado general: quién va ganando el match (score global H1-totalHoles)
     final presses  = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
@@ -3560,8 +3774,8 @@ class _CarryPanelState extends State<_CarryPanel> {
     final firstNineDone = _firstNineComplete(round);
     if (!firstNineDone && !_carryAlreadyApplied) return const SizedBox.shrink();
 
-    final n1 = widget.p1.name.split(' ').first;
-    final n2 = widget.p2.name.split(' ').first;
+    final n1 = widget.p1.shortName;
+    final n2 = widget.p2.shortName;
 
     // Calcular factor por defecto (×2) y qué apuestas se verían afectadas
     final defaultFactor = 2.0;
@@ -3822,7 +4036,7 @@ class _HoleByHoleMatch extends StatelessWidget {
         Expanded(child: Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            Text(basePlayer.name.split(' ').first,
+            Text(basePlayer.shortName,
                 style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w600)),
             const SizedBox(width: 4),
             Container(
@@ -3852,7 +4066,7 @@ class _HoleByHoleMatch extends StatelessWidget {
             child: Text('NETO', style: TextStyle(color: t.primary, fontSize: 7, fontWeight: FontWeight.w700)),
           ),
           const SizedBox(width: 4),
-          Text(receiverPlayer.name.split(' ').first,
+          Text(receiverPlayer.shortName,
               style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w600)),
         ])),
         if (hasSkins)
@@ -4031,7 +4245,7 @@ class _HoleByHoleMatch extends StatelessWidget {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           RichText(text: TextSpan(children: [
             TextSpan(
-              text: receiver.name.split(' ').first,
+              text: receiver.shortName,
               style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 12),
             ),
             TextSpan(
@@ -4043,7 +4257,7 @@ class _HoleByHoleMatch extends StatelessWidget {
               style: TextStyle(color: t.primary, fontWeight: FontWeight.w800, fontSize: 12),
             ),
             TextSpan(
-              text: ' de ${base.name.split(' ').first}',
+              text: ' de ${base.shortName}',
               style: TextStyle(color: t.sub, fontSize: 11),
             ),
           ])),
@@ -4055,9 +4269,9 @@ class _HoleByHoleMatch extends StatelessWidget {
         ])),
         // Chips HCP
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          _hcpChip(base.name.split(' ').first,     hcpBase,     t),
+          _hcpChip(base.shortName,     hcpBase,     t),
           const SizedBox(height: 3),
-          _hcpChip(receiver.name.split(' ').first, hcpReceiver, t, isHigher: true),
+          _hcpChip(receiver.shortName, hcpReceiver, t, isHigher: true),
         ]),
       ]),
     );
@@ -4224,9 +4438,9 @@ class _SkinsCellWidget extends StatelessWidget {
     final bool winnerIsOther = result.winner != null && !winnerIsP1 && !winnerIsP2;
 
     final skinWinnerName = winnerIsP1
-        ? p1.name.split(' ').first
+        ? p1.shortName
         : winnerIsP2
-            ? p2.name.split(' ').first
+            ? p2.shortName
             : '▶ otro';
     final skinColor = winnerIsOther
         ? t.sub
@@ -4294,11 +4508,11 @@ class _SkinsTotalsRow extends StatelessWidget {
         const SizedBox(width: 6),
         Text('SKINS TOTALES', style: TextStyle(color: t.accent, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
         const Spacer(),
-        _skinChip(p1.name.split(' ').first, total1, t),
+        _skinChip(p1.shortName, total1, t),
         const SizedBox(width: 8),
         Text('–', style: TextStyle(color: t.sub, fontSize: 12)),
         const SizedBox(width: 8),
-        _skinChip(p2.name.split(' ').first, total2, t),
+        _skinChip(p2.shortName, total2, t),
         const SizedBox(width: 12),
         BalChip(amount: gain1),  // balance neto p1 SOLO skins (incluye carry-overs)
       ]),
@@ -4402,6 +4616,8 @@ class _FinancialBreakdown extends StatelessWidget {
             if (st.total < 0) npBal -= st.totalVal;
           }
           for (final p in [...st.frontPresses, ...st.backPresses]) {
+            // Solo liquidar presses CERRADAS; las abiertas son apuestas pendientes
+            if (p.isOpen) continue;
             final inSeg1   = p.startHole >= seg1From && p.startHole <= seg1To;
             final pressVal = inSeg1 ? mod.nassau.frontPressValue : mod.nassau.backPressValue;
             if (p.score > 0) npBal += pressVal;
@@ -4435,8 +4651,8 @@ class _FinancialBreakdown extends StatelessWidget {
     final total = breakdown.values.fold<double>(0, (sum, v) => sum + v);
     final totalColor = total > 0.005 ? t.profit : total < -0.005 ? t.loss : t.sub;
 
-    final n1 = p1.name.split(' ').first;
-    final n2 = p2.name.split(' ').first;
+    final n1 = p1.shortName;
+    final n2 = p2.shortName;
 
     return GCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -4507,6 +4723,81 @@ class _FinancialBreakdown extends StatelessWidget {
             }
           }
 
+          // Para Oyeses: mostrar marcador y estado del zapato si aplica
+          Widget? oyesesSubtitle;
+          if (betType == BetModuleType.oyeses) {
+            final oyesMods = _modsOf(BetModuleType.oyeses);
+            if (oyesMods.isNotEmpty) {
+              final mod  = oyesMods.first;
+              final o    = mod.oyeses;
+              final par3Holes = round.course.holes.where((h) => h.isPar3).toList();
+              final eligible  = o.eligibleHoles.isNotEmpty
+                  ? par3Holes.where((h) => o.eligibleHoles.contains(h.hole)).toList()
+                  : par3Holes;
+              final totalEligible = eligible.length;
+
+              int oyes1 = 0, oyes2 = 0, holesPlayed = 0;
+              int winsP1vsP2 = 0, winsP2vsP1 = 0;
+              for (final ch in eligible) {
+                final ranking = round.getOyese(ch.hole);
+                if (ranking == null || ranking.ranking.isEmpty) continue;
+                final ordered = ranking.ranking.where((pid) => [p1.id, p2.id].contains(pid)).toList();
+                if (ordered.length < 2) continue;
+                holesPlayed++;
+                if (ordered[0] == p1.id) { oyes1++; winsP1vsP2++; }
+                else { oyes2++; winsP2vsP1++; }
+              }
+
+              // Verificar zapato
+              String? zapatoText;
+              if (o.zapatoEnabled && holesPlayed > 0) {
+                final enoughHoles = o.zapatoRequires18 ? (totalEligible >= 3) : true;
+                if (enoughHoles) {
+                  final zapatoAmt = o.zapatoValue > 0
+                      ? o.zapatoValue
+                      : (totalEligible * o.value);
+                  if (holesPlayed == totalEligible) {
+                    if (winsP1vsP2 == holesPlayed) {
+                      zapatoText = '👟 Zapato: $n1 +\$${zapatoAmt.toStringAsFixed(0)}';
+                    } else if (winsP2vsP1 == holesPlayed) {
+                      zapatoText = '👟 Zapato: $n2 +\$${zapatoAmt.toStringAsFixed(0)}';
+                    } else {
+                      zapatoText = '👟 Zapato: no aplica';
+                    }
+                  } else {
+                    final remaining = totalEligible - holesPlayed;
+                    if (winsP1vsP2 > 0 && winsP2vsP1 == 0) {
+                      zapatoText = '👟 Zapato en juego: $n1 lidera ($remaining par-3 restantes)';
+                    } else if (winsP2vsP1 > 0 && winsP1vsP2 == 0) {
+                      zapatoText = '👟 Zapato en juego: $n2 lidera ($remaining par-3 restantes)';
+                    }
+                  }
+                }
+              }
+
+              oyesesSubtitle = Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(
+                    '$n1 $oyes1 oyés  ·  $oyes2 oyés $n2',
+                    style: TextStyle(color: t.sub, fontSize: 10),
+                  ),
+                  if (zapatoText != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      zapatoText,
+                      style: TextStyle(
+                        color: zapatoText.contains('no aplica') ? t.sub : t.profit,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ]),
+              );
+            }
+          }
+
           // Para Match+Press: sin sub-filas, solo encabezado
           // (el detalle lo muestra el panel _MatchPressLivePanel)
 
@@ -4535,6 +4826,11 @@ class _FinancialBreakdown extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(left: 22),
                   child: skinsSubtitle,
+                ),
+              if (oyesesSubtitle != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 22),
+                  child: oyesesSubtitle,
                 ),
             ]),
           );

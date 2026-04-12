@@ -16,6 +16,7 @@ import 'providers/player_provider.dart';
 import 'providers/user_profile_provider.dart';
 import 'providers/handicap_provider.dart';
 import 'app_shell.dart';
+import 'screens/guest/guest_join_screen.dart';
 
 void main() {
   // Capturar y mostrar errores de framework (incluido release)
@@ -96,9 +97,26 @@ void main() {
 
 class GolfBetApp extends StatelessWidget {
   const GolfBetApp({super.key});
+
+  // ── Detectar ruta /guest/:token en la URL del navegador ──────────────────
+  static String? _extractGuestToken() {
+    if (!kIsWeb) return null;
+    try {
+      // Usamos Uri para parsear la URL actual
+      final uri = Uri.base;
+      final segments = uri.pathSegments;
+      if (segments.length >= 2 && segments[0] == 'guest') {
+        return segments[1];
+      }
+    } catch (_) {}
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<RoundProvider>();
+    final guestToken = _extractGuestToken();
+
     return MaterialApp(
       title: 'Golf Bet Master', // v1.1.0+5
       debugShowCheckedModeBanner: false,
@@ -110,7 +128,20 @@ class GolfBetApp extends StatelessWidget {
         };
         return child ?? const SizedBox.shrink();
       },
-      home: const AppShell(),
+      // Si la URL contiene /guest/:token, ir directo a esa pantalla
+      home: guestToken != null
+          ? GuestJoinScreen(token: guestToken)
+          : const AppShell(),
+      onGenerateRoute: (settings) {
+        final name = settings.name ?? '';
+        if (name.startsWith('/guest/')) {
+          final token = name.replaceFirst('/guest/', '');
+          return MaterialPageRoute(
+            builder: (_) => GuestJoinScreen(token: token),
+          );
+        }
+        return null;
+      },
     );
   }
 }

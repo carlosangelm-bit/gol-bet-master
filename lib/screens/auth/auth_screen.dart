@@ -274,6 +274,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                                     ]),
                                   );
                                 }),
+
                               ],
                             ),
                     ),
@@ -828,3 +829,5 @@ class _SubmitButton extends StatelessWidget {
     );
   }
 }
+
+

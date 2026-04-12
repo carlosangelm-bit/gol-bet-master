@@ -2,6 +2,7 @@
 // de un BetModuleInstance. Se usa tanto desde home_screen (ronda activa)
 // como desde setup_screen (revisión antes de lanzar).
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../core/app_theme.dart';
 import '../models/models.dart';
 
@@ -53,6 +54,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   late bool _sidesEnabled;
   late List<String> _sideAIds;
   late List<String> _sideBIds;
+  late TeamPlayMode _playMode; // Best Ball o Scramble
 
   // Nombre editable de cada lado
   final _nameACtrl = TextEditingController();
@@ -82,18 +84,25 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     };
 
     // ── Inicializar estado de lados ─────────────────────────────────────────
+    if (kDebugMode) {
+      debugPrint('🔧 [BetModuleEditSheet] Tipo: ${m.type}');
+      debugPrint('🔧 [BetModuleEditSheet] Soporta equipos: ${_teamSupportedTypes.contains(m.type)}');
+      debugPrint('🔧 [BetModuleEditSheet] hasTeamSides: ${m.hasTeamSides}');
+    }
     if (m.hasTeamSides) {
       _sidesEnabled = true;
       _sideAIds = List<String>.from(m.sideA.playerIds);
       _sideBIds = List<String>.from(m.sideB.playerIds);
       _nameACtrl.text = m.sideA.name;
       _nameBCtrl.text = m.sideB.name;
+      _playMode = m.sideA.playMode; // Ambos lados usan el mismo modo
     } else {
       _sidesEnabled = false;
       _sideAIds = [];
       _sideBIds = [];
-      _nameACtrl.text = 'Lado A';
-      _nameBCtrl.text = 'Lado B';
+      _nameACtrl.text = 'Equipo A';
+      _nameBCtrl.text = 'Equipo B';
+      _playMode = TeamPlayMode.bestBall; // Default
     }
   }
 
@@ -117,11 +126,11 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   // ── Construir BetSide actualizados desde el estado de UI ──────────────────
   List<BetSide>? _buildSides() {
     if (!_sidesEnabled) return null;
-    final nameA = _nameACtrl.text.trim().isEmpty ? 'Lado A' : _nameACtrl.text.trim();
-    final nameB = _nameBCtrl.text.trim().isEmpty ? 'Lado B' : _nameBCtrl.text.trim();
+    final nameA = _nameACtrl.text.trim().isEmpty ? 'Equipo A' : _nameACtrl.text.trim();
+    final nameB = _nameBCtrl.text.trim().isEmpty ? 'Equipo B' : _nameBCtrl.text.trim();
     return [
-      BetSide(id: 'sideA_${_current.id}', name: nameA, playerIds: List.from(_sideAIds)),
-      BetSide(id: 'sideB_${_current.id}', name: nameB, playerIds: List.from(_sideBIds)),
+      BetSide(id: 'sideA_${_current.id}', name: nameA, playerIds: List.from(_sideAIds), playMode: _playMode),
+      BetSide(id: 'sideB_${_current.id}', name: nameB, playerIds: List.from(_sideBIds), playMode: _playMode),
     ];
   }
 
@@ -209,10 +218,13 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ..._buildFields(t),
-                // ── Sección de equipos (solo para tipos compatibles) ────────
+                
+                // ── Sección de equipos (SIEMPRE visible para tipos compatibles) ────────
                 if (_teamSupportedTypes.contains(_current.type)) ...[
                   const SizedBox(height: 24),
-                  _buildSidesSection(t),
+                  _availablePlayers.length >= 2 
+                      ? _buildSidesSection(t)
+                      : _buildNoPlayersWarning(t),
                 ],
               ],
             ),
@@ -271,6 +283,27 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   // SECCIÓN DE EQUIPOS
   // ══════════════════════════════════════════════════════════════════════════
 
+  Widget _buildNoPlayersWarning(GolfTheme t) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: t.loss.withValues(alpha: 0.08),
+        border: Border.all(color: t.loss.withValues(alpha: 0.3)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(children: [
+        Icon(Icons.group_off_rounded, color: t.loss, size: 20),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            'Necesitas al menos 2 jugadores para configurar equipos. Agrega jugadores en el paso anterior.',
+            style: TextStyle(color: t.loss, fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+        ),
+      ]),
+    );
+  }
+
   Widget _buildSidesSection(GolfTheme t) {
     final players = _availablePlayers;
     // Jugadores sin asignar
@@ -303,7 +336,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
             const SizedBox(height: 2),
             Text(
               _sidesEnabled
-                  ? 'Lado A vs Lado B — best ball'
+                  ? 'Lado A vs Lado B — ${_playMode.label}'
                   : 'Activar para definir Lado A y Lado B',
               style: TextStyle(color: t.sub, fontSize: 11),
             ),
@@ -326,6 +359,46 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
 
       if (_sidesEnabled) ...[
         const SizedBox(height: 16),
+
+        // ── Selector de Modo de Juego (Best Ball vs Scramble) ─────────────────
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: t.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: t.divider),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('FORMATO DE JUEGO', style: TextStyle(
+              color: t.sub, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+            const SizedBox(height: 10),
+            
+            // Best Ball
+            _playModeOption(
+              t,
+              mode: TeamPlayMode.bestBall,
+              icon: Icons.sports_golf,
+              onTap: () => setState(() => _playMode = TeamPlayMode.bestBall),
+            ),
+            const SizedBox(height: 8),
+            
+            // Scramble
+            _playModeOption(
+              t,
+              mode: TeamPlayMode.scramble,
+              icon: Icons.group_work,
+              onTap: () => setState(() => _playMode = TeamPlayMode.scramble),
+            ),
+            
+            // Mostrar cálculo de handicap si Scramble está seleccionado
+            if (_playMode == TeamPlayMode.scramble && _sideAIds.length >= 2 && _sideBIds.length >= 2) ...[
+              const SizedBox(height: 12),
+              _scrambleHandicapInfo(t),
+            ],
+          ]),
+        ),
+
+        const SizedBox(height: 14),
 
         // ── Instrucción ──────────────────────────────────────────────────────
         Container(
@@ -350,7 +423,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(child: _sidePanel(
             t,
-            label: 'LADO A',
+            label: 'EQUIPO A',
             nameCtrl: _nameACtrl,
             playerIds: _sideAIds,
             color: t.primary,
@@ -360,7 +433,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
           const SizedBox(width: 10),
           Expanded(child: _sidePanel(
             t,
-            label: 'LADO B',
+            label: 'EQUIPO B',
             nameCtrl: _nameBCtrl,
             playerIds: _sideBIds,
             color: t.accent,
@@ -456,6 +529,14 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
             ),
           ),
         ),
+        // Mostrar nombres de miembros en texto pequeño
+        if (playerIds.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Miembros: ${playerIds.map((id) => _playerName(id).split(' ').first).join(', ')}',
+            style: TextStyle(color: t.sub, fontSize: 9, fontStyle: FontStyle.italic),
+          ),
+        ],
         const SizedBox(height: 8),
         // Chips de jugadores asignados
         if (playerIds.isEmpty)
@@ -598,6 +679,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       )));
     }
     return [
+      // ── Valores base ──────────────────────────────────────────────────────
       _label('VALORES', t),
       _amountField('Front 9', _nassauF, t, onChanged: (_) => saveNassau()),
       const SizedBox(height: 8),
@@ -605,14 +687,75 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       const SizedBox(height: 8),
       _amountField('Total 18', _nassauT, t, onChanged: (_) => saveNassau()),
       const SizedBox(height: 16),
+
+      // ── Modo de juego ─────────────────────────────────────────────────────
       _label('JUEGO', t),
       _segmented(['Gross', 'Net'], n.mode == GrossNetMode.net ? 1 : 0, t, (i) {
         _update(_current.copyWith(nassauConfig: n.copyWith(mode: i == 1 ? GrossNetMode.net : GrossNetMode.gross)));
       }),
       const SizedBox(height: 16),
-      _toggle('Activar Press automático', n.pressEnabled ? 'Trigger: ${n.autoPressTrigger} down' : 'Sin press', n.pressEnabled, t, (v) {
-        _update(_current.copyWith(nassauConfig: n.copyWith(pressEnabled: v)));
+
+      // ── Regla de empate ───────────────────────────────────────────────────
+      _label('EMPATE EN SEGMENTO', t),
+      _segmented(['Push (devuelve)', 'Carry (acumula)'],
+          n.tieRule == TieRule.carryOver ? 1 : 0, t, (i) {
+        _update(_current.copyWith(nassauConfig: n.copyWith(
+          tieRule: i == 1 ? TieRule.carryOver : TieRule.push,
+          // Si elige carry automático, activar carryEnabled también
+          carryEnabled: i == 1 ? true : n.carryEnabled,
+        )));
       }),
+      const SizedBox(height: 4),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Text(
+          n.tieRule == TieRule.carryOver
+              ? 'El valor del segmento empatado se acumula al siguiente automáticamente.'
+              : 'El valor del segmento empatado se devuelve (nadie gana ese segmento).',
+          style: TextStyle(color: t.sub, fontSize: 11),
+        ),
+      ),
+      const SizedBox(height: 16),
+
+      // ── Carry en Back 9 (independiente del press) ─────────────────────────
+      _toggle(
+        'Carry en Back 9',
+        n.carryEnabled
+            ? 'Si el F9 termina empatado, el B9 vale x${n.carryFactor.toStringAsFixed(0)}'
+            : 'Sin carry — el B9 siempre vale su monto normal',
+        n.carryEnabled, t, (v) {
+          _update(_current.copyWith(nassauConfig: n.copyWith(carryEnabled: v)));
+        },
+      ),
+      if (n.carryEnabled) ...[
+        const SizedBox(height: 12),
+        _label('MULTIPLICADOR CARRY', t),
+        _segmented(['x2', 'x3', 'x4'],
+            n.carryFactor >= 4 ? 2 : n.carryFactor >= 3 ? 1 : 0, t, (i) {
+          _update(_current.copyWith(nassauConfig: n.copyWith(
+            carryFactor: (i + 2).toDouble(),
+          )));
+        }),
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Text(
+            'Si el F9 termina igualado, el B9 (\$${n.backValue.toStringAsFixed(0)}) '
+            'pasa a valer \$${(n.backValue * n.carryFactor).toStringAsFixed(0)}.',
+            style: TextStyle(color: t.sub, fontSize: 11),
+          ),
+        ),
+      ],
+      const SizedBox(height: 16),
+
+      // ── Press automático ──────────────────────────────────────────────────
+      _toggle(
+        'Activar Press automático',
+        n.pressEnabled ? 'Trigger: ${n.autoPressTrigger} down' : 'Sin press',
+        n.pressEnabled, t, (v) {
+          _update(_current.copyWith(nassauConfig: n.copyWith(pressEnabled: v)));
+        },
+      ),
       if (n.pressEnabled) ...[
         const SizedBox(height: 12),
         _label('TRIGGER', t),
@@ -625,13 +768,22 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         const SizedBox(height: 8),
         _amountField('Press Back 9', _npPB, t, onChanged: (_) => saveNassau()),
         const SizedBox(height: 16),
-        _toggle('Presiones múltiples', n.allowMultiplePresses ? 'Puede haber más de una por segmento' : 'Solo 1 por segmento', n.allowMultiplePresses, t, (v) {
-          _update(_current.copyWith(nassauConfig: n.copyWith(allowMultiplePresses: v)));
-        }),
-        const SizedBox(height: 16),
-        _toggle('Carry en Back 9', n.carryEnabled ? 'Si F9 empata, B9 vale x${n.carryFactor.toStringAsFixed(0)}' : 'Sin carry', n.carryEnabled, t, (v) {
-          _update(_current.copyWith(nassauConfig: n.copyWith(carryEnabled: v)));
-        }),
+        _toggle(
+          'Presiones múltiples',
+          n.allowMultiplePresses ? 'Puede haber más de una por segmento' : 'Solo 1 por segmento',
+          n.allowMultiplePresses, t, (v) {
+            _update(_current.copyWith(nassauConfig: n.copyWith(allowMultiplePresses: v)));
+          },
+        ),
+        if (!n.allowMultiplePresses) ...[
+          const SizedBox(height: 12),
+          _label('MÁX. PRESIONES POR SEGMENTO', t),
+          _segmented(['1', '2', '3'],
+              (n.maxPresses == null || n.maxPresses! <= 1) ? 0
+              : n.maxPresses! == 2 ? 1 : 2, t, (i) {
+            _update(_current.copyWith(nassauConfig: n.copyWith(maxPresses: i + 1)));
+          }),
+        ],
       ],
     ];
   }
@@ -712,6 +864,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   // ── OYESES ──────────────────────────────────────────────────────────────────
   List<Widget> _oyesesFields(GolfTheme t) {
     final o = _current.oyeses;
+    final isAllVsAll = _current.isAllVsAll;
     final realPar3Holes = (widget.courseInfo?.holes ?? CourseInfo.standard.holes)
         .where((h) => h.isPar3)
         .map((h) => h.hole)
@@ -720,23 +873,56 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     final par3count = o.eligibleHoles.isEmpty ? realPar3Holes.length : o.eligibleHoles.length;
 
     return [
+      // ── ESTRUCTURA DE APUESTA ───────────────────────────────────────────────
+      _label('ESTRUCTURA DE APUESTA', t),
+      const SizedBox(height: 8),
+      _segmented(['1 Pot', 'Todos vs Todos'], isAllVsAll ? 1 : 0, t, (i) {
+        _update(_current.copyWith(
+          formatMode: i == 1 ? BetFormatMode.allVsAll : BetFormatMode.onePot,
+        ));
+      }),
+      const SizedBox(height: 6),
+      Text(
+        isAllVsAll
+            ? 'Todos vs Todos: A vs B, A vs C y B vs C con duelo independiente.'
+            : '1 Pot: el mejor oyés por hoyo cobra al resto del grupo.',
+        style: TextStyle(color: t.sub, fontSize: 11, fontStyle: FontStyle.italic),
+      ),
+      const SizedBox(height: 20),
+
+      // ── VALOR POR OYÉS ──────────────────────────────────────────────────────
       _label('VALOR POR OYÉS', t),
       _amountField('Monto', _oyesCtrl, t, onChanged: (v) {
         _update(_current.copyWith(oyesesConfig: o.copyWith(value: v)));
       }),
       const SizedBox(height: 20),
+
+      // ── ZAPATO ──────────────────────────────────────────────────────────────
       _label('👟 ZAPATO', t),
-      Text('El jugador que gana TODOS los oyeses cobra el zapato.', style: TextStyle(color: t.sub, fontSize: 11)),
+      Text(
+        isAllVsAll
+            ? 'Todos vs Todos: si A le gana TODOS los oyeses a B, A hace zapato vs B (puede haber varios zapatos).'
+            : '1 Pot: si un jugador gana TODOS los oyeses del campo, cobra el zapato a todo el grupo.',
+        style: TextStyle(color: t.sub, fontSize: 11),
+      ),
       const SizedBox(height: 10),
-      _toggle('Activar zapato', o.zapatoEnabled ? 'Ganador de todos los oyeses cobra extra' : 'Sin regla de zapato', o.zapatoEnabled, t, (v) {
-        _update(_current.copyWith(oyesesConfig: o.copyWith(zapatoEnabled: v)));
-      }),
+      _toggle(
+        'Activar zapato',
+        o.zapatoEnabled
+            ? (isAllVsAll
+                ? 'Zapato por pareja: quien gane todos los oyeses vs otro cobra extra'
+                : 'Zapato grupal: el ganador absoluto cobra a todos')
+            : 'Sin regla de zapato',
+        o.zapatoEnabled,
+        t,
+        (v) => _update(_current.copyWith(oyesesConfig: o.copyWith(zapatoEnabled: v))),
+      ),
       if (o.zapatoEnabled) ...[
         const SizedBox(height: 12),
         _label('VALOR DEL ZAPATO', t),
         Text(
           o.zapatoValue == 0
-              ? 'Automático: $par3count oyeses × \$${o.value.toStringAsFixed(0)} = \$${(par3count * o.value).toStringAsFixed(0)}'
+              ? 'Automático: $par3count oyeses × \$${o.value.toStringAsFixed(0)} = \$${(par3count * o.value).toStringAsFixed(0)} por par afectado'
               : 'Valor fijo configurado',
           style: TextStyle(color: t.sub, fontSize: 11),
         ),
@@ -764,14 +950,14 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         ),
         const SizedBox(height: 12),
         _label('APLICA EN', t),
-        _segmented(['Solo 18 hoyos', 'También 9 hoyos'], o.zapatoRequires18 ? 0 : 1, t, (i) {
+        _segmented(['Solo campo 18H', 'Cualquier ronda'], o.zapatoRequires18 ? 0 : 1, t, (i) {
           _update(_current.copyWith(oyesesConfig: _current.oyeses.copyWith(zapatoRequires18: i == 0)));
         }),
         const SizedBox(height: 6),
         Text(
           o.zapatoRequires18
-              ? 'Solo aplica si se juegan todos los par-3 del campo.'
-              : 'Aplica con 2 o más oyeses registrados (válido en 9H).',
+              ? 'Solo aplica en campos con 3+ par-3s (rondas de 18 hoyos).'
+              : 'Aplica en cualquier campo al completarse todos sus par-3s.',
           style: TextStyle(color: t.sub, fontSize: 11),
         ),
       ],
@@ -907,4 +1093,137 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       ),
     ]),
   );
+
+  Widget _playModeOption(GolfTheme t, {
+    required TeamPlayMode mode,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    final isSelected = _playMode == mode;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected ? t.primary.withValues(alpha: 0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? t.primary : t.divider,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: isSelected ? t.primary.withValues(alpha: 0.2) : t.divider.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Icon(icon, color: isSelected ? t.primary : t.sub, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(mode.label, style: TextStyle(
+                color: isSelected ? t.primary : t.text,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              )),
+              const SizedBox(height: 2),
+              Text(mode.description, style: TextStyle(
+                color: t.sub,
+                fontSize: 10,
+              )),
+            ]),
+          ),
+          if (isSelected)
+            Icon(Icons.check_circle, color: t.primary, size: 20),
+        ]),
+      ),
+    );
+  }
+
+  // ── Widget de información de cálculo de handicap Scramble ─────────────────
+  Widget _scrambleHandicapInfo(GolfTheme t) {
+    // Calcular handicaps de cada equipo
+    final teamAPlayers = _availablePlayers.where((p) => _sideAIds.contains(p.id)).toList();
+    final teamBPlayers = _availablePlayers.where((p) => _sideBIds.contains(p.id)).toList();
+    
+    if (teamAPlayers.length < 2 || teamBPlayers.length < 2) {
+      return const SizedBox.shrink();
+    }
+    
+    // Calcular HCP de cada equipo (35% low + 15% high)
+    final teamAHcps = teamAPlayers.map((p) => p.handicapBase).toList()..sort();
+    final teamBHcps = teamBPlayers.map((p) => p.handicapBase).toList()..sort();
+    
+    final teamAHcp = (teamAHcps.first * 0.35 + teamAHcps.last * 0.15).round();
+    final teamBHcp = (teamBHcps.first * 0.35 + teamBHcps.last * 0.15).round();
+    
+    // Calcular ventaja (diferencia)
+    final diff = (teamAHcp - teamBHcp).abs();
+    final advantageTeam = teamAHcp > teamBHcp ? 'B' : teamAHcp < teamBHcp ? 'A' : null;
+    
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: t.accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: t.accent.withValues(alpha: 0.25)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.calculate, color: t.accent, size: 14),
+          const SizedBox(width: 6),
+          Text('CÁLCULO DE VENTAJA', style: TextStyle(
+            color: t.accent, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+        ]),
+        const SizedBox(height: 8),
+        
+        // Equipo A
+        _teamHcpRow(t, 'Equipo A', teamAHcps.first, teamAHcps.last, teamAHcp, t.primary),
+        const SizedBox(height: 4),
+        
+        // Equipo B
+        _teamHcpRow(t, 'Equipo B', teamBHcps.first, teamBHcps.last, teamBHcp, t.accent),
+        
+        if (diff > 0) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: t.accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              '→ Equipo $advantageTeam recibe $diff ${diff == 1 ? 'golpe' : 'golpes'} de ventaja',
+              style: TextStyle(color: t.accent, fontSize: 10, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  Widget _teamHcpRow(GolfTheme t, String name, double lowHcp, double highHcp, int teamHcp, Color color) {
+    return Row(children: [
+      Container(
+        width: 6, height: 6,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 6),
+      Expanded(
+        child: RichText(
+          text: TextSpan(
+            style: TextStyle(color: t.text, fontSize: 10),
+            children: [
+              TextSpan(text: '$name: ', style: const TextStyle(fontWeight: FontWeight.w700)),
+              TextSpan(text: '35% × ${lowHcp.toStringAsFixed(0)} + 15% × ${highHcp.toStringAsFixed(0)} = '),
+              TextSpan(text: teamHcp.toString(), style: TextStyle(fontWeight: FontWeight.w800, color: color)),
+            ],
+          ),
+        ),
+      ),
+    ]);
+  }
 }

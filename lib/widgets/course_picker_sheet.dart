@@ -46,6 +46,29 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
   bool _hasCorrectedData = false; // true cuando se usan datos corregidos del campo
 
   @override
+  void initState() {
+    super.initState();
+    // Pre-cargar los campos favoritos en paralelo para que el tap sea instantáneo
+    WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchFavorites());
+  }
+
+  void _prefetchFavorites() {
+    if (!mounted) return;
+    try {
+      final profProv = context.read<UserProfileProvider>();
+      final favIds = profProv.favCourses
+          .where((f) => f.courseId.isNotEmpty)
+          .map((f) => int.tryParse(f.courseId))
+          .whereType<int>()
+          .toList();
+      if (favIds.isNotEmpty) {
+        // Pre-carga silenciosa en background — no bloquea la UI
+        GolfCourseService.prefetchByIds(favIds).catchError((_) {});
+      }
+    } catch (_) {}
+  }
+
+  @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
@@ -88,25 +111,26 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
       _hasCorrectedData = false;
     });
     try {
-      // PRIMERO: verificar corrección oficial — si existe, usarla SIN llamar a la API
-      final correction = await CourseCorrectionsService.getForCourse(course.id.toString());
-      if (correction != null && mounted) {
-        setState(() {
-          _selected = correction.correctedCourse;
-          _loadingDetail = false;
-          _hasCorrectedData = true;
-        });
-        return;
-      }
-      // Sin corrección → llamar a la API
-      final full = await GolfCourseService.getById(course.id);
-      if (mounted) {
-        setState(() {
-          _selected = full;
-          _loadingDetail = false;
-          _hasCorrectedData = false;
-        });
-      }
+      // Lanzar AMBAS llamadas en paralelo para minimizar la espera:
+      // - Firestore: ¿hay corrección oficial para este campo?
+      // - API:       datos completos del campo (hoyos + tees)
+      // Ambas tienen caché en memoria → segunda visita al mismo campo es instantánea.
+      final results = await Future.wait([
+        CourseCorrectionsService.getForCourse(course.id.toString()),
+        GolfCourseService.getById(course.id),
+      ]);
+
+      if (!mounted) return;
+
+      final correction = results[0] as CourseCorrection?;
+      final full       = results[1] as ApiCourse;
+
+      // La corrección oficial tiene prioridad sobre los datos de la API
+      setState(() {
+        _selected        = correction?.correctedCourse ?? full;
+        _loadingDetail   = false;
+        _hasCorrectedData = correction != null;
+      });
     } catch (e) {
       if (mounted) {
         setState(() {
