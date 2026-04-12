@@ -150,6 +150,8 @@ class RoundProvider extends ChangeNotifier {
   StreamSubscription<Round?>? _liveRoundSub;
   // Flag para ignorar el próximo evento del stream (evitar eco)
   bool _ignoringLiveUpdate = false;
+  // Flag: el admin finalizó la ronda pero este usuario aún no presionó "Cerrar"
+  bool _roundFinishedByAdmin = false;
 
   Round? get round => _round;
   AppThemeMode get themeMode => _themeMode;
@@ -157,6 +159,8 @@ class RoundProvider extends ChangeNotifier {
   bool get hasRound => _round != null;
   bool get isLiveRound => _round?.isLive ?? false;
   bool get isLiveOwner => _round?.isLive == true && _round?.ownerUid == AuthService.uid;
+  /// true cuando el admin de la ronda live la finalizó pero el usuario local aún no cerró
+  bool get roundFinishedByAdmin => _roundFinishedByAdmin;
 
   GolfTheme get theme {
     switch (_themeMode) {
@@ -222,8 +226,23 @@ class RoundProvider extends ChangeNotifier {
         _ignoringLiveUpdate = false;
         return;
       }
-      // Solo actualizar si hay cambio real (evitar rebuilds innecesarios)
       if (_round == null) return;
+
+      // ── Detección: el ADMIN finalizó la ronda remotamente ──────────────────
+      // Si la ronda remota tiene isFinished=true y el usuario local NO es el owner,
+      // mantenemos la ronda visible pero activamos el banner de aviso.
+      if (remote.isFinished && !isLiveOwner) {
+        _round = remote;          // Actualizar datos (scores, resultados finales)
+        _roundFinishedByAdmin = true;
+        notifyListeners();
+        // Navegar automáticamente a Resultados para que el usuario vea el banner
+        if (_tabIndex != 2) _tabIndex = 2;
+        notifyListeners();
+        if (kDebugMode) debugPrint('[LiveRound] Ronda finalizada por el admin — mostrando aviso al invitado');
+        return;
+      }
+
+      // Caso normal: actualización de datos en tiempo real
       _round = remote;
       notifyListeners();
       // Actualizar caché local también
@@ -235,6 +254,13 @@ class RoundProvider extends ChangeNotifier {
   void _cancelLiveListener() {
     _liveRoundSub?.cancel();
     _liveRoundSub = null;
+  }
+
+  /// El invitado reconoce que el admin ya finalizó y decide cerrar la ronda en su dispositivo.
+  /// Ejecuta finishRound() para él (guarda en historial personal y limpia la UI).
+  Future<void> acknowledgeAdminFinish() async {
+    _roundFinishedByAdmin = false;
+    await finishRound();
   }
 
   @override
@@ -508,12 +534,19 @@ class RoundProvider extends ChangeNotifier {
           return;
         }
         _round = remote;
-        _tabIndex = _round!.isFinished ? 0 : 1;
+        // Si la ronda cargada ya está finalizada (admin la cerró antes de que
+        // el invitado abriera la app), mostrar el banner de aviso en Resultados.
+        if (_round!.isFinished && _round!.isLive && !isLiveOwner) {
+          _roundFinishedByAdmin = true;
+          _tabIndex = 2; // Ir directo a Resultados
+        } else {
+          _tabIndex = _round!.isFinished ? 0 : 1;
+        }
         notifyListeners();
         // Actualizar caché local
         final p = await _prefs();
         await p.setString('round', jsonEncode(roundToJson(_round!)));
-        // Si es ronda en vivo, activar listener
+        // Si es ronda en vivo activa, activar listener
         if (_round!.isLive && !_round!.isFinished) {
           _startLiveListener(_round!.id);
         }

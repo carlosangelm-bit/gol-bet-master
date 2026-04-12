@@ -294,22 +294,50 @@ class LiveRoundService {
           return bDate.compareTo(aDate); // descendente
         });
 
-      // Buscar la primera ronda no finalizada (la más reciente aceptada)
+      // Ventana de gracia: consideramos rondas finalizadas hace menos de 24 horas
+      // para que el invitado pueda ver resultados y dar sliding incluso si reabre la app.
+      final graceCutoff = DateTime.now().subtract(const Duration(hours: 24));
+
+      // Buscar primero una ronda NO finalizada; luego buscar la más reciente finalizada
+      // dentro de la ventana de gracia (para el caso en que el admin ya cerró).
+      Round? activeRound;
+      Round? recentlyFinishedRound;
+
       for (final ref in sorted) {
         final roundId = ref.data()['roundId'] as String? ?? ref.id;
         final snap = await _liveRounds.doc(roundId).get();
         if (!snap.exists || snap.data() == null) continue;
         final data = snap.data()!;
         final isFinished = data['isFinished'] as bool? ?? false;
+
         if (!isFinished) {
+          // Ronda activa → máxima prioridad
           try {
-            return roundFromJson(data);
+            activeRound = roundFromJson(data);
+            break;
           } catch (e, st) {
-            debugPrint('[LiveRound] Error parseando ronda del invitado: $e');
+            debugPrint('[LiveRound] Error parseando ronda activa del invitado: $e');
             debugPrint('[LiveRound] StackTrace: $st');
+          }
+        } else if (recentlyFinishedRound == null) {
+          // Ronda finalizada → verificar ventana de gracia (finishedAt o updatedAt)
+          final finishedTs = data['finishedAt'] ?? data['updatedAt'];
+          DateTime? finishedAt;
+          if (finishedTs is Timestamp) {
+            finishedAt = finishedTs.toDate();
+          }
+          if (finishedAt != null && finishedAt.isAfter(graceCutoff)) {
+            try {
+              recentlyFinishedRound = roundFromJson(data);
+            } catch (e) {
+              debugPrint('[LiveRound] Error parseando ronda finalizada del invitado: $e');
+            }
           }
         }
       }
+
+      // Retornar: activa > recién finalizada (ventana de gracia) > null
+      return activeRound ?? recentlyFinishedRound;
     } catch (e, st) {
       debugPrint('[LiveRound] Error buscando ronda aceptada del invitado: $e');
       debugPrint('[LiveRound] StackTrace: $st');

@@ -11,6 +11,7 @@ import '../../engines/ledger_engine.dart';
 import '../../engines/bet_engine.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sliding_adjustment_dialog.dart';
 
@@ -148,10 +149,26 @@ class _ResultsScreenState extends State<ResultsScreen> {
 
     final g = _ThemeGrad(t);
 
+    // ── Determinar si este usuario tiene cuenta registrada (linked) ──────────
+    final myUid = AuthService.uid;
+    final myLinkedPlayer = myUid != null
+        ? round.players.where((p) =>
+              p.linkedUserId == myUid && !p.isVirtual).firstOrNull
+        : null;
+    final iAmRegistered = myLinkedPlayer != null;
+    final adminFinished = prov.roundFinishedByAdmin;
+
     return Scaffold(
       backgroundColor: t.bg,
       body: SafeArea(
         child: Column(children: [
+          // Banner: ronda finalizada por el admin (solo para invitados)
+          if (adminFinished && !prov.isLiveOwner)
+            _AdminFinishedBanner(
+              t: t,
+              iAmRegistered: iAmRegistered,
+              onClose: () => _handleGuestClose(context, round, prov, iAmRegistered),
+            ),
           _PGAHeader(round: round, t: t, g: g, prov: prov, onFinish: _confirmFinish),
           Expanded(
             child: SingleChildScrollView(
@@ -222,12 +239,139 @@ class _ResultsScreenState extends State<ResultsScreen> {
               duration: const Duration(seconds: 5),
             ));
           }
-          if (roundSnapshot != null && context.mounted) {
+          // Sliding solo para usuarios con cuenta registrada (premium)
+          final myUid = AuthService.uid;
+          final myLinkedPlayer = myUid != null
+              ? roundSnapshot?.players.where((p) =>
+                    p.linkedUserId == myUid && !p.isVirtual).firstOrNull
+              : null;
+          if (roundSnapshot != null && myLinkedPlayer != null && context.mounted) {
             await showSlidingAdjustmentDialog(context, roundSnapshot);
           }
         }, child: Text('Finalizar', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700))),
       ],
     ));
+  }
+
+  /// Lógica para que el invitado cierre la ronda desde el banner de "admin finalizó"
+  Future<void> _handleGuestClose(
+    BuildContext context,
+    Round round,
+    RoundProvider prov,
+    bool iAmRegistered,
+  ) async {
+    final t = prov.theme;
+    // Mostrar diálogo de confirmación
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: t.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Cerrar ronda', style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
+        content: Text(
+          iAmRegistered
+              ? 'La ronda se guardará en tu historial y podrás actualizar tus ajustes de sliding.'
+              : 'La ronda se cerrará. Puedes revisar los resultados finales antes de salir.',
+          style: TextStyle(color: t.sub),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancelar', style: TextStyle(color: t.sub)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Cerrar', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final roundSnapshot = round;
+    await prov.acknowledgeAdminFinish();
+
+    // Sliding: solo para usuarios con cuenta registrada (funcionalidad premium)
+    if (iAmRegistered && context.mounted) {
+      await showSlidingAdjustmentDialog(context, roundSnapshot);
+    }
+  }
+}
+
+// ── Banner: el admin finalizó la ronda — aviso para invitados ─────────────────
+class _AdminFinishedBanner extends StatelessWidget {
+  final GolfTheme t;
+  final bool iAmRegistered;
+  final VoidCallback onClose;
+  const _AdminFinishedBanner({
+    required this.t,
+    required this.iAmRegistered,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFFF8C00).withValues(alpha: 0.92),
+            const Color(0xFFFF5722).withValues(alpha: 0.92),
+          ],
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(children: [
+        const Text('🏁', style: TextStyle(fontSize: 18)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'El administrador finalizó la ronda',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
+              Text(
+                iAmRegistered
+                    ? 'Presiona "Cerrar" para guardar los resultados y actualizar tu sliding.'
+                    : 'Revisa los resultados finales y presiona "Cerrar" cuando quieras.',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.88),
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: onClose,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.22),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+            ),
+            child: Text(
+              'Cerrar',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ),
+      ]),
+    );
   }
 }
 
