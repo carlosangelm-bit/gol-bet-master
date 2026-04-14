@@ -1,23 +1,44 @@
+// ignore_for_file: avoid_print
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests de Nassau con presiones (usando BetModuleType.nassau + pressEnabled:true)
+// Actualizado para usar NassauConfig en lugar del tipo nassauPress obsoleto.
+// ─────────────────────────────────────────────────────────────────────────────
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/models.dart';
 import 'package:golf_bet_master/engines/bet_engine.dart';
 import 'package:golf_bet_master/engines/ledger_engine.dart';
+
+BetModuleInstance _nassauPressMod(List<String> pids, {
+  double frontValue = 50,
+  double backValue  = 50,
+  double totalValue = 100,
+  double frontPressValue = 25,
+  double backPressValue  = 25,
+  int    trigger = 2,
+  GrossNetMode mode = GrossNetMode.gross,
+}) => BetModuleInstance(
+  id: 'np1',
+  type: BetModuleType.nassau,
+  name: 'Nassau con Press',
+  participantIds: pids,
+  nassauConfig: NassauConfig(
+    frontValue:      frontValue,
+    backValue:       backValue,
+    totalValue:      totalValue,
+    frontPressValue: frontPressValue,
+    backPressValue:  backPressValue,
+    pressEnabled:    true,
+    autoPressTrigger: trigger,
+    mode:            mode,
+  ),
+);
 
 void main() {
   test('nassauPress genera entries cuando hay scores (front start)', () {
     final p1 = Player(id: 'p1', name: 'Carlos', handicapBase: 10, colorIndex: 0);
     final p2 = Player(id: 'p2', name: 'Rafa',   handicapBase: 10, colorIndex: 1);
 
-    final mod = BetModuleInstance(
-      id: 'np1', type: BetModuleType.nassauPress, name: 'NP Test',
-      participantIds: ['p1','p2'],
-      nassauPressConfig: const NassauPressConfig(
-        frontValue: 50, backValue: 50, totalValue: 100,
-        frontPressValue: 25, backPressValue: 25,
-        pressTriggerValue: 2,
-        mode: GrossNetMode.gross, // gross para ignorar handicaps
-      ),
-    );
+    final mod = _nassauPressMod(['p1', 'p2']);
 
     final holes = List.generate(18, (i) => CourseHole(
       hole: i+1, par: 4,
@@ -62,10 +83,11 @@ void main() {
     print('=== Breakdown ===');
     breakdown.forEach((k,v) => print('  $k: \$$v'));
 
-    // p1 gana 3 hoyos → F9 +3 → p2 paga a p1 \$50
-    expect(entries.where((e) => e.betType == BetModuleType.nassauPress).isNotEmpty, true,
-        reason: 'Debe haber al menos 1 entry de nassauPress');
-    expect(breakdown[BetModuleType.nassauPress], greaterThan(0),
+    // p1 gana 3 hoyos → F9 +3 → p2 paga a p1 $50
+    final nassauEntries = entries.where((e) => e.betType == BetModuleType.nassau).toList();
+    expect(nassauEntries.isNotEmpty, true,
+        reason: 'Debe haber al menos 1 entry de nassau (con press)');
+    expect(breakdown[BetModuleType.nassau], greaterThan(0),
         reason: 'p1 ganó F9 → debe tener balance positivo');
   });
 
@@ -73,15 +95,11 @@ void main() {
     final p1 = Player(id: 'p1', name: 'CAV',  handicapBase: 0,  colorIndex: 0);
     final p2 = Player(id: 'p2', name: 'CAM',  handicapBase: 10, colorIndex: 1);
 
-    final mod = BetModuleInstance(
-      id: 'np1', type: BetModuleType.nassauPress, name: 'NP Back',
-      participantIds: ['p1','p2'],
-      nassauPressConfig: const NassauPressConfig(
-        frontValue: 50, backValue: 50, totalValue: 100,
-        frontPressValue: 50, backPressValue: 50,
-        pressTriggerValue: 2,
-        mode: GrossNetMode.gross, // gross para aislar el bug de startingNine
-      ),
+    final mod = _nassauPressMod(
+      ['p1', 'p2'],
+      frontValue: 50, backValue: 50, totalValue: 100,
+      frontPressValue: 50, backPressValue: 50,
+      trigger: 2,
     );
 
     // 18 hoyos en el curso pero solo se juegan los 10-18
@@ -149,21 +167,17 @@ void main() {
     breakdown.forEach((k,v) => print('  $k: \$$v'));
 
     // CAM (p2) gana B9 3UP → p1 paga a p2 → breakdown negativo para p1
-    final npEntries = entries.where((e) => e.betType == BetModuleType.nassauPress).toList();
-    final pressEntries = npEntries.where((e) => e.reason.contains('Press')).toList();
-    print('Press entries: ${pressEntries.length}');
+    final nassauEntries = entries.where((e) => e.betType == BetModuleType.nassau).toList();
+    final pressEntries  = nassauEntries.where((e) => e.reason.contains('Press')).toList();
+    print('Nassau entries: ${nassauEntries.length}, Press entries: ${pressEntries.length}');
 
-    expect(npEntries.isNotEmpty, true,
-        reason: 'Debe haber entries de nassauPress en ronda back nine');
-    expect(breakdown[BetModuleType.nassauPress], isNotNull);
-    expect(breakdown[BetModuleType.nassauPress]!, lessThan(0),
+    expect(nassauEntries.isNotEmpty, true,
+        reason: 'Debe haber entries de nassau en ronda back nine');
+    expect(breakdown[BetModuleType.nassau], isNotNull);
+    expect(breakdown[BetModuleType.nassau]!, lessThan(0),
         reason: 'p1 (CAV) perdió el B9 → balance debe ser negativo (p2=CAM gana)');
 
-    // Con trigger=2 y scores -1,-2,-2,-2,-1,-1,-2,-3,-3:
-    // refIdx=0, H10: rel=-1 (no trigger), H11: rel=-2 → PRESS en H12, refIdx=2
-    // Desde H12: H12: rel=0, H13: rel=0, H14: rel=+1, H15: rel=+1, H16: rel=0,
-    //            H17: rel=-1 (no trigger), H18: rel=-2? → depende de scores exactos
-    // Debe haber como máximo 2 presiones (no 5)
+    // Con trigger=2, no debe haber más de 2 presiones
     expect(pressEntries.length, lessThanOrEqualTo(2),
         reason: 'No debe haber más de 2 presiones con trigger=2 en estos scores');
   });

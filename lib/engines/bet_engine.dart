@@ -27,13 +27,31 @@ class BetEngine {
         (r) => r.playerId == p1Id,
         orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: round.getHandicap(p1Id)));
     final m1 = rp1.manualHandicaps[p2Id];
-    if (m1 != null) return m1; // manual directo — 0 es un acuerdo válido, se respeta
 
     final rp2 = round.roundPlayers.firstWhere(
         (r) => r.playerId == p2Id,
         orElse: () => RoundPlayer(playerId: p2Id, handicapEnRonda: round.getHandicap(p2Id)));
     final m2 = rp2.manualHandicaps[p1Id];
-    if (m2 != null) return -m2; // inverso: p2 tiene el acuerdo desde su perspectiva (0 también se respeta)
+
+    // ── Validación de consistencia bilateral ─────────────────────────────────
+    // Si AMBOS lados tienen manual guardado, deben ser espejos exactos (m1 == -m2).
+    // Si no lo son, significa inconsistencia de datos: lanzar error controlado.
+    if (m1 != null && m2 != null) {
+      // Tolerancia de 0.01 para evitar falsos positivos por precisión de punto flotante
+      if ((m1 + m2).abs() > 0.01) {
+        throw StateError(
+          'Inconsistencia bilateral de acuerdo manual entre $p1Id y $p2Id: '
+          'manual[$p1Id][$p2Id]=$m1 pero manual[$p2Id][$p1Id]=$m2 '
+          '(se esperaba $m1 == ${-m2}). '
+          'Corrige los acuerdos antes de calcular la apuesta.',
+        );
+      }
+      // Son consistentes: usar m1 (fuente canónica desde perspectiva p1)
+      return m1;
+    }
+
+    if (m1 != null) return m1; // manual directo — 0 es acuerdo válido, se respeta
+    if (m2 != null) return -m2; // inverso: 0 también se respeta
 
     // Fallback HCP: SOLO si no existe ningún manual entre este par en ninguna dirección.
     return round.getHandicap(p1Id) - round.getHandicap(p2Id);
@@ -264,10 +282,25 @@ class BetEngine {
       return s.hasScore;
     }).toList();
 
-    final holeOrder = round.startingNine == StartingNine.back
-        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
-        : List.generate(round.totalHoles, (i) => i + 1);
     final holeMap = { for (final ch in allHoles) ch.hole: ch };
+
+    // Orden lógico de hoyos: usa los hoyos reales del curso, no un rango fijo.
+    // Así funciona correctamente tanto para rondas de 9 hoyos (B9 o F9) como de 18.
+    final List<int> holeOrder;
+    if (round.startingNine == StartingNine.back) {
+      // Hoyos 10-18 primero (los que existan), luego 1-9 (los que existan)
+      final b9 = allHoles.where((c) => c.hole >= 10).map((c) => c.hole).toList()..sort();
+      final f9 = allHoles.where((c) => c.hole <= 9).map((c) => c.hole).toList()..sort();
+      holeOrder = [...b9, ...f9];
+    } else {
+      holeOrder = allHoles.map((c) => c.hole).toList()..sort();
+    }
+
+    // Segmentación lógica: seg1 = primer segmento jugado ("Front"), seg2 = segundo ("Back").
+    // Si arranca en el 10, los hoyos 10-18 son "Front" y 1-9 son "Back".
+    final bool _isBack = round.startingNine == StartingNine.back;
+    final int seg1From = _isBack ? 10 : 1;
+    final int seg1To   = _isBack ? 18 : 9;
 
     for (final h in holeOrder) {
       final ch = holeMap[h]!;
@@ -291,8 +324,10 @@ class BetEngine {
       else if (grossBase > netReceiver) delta = p1IsBase ? -1 : 1;
       else                              delta = 0;
 
-      if (h <= 9) front += delta;
-      else        back  += delta;
+      // Segmentación LÓGICA: el primer segmento jugado es siempre "front",
+      // independientemente de si los números de hoyo son 1-9 ó 10-18.
+      if (h >= seg1From && h <= seg1To) front += delta;
+      else                               back  += delta;
     }
 
     final total = front + back;
@@ -430,8 +465,8 @@ class BetEngine {
       addEntry(segScore, segValue, segLabel);
 
       // Liquidar cada presión.
-      // CORRECCIÓN: cada press cierra cuando empieza la SIGUIENTE press,
-      // no al final del segmento. Así el score refleja solo el tramo de esa press.
+      // Cada press cierra cuando empieza la SIGUIENTE press,
+      // no al final del segmento. El label refleja el tramo real liquidado.
       for (int k = 0; k < pressStarts.length; k++) {
         final ps = pressStarts[k];
         // Endpoint: inicio de la siguiente press (exclusive) o fin del segmento.
@@ -439,8 +474,10 @@ class BetEngine {
             ? pressStarts[k + 1].startIdx - 1
             : history.length - 1;
         final pressScore = history[endIdx] - history[ps.startIdx - 1];
+        // endHole real: holeFrom + endIdx (ya que history[i] corresponde a holeFrom+i)
+        final endHole = holeFrom + endIdx;
         addEntry(pressScore, pressValue,
-            'Press H${ps.startHole}–H$holeTo ($segLabel)');
+            'Press H${ps.startHole}–H$endHole ($segLabel)');
       }
 
       // Presiones manuales del módulo (no son match principal, en rango del segmento)
@@ -526,6 +563,9 @@ class BetEngine {
     // en cada hoyo. Esto es correcto para medias rondas (solo B9 o solo F9).
     // No se usa la lógica USGA de ceil/floor por vuelta, que era para HCP de 18 hoyos.
     int netVs(String pA, String pB) {
+      // Caso explícito: auto-comparación — el net es el gross bruto (sin ventajas).
+      // Ocurre cuando el ancla se compara contra sí misma en onePot N>2.
+      if (pA == pB) return GameEngine.grossTotal(round, pA);
       if (!mod.useHandicap) return GameEngine.grossTotal(round, pA);
       final recv = _strokesP1ReceivesFromP2(round, pA, pB); // cuánto recibe pA de pB
       int net = 0;
@@ -935,14 +975,20 @@ class BetEngine {
         : List.generate(round.totalHoles, (i) => i + 1);
 
     int front = 0, back = 0;
+
+    // Segmentación lógica: seg1 = primer segmento jugado ("Front"), seg2 = segundo ("Back").
+    final bool _isBackTeam = round.startingNine == StartingNine.back;
+    final int tSeg1From = _isBackTeam ? 10 : 1;
+    final int tSeg1To   = _isBackTeam ? 18 : 9;
+
     for (final h in holeOrder) {
       final delta = GameEngine.holeDeltaVs(
         round: round, sideA: sideA, sideB: sideB,
         holeNum: h, useHandicap: mod.useHandicap, hcpMap: hcpMap,
       );
       if (delta == null) continue;
-      if (h <= 9) front += delta;
-      else        back  += delta;
+      if (h >= tSeg1From && h <= tSeg1To) front += delta;
+      else                                 back  += delta;
     }
     final total = front + back;
 

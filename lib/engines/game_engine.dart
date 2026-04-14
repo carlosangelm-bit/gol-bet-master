@@ -191,10 +191,15 @@ class GameEngine {
   }
 
   // ── total de putts ────────────────────────────────────────────────────────
-  static int totalPutts(Round round, String playerId, {int from = 1, int to = 18}) =>
-      List.generate(to - from + 1, (i) => from + i)
-        .map((h) => round.getScore(playerId, h).putts)
-        .fold(0, (s, p) => s + p);
+  // Solo suma hoyos con hasScore==true para evitar contar defaults silenciosos.
+  static int totalPutts(Round round, String playerId, {int from = 1, int to = 18}) {
+    int total = 0;
+    for (int h = from; h <= to; h++) {
+      final s = round.getScore(playerId, h);
+      if (s.hasScore) total += s.putts;
+    }
+    return total;
+  }
 
   // ── puntos stableford totales ─────────────────────────────────────────────
   static int stablefordTotal(Round round, String playerId, bool useHandicap, {int from = 1, int to = 18}) {
@@ -209,75 +214,102 @@ class GameEngine {
   // ── match play status entre dos jugadores (p1 perspectiva) ───────────────
   // retorna: positivo = p1 up, 0 = all square, negativo = p1 down
   //
-  // NOTA SOBRE manualHandicaps:
-  // manual[p1][p2] ya ES la diferencia de strokes (no un ajuste al HCP).
-  //   > 0 → p1 recibe esos strokes de p2  → p2=base, p1=receptor, diff=manual
-  //   < 0 → p1 da esos strokes a p2       → p1=base, p2=receptor, diff=|manual|
-  //   null → diferencia de HCPs normales
+  // Usa la misma lógica bilateral de acuerdos manuales que BetEngine:
+  //   1. manual[p1][p2]  → valor directo (incluyendo 0 como acuerdo explícito)
+  //   2. manual[p2][p1]  → invertido    (incluyendo 0)
+  //   3. Ambos null      → diferencia de HCPs como fallback
+  //
+  // La distribución de strokes usa strokesReceivedInPlayedHoles (no strokesReceivedVs)
+  // para ser correcta en medias rondas, solo B9, solo F9 o rondas parciales.
   static int matchPlayStatus(Round round, String p1Id, String p2Id, bool useHandicap, {int throughHole = 18}) {
     int status = 0;
 
-    // Calcular base/receptor y diff UNA sola vez (no cambia por hoyo)
-    final hcp1 = useHandicap ? round.getHandicap(p1Id) : 0.0;
-    final hcp2 = useHandicap ? round.getHandicap(p2Id) : 0.0;
-    final rp1 = round.roundPlayers.firstWhere(
-      (r) => r.playerId == p1Id,
-      orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: hcp1),
-    );
-    final manual = useHandicap ? rp1.manualHandicaps[p2Id] : null;
-
-    final bool p1IsBase;
-    final double hcpBase;
-    final double hcpReceiver;
-
-    if (manual != null && manual != 0) {
-      // El manual ya ES la diferencia de strokes:
-      // manual > 0: p1 recibe → p2=base, p1=receptor, diff=manual
-      // manual < 0: p1 da     → p1=base, p2=receptor, diff=|manual|
-      if (manual > 0) {
-        p1IsBase    = false;          // p2 es base
-        hcpBase     = hcp2;
-        hcpReceiver = hcp2 + manual;  // diff = manual
+    // ── Calcular recv bilateral una sola vez ──────────────────────────────────
+    // Misma prioridad que BetEngine._strokesP1ReceivesFromP2:
+    //   m1 = manual[p1][p2], m2 = manual[p2][p1]
+    double recv = 0;
+    if (useHandicap) {
+      final rp1 = round.roundPlayers.firstWhere(
+        (r) => r.playerId == p1Id,
+        orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: round.getHandicap(p1Id)),
+      );
+      final m1 = rp1.manualHandicaps[p2Id];
+      if (m1 != null) {
+        recv = m1; // directo, 0 es acuerdo explícito
       } else {
-        p1IsBase    = true;           // p1 es base
-        hcpBase     = hcp1;
-        hcpReceiver = hcp1 + (-manual); // diff = |manual|
+        final rp2 = round.roundPlayers.firstWhere(
+          (r) => r.playerId == p2Id,
+          orElse: () => RoundPlayer(playerId: p2Id, handicapEnRonda: round.getHandicap(p2Id)),
+        );
+        final m2 = rp2.manualHandicaps[p1Id];
+        if (m2 != null) {
+          recv = -m2; // inverso
+        } else {
+          recv = round.getHandicap(p1Id) - round.getHandicap(p2Id); // fallback HCP
+        }
       }
-    } else {
-      // Sin manual: diferencia de HCPs normales
-      p1IsBase    = hcp1 <= hcp2;
-      hcpBase     = p1IsBase ? hcp1 : hcp2;
-      hcpReceiver = p1IsBase ? hcp2 : hcp1;
     }
 
-    final allHoles = round.course.holes;
+    // recv > 0 → p1 recibe (p2=base, p1=receptor)
+    // recv < 0 → p1 da     (p1=base, p2=receptor)
+    // recv = 0 → sin ventaja
+    final bool p1IsBase  = recv <= 0;
+    final String baseId     = p1IsBase ? p1Id : p2Id;
+    final String receiverId = p1IsBase ? p2Id : p1Id;
+    final int    recvAbs    = recv.abs().round();
 
-    for (int h = 1; h <= throughHole; h++) {
-      final ch = round.course.holes.firstWhere((c) => c.hole == h);
+    // Pre-calcular hoyos jugados por el receptor (para strokesReceivedInPlayedHoles)
+    final receiverPlayedHoles = round.course.holes.where((ch) {
+      return round.getScore(receiverId, ch.hole).hasScore;
+    }).toList();
+
+    // Orden lógico de hoyos del curso (igual que en _nassauPair):
+    // - Si startingNine=back: primero 10-18, luego 1-9 (solo los que existan en el curso).
+    // - Si startingNine=front: orden numérico ascendente.
+    // Esto evita "Hole X not found" en cursos de 9 hoyos y corrige el orden en B9.
+    final List<CourseHole> orderedHoles;
+    {
+      final allCh = round.course.holes;
+      if (round.startingNine == StartingNine.back) {
+        final b9 = allCh.where((c) => c.hole >= 10).toList()..sort((a, b) => a.hole.compareTo(b.hole));
+        final f9 = allCh.where((c) => c.hole < 10).toList()..sort((a, b) => a.hole.compareTo(b.hole));
+        orderedHoles = [...b9, ...f9];
+      } else {
+        orderedHoles = [...allCh]..sort((a, b) => a.hole.compareTo(b.hole));
+      }
+    }
+
+    for (final ch in orderedHoles) {
+      final h = ch.hole;
+      // Respetar el parámetro throughHole (límite numérico del hoyo, no posición)
+      if (h > throughHole && throughHole <= 18) {
+        // Solo aplicar filtro si throughHole es un límite de hoyo F9 (≤9 o 18)
+        // Para B9 el caller pasa throughHole=18, así que no se filtra nada
+        if (round.startingNine != StartingNine.back || throughHole < 18) continue;
+      }
       final s1 = round.getScore(p1Id, h);
       final s2 = round.getScore(p2Id, h);
       if (!s1.hasScore || !s2.hasScore) continue;
 
-      final strokesHere = useHandicap
-          ? strokesReceivedVs(
-              hcpHigher: hcpReceiver,
-              hcpLower:  hcpBase,
-              ch: ch,
-              allHoles: allHoles,
-              startingNine: round.startingNine,
+      // Strokes distribuidos SOLO sobre los hoyos efectivamente jugados por el receptor
+      final strokesHere = useHandicap && recvAbs > 0
+          ? strokesReceivedInPlayedHoles(
+              diff:        recvAbs,
+              ch:          ch,
+              playedHoles: receiverPlayedHoles,
             )
           : 0;
 
-      final grossBase     = round.getScore(p1IsBase ? p1Id : p2Id, h).grossScore!;
-      final grossReceiver = round.getScore(p1IsBase ? p2Id : p1Id, h).grossScore!;
+      final grossBase     = round.getScore(baseId,     h).grossScore!;
+      final grossReceiver = round.getScore(receiverId, h).grossScore!;
       final netReceiver   = grossReceiver - strokesHere;
 
       // Resultado en perspectiva p1
       if (p1IsBase) {
-        if (grossBase < netReceiver)      status++;
+        if      (grossBase < netReceiver) status++;
         else if (grossBase > netReceiver) status--;
       } else {
-        if (netReceiver < grossBase)      status++;
+        if      (netReceiver < grossBase) status++;
         else if (netReceiver > grossBase) status--;
       }
     }
