@@ -542,8 +542,11 @@ class BetEngine {
       // allVsAll: cada par (A, B) es completamente independiente.
       // net_A = sum_hoyos(gross_A - strokes_A_vs_B)
       // net_B = sum_hoyos(gross_B - strokes_B_vs_A)
+      // Solo evaluar pares donde AMBOS jugadores tienen scores registrados.
       for (int i = 0; i < pids.length; i++) {
         for (int j = i + 1; j < pids.length; j++) {
+          if (GameEngine.grossTotal(round, pids[i]) == 0) continue;
+          if (GameEngine.grossTotal(round, pids[j]) == 0) continue;
           final netI = netInPair(pids[i], pids[j]);
           final netJ = netInPair(pids[j], pids[i]);
           if (netI < netJ) {
@@ -560,27 +563,37 @@ class BetEngine {
     // Para 1v1: net_A vs B, net_B vs A (bilateral, hoyo a hoyo)
     // Para 3+: cada jugador calcula su net vs la base (menor HCP),
     //          todos los nets quedan en la misma escala.
+    // Solo participan jugadores que tienen al menos un hoyo jugado (grossTotal > 0).
     final nets = <String, int>{};
     if (pids.length == 2) {
+      // 1v1: ambos deben tener scores; si alguno no tiene, no hay resultado
+      final g0 = GameEngine.grossTotal(round, pids[0]);
+      final g1 = GameEngine.grossTotal(round, pids[1]);
+      if (g0 == 0 || g1 == 0) return entries;
       nets[pids[0]] = netInPair(pids[0], pids[1]);
       nets[pids[1]] = netInPair(pids[1], pids[0]);
     } else {
       if (!mod.useHandicap) {
         for (final pid in pids) {
-          nets[pid] = GameEngine.grossTotal(round, pid);
+          final g = GameEngine.grossTotal(round, pid);
+          if (g > 0) nets[pid] = g; // excluir jugadores sin scores
         }
       } else {
-        final base = pids.reduce((a, b) =>
+        // Usar solo jugadores con scores registrados para elegir la base
+        final activePids = pids.where((pid) => GameEngine.grossTotal(round, pid) > 0).toList();
+        if (activePids.length < 2) return entries;
+        final base = activePids.reduce((a, b) =>
             round.getHandicap(a) <= round.getHandicap(b) ? a : b);
-        for (final pid in pids) {
+        for (final pid in activePids) {
           nets[pid] = netInPair(pid, base);
         }
       }
     }
-    final sorted = pids.toList()..sort((a, b) => (nets[a] ?? 999).compareTo(nets[b] ?? 999));
-    final winner = sorted.first;
-    if ((nets[sorted[0]] ?? 999) == (nets[sorted[1]] ?? 999)) return entries;
-    for (final pid in sorted.skip(1)) {
+    if (nets.length < 2) return entries;
+    final validPids = nets.keys.toList()..sort((a, b) => (nets[a] ?? 999).compareTo(nets[b] ?? 999));
+    final winner = validPids.first;
+    if ((nets[validPids[0]] ?? 999) == (nets[validPids[1]] ?? 999)) return entries;
+    for (final pid in validPids.skip(1)) {
       entries.add(LedgerEntry(fromPlayerId: pid, toPlayerId: winner, amount: cfg.value, betType: BetModuleType.medal, reason: 'Medal'));
     }
     return entries;
@@ -617,14 +630,19 @@ class BetEngine {
     }
 
     // onePot: winner cobra a todos
+    // Solo participan jugadores con putts > 0 (tienen putts registrados).
+    // Si un jugador no registró putts (= 0), se excluye del comparador
+    // pero no se descarta el segmento completo.
     for (final seg in segs) {
       final (from, to, label) = seg;
       final totals = <String, int>{};
       for (final pid in pids) {
         totals[pid] = GameEngine.totalPutts(round, pid, from: from, to: to);
       }
-      if (totals.values.any((v) => v == 0)) continue;
-      final sorted = pids.toList()..sort((a, b) => (totals[a] ?? 99).compareTo(totals[b] ?? 99));
+      // Filtrar solo jugadores con putts registrados (> 0)
+      final validPids = pids.where((pid) => (totals[pid] ?? 0) > 0).toList();
+      if (validPids.length < 2) continue; // no hay suficientes para comparar
+      final sorted = validPids..sort((a, b) => (totals[a] ?? 99).compareTo(totals[b] ?? 99));
       if ((totals[sorted[0]] ?? 99) == (totals[sorted[1]] ?? 99)) continue;
       final winner = sorted.first;
       for (final pid in sorted.skip(1)) {
