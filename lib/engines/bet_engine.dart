@@ -8,21 +8,185 @@ import 'game_engine.dart';
 
 class BetEngine {
 
-  // ── Helper: strokes que recibe p1 de p2 (acuerdo bilateral) ─────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  // CANONICAL PAIR SLIDING — fuente de verdad única
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Construye la clave canónica para el par (a, b):
+  /// ids ordenados lexicográficamente, separados por '|'.
+  static String pairKey(String a, String b) =>
+      a.compareTo(b) <= 0 ? '$a|$b' : '$b|$a';
+
+  /// Devuelve cuántos strokes recibe [p1Id] de [p2Id] usando [round.pairSliding].
+  /// Retorna null si no hay entrada para este par en pairSliding.
+  ///
+  /// Convención del valor almacenado: el valor representa los strokes que recibe
+  /// el jugador cuyo id es menor lexicográficamente.
+  ///   - Si clave = 'A|B' y valor = -5 → A da 5 a B (A recibe -5).
+  ///   - Consulta recv(A,B) = -5, recv(B,A) = +5.
+  static double? canonicalSlidingBetween(Round round, String p1Id, String p2Id) {
+    if (p1Id == p2Id) return 0.0;
+    final key = pairKey(p1Id, p2Id);
+    final stored = round.pairSliding[key];
+    if (stored == null) return null;
+    // Si p1Id es el "low" id de la clave, el valor se usa directo.
+    // Si p1Id es el "high" id de la clave, se invierte el signo.
+    final lowId = p1Id.compareTo(p2Id) <= 0 ? p1Id : p2Id;
+    return (p1Id == lowId) ? stored : -stored;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // VALIDACIÓN DE pairSliding
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Valida la coherencia del campo [round.pairSliding] y detecta conflictos con
+  /// los legacy [manualHandicaps] de [RoundPlayer].
+  ///
+  /// Retorna una lista de mensajes de error descriptivos (vacía si todo está ok).
+  static List<String> validatePairSliding(Round round) {
+    final errors = <String>[];
+
+    for (final entry in round.pairSliding.entries) {
+      final key = entry.key;
+      final val = entry.value;
+
+      // 1. Formato de clave válido
+      final parts = key.split('|');
+      if (parts.length != 2 || parts[0].isEmpty || parts[1].isEmpty) {
+        errors.add('pairSliding: clave "$key" mal formada (se esperaba "id1|id2").');
+        continue;
+      }
+
+      // 2. Los dos ids del par no pueden ser el mismo jugador
+      if (parts[0] == parts[1]) {
+        errors.add('pairSliding: clave "$key" tiene el mismo jugador en ambos lados.');
+        continue;
+      }
+
+      // 3. Ids deben estar en orden lexicográfico (la clave siempre debe ser canónica)
+      if (parts[0].compareTo(parts[1]) > 0) {
+        errors.add('pairSliding: clave "$key" no está en orden canónico '
+            '(se esperaba "${parts[1]}|${parts[0]}").');
+      }
+
+      // 4. El valor no puede ser NaN o infinito
+      if (val.isNaN || val.isInfinite) {
+        errors.add('pairSliding: clave "$key" tiene valor inválido ($val).');
+      }
+
+      // 5. Verificar conflicto con legacy manualHandicaps si ambos existen
+      final lowId  = parts[0];
+      final highId = parts[1];
+
+      final rpLow  = round.roundPlayers.where((r) => r.playerId == lowId).firstOrNull;
+      final rpHigh = round.roundPlayers.where((r) => r.playerId == highId).firstOrNull;
+
+      final mLowHigh  = rpLow?.manualHandicaps[highId];   // lo que lowId dice que recibe de highId
+      final mHighLow  = rpHigh?.manualHandicaps[lowId];   // lo que highId dice que recibe de lowId
+
+      // El pairSliding dice que lowId recibe `val` de highId.
+      // El legacy manual[lowId][highId] también debería ser `val`.
+      if (mLowHigh != null && (mLowHigh - val).abs() > 0.01) {
+        errors.add('pairSliding: conflicto entre pairSliding["$key"]=$val y '
+            'manualHandicaps[$lowId][$highId]=$mLowHigh. '
+            'Si ambos existen deben coincidir.');
+      }
+
+      // El legacy manual[highId][lowId] debería ser -val (highId da `val` a lowId).
+      if (mHighLow != null && (mHighLow + val).abs() > 0.01) {
+        errors.add('pairSliding: conflicto entre pairSliding["$key"]=$val y '
+            'manualHandicaps[$highId][$lowId]=$mHighLow '
+            '(se esperaba ${-val}). '
+            'Si ambos existen deben ser opuestos.');
+      }
+    }
+
+    return errors;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // MIGRACIÓN LEGACY: manualHandicaps → pairSliding
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Construye un mapa pairSliding a partir de los manualHandicaps legacy
+  /// de los RoundPlayers. Útil para rondas antiguas que aún no tienen pairSliding.
+  ///
+  /// Reglas:
+  ///   - Si existen ambos lados y son consistentes (a+b≈0) → migra.
+  ///   - Si existe solo uno → migra ese valor como fuente de verdad.
+  ///   - Si existen ambos y son inconsistentes → añade error a [errors] y omite ese par.
+  static Map<String, double> buildPairSlidingFromLegacy(
+    Round round, {
+    List<String>? errors,
+  }) {
+    final result = <String, double>{};
+    final processed = <String>{};
+
+    for (final rp in round.roundPlayers) {
+      for (final entry in rp.manualHandicaps.entries) {
+        final otherId = entry.key;
+        final key = pairKey(rp.playerId, otherId);
+        if (processed.contains(key)) continue;
+        processed.add(key);
+
+        // Valor directo: rp recibe `entry.value` de otherId
+        final mDirect = entry.value; // recv(rp.playerId, otherId)
+
+        // Buscar el inverso en el otro RoundPlayer
+        final rpOther = round.roundPlayers
+            .where((r) => r.playerId == otherId)
+            .firstOrNull;
+        final mInverse = rpOther?.manualHandicaps[rp.playerId]; // recv(otherId, rp.playerId)
+
+        // El valor canónico en pairSliding es: recv(lowId, highId)
+        final lowId = rp.playerId.compareTo(otherId) <= 0 ? rp.playerId : otherId;
+        final isRpLow = rp.playerId == lowId;
+
+        if (mInverse != null) {
+          // Ambos lados existen: verificar consistencia (deben sumar 0)
+          if ((mDirect + mInverse).abs() > 0.01) {
+            errors?.add(
+              'Legacy inconsistente para el par "$key": '
+              'manual[${rp.playerId}][$otherId]=$mDirect y '
+              'manual[$otherId][${rp.playerId}]=$mInverse '
+              'no son opuestos. Par ignorado en la migración.',
+            );
+            continue; // No migrar un par inconsistente
+          }
+          // Consistentes: usar el valor desde la perspectiva del lowId
+          result[key] = isRpLow ? mDirect : -mDirect;
+        } else {
+          // Solo un lado definido: ese es la fuente de verdad
+          result[key] = isRpLow ? mDirect : -mDirect;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // HELPER CENTRAL: strokes que recibe p1 de p2
+  // ══════════════════════════════════════════════════════════════════════════
   //
-  // REGLAS DE PRIORIDAD:
-  //   1. Manual[p1][p2]  → p1 recibe ese valor (+ = recibe, - = da).
-  //                        CRÍTICO: si el valor es 0 (acuerdo explícito "0 ventaja"),
-  //                        se respeta y NO se cae al HCP.
-  //   2. Manual[p2][p1]  → invertido. Igual: si es 0, también se respeta.
-  //   3. Ambos null      → diferencia de HCP (p1.hcp - p2.hcp).
-  //                        Solo cuando no existe NINGÚN acuerdo guardado entre el par.
+  // REGLAS DE PRIORIDAD (nueva):
+  //   1. pairSliding (fuente canónica)  → si existe para el par, usarlo.
+  //   2. manualHandicaps legacy         → compatibilidad con rondas antiguas.
+  //      a. Manual[p1][p2]  → p1 recibe ese valor.
+  //      b. Manual[p2][p1]  → invertido.
+  //      c. Si ambos existen y son inconsistentes → StateError.
+  //   3. Fallback HCP                   → p1.hcp - p2.hcp.
   //
   // Devuelve cuántos strokes recibe p1 de p2:
   //   > 0 → p1 recibe esa cantidad
   //   = 0 → acuerdo par a par: sin ventaja
   //   < 0 → p2 recibe |valor| (p1 da strokes)
   static double _strokesP1ReceivesFromP2(Round round, String p1Id, String p2Id) {
+    // ── 1. pairSliding (fuente canónica) ─────────────────────────────────────
+    final canonical = canonicalSlidingBetween(round, p1Id, p2Id);
+    if (canonical != null) return canonical;
+
+    // ── 2. Legacy manualHandicaps ─────────────────────────────────────────────
     final rp1 = round.roundPlayers.firstWhere(
         (r) => r.playerId == p1Id,
         orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: round.getHandicap(p1Id)));

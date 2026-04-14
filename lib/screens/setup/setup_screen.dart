@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/app_theme.dart';
+import '../../engines/bet_engine.dart';
 import '../../providers/user_profile_provider.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
@@ -138,6 +139,7 @@ class _SetupScreenState extends State<SetupScreen> {
     // Aplicar contra todos los jugadores ya en la ronda (excepto el nuevo)
     for (final other in _players) {
       if (other.id == newPlayerId) continue;
+      // ── Mantener manualHandicaps para visualización en _HandicapMatrix ──
       _manualHandicaps.putIfAbsent(newPlayerId, () => {});
       _manualHandicaps.putIfAbsent(other.id,    () => {});
       // slidingAdj > 0: newPlayer RECIBE strokes de other
@@ -148,6 +150,12 @@ class _SetupScreenState extends State<SetupScreen> {
       //   → other[newPlayer] = -slidingAdj  (other recibe)
       _manualHandicaps[newPlayerId]![other.id] =  slidingAdj;
       _manualHandicaps[other.id]![newPlayerId] = -slidingAdj;
+      // ── Escribir UNA sola vez en el mapa canónico ──────────────────────
+      // slidingAdj = recv(newPlayerId, other.id)
+      // Clave canónica: lowId|highId. Valor = recv(lowId, highId).
+      final lowId = newPlayerId.compareTo(other.id) <= 0 ? newPlayerId : other.id;
+      final key = BetEngine.pairKey(newPlayerId, other.id);
+      _pairSliding[key] = (newPlayerId == lowId) ? slidingAdj : -slidingAdj;
     }
   }
 
@@ -2736,9 +2744,13 @@ class _SetupScreenState extends State<SetupScreen> {
               if (val == null) {
                 _manualHandicaps[p1]!.remove(p2);
                 _manualHandicaps[p2]!.remove(p1);
+                _pairSliding.remove(BetEngine.pairKey(p1, p2));
               } else {
                 _manualHandicaps[p1]![p2] = val;
                 _manualHandicaps[p2]![p1] = -val;
+                final lowId = p1.compareTo(p2) <= 0 ? p1 : p2;
+                final key = BetEngine.pairKey(p1, p2);
+                _pairSliding[key] = (p1 == lowId) ? val : -val;
               }
             }),
             t: t,
@@ -3318,6 +3330,21 @@ class _SetupScreenState extends State<SetupScreen> {
       return p;
     }).toList();
 
+    // ── pairSliding canónico: usar _pairSliding (mantenido en tiempo real) ────
+    // _pairSliding se actualiza en cada llamada a onEdit de _HandicapMatrix
+    // y en _applyDefaultSliding. Contiene exactamente UN valor por par,
+    // con clave '$lowId|$highId' (IDs ordenados lexicográficamente).
+    // Filtrar solo pares donde ambos jugadores están en la ronda.
+    final roundPlayerIds = allPlayersForRound.map((p) => p.id).toSet();
+    final pairSlidingMap = Map<String, double>.fromEntries(
+      _pairSliding.entries.where((e) {
+        final parts = e.key.split('|');
+        return parts.length == 2 &&
+            roundPlayerIds.contains(parts[0]) &&
+            roundPlayerIds.contains(parts[1]);
+      }),
+    );
+
     final round = Round(
       id: _uuid.v4(),
       name: _nameCtrl.text.trim().isEmpty ? 'Ronda Golf' : _nameCtrl.text.trim(),
@@ -3338,6 +3365,7 @@ class _SetupScreenState extends State<SetupScreen> {
       totalHoles: _totalHoles,
       ownerUid: creatorUid,
       scoringMode: startLive ? scoringMode : 'open',
+      pairSliding: pairSlidingMap,
     );
 
     if (startLive) {

@@ -1543,6 +1543,18 @@ class Round {
   final DateTime createdAt;
   final int currentHole;
   final bool isFinished;
+
+  // ── pairSliding: fuente canónica de acuerdos bilaterales ─────────────────────
+  // Clave: '$lowId|$highId'  (IDs ordenados lexicográficamente, separados por '|')
+  // Valor: cuántos strokes recibe el jugador con ID menor (lowId) del jugador con
+  //        ID mayor (highId).
+  //   +5 → lowId recibe 5 de highId   (highId da 5 a lowId)
+  //   -5 → lowId da 5 a highId         (highId recibe 5 de lowId)
+  //
+  // Para consultar recv(A, B): usar BetEngine.canonicalSlidingBetween(round, A, B).
+  // Este campo reemplaza progresivamente a manualHandicaps (que queda como
+  // compatibilidad legacy). El engine prioriza pairSliding cuando existe.
+  final Map<String, double> pairSliding;
   /// Vuelta de inicio: determina qué mitad lleva el stroke extra (diff impar).
   final StartingNine startingNine;
   /// Total de hoyos de la ronda: 9 o 18 (por defecto 18).
@@ -1571,7 +1583,8 @@ class Round {
     this.ownerUid,
     this.liveCode,
     this.scoringMode = 'open',
-  });
+    Map<String, double>? pairSliding,
+  }) : pairSliding = pairSliding ?? const {};
 
   HoleScore getScore(String playerId, int hole) =>
       scores[playerId]?[hole] ?? HoleScore(playerId: playerId, hole: hole);
@@ -1613,6 +1626,7 @@ class Round {
     String? ownerUid,
     String? liveCode,
     String? scoringMode,
+    Map<String, double>? pairSliding,
   }) => Round(
     id: id, name: name, course: course,
     players: players ?? this.players,
@@ -1630,5 +1644,6 @@ class Round {
     ownerUid: ownerUid ?? this.ownerUid,
     liveCode: liveCode ?? this.liveCode,
     scoringMode: scoringMode ?? this.scoringMode,
+    pairSliding: pairSliding ?? this.pairSliding,
   );
 }

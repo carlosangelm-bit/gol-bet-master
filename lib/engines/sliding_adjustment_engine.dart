@@ -147,20 +147,18 @@ class SlidingAdjustmentEngine {
 
       // ── Baseline de sliding: el manualHandicap REAL que se usó en la ronda ──
       //
-      // FUENTE DE VERDAD: round.roundPlayers[myPlayer].manualHandicaps[opponent]
-      // Este valor es idéntico para cualquier usuario que abra la ronda porque
-      // está grabado en Firestore junto con la ronda misma.
+      // FUENTE DE VERDAD: pairSliding canónico de la ronda (nuevo formato).
+      // Si no existe, fallback a manualHandicaps legacy (rondas antiguas).
+      // Nunca usar playerLinks como baseline (depende de quién abre la ronda).
       //
-      // NO usar playerLinks[opponent].defaultSlidingAdjustment como baseline:
-      // ese valor depende de QUIÉN abre el diálogo y puede diferir si la ronda
-      // fue creada por otro usuario (ej. Carlos crea la ronda con sus ajustes,
-      // Alan la abre con los suyos → ajustes incorrectos).
-      //
-      // Fallback al PlayerLink si la ronda no tiene manualHandicap guardado
-      // (rondas antiguas o rondas sin sliding configurado).
-      final roundSliding = myRoundPlayer?.manualHandicaps[player.id];
+      // Prioridad:
+      //   1. round.pairSliding canónico → BetEngine.canonicalSlidingBetween
+      //   2. manualHandicaps legacy     → myRoundPlayer.manualHandicaps[opponent]
+      //   3. playerLinks fallback       → solo si ninguno de los dos existe
       final link         = playerLinks[player.id];
-      final currentAdj   = roundSliding ?? link?.defaultSlidingAdjustment ?? 0.0;
+      final canonicalAdj = BetEngine.canonicalSlidingBetween(round, myPlayer.id, player.id);
+      final legacyAdj    = myRoundPlayer?.manualHandicaps[player.id];
+      final currentAdj   = canonicalAdj ?? legacyAdj ?? link?.defaultSlidingAdjustment ?? 0.0;
 
       final int delta;
       if (duel.isTie) {
@@ -178,9 +176,12 @@ class SlidingAdjustmentEngine {
       final opponentRoundPlayer = round.roundPlayers
           .where((rp) => rp.playerId == player.id)
           .firstOrNull;
-      // La perspectiva del oponente es el simétrico del mío (convención bilateral)
-      final opponentCurrentAdj = opponentRoundPlayer?.manualHandicaps[myPlayer.id]
-          ?? (roundSliding != null ? -roundSliding : null);
+      // La perspectiva del oponente es el simétrico del mío (convención bilateral).
+      // Prioridad: pairSliding canónico (invertido) → legacy manualHandicaps → inferido.
+      final opponentCanonicalAdj = canonicalAdj != null ? -canonicalAdj : null;
+      final opponentLegacyAdj    = opponentRoundPlayer?.manualHandicaps[myPlayer.id];
+      final opponentCurrentAdj   = opponentCanonicalAdj ?? opponentLegacyAdj
+          ?? (legacyAdj != null ? -legacyAdj : null);
 
       suggestions.add(SlidingAdjustmentSuggestion(
         playerId:                   myPlayer.id,

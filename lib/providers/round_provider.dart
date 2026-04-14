@@ -43,6 +43,8 @@ Map<String, dynamic> roundToJson(Round r) {
   'events': r.events.map((pid, hmap) => MapEntry(pid, hmap.map((h, list) => MapEntry(h.toString(), list.map((e) => e.toJson()).toList())))),
   'oyeseRankings': r.oyeseRankings.map((h, or_) => MapEntry(h.toString(), or_.toJson())),
   'sliding': r.sliding.map((s) => s.toJson()).toList(),
+  // pairSliding: fuente canónica de acuerdos bilaterales (solo si hay valores)
+  if (r.pairSliding.isNotEmpty) 'pairSliding': r.pairSliding,
   };
 }
 
@@ -137,7 +139,86 @@ Round roundFromJson(Map<String, dynamic> j) {
         ? CourseInfo.fromJson(asMap(j['course']))   // asMap() normaliza Map<Object?,Object?>
         : CourseInfo.standard,
     scores: scores, events: events, oyeseRankings: oyeses, sliding: sliding,
+    // ── pairSliding: leer campo canónico y aplicar migración legacy ──────────
+    pairSliding: _buildPairSliding(j, roundPlayers),
   );
+}
+
+/// Construye el mapa pairSliding canónico a partir del JSON deserializado.
+///
+/// Prioridad:
+///   1. Campo 'pairSliding' en el JSON (rondas nuevas)
+///   2. Migración automática desde manualHandicaps legacy (rondas viejas)
+///
+/// Convención de clave: '\$lowId|\$highId' (IDs ordenados lexicográficamente).
+/// Valor: cuántos strokes recibe lowId de highId.
+///   +5 → lowId recibe 5  |  -5 → lowId da 5 (highId recibe 5)
+Map<String, double> _buildPairSliding(
+    Map<String, dynamic> j, List<RoundPlayer> roundPlayers) {
+  // ── Paso 1: leer campo canónico si existe ─────────────────────────────────
+  final rawPs = j['pairSliding'];
+  if (rawPs != null && rawPs is Map && (rawPs as Map).isNotEmpty) {
+    return (rawPs as Map).map(
+      (k, v) => MapEntry(k.toString(), (v as num?)?.toDouble() ?? 0.0),
+    );
+  }
+
+  // ── Paso 2: migración desde manualHandicaps legacy ────────────────────────
+  // Recopilar todos los pares únicos presentes en manualHandicaps
+  final result = <String, double>{};
+  final seen = <String>{}; // claves canónicas ya procesadas
+
+  for (final rp in roundPlayers) {
+    final p1 = rp.playerId;
+    for (final entry in rp.manualHandicaps.entries) {
+      final p2 = entry.key;
+      final m1 = entry.value; // cuánto recibe p1 de p2 (según legacy)
+
+      // Clave canónica: ids ordenados lexicográficamente
+      final lowId  = p1.compareTo(p2) <= 0 ? p1 : p2;
+      final highId = p1.compareTo(p2) <= 0 ? p2 : p1;
+      final key = '\$lowId|\$highId';
+
+      if (seen.contains(key)) continue; // ya procesado desde el otro sentido
+      seen.add(key);
+
+      // Buscar el valor del sentido inverso para validar consistencia
+      final rp2 = roundPlayers.firstWhere(
+        (r) => r.playerId == p2,
+        orElse: () => RoundPlayer(playerId: p2, handicapEnRonda: 0),
+      );
+      final m2 = rp2.manualHandicaps[p1]; // cuánto recibe p2 de p1 (legacy)
+
+      double canonicalValue; // valor desde perspectiva de lowId
+      if (m1 != null && m2 != null) {
+        // Ambos lados existen: validar consistencia (m1 == -m2)
+        if ((m1 + m2).abs() > 0.01) {
+          // Inconsistencia legacy: registrar pero no migrar silenciosamente
+          // El error se lanzará cuando el engine lo consulte.
+          // Guardamos el valor de m1 como señal de conflicto y continuamos.
+          debugPrint(
+            '[pairSliding] Inconsistencia legacy en par (\$p1, \$p2): '
+            'manual[\$p1][\$p2]=\$m1 pero manual[\$p2][\$p1]=\$m2 '
+            '(se esperaba \$m1 == \${-m2}). '
+            'El engine lanzará StateError al consultar este par.',
+          );
+          // Persistir ambos en manualHandicaps (sin cambiar) — el engine lo detecta
+          continue; // no migrar este par conflictivo
+        }
+        // Consistentes: valor canónico es recv(lowId, highId)
+        canonicalValue = (p1 == lowId) ? m1 : -m1;
+      } else if (m1 != null) {
+        // Solo un lado: inferir el canónico
+        canonicalValue = (p1 == lowId) ? m1 : -m1;
+      } else {
+        continue; // null — no hay dato, saltar
+      }
+
+      result[key] = canonicalValue;
+    }
+  }
+
+  return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
