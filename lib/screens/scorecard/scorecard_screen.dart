@@ -3962,57 +3962,41 @@ class _HoleByHoleMatch extends StatelessWidget {
     final hasSkins = skinsResults != null;
 
     // Determinar base/receptor y diff CORRECTOS usando manualHandicaps
+    // Delegamos al helper centralizado del engine (prioridad: manual → HCP fallback).
     // manual[p1][p2] ya ES la diferencia de strokes:
     //   > 0 → p1 recibe esos strokes de p2  → p1 es receptor
     //   < 0 → p1 da esos strokes a p2       → p2 es receptor
-    //   null → usar diferencia de HCPs normales
+    //   = 0 → acuerdo explícito: sin ventaja entre este par (NO se usa HCP)
     final hcp1 = round.getHandicap(p1.id);
     final hcp2 = round.getHandicap(p2.id);
-    final rp1 = round.roundPlayers.firstWhere(
-      (r) => r.playerId == p1.id,
-      orElse: () => RoundPlayer(playerId: p1.id, handicapEnRonda: hcp1),
-    );
-    // Intentar leer manual desde perspectiva de p1
-    double? manual = rp1.manualHandicaps[p2.id];
-    // Si no existe, intentar desde perspectiva de p2 (el negativo es equivalente)
-    if (manual == null || manual == 0) {
-      final rp2 = round.roundPlayers.firstWhere(
-        (r) => r.playerId == p2.id,
-        orElse: () => RoundPlayer(playerId: p2.id, handicapEnRonda: hcp2),
-      );
-      final manual2 = rp2.manualHandicaps[p1.id];
-      if (manual2 != null && manual2 != 0) {
-        // manual2[p2][p1] = X → p2 recibe X de p1 → desde perspectiva p1: da X → manual = -X
-        manual = -manual2;
-      }
-    }
+
+    // Usar el mismo helper centralizado del engine para consistencia total.
+    // Prioridad: manual[p1][p2] → manual[p2][p1] invertido → HCP diff
+    final recv = BetEngine.strokesP1ReceivesFromP2(round, p1.id, p2.id);
 
     final Player basePlayer;
     final Player receiverPlayer;
     final double hcpBase;
     final double hcpReceiver;
 
-    if (manual != null && manual != 0) {
-      // manual > 0: p1 recibe de p2  → p2=base, p1=receptor, diff=manual
-      // manual < 0: p1 da a p2       → p1=base, p2=receptor, diff=|manual|
-      if (manual > 0) {
-        basePlayer     = p2;
-        receiverPlayer = p1;
-        hcpBase        = hcp2;
-        hcpReceiver    = hcp2 + manual; // diff = manual
-      } else {
-        basePlayer     = p1;
-        receiverPlayer = p2;
-        hcpBase        = hcp1;
-        hcpReceiver    = hcp1 + (-manual); // diff = |manual|
-      }
+    if (recv > 0) {
+      // p1 recibe de p2 → p2=base, p1=receptor
+      basePlayer     = p2;
+      receiverPlayer = p1;
+      hcpBase        = hcp2;
+      hcpReceiver    = hcp2 + recv;
+    } else if (recv < 0) {
+      // p1 da a p2 → p1=base, p2=receptor
+      basePlayer     = p1;
+      receiverPlayer = p2;
+      hcpBase        = hcp1;
+      hcpReceiver    = hcp1 + (-recv);
     } else {
-      // Sin manual: usar diferencia de HCPs normales
-      final p1IsBase = hcp1 <= hcp2;
-      basePlayer     = p1IsBase ? p1 : p2;
-      receiverPlayer = p1IsBase ? p2 : p1;
-      hcpBase        = p1IsBase ? hcp1 : hcp2;
-      hcpReceiver    = p1IsBase ? hcp2 : hcp1;
+      // Sin ventaja entre este par
+      basePlayer     = p1;
+      receiverPlayer = p2;
+      hcpBase        = hcp1;
+      hcpReceiver    = hcp2;
     }
 
     final allHoles = round.course.holes;

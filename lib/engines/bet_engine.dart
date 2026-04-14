@@ -8,59 +8,56 @@ import 'game_engine.dart';
 
 class BetEngine {
 
-  // ── Helper: handicaps efectivos para un par 1v1, respetando manualHandicaps ──
-  // Si hay un manualHandicap entre p1 y p2, los HCPs se ajustan para que
-  // strokesReceivedVs y strokesReceived produzcan el resultado correcto.
+  // ── Helper: strokes que recibe p1 de p2 (acuerdo bilateral) ─────────────────
   //
-  // Devuelve (hcp1efectivo, hcp2efectivo) donde la diferencia refleja el sliding.
+  // REGLAS DE PRIORIDAD:
+  //   1. Manual[p1][p2]  → p1 recibe ese valor (+ = recibe, - = da).
+  //                        CRÍTICO: si el valor es 0 (acuerdo explícito "0 ventaja"),
+  //                        se respeta y NO se cae al HCP.
+  //   2. Manual[p2][p1]  → invertido. Igual: si es 0, también se respeta.
+  //   3. Ambos null      → diferencia de HCP (p1.hcp - p2.hcp).
+  //                        Solo cuando no existe NINGÚN acuerdo guardado entre el par.
   //
-  // Convención manualHandicaps[pA][pB]:
-  //   > 0 → pA recibe esos strokes de pB (ventaja para pA)
-  //   < 0 → pA da esos strokes a pB  (desventaja para pA)
-  //
-  // IMPORTANTE: el manual ya ES la diferencia de strokes entre el par.
-  // No se suma al HCP — se usa como diferencia directa.
-  // Si manual[p1][p2] = +8 → p1 recibe 8 de p2 → hcp1Eff = hcp2 + 8 (para que diff = 8)
-  // Si manual[p1][p2] = -8 → p1 da 8 a p2    → hcp2Eff = hcp1 + 8 (para que diff = 8)
-  //
-  // ROBUSTEZ: se consultan AMBAS perspectivas del par. Si solo está guardada
-  // la ventaja desde la perspectiva de p2 (p2.manualHandicaps[p1] = -X),
-  // equivale a manual[p1][p2] = +X (p1 recibe X de p2).
+  // Devuelve cuántos strokes recibe p1 de p2:
+  //   > 0 → p1 recibe esa cantidad
+  //   = 0 → acuerdo par a par: sin ventaja
+  //   < 0 → p2 recibe |valor| (p1 da strokes)
+  static double _strokesP1ReceivesFromP2(Round round, String p1Id, String p2Id) {
+    final rp1 = round.roundPlayers.firstWhere(
+        (r) => r.playerId == p1Id,
+        orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: round.getHandicap(p1Id)));
+    final m1 = rp1.manualHandicaps[p2Id];
+    if (m1 != null) return m1; // manual directo — 0 es un acuerdo válido, se respeta
+
+    final rp2 = round.roundPlayers.firstWhere(
+        (r) => r.playerId == p2Id,
+        orElse: () => RoundPlayer(playerId: p2Id, handicapEnRonda: round.getHandicap(p2Id)));
+    final m2 = rp2.manualHandicaps[p1Id];
+    if (m2 != null) return -m2; // inverso: p2 tiene el acuerdo desde su perspectiva (0 también se respeta)
+
+    // Fallback HCP: SOLO si no existe ningún manual entre este par en ninguna dirección.
+    return round.getHandicap(p1Id) - round.getHandicap(p2Id);
+  }
+
+  // ── Helper legacy: devuelve (hcp1Eff, hcp2Eff) para strokesReceivedVs ────────
+  // Convierte _strokesP1ReceivesFromP2 al formato de par de HCPs que espera
+  // GameEngine.strokesReceivedVs (hcpHigher, hcpLower).
   static (double, double) _effectiveHcps(Round round, String p1Id, String p2Id, bool useHandicap) {
     if (!useHandicap) return (0.0, 0.0);
     final hcp1 = round.getHandicap(p1Id);
     final hcp2 = round.getHandicap(p2Id);
-
-    // Intentar leer la ventaja desde la perspectiva de p1
-    final rp1 = round.roundPlayers.firstWhere(
-        (r) => r.playerId == p1Id,
-        orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: hcp1));
-    double? manual = rp1.manualHandicaps[p2Id];
-
-    // Si no existe desde p1, intentar desde p2 (el negativo equivale al mismo acuerdo)
-    if (manual == null || manual == 0) {
-      final rp2 = round.roundPlayers.firstWhere(
-          (r) => r.playerId == p2Id,
-          orElse: () => RoundPlayer(playerId: p2Id, handicapEnRonda: hcp2));
-      final manual2 = rp2.manualHandicaps[p1Id];
-      if (manual2 != null && manual2 != 0) {
-        // manual2[p2][p1] = X → p2 recibe X de p1 → desde perspectiva p1: p1 da X → manual = -X
-        manual = -manual2;
-      }
-    }
-
-    if (manual == null || manual == 0) return (hcp1, hcp2);
-
-    // manual > 0: p1 recibe → p1 es receptor, diff = manual
-    //   hcp1Eff = hcp2 + manual  (garantiza hcp1Eff - hcp2 = manual)
-    // manual < 0: p1 da → p2 es receptor, diff = |manual|
-    //   hcp2Eff = hcp1 + |manual|  (garantiza hcp2Eff - hcp1 = |manual|)
-    if (manual > 0) {
-      return (hcp2 + manual, hcp2); // p1 recibe: hcp1Eff > hcp2
-    } else {
-      return (hcp1, hcp1 + (-manual)); // p2 recibe: hcp2Eff > hcp1
-    }
+    final recv = _strokesP1ReceivesFromP2(round, p1Id, p2Id);
+    if (recv == 0) return (hcp1, hcp2);
+    // Fabricar HCPs efectivos tal que hcp1Eff - hcp2Eff = recv (si recv > 0)
+    if (recv > 0) return (hcp2 + recv, hcp2); // p1 recibe
+    return (hcp1, hcp1 + (-recv));             // p2 recibe
   }
+
+  /// Método público: cuántos strokes recibe p1 de p2.
+  /// Prioridad: manual[p1][p2] → manual[p2][p1] invertido → HCP diff.
+  /// Positivo = p1 recibe, negativo = p1 da (p2 recibe).
+  static double strokesP1ReceivesFromP2(Round round, String p1Id, String p2Id) =>
+      _strokesP1ReceivesFromP2(round, p1Id, p2Id);
 
   /// Genera todos los LedgerEntries para una BetGroup completa
   static List<LedgerEntry> computeGroup(Round round, BetGroup group) {
@@ -524,32 +521,34 @@ class BetEngine {
   }
 
   // ── MEDAL ─────────────────────────────────────────────────────────────────
-  // onePot  : un solo ganador cobra a todos.
-  // allVsAll: cada par tiene su propio resultado independiente.
+  // Regla: menor net total gana.
+  // Net = suma hoyo a hoyo de (gross − strokes_recibidos_en_ese_hoyo).
+  // Strokes recibidos: PRIORIDAD MANUAL > HCP diff.
+  //   Si hay manual entre A y B → esos son los strokes del par (ignora HCP).
+  //   Si no hay manual → diferencia de HCP como fallback.
   //
-  // Net score = suma hoyo a hoyo de (gross_hoyo − strokes_recibidos_en_ese_hoyo)
-  // Los strokes por hoyo se distribuyen con strokesReceivedVs según el SI,
-  // respetando la vuelta de inicio (startingNine) del round.
-  // Así, si se juegan 9 hoyos, solo se contabilizan los strokes de esos 9 hoyos
-  // (no los 18 totales), lo que produce el net correcto.
+  // allVsAll : cada par es independiente; ambos computan net vs el otro.
+  // onePot   : se necesita una escala común → se elige el "ancla" del grupo
+  //            (el que más da / menos recibe según los manuales del grupo),
+  //            y cada jugador calcula su net respecto al ancla.
   static List<LedgerEntry> _medal(Round round, List<String> pids, BetModuleInstance mod) {
-    final entries = <LedgerEntry>[];
-    final cfg = mod.medal;
+    final entries = <LedgerEntry>[];  
+    final cfg     = mod.medal;
     final allHoles = round.course.holes;
 
-    // Net de A relativo a B, sumando hoyo a hoyo los strokes distribuidos por SI.
-    // Solo cuenta hoyos donde A tiene score registrado.
-    // gross_hoyo(A) − strokes_que_A_recibe_en_ese_hoyo_vs_B
-    int netInPair(String pA, String pB) {
+    // Net de pA respecto a pB: gross(pA) - strokes_que_pA_recibe_de_pB por hoyo.
+    // useHandicap=false → net = gross bruto.
+    int netVs(String pA, String pB) {
       if (!mod.useHandicap) return GameEngine.grossTotal(round, pA);
-      final (hcpA, hcpB) = _effectiveHcps(round, pA, pB, true);
+      final recv = _strokesP1ReceivesFromP2(round, pA, pB); // cuánto recibe pA de pB
       int net = 0;
       for (final ch in allHoles) {
         final score = round.getScore(pA, ch.hole);
         if (!score.hasScore) continue;
-        final strokes = hcpA > hcpB
+        final strokes = recv > 0
             ? GameEngine.strokesReceivedVs(
-                hcpHigher: hcpA, hcpLower: hcpB,
+                hcpHigher: round.getHandicap(pA) + recv, // fabricar diff = recv
+                hcpLower:  round.getHandicap(pA),
                 ch: ch, allHoles: allHoles,
                 startingNine: round.startingNine)
             : 0;
@@ -558,14 +557,13 @@ class BetEngine {
       return net;
     }
 
-    if (mod.isAllVsAll && pids.length > 2) {
-      // allVsAll: cada par (A, B) es completamente independiente.
-      // net_A = sum_hoyos(gross_A - strokes_A_vs_B)
-      // net_B = sum_hoyos(gross_B - strokes_B_vs_A)
+    // ── allVsAll ──────────────────────────────────────────────────────────────
+    // Cada par se resuelve de forma bilateral e independiente.
+    if (mod.isAllVsAll) {
       for (int i = 0; i < pids.length; i++) {
         for (int j = i + 1; j < pids.length; j++) {
-          final netI = netInPair(pids[i], pids[j]);
-          final netJ = netInPair(pids[j], pids[i]);
+          final netI = netVs(pids[i], pids[j]);
+          final netJ = netVs(pids[j], pids[i]);
           if (netI < netJ) {
             entries.add(LedgerEntry(fromPlayerId: pids[j], toPlayerId: pids[i], amount: cfg.value, betType: BetModuleType.medal, reason: 'Medal'));
           } else if (netJ < netI) {
@@ -576,30 +574,54 @@ class BetEngine {
       return entries;
     }
 
-    // onePot (1v1 o grupo con un solo ganador):
-    // Para 1v1: net_A vs B, net_B vs A (bilateral, hoyo a hoyo)
-    // Para 3+: cada jugador calcula su net vs la base (menor HCP),
-    //          todos los nets quedan en la misma escala.
+    // ── onePot (1v1 o N jugadores, un solo ganador) ───────────────────────────
+    // Sin handicap: net = gross.
+    if (!mod.useHandicap) {
+      final nets = { for (final p in pids) p: GameEngine.grossTotal(round, p) };
+      final sorted = pids.toList()..sort((a, b) => nets[a]!.compareTo(nets[b]!));
+      if (nets[sorted[0]] == nets[sorted[1]]) return entries; // empate
+      final winner = sorted.first;
+      for (final pid in sorted.skip(1)) {
+        entries.add(LedgerEntry(fromPlayerId: pid, toPlayerId: winner, amount: cfg.value, betType: BetModuleType.medal, reason: 'Medal'));
+      }
+      return entries;
+    }
+
+    // Con handicap / manuals:
+    // 1v1: bilateral (A vs B, B vs A) → nets comparables.
+    // N>2: elegir ancla = el jugador que más da al grupo (menor ventaja recibida).
+    //      Net de cada jugador = netVs(jugador, ancla).
     final nets = <String, int>{};
     if (pids.length == 2) {
-      nets[pids[0]] = netInPair(pids[0], pids[1]);
-      nets[pids[1]] = netInPair(pids[1], pids[0]);
+      nets[pids[0]] = netVs(pids[0], pids[1]);
+      nets[pids[1]] = netVs(pids[1], pids[0]);
     } else {
-      if (!mod.useHandicap) {
-        for (final pid in pids) {
-          nets[pid] = GameEngine.grossTotal(round, pid);
+      // Ancla = jugador que, en la suma de acuerdos bilaterales del grupo,
+      // da más y recibe menos. Si hay empate de ventaja, usar HCP más bajo.
+      String ancla = pids.first;
+      double maxNet = double.negativeInfinity;
+      for (final pid in pids) {
+        double net = 0;
+        for (final other in pids) {
+          if (other == pid) continue;
+          net += _strokesP1ReceivesFromP2(round, pid, other); // positivo = recibe, negativo = da
         }
-      } else {
-        final base = pids.reduce((a, b) =>
-            round.getHandicap(a) <= round.getHandicap(b) ? a : b);
-        for (final pid in pids) {
-          nets[pid] = netInPair(pid, base);
+        // Queremos el que tiene net MÁS NEGATIVO (da más, recibe menos)
+        // Guardamos el inverso (−net) para comparar con maxNet
+        final score = -net;
+        if (score > maxNet || (score == maxNet && round.getHandicap(pid) < round.getHandicap(ancla))) {
+          maxNet = score;
+          ancla = pid;
         }
       }
+      for (final pid in pids) {
+        nets[pid] = netVs(pid, ancla);
+      }
     }
+
     final sorted = pids.toList()..sort((a, b) => (nets[a] ?? 999).compareTo(nets[b] ?? 999));
+    if ((nets[sorted[0]] ?? 999) == (nets[sorted[1]] ?? 999)) return entries; // empate
     final winner = sorted.first;
-    if ((nets[sorted[0]] ?? 999) == (nets[sorted[1]] ?? 999)) return entries;
     for (final pid in sorted.skip(1)) {
       entries.add(LedgerEntry(fromPlayerId: pid, toPlayerId: winner, amount: cfg.value, betType: BetModuleType.medal, reason: 'Medal'));
     }
