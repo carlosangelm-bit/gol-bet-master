@@ -22,15 +22,35 @@ class BetEngine {
   // No se suma al HCP — se usa como diferencia directa.
   // Si manual[p1][p2] = +8 → p1 recibe 8 de p2 → hcp1Eff = hcp2 + 8 (para que diff = 8)
   // Si manual[p1][p2] = -8 → p1 da 8 a p2    → hcp2Eff = hcp1 + 8 (para que diff = 8)
+  //
+  // ROBUSTEZ: se consultan AMBAS perspectivas del par. Si solo está guardada
+  // la ventaja desde la perspectiva de p2 (p2.manualHandicaps[p1] = -X),
+  // equivale a manual[p1][p2] = +X (p1 recibe X de p2).
   static (double, double) _effectiveHcps(Round round, String p1Id, String p2Id, bool useHandicap) {
     if (!useHandicap) return (0.0, 0.0);
     final hcp1 = round.getHandicap(p1Id);
     final hcp2 = round.getHandicap(p2Id);
+
+    // Intentar leer la ventaja desde la perspectiva de p1
     final rp1 = round.roundPlayers.firstWhere(
         (r) => r.playerId == p1Id,
         orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: hcp1));
-    final manual = rp1.manualHandicaps[p2Id];
+    double? manual = rp1.manualHandicaps[p2Id];
+
+    // Si no existe desde p1, intentar desde p2 (el negativo equivale al mismo acuerdo)
+    if (manual == null || manual == 0) {
+      final rp2 = round.roundPlayers.firstWhere(
+          (r) => r.playerId == p2Id,
+          orElse: () => RoundPlayer(playerId: p2Id, handicapEnRonda: hcp2));
+      final manual2 = rp2.manualHandicaps[p1Id];
+      if (manual2 != null && manual2 != 0) {
+        // manual2[p2][p1] = X → p2 recibe X de p1 → desde perspectiva p1: p1 da X → manual = -X
+        manual = -manual2;
+      }
+    }
+
     if (manual == null || manual == 0) return (hcp1, hcp2);
+
     // manual > 0: p1 recibe → p1 es receptor, diff = manual
     //   hcp1Eff = hcp2 + manual  (garantiza hcp1Eff - hcp2 = manual)
     // manual < 0: p1 da → p2 es receptor, diff = |manual|
@@ -542,11 +562,8 @@ class BetEngine {
       // allVsAll: cada par (A, B) es completamente independiente.
       // net_A = sum_hoyos(gross_A - strokes_A_vs_B)
       // net_B = sum_hoyos(gross_B - strokes_B_vs_A)
-      // Solo evaluar pares donde AMBOS jugadores tienen scores registrados.
       for (int i = 0; i < pids.length; i++) {
         for (int j = i + 1; j < pids.length; j++) {
-          if (GameEngine.grossTotal(round, pids[i]) == 0) continue;
-          if (GameEngine.grossTotal(round, pids[j]) == 0) continue;
           final netI = netInPair(pids[i], pids[j]);
           final netJ = netInPair(pids[j], pids[i]);
           if (netI < netJ) {
@@ -563,37 +580,27 @@ class BetEngine {
     // Para 1v1: net_A vs B, net_B vs A (bilateral, hoyo a hoyo)
     // Para 3+: cada jugador calcula su net vs la base (menor HCP),
     //          todos los nets quedan en la misma escala.
-    // Solo participan jugadores que tienen al menos un hoyo jugado (grossTotal > 0).
     final nets = <String, int>{};
     if (pids.length == 2) {
-      // 1v1: ambos deben tener scores; si alguno no tiene, no hay resultado
-      final g0 = GameEngine.grossTotal(round, pids[0]);
-      final g1 = GameEngine.grossTotal(round, pids[1]);
-      if (g0 == 0 || g1 == 0) return entries;
       nets[pids[0]] = netInPair(pids[0], pids[1]);
       nets[pids[1]] = netInPair(pids[1], pids[0]);
     } else {
       if (!mod.useHandicap) {
         for (final pid in pids) {
-          final g = GameEngine.grossTotal(round, pid);
-          if (g > 0) nets[pid] = g; // excluir jugadores sin scores
+          nets[pid] = GameEngine.grossTotal(round, pid);
         }
       } else {
-        // Usar solo jugadores con scores registrados para elegir la base
-        final activePids = pids.where((pid) => GameEngine.grossTotal(round, pid) > 0).toList();
-        if (activePids.length < 2) return entries;
-        final base = activePids.reduce((a, b) =>
+        final base = pids.reduce((a, b) =>
             round.getHandicap(a) <= round.getHandicap(b) ? a : b);
-        for (final pid in activePids) {
+        for (final pid in pids) {
           nets[pid] = netInPair(pid, base);
         }
       }
     }
-    if (nets.length < 2) return entries;
-    final validPids = nets.keys.toList()..sort((a, b) => (nets[a] ?? 999).compareTo(nets[b] ?? 999));
-    final winner = validPids.first;
-    if ((nets[validPids[0]] ?? 999) == (nets[validPids[1]] ?? 999)) return entries;
-    for (final pid in validPids.skip(1)) {
+    final sorted = pids.toList()..sort((a, b) => (nets[a] ?? 999).compareTo(nets[b] ?? 999));
+    final winner = sorted.first;
+    if ((nets[sorted[0]] ?? 999) == (nets[sorted[1]] ?? 999)) return entries;
+    for (final pid in sorted.skip(1)) {
       entries.add(LedgerEntry(fromPlayerId: pid, toPlayerId: winner, amount: cfg.value, betType: BetModuleType.medal, reason: 'Medal'));
     }
     return entries;
@@ -610,40 +617,36 @@ class BetEngine {
         ? [(1, 18, 'Putts Total')]
         : [(1, 9, 'Putts F9'), (10, 18, 'Putts B9')];
 
-    if (mod.isAllVsAll && pids.length > 2) {
+    if (mod.isAllVsAll) {
+      // allVsAll: cada par (A, B) es completamente independiente.
+      // El que menos putts totales tenga en el segmento, gana el duelo directo.
+      // No se filtra por 0 putts: 0 puede ser un dato válido (ej. chip-in).
       for (final seg in segs) {
         final (from, to, label) = seg;
         for (int i = 0; i < pids.length; i++) {
           for (int j = i + 1; j < pids.length; j++) {
             final t1 = GameEngine.totalPutts(round, pids[i], from: from, to: to);
             final t2 = GameEngine.totalPutts(round, pids[j], from: from, to: to);
-            if (t1 == 0 || t2 == 0) continue;
             if (t1 < t2) {
               entries.add(LedgerEntry(fromPlayerId: pids[j], toPlayerId: pids[i], amount: cfg.value, betType: BetModuleType.putts, reason: label));
             } else if (t2 < t1) {
               entries.add(LedgerEntry(fromPlayerId: pids[i], toPlayerId: pids[j], amount: cfg.value, betType: BetModuleType.putts, reason: label));
             }
+            // empate → no se añade entrada
           }
         }
       }
       return entries;
     }
 
-    // onePot: winner cobra a todos
-    // Solo participan jugadores con putts > 0 (tienen putts registrados).
-    // Si un jugador no registró putts (= 0), se excluye del comparador
-    // pero no se descarta el segmento completo.
+    // onePot: el jugador con menos putts totales en el segmento cobra a todos.
+    // El que menos haga gana; empate → sin resultado.
     for (final seg in segs) {
       final (from, to, label) = seg;
-      final totals = <String, int>{};
-      for (final pid in pids) {
-        totals[pid] = GameEngine.totalPutts(round, pid, from: from, to: to);
-      }
-      // Filtrar solo jugadores con putts registrados (> 0)
-      final validPids = pids.where((pid) => (totals[pid] ?? 0) > 0).toList();
-      if (validPids.length < 2) continue; // no hay suficientes para comparar
-      final sorted = validPids..sort((a, b) => (totals[a] ?? 99).compareTo(totals[b] ?? 99));
-      if ((totals[sorted[0]] ?? 99) == (totals[sorted[1]] ?? 99)) continue;
+      if (pids.length < 2) continue;
+      final totals = { for (final pid in pids) pid: GameEngine.totalPutts(round, pid, from: from, to: to) };
+      final sorted = pids.toList()..sort((a, b) => totals[a]!.compareTo(totals[b]!));
+      if (totals[sorted[0]] == totals[sorted[1]]) continue; // empate
       final winner = sorted.first;
       for (final pid in sorted.skip(1)) {
         entries.add(LedgerEntry(fromPlayerId: pid, toPlayerId: winner, amount: cfg.value, betType: BetModuleType.putts, reason: label));

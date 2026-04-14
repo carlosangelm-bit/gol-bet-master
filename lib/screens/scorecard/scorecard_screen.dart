@@ -3972,7 +3972,20 @@ class _HoleByHoleMatch extends StatelessWidget {
       (r) => r.playerId == p1.id,
       orElse: () => RoundPlayer(playerId: p1.id, handicapEnRonda: hcp1),
     );
-    final manual = rp1.manualHandicaps[p2.id];
+    // Intentar leer manual desde perspectiva de p1
+    double? manual = rp1.manualHandicaps[p2.id];
+    // Si no existe, intentar desde perspectiva de p2 (el negativo es equivalente)
+    if (manual == null || manual == 0) {
+      final rp2 = round.roundPlayers.firstWhere(
+        (r) => r.playerId == p2.id,
+        orElse: () => RoundPlayer(playerId: p2.id, handicapEnRonda: hcp2),
+      );
+      final manual2 = rp2.manualHandicaps[p1.id];
+      if (manual2 != null && manual2 != 0) {
+        // manual2[p2][p1] = X → p2 recibe X de p1 → desde perspectiva p1: da X → manual = -X
+        manual = -manual2;
+      }
+    }
 
     final Player basePlayer;
     final Player receiverPlayer;
