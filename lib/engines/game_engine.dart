@@ -88,6 +88,34 @@ class GameEngine {
     }
   }
 
+  // ── Strokes recibidos en un hoyo cuando la ventaja se aplica SOLO sobre
+  //    los hoyos jugados (no dividida entre F9 y B9). ───────────────────────
+  //
+  // Usar para manualHandicaps (sliding): si se acordaron 9 strokes y se juega
+  // solo B9, los 9 strokes se reparten entre los 9 hoyos jugados, no entre 18.
+  // Los primeros [diff] hoyos por SI reciben 1 stroke; el resto, 0.
+  // Si diff ≥ nHoles, todos los hoyos reciben 1 stroke (puede recibir 2 si
+  // diff ≥ 2*nHoles, pero eso sería un caso extremo).
+  //
+  // [playedHoles]: lista de hoyos CON score del jugador receptor, ordenada por SI.
+  static int strokesReceivedInPlayedHoles({
+    required int diff,
+    required CourseHole ch,
+    required List<CourseHole> playedHoles,
+  }) {
+    if (diff <= 0) return 0;
+    // Ordenar los hoyos jugados por SI (menor SI = más difícil = primer stroke)
+    final sorted = [...playedHoles]..sort((a, b) => a.strokeIndex.compareTo(b.strokeIndex));
+    final n = sorted.length;
+    if (n == 0) return 0;
+    // Strokes completos: 1 por cada "vuelta completa" de los hoyos jugados
+    final fullRounds = diff ~/ n;   // cuántas veces se recorre completa la lista
+    final remainder  = diff % n;    // hoyos que reciben un stroke extra
+    final rank = sorted.indexWhere((h) => h.hole == ch.hole) + 1; // 1-based
+    if (rank <= 0) return 0; // hoyo no encontrado
+    return fullRounds + (rank <= remainder ? 1 : 0);
+  }
+
   // ── contexto de un hoyo para un jugador ──────────────────────────────────
   static HoleContext? contextForHole(
     Round round, String playerId, int holeNum, bool useHandicap,
