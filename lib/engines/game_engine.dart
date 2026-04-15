@@ -331,13 +331,24 @@ class GameEngine {
 
     final allCh = round.course.holes;
 
-    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final receiverPlayedF9mp = allCh.where((ch) {
-      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
-    final receiverPlayedB9mp = allCh.where((ch) {
-      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
+    // Hoyos jugados por el receptor en F9 y B9 por separado.
+    // CORRECCIÓN para campos de 9 hoyos con numeración "invertida":
+    //   Campo 1-9 con back-start → todos los hoyos son la vuelta de inicio (B9).
+    //   Campo 10-18 con front-start → todos son la vuelta de inicio (F9).
+    final List<CourseHole> receiverPlayedF9mp;
+    final List<CourseHole> receiverPlayedB9mp;
+    final _courseHasOnlyF9nums = allCh.isNotEmpty && allCh.every((h) => h.hole <= 9);
+    final _courseHasOnlyB9nums = allCh.isNotEmpty && allCh.every((h) => h.hole >  9);
+    if (_courseHasOnlyF9nums && round.startingNine == StartingNine.back) {
+      receiverPlayedF9mp = [];
+      receiverPlayedB9mp = allCh.where((ch) => round.getScore(receiverId, ch.hole).hasScore).toList();
+    } else if (_courseHasOnlyB9nums && round.startingNine == StartingNine.front) {
+      receiverPlayedF9mp = allCh.where((ch) => round.getScore(receiverId, ch.hole).hasScore).toList();
+      receiverPlayedB9mp = [];
+    } else {
+      receiverPlayedF9mp = allCh.where((ch) => ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore).toList();
+      receiverPlayedB9mp = allCh.where((ch) => ch.hole >  9 && round.getScore(receiverId, ch.hole).hasScore).toList();
+    }
 
     // Orden lógico de hoyos del curso (igual que en _nassauPair):
     // - Si startingNine=back: primero 10-18, luego 1-9 (solo los que existan en el curso).
@@ -371,7 +382,7 @@ class GameEngine {
           ? strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9mp : receiverPlayedB9mp,
+              playedHolesInSameNine: receiverPlayedF9mp.any((h) => h.hole == ch.hole) ? receiverPlayedF9mp : receiverPlayedB9mp,
               startingNine:        round.startingNine,
             )
           : 0;

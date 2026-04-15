@@ -177,6 +177,49 @@ class BetEngine {
   //      c. Si ambos existen y son inconsistentes → StateError.
   //   3. Fallback HCP                   → p1.hcp - p2.hcp.
   //
+  // ══════════════════════════════════════════════════════════════════════════
+  // HELPER: clasificación correcta de hoyos para campos de 9 hoyos
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Clasifica los hoyos jugados de [playerId] en F9 y B9 teniendo en cuenta
+  /// el caso especial de campos de 9 hoyos con numeración "incorrecta":
+  ///
+  /// • Campo 1-9 con startingNine=back → todos los hoyos son la vuelta de inicio
+  ///   (B9), pero tienen números ≤9. Se reclasifican como B9 para que
+  ///   strokesReceivedFromOfficial18Sliding aplique ceil (no floor).
+  ///
+  /// • Campo 10-18 con startingNine=front → análogamente se reclasifican como F9.
+  ///
+  /// Retorna (playedF9, playedB9) correctamente clasificados.
+  static (List<CourseHole>, List<CourseHole>) _splitHolesForPlayer(
+    Round round,
+    String playerId,
+    List<CourseHole> allHoles,
+  ) {
+    final courseHasOnlyF9nums = allHoles.isNotEmpty && allHoles.every((h) => h.hole <= 9);
+    final courseHasOnlyB9nums = allHoles.isNotEmpty && allHoles.every((h) => h.hole >  9);
+
+    if (courseHasOnlyF9nums && round.startingNine == StartingNine.back) {
+      // Campo 1-9 jugado como back-nine: todos los hoyos son la vuelta de inicio (B9)
+      return (
+        <CourseHole>[],
+        allHoles.where((ch) => round.getScore(playerId, ch.hole).hasScore).toList(),
+      );
+    } else if (courseHasOnlyB9nums && round.startingNine == StartingNine.front) {
+      // Campo 10-18 jugado como front-nine: todos son la vuelta de inicio (F9)
+      return (
+        allHoles.where((ch) => round.getScore(playerId, ch.hole).hasScore).toList(),
+        <CourseHole>[],
+      );
+    } else {
+      // Campo de 18 hoyos o campo de 9 hoyos con numeración "correcta"
+      return (
+        allHoles.where((ch) => ch.hole <= 9 && round.getScore(playerId, ch.hole).hasScore).toList(),
+        allHoles.where((ch) => ch.hole >  9 && round.getScore(playerId, ch.hole).hasScore).toList(),
+      );
+    }
+  }
+
   // Devuelve cuántos strokes recibe p1 de p2:
   //   > 0 → p1 recibe esa cantidad
   //   = 0 → acuerdo par a par: sin ventaja
@@ -356,12 +399,8 @@ class BetEngine {
     final allHoles    = round.course.holes;
 
     // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final receiverPlayedF9skins = allHoles.where((ch) {
-      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
-    final receiverPlayedB9skins = allHoles.where((ch) {
-      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
+    final (receiverPlayedF9skins, receiverPlayedB9skins) =
+        _splitHolesForPlayer(round, receiverId, allHoles);
 
     // Iterar en orden real de la ronda para un carry correcto.
     // Usar hoyos reales del curso (igual que _nassauPair) para evitar null en
@@ -390,7 +429,7 @@ class BetEngine {
           ? GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9skins : receiverPlayedB9skins,
+              playedHolesInSameNine: receiverPlayedF9skins.any((h) => h.hole == ch.hole) ? receiverPlayedF9skins : receiverPlayedB9skins,
               startingNine:        round.startingNine,
             )
           : 0;
@@ -453,12 +492,8 @@ class BetEngine {
     final holeMap = { for (final ch in allHoles) ch.hole: ch };
 
     // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final receiverPlayedF9 = allHoles.where((ch) {
-      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
-    final receiverPlayedB9 = allHoles.where((ch) {
-      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
+    final (receiverPlayedF9, receiverPlayedB9) =
+        _splitHolesForPlayer(round, receiverId, allHoles);
 
     // Orden lógico de hoyos: usa los hoyos reales del curso, no un rango fijo.
     // Así funciona correctamente tanto para rondas de 9 hoyos (B9 o F9) como de 18.
@@ -488,7 +523,7 @@ class BetEngine {
           ? GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9 : receiverPlayedB9,
+              playedHolesInSameNine: receiverPlayedF9.any((h) => h.hole == ch.hole) ? receiverPlayedF9 : receiverPlayedB9,
               startingNine:        round.startingNine,
             )
           : 0;
@@ -547,12 +582,8 @@ class BetEngine {
     final allHoles    = round.course.holes;
 
     // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final receiverPlayedF9press = allHoles.where((ch) {
-      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
-    final receiverPlayedB9press = allHoles.where((ch) {
-      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
+    final (receiverPlayedF9press, receiverPlayedB9press) =
+        _splitHolesForPlayer(round, receiverId, allHoles);
 
     // ── Determinar rango de hoyos según startingNine ─────────────────────────
     final bool isBackStart = round.startingNine == StartingNine.back;
@@ -572,7 +603,7 @@ class BetEngine {
           ? GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9press : receiverPlayedB9press,
+              playedHolesInSameNine: receiverPlayedF9press.any((h) => h.hole == ch.hole) ? receiverPlayedF9press : receiverPlayedB9press,
               startingNine:        round.startingNine,
             )
           : 0;
@@ -760,13 +791,12 @@ class BetEngine {
         return net;
       }
       final diff18 = recv.round();
-      // Hoyos jugados por pA en F9 y B9 por separado
-      final playedF9 = allHoles.where((ch) => ch.hole <= 9 && round.getScore(pA, ch.hole).hasScore).toList();
-      final playedB9 = allHoles.where((ch) => ch.hole > 9  && round.getScore(pA, ch.hole).hasScore).toList();
+      // Clasificación de hoyos con corrección para campos de 9 hoyos
+      final (playedF9, playedB9) = _splitHolesForPlayer(round, pA, allHoles);
       final allPlayed = [...playedF9, ...playedB9];
       for (final ch in allPlayed) {
         final score = round.getScore(pA, ch.hole);
-        final nineHoles = ch.hole <= 9 ? playedF9 : playedB9;
+        final nineHoles = playedF9.contains(ch) ? playedF9 : playedB9;
         final strokes = GameEngine.strokesReceivedFromOfficial18Sliding(
           diff18: diff18,
           ch: ch,
@@ -1518,12 +1548,8 @@ class BetEngine {
     final recvAbs  = recv.abs().round();
 
     // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final receiverPlayedF9match = allHoles.where((ch) {
-      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
-    final receiverPlayedB9match = allHoles.where((ch) {
-      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
+    final (receiverPlayedF9match, receiverPlayedB9match) =
+        _splitHolesForPlayer(round, receiverId, allHoles);
 
     final holeOrder = round.startingNine == StartingNine.back
         ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
@@ -1544,7 +1570,7 @@ class BetEngine {
           ? GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9match : receiverPlayedB9match,
+              playedHolesInSameNine: receiverPlayedF9match.any((h) => h.hole == ch.hole) ? receiverPlayedF9match : receiverPlayedB9match,
               startingNine:        round.startingNine,
             )
           : 0;
@@ -1719,12 +1745,11 @@ class BetEngine {
           final recv = _strokesP1ReceivesFromP2(round, pA, pB);
           if (recv <= 0) return grosses[pA] ?? 0;
           final diff18 = recv.round();
-          final playedF9 = allHoles.where((ch) => ch.hole <= 9 && round.getScore(pA, ch.hole).hasScore).toList();
-          final playedB9 = allHoles.where((ch) => ch.hole > 9  && round.getScore(pA, ch.hole).hasScore).toList();
+          final (playedF9, playedB9) = _splitHolesForPlayer(round, pA, allHoles);
           int net = 0;
           for (final ch in [...playedF9, ...playedB9]) {
             final score = round.getScore(pA, ch.hole);
-            final nineHoles = ch.hole <= 9 ? playedF9 : playedB9;
+            final nineHoles = playedF9.any((h) => h.hole == ch.hole) ? playedF9 : playedB9;
             final strokes = GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18: diff18, ch: ch,
               playedHolesInSameNine: nineHoles,
@@ -1741,11 +1766,10 @@ class BetEngine {
           final recv = _strokesP1ReceivesFromP2(round, pA, pB);
           if (recv <= 0) return 0;
           final diff18 = recv.round();
-          final playedF9 = allHoles.where((ch) => ch.hole <= 9 && round.getScore(pA, ch.hole).hasScore).toList();
-          final playedB9 = allHoles.where((ch) => ch.hole > 9  && round.getScore(pA, ch.hole).hasScore).toList();
+          final (playedF9, playedB9) = _splitHolesForPlayer(round, pA, allHoles);
           int total = 0;
           for (final ch in [...playedF9, ...playedB9]) {
-            final nineHoles = ch.hole <= 9 ? playedF9 : playedB9;
+            final nineHoles = playedF9.any((h) => h.hole == ch.hole) ? playedF9 : playedB9;
             total += GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18: diff18, ch: ch,
               playedHolesInSameNine: nineHoles,
@@ -1900,12 +1924,8 @@ class BetEngine {
     final recvAbs1v1  = recv1v1.abs().round();
 
     // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final receiverPlayedF9scorecard = allHoles.where((ch) {
-      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
-    final receiverPlayedB9scorecard = allHoles.where((ch) {
-      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
+    final (receiverPlayedF9scorecard, receiverPlayedB9scorecard) =
+        _splitHolesForPlayer(round, receiverId, allHoles);
 
     // Construir resultados en orden de la ronda
     final orderedResults = <SkinHoleResult>[];
@@ -1968,7 +1988,7 @@ class BetEngine {
             ? GameEngine.strokesReceivedFromOfficial18Sliding(
                 diff18:              recvAbs1v1,
                 ch:                  ch,
-                playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9scorecard : receiverPlayedB9scorecard,
+                playedHolesInSameNine: receiverPlayedF9scorecard.any((h) => h.hole == ch.hole) ? receiverPlayedF9scorecard : receiverPlayedB9scorecard,
                 startingNine:        round.startingNine,
               )
             : 0;
@@ -2015,12 +2035,8 @@ class BetEngine {
     final allHoles    = round.course.holes;
 
     // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final receiverPlayedF9live = allHoles.where((ch) {
-      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
-    final receiverPlayedB9live = allHoles.where((ch) {
-      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
+    final (receiverPlayedF9live, receiverPlayedB9live) =
+        _splitHolesForPlayer(round, receiverId, allHoles);
 
     // Respetar startingNine: primer segmento = hoyos que se juegan primero
     final bool isBack   = round.startingNine == StartingNine.back;
@@ -2045,7 +2061,7 @@ class BetEngine {
           ? GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9live : receiverPlayedB9live,
+              playedHolesInSameNine: receiverPlayedF9live.any((h) => h.hole == ch.hole) ? receiverPlayedF9live : receiverPlayedB9live,
               startingNine:        round.startingNine,
             )
           : 0;
@@ -2108,12 +2124,8 @@ class BetEngine {
     final allHoles    = round.course.holes;
 
     // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final receiverPlayedF9press2 = allHoles.where((ch) {
-      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
-    final receiverPlayedB9press2 = allHoles.where((ch) {
-      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
+    final (receiverPlayedF9press2, receiverPlayedB9press2) =
+        _splitHolesForPlayer(round, receiverId, allHoles);
 
     // Respetar startingNine: si la ronda es back, el "primer segmento" es hoyos 10-18
     final bool liveIsBack  = round.startingNine == StartingNine.back;
@@ -2137,7 +2149,7 @@ class BetEngine {
           ? GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9press2 : receiverPlayedB9press2,
+              playedHolesInSameNine: receiverPlayedF9press2.any((h) => h.hole == ch.hole) ? receiverPlayedF9press2 : receiverPlayedB9press2,
               startingNine:        round.startingNine,
             )
           : 0;
