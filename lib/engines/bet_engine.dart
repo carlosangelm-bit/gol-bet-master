@@ -355,17 +355,26 @@ class BetEngine {
     final recvAbs     = recv.abs().round();
     final allHoles    = round.course.holes;
 
-    // Pre-calcular hoyos jugados por el receptor (para distribuir strokes correctamente)
-    final receiverPlayedHoles = allHoles.where((ch) {
-      final s = round.getScore(receiverId, ch.hole);
-      return s.hasScore;
+    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
+    final receiverPlayedF9skins = allHoles.where((ch) {
+      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
+    }).toList();
+    final receiverPlayedB9skins = allHoles.where((ch) {
+      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
     }).toList();
 
-    // Iterar en orden real de la ronda para un carry correcto
-    final holeOrder = round.startingNine == StartingNine.back
-        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
-        : List.generate(18, (i) => i + 1);
+    // Iterar en orden real de la ronda para un carry correcto.
+    // Usar hoyos reales del curso (igual que _nassauPair) para evitar null en
+    // cursos de 9 hoyos.
     final holeMap = { for (final ch in allHoles) ch.hole: ch };
+    final List<int> holeOrder;
+    if (round.startingNine == StartingNine.back) {
+      final b9 = allHoles.where((c) => c.hole >= 10).map((c) => c.hole).toList()..sort();
+      final f9 = allHoles.where((c) => c.hole <= 9).map((c) => c.hole).toList()..sort();
+      holeOrder = [...b9, ...f9];
+    } else {
+      holeOrder = allHoles.map((c) => c.hole).toList()..sort();
+    }
 
     for (final h in holeOrder) {
       final ch = holeMap[h]!;
@@ -376,12 +385,13 @@ class BetEngine {
       // (el carry solo se acumula cuando el hoyo es JUGADO y resulta en empate)
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
 
-      // Distribuir strokes solo entre los hoyos jugados por el receptor
+      // Distribuir strokes por vuelta usando el sliding oficial de 18 hoyos
       final strokesHere = mod.useHandicap && recvAbs > 0
-          ? GameEngine.strokesReceivedInPlayedHoles(
-              diff:        recvAbs,
-              ch:          ch,
-              playedHoles: receiverPlayedHoles,
+          ? GameEngine.strokesReceivedFromOfficial18Sliding(
+              diff18:              recvAbs,
+              ch:                  ch,
+              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9skins : receiverPlayedB9skins,
+              startingNine:        round.startingNine,
             )
           : 0;
 
@@ -440,13 +450,15 @@ class BetEngine {
     final recvAbs     = recv.abs().round();
     final allHoles = round.course.holes;
 
-    // Pre-calcular hoyos jugados por el receptor
-    final receiverPlayedHoles = allHoles.where((ch) {
-      final s = round.getScore(receiverId, ch.hole);
-      return s.hasScore;
-    }).toList();
-
     final holeMap = { for (final ch in allHoles) ch.hole: ch };
+
+    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
+    final receiverPlayedF9 = allHoles.where((ch) {
+      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
+    }).toList();
+    final receiverPlayedB9 = allHoles.where((ch) {
+      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
+    }).toList();
 
     // Orden lógico de hoyos: usa los hoyos reales del curso, no un rango fijo.
     // Así funciona correctamente tanto para rondas de 9 hoyos (B9 o F9) como de 18.
@@ -473,10 +485,11 @@ class BetEngine {
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
 
       final strokesHere = mod.useHandicap && recvAbs > 0
-          ? GameEngine.strokesReceivedInPlayedHoles(
-              diff:        recvAbs,
-              ch:          ch,
-              playedHoles: receiverPlayedHoles,
+          ? GameEngine.strokesReceivedFromOfficial18Sliding(
+              diff18:              recvAbs,
+              ch:                  ch,
+              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9 : receiverPlayedB9,
+              startingNine:        round.startingNine,
             )
           : 0;
 
@@ -533,10 +546,12 @@ class BetEngine {
     final recvAbs     = recv.abs().round();
     final allHoles    = round.course.holes;
 
-    // Pre-calcular hoyos jugados por el receptor
-    final receiverPlayedHoles = allHoles.where((ch) {
-      final s = round.getScore(receiverId, ch.hole);
-      return s.hasScore;
+    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
+    final receiverPlayedF9press = allHoles.where((ch) {
+      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
+    }).toList();
+    final receiverPlayedB9press = allHoles.where((ch) {
+      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
     }).toList();
 
     // ── Determinar rango de hoyos según startingNine ─────────────────────────
@@ -554,8 +569,12 @@ class BetEngine {
       final sReceiver = round.getScore(receiverId, h);
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
       final strokes = mod.useHandicap && recvAbs > 0
-          ? GameEngine.strokesReceivedInPlayedHoles(
-              diff: recvAbs, ch: ch, playedHoles: receiverPlayedHoles)
+          ? GameEngine.strokesReceivedFromOfficial18Sliding(
+              diff18:              recvAbs,
+              ch:                  ch,
+              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9press : receiverPlayedB9press,
+              startingNine:        round.startingNine,
+            )
           : 0;
       final grossBase    = sBase.grossScore!;
       final netReceiver  = sReceiver.grossScore! - strokes;
@@ -721,11 +740,10 @@ class BetEngine {
     // Net de pA respecto a pB: gross(pA) - strokes_que_pA_recibe_de_pB por hoyo.
     // useHandicap=false → net = gross bruto.
     //
-    // REGLA DE DISTRIBUCIÓN:
-    // Los strokes del manual (sliding) se reparten SOLO entre los hoyos que
-    // pA realmente jugó. Si pA jugó 9 hoyos y tiene ventaja 9, recibe 1 stroke
-    // en cada hoyo. Esto es correcto para medias rondas (solo B9 o solo F9).
-    // No se usa la lógica USGA de ceil/floor por vuelta, que era para HCP de 18 hoyos.
+    // REGLA DE DISTRIBUCIÓN (pairSliding oficial de 18 hoyos):
+    // El pairSliding es el valor oficial de 18 hoyos; se divide entre F9 y B9
+    // con ceil/floor según startingNine, y dentro de cada vuelta se distribuye
+    // solo entre los hoyos efectivamente jugados.
     int netVs(String pA, String pB) {
       // Caso explícito: auto-comparación — el net es el gross bruto (sin ventajas).
       // Ocurre cuando el ancla se compara contra sí misma en onePot N>2.
@@ -733,19 +751,28 @@ class BetEngine {
       if (!mod.useHandicap) return GameEngine.grossTotal(round, pA);
       final recv = _strokesP1ReceivesFromP2(round, pA, pB); // cuánto recibe pA de pB
       int net = 0;
-      // Pre-calcular hoyos jugados por pA (necesario para strokesReceivedInPlayedHoles)
-      final playedHoles = allHoles.where((ch) {
-        final s = round.getScore(pA, ch.hole);
-        return s.hasScore;
-      }).toList();
-      for (final ch in playedHoles) {
+      if (recv <= 0) {
+        // pA da strokes (o sin ventaja): su net es su bruto
+        final playedHoles = allHoles.where((ch) => round.getScore(pA, ch.hole).hasScore).toList();
+        for (final ch in playedHoles) {
+          net += round.getScore(pA, ch.hole).grossScore!;
+        }
+        return net;
+      }
+      final diff18 = recv.round();
+      // Hoyos jugados por pA en F9 y B9 por separado
+      final playedF9 = allHoles.where((ch) => ch.hole <= 9 && round.getScore(pA, ch.hole).hasScore).toList();
+      final playedB9 = allHoles.where((ch) => ch.hole > 9  && round.getScore(pA, ch.hole).hasScore).toList();
+      final allPlayed = [...playedF9, ...playedB9];
+      for (final ch in allPlayed) {
         final score = round.getScore(pA, ch.hole);
-        final strokes = recv > 0
-            ? GameEngine.strokesReceivedInPlayedHoles(
-                diff: recv.round(),
-                ch: ch,
-                playedHoles: playedHoles)
-            : 0;
+        final nineHoles = ch.hole <= 9 ? playedF9 : playedB9;
+        final strokes = GameEngine.strokesReceivedFromOfficial18Sliding(
+          diff18: diff18,
+          ch: ch,
+          playedHolesInSameNine: nineHoles,
+          startingNine: round.startingNine,
+        );
         net += score.grossScore! - strokes;
       }
       return net;
@@ -1490,10 +1517,12 @@ class BetEngine {
     final receiverId = p1IsBase ? p2Id : p1Id;
     final recvAbs  = recv.abs().round();
 
-    // Pre-calcular hoyos jugados por el receptor para distribuir strokes correctamente
-    final receiverPlayedHoles = allHoles.where((ch) {
-      final s = round.getScore(receiverId, ch.hole);
-      return s.hasScore;
+    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
+    final receiverPlayedF9match = allHoles.where((ch) {
+      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
+    }).toList();
+    final receiverPlayedB9match = allHoles.where((ch) {
+      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
     }).toList();
 
     final holeOrder = round.startingNine == StartingNine.back
@@ -1512,8 +1541,12 @@ class BetEngine {
       if (!s1.hasScore || !s2.hasScore) continue;
 
       final strokesHere = mod.useHandicap && recvAbs > 0
-          ? GameEngine.strokesReceivedInPlayedHoles(
-              diff: recvAbs, ch: ch, playedHoles: receiverPlayedHoles)
+          ? GameEngine.strokesReceivedFromOfficial18Sliding(
+              diff18:              recvAbs,
+              ch:                  ch,
+              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9match : receiverPlayedB9match,
+              startingNine:        round.startingNine,
+            )
           : 0;
 
       final grossBase   = round.getScore(baseId,     h).grossScore!;
@@ -1680,18 +1713,23 @@ class BetEngine {
           hcps[pid]    = round.getHandicap(pid);
         }
 
-        // Mismo cálculo que _medal: usar recv directo sobre hoyos jugados.
+        // Mismo cálculo que _medal: usar sliding oficial 18 hoyos con split F9/B9.
         int netInPairDiag(String pA, String pB) {
           if (!mod.useHandicap) return grosses[pA] ?? 0;
           final recv = _strokesP1ReceivesFromP2(round, pA, pB);
-          final played = allHoles.where((ch) => round.getScore(pA, ch.hole).hasScore).toList();
+          if (recv <= 0) return grosses[pA] ?? 0;
+          final diff18 = recv.round();
+          final playedF9 = allHoles.where((ch) => ch.hole <= 9 && round.getScore(pA, ch.hole).hasScore).toList();
+          final playedB9 = allHoles.where((ch) => ch.hole > 9  && round.getScore(pA, ch.hole).hasScore).toList();
           int net = 0;
-          for (final ch in played) {
+          for (final ch in [...playedF9, ...playedB9]) {
             final score = round.getScore(pA, ch.hole);
-            final strokes = recv > 0
-                ? GameEngine.strokesReceivedInPlayedHoles(
-                    diff: recv.round(), ch: ch, playedHoles: played)
-                : 0;
+            final nineHoles = ch.hole <= 9 ? playedF9 : playedB9;
+            final strokes = GameEngine.strokesReceivedFromOfficial18Sliding(
+              diff18: diff18, ch: ch,
+              playedHolesInSameNine: nineHoles,
+              startingNine: round.startingNine,
+            );
             net += score.grossScore! - strokes;
           }
           return net;
@@ -1702,11 +1740,17 @@ class BetEngine {
           if (!mod.useHandicap) return 0;
           final recv = _strokesP1ReceivesFromP2(round, pA, pB);
           if (recv <= 0) return 0;
-          final played = allHoles.where((ch) => round.getScore(pA, ch.hole).hasScore).toList();
+          final diff18 = recv.round();
+          final playedF9 = allHoles.where((ch) => ch.hole <= 9 && round.getScore(pA, ch.hole).hasScore).toList();
+          final playedB9 = allHoles.where((ch) => ch.hole > 9  && round.getScore(pA, ch.hole).hasScore).toList();
           int total = 0;
-          for (final ch in played) {
-            total += GameEngine.strokesReceivedInPlayedHoles(
-                diff: recv.round(), ch: ch, playedHoles: played);
+          for (final ch in [...playedF9, ...playedB9]) {
+            final nineHoles = ch.hole <= 9 ? playedF9 : playedB9;
+            total += GameEngine.strokesReceivedFromOfficial18Sliding(
+              diff18: diff18, ch: ch,
+              playedHolesInSameNine: nineHoles,
+              startingNine: round.startingNine,
+            );
           }
           return total;
         }
@@ -1836,12 +1880,16 @@ class BetEngine {
     final isGroup = pids.length > 2;
 
     // Iterar en el ORDEN de la ronda (respetando startingNine).
-    final holeOrder = round.startingNine == StartingNine.back
-        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
-        : List.generate(18, (i) => i + 1);
-
-    // Mapa para acceder rápido a CourseHole por número
+    // Usar hoyos reales del curso para evitar null en cursos de 9 hoyos.
     final holeMap = { for (final ch in allHoles) ch.hole: ch };
+    final List<int> holeOrder;
+    if (round.startingNine == StartingNine.back) {
+      final b9 = allHoles.where((c) => c.hole >= 10).map((c) => c.hole).toList()..sort();
+      final f9 = allHoles.where((c) => c.hole <= 9).map((c) => c.hole).toList()..sort();
+      holeOrder = [...b9, ...f9];
+    } else {
+      holeOrder = allHoles.map((c) => c.hole).toList()..sort();
+    }
 
     // 1v1: determinar base/receptor usando _strokesP1ReceivesFromP2
     // (respeta manuales; si no hay manual, usa diff HCP como fallback)
@@ -1851,9 +1899,12 @@ class BetEngine {
     final receiverId  = p1Receives ? p1Id : p2Id;
     final recvAbs1v1  = recv1v1.abs().round();
 
-    // Pre-calcular hoyos jugados por el receptor (para strokesReceivedInPlayedHoles)
-    final receiverPlayedHoles1v1 = allHoles.where((ch) {
-      return round.getScore(receiverId, ch.hole).hasScore;
+    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
+    final receiverPlayedF9scorecard = allHoles.where((ch) {
+      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
+    }).toList();
+    final receiverPlayedB9scorecard = allHoles.where((ch) {
+      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
     }).toList();
 
     // Construir resultados en orden de la ronda
@@ -1914,10 +1965,11 @@ class BetEngine {
         final grossReceiver = round.getScore(receiverId, h).grossScore!;
 
         final strokesHere = mod.useHandicap && recvAbs1v1 > 0
-            ? GameEngine.strokesReceivedInPlayedHoles(
-                diff:        recvAbs1v1,
-                ch:          ch,
-                playedHoles: receiverPlayedHoles1v1,
+            ? GameEngine.strokesReceivedFromOfficial18Sliding(
+                diff18:              recvAbs1v1,
+                ch:                  ch,
+                playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9scorecard : receiverPlayedB9scorecard,
+                startingNine:        round.startingNine,
               )
             : 0;
         final netReceiver = grossReceiver - strokesHere;
@@ -1960,10 +2012,15 @@ class BetEngine {
     final baseId      = p1IsBase ? p1Id : p2Id;
     final receiverId  = p1IsBase ? p2Id : p1Id;
     final recvAbs     = recv.abs().round();
-    final receiverPlayedHoles = round.course.holes.where((ch) {
-      return round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
     final allHoles    = round.course.holes;
+
+    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
+    final receiverPlayedF9live = allHoles.where((ch) {
+      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
+    }).toList();
+    final receiverPlayedB9live = allHoles.where((ch) {
+      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
+    }).toList();
 
     // Respetar startingNine: primer segmento = hoyos que se juegan primero
     final bool isBack   = round.startingNine == StartingNine.back;
@@ -1984,11 +2041,12 @@ class BetEngine {
       final sReceiver = round.getScore(receiverId, h);
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
 
-      final strokesHere = mod.useHandicap
-          ? GameEngine.strokesReceivedInPlayedHoles(
-              diff:        recvAbs,
-              ch:          ch,
-              playedHoles: receiverPlayedHoles,
+      final strokesHere = mod.useHandicap && recvAbs > 0
+          ? GameEngine.strokesReceivedFromOfficial18Sliding(
+              diff18:              recvAbs,
+              ch:                  ch,
+              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9live : receiverPlayedB9live,
+              startingNine:        round.startingNine,
             )
           : 0;
       final grossBase   = sBase.grossScore!;
@@ -2047,10 +2105,15 @@ class BetEngine {
     final baseId      = p1IsBase ? p1Id : p2Id;
     final receiverId  = p1IsBase ? p2Id : p1Id;
     final recvAbs     = recv.abs().round();
-    final receiverPlayedHoles = round.course.holes.where((ch) {
-      return round.getScore(receiverId, ch.hole).hasScore;
-    }).toList();
     final allHoles    = round.course.holes;
+
+    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
+    final receiverPlayedF9press2 = allHoles.where((ch) {
+      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
+    }).toList();
+    final receiverPlayedB9press2 = allHoles.where((ch) {
+      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
+    }).toList();
 
     // Respetar startingNine: si la ronda es back, el "primer segmento" es hoyos 10-18
     final bool liveIsBack  = round.startingNine == StartingNine.back;
@@ -2070,9 +2133,13 @@ class BetEngine {
       final sBase     = round.getScore(baseId,     h);
       final sReceiver = round.getScore(receiverId, h);
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
-      final strokes = mod.useHandicap
-          ? GameEngine.strokesReceivedInPlayedHoles(
-              diff: recvAbs, ch: ch, playedHoles: receiverPlayedHoles)
+      final strokes = mod.useHandicap && recvAbs > 0
+          ? GameEngine.strokesReceivedFromOfficial18Sliding(
+              diff18:              recvAbs,
+              ch:                  ch,
+              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9press2 : receiverPlayedB9press2,
+              startingNine:        round.startingNine,
+            )
           : 0;
       final grossBase   = sBase.grossScore!;
       final netReceiver = sReceiver.grossScore! - strokes;

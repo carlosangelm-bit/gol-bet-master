@@ -261,15 +261,18 @@ void main() {
   });
 
   // ── TEST C ────────────────────────────────────────────────────────────────
-  // Medal allVsAll con acuerdo bilateral espejo: debe ser empate.
-  group('C: Medal allVsAll acuerdo espejo → empate', () {
-    test('A tira 45, B tira 50, A da 5 a B → empate neto', () {
-      // A da 5 a B: manual[A][B] = -5 (A da), manual[B][A] = +5 (B recibe)
-      // Net de A vs B: 45 − 0 = 45  (A no recibe nada de B)
-      // Net de B vs A: 50 − 5 = 45  (B recibe 5 de A)
-      // → empate, sin ledger entry.
+  // Medal allVsAll con acuerdo bilateral espejo:
+  // Con pairSliding oficial 18H en B9 back-start, pB recibe solo ceil(5/2)=3 strokes
+  // (no los 5 completos). pA gana porque pA net=45 < pB net=47.
+  group('C: Medal allVsAll acuerdo espejo → pA gana con sliding oficial 18H', () {
+    test('A tira 45, B tira 50, A da 5 a B → pA gana (B9 back-start share=3)', () {
+      // NUEVA LÓGICA pairSliding oficial de 18 hoyos:
+      // A da 5 (diff18=5). back-start: B9=inicio → share=ceil(5/2)=3.
+      // Net de pA vs pB: pA gross=45 (recv(pA,pB)=-5≤0, sin strokes) → pA net=45.
+      // Net de pB vs pA: pB recibe 3 strokes → pB net=50-3=47.
+      // → pA net=45 < pB net=47 → pA GANA.
       final mod = _medalMod(['pA','pB'], allVsAll: true);
-      // pA=45 (9×5), pB=50 (8×6+1×2)
+      // pA=45 (9×5), pB=50 (8×6+2)
       final roundExact = _makeRound(
         players: [{'id': 'pA', 'hcp': 15.0}, {'id': 'pB', 'hcp': 20.0}],
         groups: [_group(['pA','pB'], mod)],
@@ -290,8 +293,9 @@ void main() {
       for (final e in entries) print('  ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [${e.reason}]');
 
       final medalEntries = entries.where((e) => e.betType == BetModuleType.medal).toList();
-      expect(medalEntries.isEmpty, true,
-          reason: 'Con acuerdo espejo y scores iguales netos → empate → sin entries de medal');
+      // pA net=45 < pB net=47 → pA GANA
+      expect(medalEntries.any((e) => e.toPlayerId == 'pA'), true,
+          reason: 'pA net=45 < pB net=47 (share B9=3 con back-start) → pA cobra');
     });
   });
 
@@ -373,15 +377,20 @@ void main() {
   });
 
   // ── TEST F ────────────────────────────────────────────────────────────────
-  // matchPlayStatus en media ronda B9: strokes distribuidos sobre hoyos jugados.
-  group('F: matchPlayStatus media ronda B9 - strokes sobre hoyos jugados', () {
-    test('9 strokes se distribuyen 1 por hoyo en B9, no 5 (split USGA)', () {
-      // p2 da 9 strokes a p1. Jugando solo B9 (9 hoyos).
-      // Con strokesReceivedInPlayedHoles: p1 recibe 1 stroke en cada uno de los 9 hoyos.
-      // Con strokesReceivedVs (bug anterior): p1 solo recibía 5 strokes (ceil(9/2)).
-      // Scores: p1=5 bruto en cada hoyo, p2=4 bruto.
-      // Sin ventaja: p2 ganaría todos los hoyos (4 < 5).
-      // Con 9 strokes correctos: p1 net = 5-1 = 4 en cada hoyo → empate todos.
+  // matchPlayStatus en media ronda B9: strokes usando pairSliding oficial 18H.
+  // Con diff18=9 y back-start: B9=inicio → share=ceil(9/2)=5.
+  // Los 5 strokes se distribuyen entre los 9 hoyos de B9 por SI (5 hoyos reciben 1).
+  group('F: matchPlayStatus media ronda B9 - strokes pairSliding oficial 18H', () {
+    test('9 strokes (diff18), back-start: B9 recibe share=5 → p1 down 4', () {
+      // p2 da 9 strokes a p1 (diff18=9). Solo B9 (9 hoyos), back-start.
+      // NUEVA LÓGICA: B9=vuelta inicio → share=ceil(9/2)=5.
+      // Los 5 strokes se distribuyen en 9 hoyos por SI:
+      //   B9 SI: 2(H10),4(H11),6(H12),8(H13),10(H14),12(H15),14(H16),16(H17),18(H18)
+      //   Hoyos con rank SI ≤ 5 reciben 1 stroke: H10,H11,H12,H13,H14.
+      // Scores: p1=5 bruto, p2=4 bruto en todos.
+      // H10-H14 (5 hoyos): p1 net=4 == p2=4 → empate (0 delta).
+      // H15-H18 (4 hoyos): p1 net=5 > p2=4 → p2 gana (-1 cada uno).
+      // status = 0 - 4 = -4.
       final course = _courseB9;
       final rPlayers = [
         RoundPlayer(playerId: 'p1', handicapEnRonda: 10.0,
@@ -406,10 +415,10 @@ void main() {
       );
 
       final status = GameEngine.matchPlayStatus(round, 'p1', 'p2', true, throughHole: 18);
-      print('TEST F matchPlayStatus B9 con 9 strokes: $status');
-      // p1 net = 4 en cada hoyo (5-1), p2 bruto = 4 → todos empate → status = 0
-      expect(status, equals(0),
-          reason: 'Con 9 strokes distribuidos en 9 hoyos, p1 net=4 == p2 bruto=4 → all square');
+      print('TEST F matchPlayStatus B9 con diff18=9 back-start: $status');
+      // B9 share=5: 5 hoyos empate, 4 hoyos p2 gana → status = -4
+      expect(status, equals(-4),
+          reason: 'B9 back-start, share=5: 5 empates + 4 hoyos p2 gana → status=-4');
     });
   });
 

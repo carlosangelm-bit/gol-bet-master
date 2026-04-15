@@ -116,6 +116,77 @@ class GameEngine {
     return fullRounds + (rank <= remainder ? 1 : 0);
   }
 
+  // ── Share de strokes para una de las dos vueltas (F9/B9) ─────────────────
+  //
+  // El pairSliding es SIEMPRE un valor oficial de 18 hoyos.
+  // Al repartir entre las dos vueltas, la vuelta de inicio (startingNine)
+  // recibe ceil(diff18/2) y la vuelta secundaria recibe floor(diff18/2).
+  //
+  // [diff18]            : valor oficial de 18 hoyos (positivo).
+  // [startingNine]      : la vuelta que se juega primero en la ronda.
+  // [targetIsStartingNine]: true si la vuelta objetivo ES la de inicio.
+  //
+  // Retorna el share correcto para la vuelta objetivo.
+  static int slidingShareForNine({
+    required int diff18,
+    required StartingNine startingNine,
+    required bool targetIsStartingNine,
+  }) {
+    if (diff18 <= 0) return 0;
+    // La vuelta de inicio lleva ceil (el stroke "extra" del impar).
+    // La vuelta secundaria lleva floor.
+    return targetIsStartingNine ? (diff18 / 2).ceil() : (diff18 / 2).floor();
+  }
+
+  // ── Strokes que recibe el receptor en un hoyo usando el pairSliding oficial
+  //    de 18 hoyos, respetando la segmentación F9/B9. ─────────────────────────
+  //
+  // REGLA CENTRAL:
+  //   1. Identifica a qué vuelta pertenece [ch] (F9: hoyo≤9, B9: hoyo>9).
+  //   2. Calcula el share de esa vuelta usando [slidingShareForNine].
+  //   3. Distribuye ese share SOLO entre los hoyos jugados en esa misma vuelta.
+  //
+  // Esto es correcto para:
+  //   • Ronda completa de 18 hoyos: F9 recibe ceil, B9 recibe floor (o viceversa).
+  //   • Ronda de solo 9 hoyos: solo se usa el share de la vuelta jugada.
+  //   • Ronda parcial dentro de una vuelta: el share se distribuye entre los
+  //     hoyos efectivamente jugados de esa vuelta.
+  //
+  // [diff18]             : valor oficial de 18 hoyos (positivo).
+  // [ch]                 : hoyo objetivo (donde se consulta el stroke).
+  // [playedHolesInSameNine]: hoyos CON score del receptor en la MISMA vuelta que [ch].
+  // [startingNine]       : la vuelta que se juega primero en la ronda.
+  static int strokesReceivedFromOfficial18Sliding({
+    required int diff18,
+    required CourseHole ch,
+    required List<CourseHole> playedHolesInSameNine,
+    required StartingNine startingNine,
+  }) {
+    if (diff18 <= 0) return 0;
+    final nineHoles = playedHolesInSameNine;
+    if (nineHoles.isEmpty) return 0;
+
+    // Determinar si [ch] pertenece a la vuelta de inicio
+    final chIsF9 = ch.hole <= 9;
+    final targetIsStartingNine = startingNine == StartingNine.front
+        ? chIsF9           // front start → F9 es la vuelta de inicio
+        : !chIsF9;         // back start  → B9 (hoyo>9) es la vuelta de inicio
+
+    final share = slidingShareForNine(
+      diff18: diff18,
+      startingNine: startingNine,
+      targetIsStartingNine: targetIsStartingNine,
+    );
+    if (share <= 0) return 0;
+
+    // Distribuir el share entre los hoyos jugados en esta vuelta (por SI)
+    return strokesReceivedInPlayedHoles(
+      diff:        share,
+      ch:          ch,
+      playedHoles: nineHoles,
+    );
+  }
+
   // ── contexto de un hoyo para un jugador ──────────────────────────────────
   static HoleContext? contextForHole(
     Round round, String playerId, int holeNum, bool useHandicap,
@@ -258,9 +329,14 @@ class GameEngine {
     final String receiverId = p1IsBase ? p2Id : p1Id;
     final int    recvAbs    = recv.abs().round();
 
-    // Pre-calcular hoyos jugados por el receptor (para strokesReceivedInPlayedHoles)
-    final receiverPlayedHoles = round.course.holes.where((ch) {
-      return round.getScore(receiverId, ch.hole).hasScore;
+    final allCh = round.course.holes;
+
+    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
+    final receiverPlayedF9mp = allCh.where((ch) {
+      return ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore;
+    }).toList();
+    final receiverPlayedB9mp = allCh.where((ch) {
+      return ch.hole > 9 && round.getScore(receiverId, ch.hole).hasScore;
     }).toList();
 
     // Orden lógico de hoyos del curso (igual que en _nassauPair):
@@ -269,7 +345,6 @@ class GameEngine {
     // Esto evita "Hole X not found" en cursos de 9 hoyos y corrige el orden en B9.
     final List<CourseHole> orderedHoles;
     {
-      final allCh = round.course.holes;
       if (round.startingNine == StartingNine.back) {
         final b9 = allCh.where((c) => c.hole >= 10).toList()..sort((a, b) => a.hole.compareTo(b.hole));
         final f9 = allCh.where((c) => c.hole < 10).toList()..sort((a, b) => a.hole.compareTo(b.hole));
@@ -291,12 +366,13 @@ class GameEngine {
       final s2 = round.getScore(p2Id, h);
       if (!s1.hasScore || !s2.hasScore) continue;
 
-      // Strokes distribuidos SOLO sobre los hoyos efectivamente jugados por el receptor
+      // Strokes distribuidos usando el sliding oficial de 18 hoyos (F9/B9 separados)
       final strokesHere = useHandicap && recvAbs > 0
-          ? strokesReceivedInPlayedHoles(
-              diff:        recvAbs,
-              ch:          ch,
-              playedHoles: receiverPlayedHoles,
+          ? strokesReceivedFromOfficial18Sliding(
+              diff18:              recvAbs,
+              ch:                  ch,
+              playedHolesInSameNine: ch.hole <= 9 ? receiverPlayedF9mp : receiverPlayedB9mp,
+              startingNine:        round.startingNine,
             )
           : 0;
 

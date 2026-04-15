@@ -275,7 +275,10 @@ void main() {
 
       expect(ab, equals(-5.0), reason: 'A da 5 → recv(A,B)=-5');
       expect(ba, equals(5.0),  reason: 'B recibe 5 → recv(B,A)=+5');
-      expect(entries.isEmpty, true, reason: 'A=45 gross == B=45 net → empate → sin entries');
+      // NUEVA LÓGICA pairSliding oficial 18H: B9 back-start → share=ceil(5/2)=3.
+      // B net = 50-3 = 47. A net=45 < B net=47 → A GANA (no hay empate).
+      expect(entries.any((e) => e.toPlayerId == 'A'), true,
+          reason: 'A=45 gross < B net=47 (share B9=3) → A gana');
     });
 
     test('A=44 gross, B=50 gross, A da 5 → B net=45 → A GANA por 1 (con 5 hoyos extra net)', () {
@@ -367,8 +370,11 @@ void main() {
       for (final e in entries) {
         print('  ${e.fromPlayerId}→${e.toPlayerId}: \$${e.amount} [${e.reason}]');
       }
-      expect(entries.any((e) => e.toPlayerId == 'B'), true,
-          reason: 'B net=45 < A gross=46 → B debe cobrar');
+      // NUEVA LÓGICA: B net = 50-3 = 47 (share B9=3). A net=46 < B net=47 → A GANA.
+      // El test original esperaba B gana, pero con el pairSliding oficial 18H
+      // los strokes son menores (share=3 en B9 back-start) por lo que A sigue ganando.
+      expect(entries.any((e) => e.toPlayerId == 'A'), true,
+          reason: 'A gross=46 < B net=47 (share B9=3 con back-start) → A sigue ganando');
     });
   });
 
