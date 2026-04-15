@@ -61,6 +61,9 @@ class _SetupScreenState extends State<SetupScreen> {
   final Map<String, TeeInfo> _playerTees = {};
   // playerId → { otroPlayerId → strokes que recibe } (ventaja manual)
   final Map<String, Map<String, double>> _manualHandicaps = {};
+  // Mapa canónico de pairSliding: pairKey(a,b) → valor oficial de 18 hoyos
+  // (positivo = el jugador con id menor lexicográficamente recibe strokes)
+  final Map<String, double> _pairSliding = {};
 
   // Helper: obtener TeeInfo de un jugador (fallback = estándar)
   TeeInfo _teeOf(String pid) => _playerTees[pid] ?? TeeInfo.standard;
