@@ -477,9 +477,10 @@ void main() {
       expect(entries.every((e) => e.toPlayerId == 'A'), isTrue,
           reason: 'Todos los pagos van a A (el ganador)');
 
-      // Monto correcto: pot / (n-1) = 10 / 2 = 5 por jugador
-      expect(entries.every((e) => (e.amount - 5.0).abs() < 0.01), isTrue,
-          reason: 'pot=10, n=3 → share = 10/2 = 5 por jugador');
+      // Monto correcto: cada perdedor paga valuePerSkin = 10 al ganador
+      // (golf estándar: single_pot → cada perdedor contribuye 1 skin completo)
+      expect(entries.every((e) => (e.amount - 10.0).abs() < 0.01), isTrue,
+          reason: 'pot=10, n=3 → cada perdedor paga 10 (valuePerSkin). A recibe 10×2=20 total');
     });
 
     test('S1.2 – holeWinner selecciona por netScore individual (no bilateral)', () {
@@ -630,9 +631,10 @@ void main() {
       final h2Entries = entries.where((e) => e.hole == 2).toList();
       expect(h2Entries.length, equals(2));
       expect(h2Entries.every((e) => e.toPlayerId == 'A'), isTrue);
-      // pot H2 = 10 (carry de H1) + 10 (H2) = 20 → share = 20/2 = 10 por jugador
-      expect(h2Entries.every((e) => (e.amount - 10.0).abs() < 0.01), isTrue,
-          reason: 'pot=20 (carry+H2), n=3 → share=10');
+      // pot H2 = 10 (carry de H1) + 10 (H2) = potPerLoser=20 por perdedor
+      // (golf estándar: carry acumula → cada perdedor paga 2 × valuePerSkin)
+      expect(h2Entries.every((e) => (e.amount - 20.0).abs() < 0.01), isTrue,
+          reason: 'pot=20 (carry+H2), n=3 → cada perdedor paga 20 al ganador');
     });
 
     test('S3.2 – sin carry: H1 empatado se pierde, H2 vale solo 1 skin', () {
@@ -658,11 +660,11 @@ void main() {
       // H1 empatado (sin carry) → sin entradas H1
       expect(entries.where((e) => e.hole == 1), isEmpty);
 
-      // H2 A gana con pot=10 (sin carry)
+      // H2 A gana con pot=10 (sin carry) → cada perdedor paga valuePerSkin=10
       final h2 = entries.where((e) => e.hole == 2).toList();
       expect(h2.length, equals(2));
-      expect(h2.every((e) => (e.amount - 5.0).abs() < 0.01), isTrue,
-          reason: 'Sin carry: pot=10 → share=5');
+      expect(h2.every((e) => (e.amount - 10.0).abs() < 0.01), isTrue,
+          reason: 'Sin carry: potPerLoser=10 → cada perdedor paga 10');
     });
   });
 
@@ -696,12 +698,12 @@ void main() {
       // H1, H2 empate → sin entradas
       expect(entries.where((e) => e.hole == 1 || e.hole == 2), isEmpty);
 
-      // H3: A gana, pot=30 → B→A: 15, C→A: 15
+      // H3: A gana, 3 skins acumulados → cada perdedor paga 3×valuePerSkin = 30
       final h3 = entries.where((e) => e.hole == 3).toList();
       expect(h3.length, equals(2), reason: 'A gana H3 → 2 pagos');
       expect(h3.every((e) => e.toPlayerId == 'A'), isTrue);
-      expect(h3.every((e) => (e.amount - 15.0).abs() < 0.01), isTrue,
-          reason: 'pot=30 (3 skins × 10), n=3 → share=15');
+      expect(h3.every((e) => (e.amount - 30.0).abs() < 0.01), isTrue,
+          reason: 'potPerLoser=30 (3 skins × 10) → cada perdedor paga 30 al ganador');
     });
 
     test('S4.2 – después del carry ganado, el pot se resetea', () {
@@ -725,17 +727,17 @@ void main() {
       final entries = _skinsE(BetEngine.computeAll(round));
       print('[S4.2] H1-H2 empate, H3 A gana, H4 B gana: ${entries.map((e) => '${e.fromPlayerId}→${e.toPlayerId} H${e.hole} \$${e.amount}').toList()}');
 
-      // H3: A gana con pot=30 → share=15
+      // H3: A gana con 3 skins acumulados → cada perdedor paga 30
       final h3 = entries.where((e) => e.hole == 3).toList();
       expect(h3.length, equals(2));
-      expect(h3.every((e) => (e.amount - 15.0).abs() < 0.01), isTrue);
+      expect(h3.every((e) => (e.amount - 30.0).abs() < 0.01), isTrue);
 
-      // H4: B gana con pot=10 (reset a 1 skin) → share=5
+      // H4: B gana con pot=10 (reset a 1 skin) → cada perdedor paga 10
       final h4 = entries.where((e) => e.hole == 4).toList();
       expect(h4.length, equals(2));
       expect(h4.every((e) => e.toPlayerId == 'B'), isTrue);
-      expect(h4.every((e) => (e.amount - 5.0).abs() < 0.01), isTrue,
-          reason: 'Pot reseteado a 10 después de H3 → share=5');
+      expect(h4.every((e) => (e.amount - 10.0).abs() < 0.01), isTrue,
+          reason: 'Pot reseteado a 10 después de H3 → cada perdedor paga 10');
     });
   });
 

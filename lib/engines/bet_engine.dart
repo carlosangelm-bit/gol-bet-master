@@ -191,6 +191,13 @@ class BetEngine {
   /// • Campo 10-18 con startingNine=front → análogamente se reclasifican como F9.
   ///
   /// Retorna (playedF9, playedB9) correctamente clasificados.
+  /// Versión pública para uso en la UI (garantiza consistencia con el engine).
+  static (List<CourseHole>, List<CourseHole>) splitHolesForPlayerPublic(
+    Round round,
+    String playerId,
+    List<CourseHole> allHoles,
+  ) => _splitHolesForPlayer(round, playerId, allHoles);
+
   static (List<CourseHole>, List<CourseHole>) _splitHolesForPlayer(
     Round round,
     String playerId,
@@ -353,36 +360,53 @@ class BetEngine {
       return entries;
     }
 
-    // ── onePot GRUPAL (3+ jugadores): un ganador por hoyo toma de todos ──────
+    // ── onePot GRUPAL (3+ jugadores): un ganador por hoyo cobra de CADA rival ─
+    // Cada jugador aporta valuePerSkin por hoyo. Con carry, el pot acumulado
+    // se cobra completo a cada perdedor (no dividido entre ellos).
+    // Ej: n=3, valuePerSkin=10, sin carry → cada perdedor paga 10 al ganador.
+    // Con carry de 3 hoyos → cada perdedor paga 30 al ganador.
     final cfg = mod.skins;
-    double pot = cfg.valuePerSkin;
-    for (final ch in round.course.holes) {
-      final h = ch.hole;
+    // pot = lo que cada perdedor debe pagar por skin acumulado
+    double potPerLoser = cfg.valuePerSkin;
+
+    // Iterar en el orden correcto de la ronda (respeta startingNine)
+    final allHoles = round.course.holes;
+    final holeMap  = { for (final ch in allHoles) ch.hole: ch };
+    final List<int> holeOrder;
+    if (round.startingNine == StartingNine.back) {
+      final b9 = allHoles.where((c) => c.hole >= 10).map((c) => c.hole).toList()..sort();
+      final f9 = allHoles.where((c) => c.hole <= 9 ).map((c) => c.hole).toList()..sort();
+      holeOrder = [...b9, ...f9];
+    } else {
+      holeOrder = allHoles.map((c) => c.hole).toList()..sort();
+    }
+
+    for (final h in holeOrder) {
       // Hoyo no jugado aún: se salta sin acumular carry
       if (!pids.every((pid) => round.getScore(pid, h).hasScore)) continue;
 
       final winner = GameEngine.holeWinner(round, pids, h, mod.useHandicap);
       if (winner != null) {
-        final share = pot / (n - 1);
+        // Cada perdedor paga potPerLoser al ganador
         for (final pid in pids) {
           if (pid != winner) {
             entries.add(LedgerEntry(
               fromPlayerId: pid, toPlayerId: winner,
-              amount: share, betType: BetModuleType.skins,
+              amount: potPerLoser, betType: BetModuleType.skins,
               reason: 'Skins H$h', hole: h,
             ));
           }
         }
-        pot = cfg.valuePerSkin;
+        potPerLoser = cfg.valuePerSkin;
       } else {
-        // Empate en hoyo jugado → acumular carry
-        if (cfg.carryOver) pot += cfg.valuePerSkin;
+        // Empate en hoyo jugado → acumular carry (cada perdedor acumula 1 skin más)
+        if (cfg.carryOver) potPerLoser += cfg.valuePerSkin;
       }
     }
     return entries;
   }
 
-  // Skins 1v1: usa strokesReceivedVs (igual que skinsScorecard y la vista UI).
+  // Skins 1v1: usa strokesReceivedFromOfficial18Sliding (igual que skinsScorecard).
   // Itera en el orden real de la ronda (startingNine) para que el carry-over
   // no se acumule en hoyos pending del segmento no iniciado.
   static List<LedgerEntry> _skins1v1(Round round, String p1Id, String p2Id, BetModuleInstance mod) {

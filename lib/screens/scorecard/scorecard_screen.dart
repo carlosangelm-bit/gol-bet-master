@@ -4083,24 +4083,54 @@ class _HoleByHoleMatch extends StatelessWidget {
       // Mostrar en el orden que se jugaron para que los skins y el marcador
       // sean coherentes visualmente con la secuencia real de la partida.
       ...() {
+        // Usar los hoyos REALES del curso (no un rango fijo 1-18/10-18+1-9).
+        // Esto soporta campos de 9 hoyos numerados 1-9 jugados como B9.
         final holeMap = { for (final ch in round.course.holes) ch.hole: ch };
-        final order = round.startingNine == StartingNine.back
-            ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
-            : List.generate(18, (i) => i + 1);
+        final List<int> order;
+        if (round.startingNine == StartingNine.back) {
+          final b9 = round.course.holes.where((c) => c.hole >= 10).map((c) => c.hole).toList()..sort();
+          final f9 = round.course.holes.where((c) => c.hole <= 9).map((c) => c.hole).toList()..sort();
+          order = [...b9, ...f9];
+        } else {
+          order = round.course.holes.map((c) => c.hole).toList()..sort();
+        }
+
+        // Pre-calcular hoyos del receptor divididos en F9/B9 para la
+        // distribución de strokes oficial (igual que en _skins1v1 y skinsScorecard).
+        final (receiverF9holes, receiverB9holes) =
+            BetEngine.splitHolesForPlayerPublic(round, receiverPlayer.id, allHoles);
+
+        // Diferencia oficial de strokes (del pairSliding o diff de HCP)
+        final recvOfficial = BetEngine.strokesP1ReceivesFromP2(round, p1.id, p2.id);
+        final recvAbsOfficial = recvOfficial.abs().round();
+
         return order.map((hNum) {
-          final ch = holeMap[hNum]!;
+          final ch = holeMap[hNum];
+          if (ch == null) return const SizedBox.shrink();
           final sBase     = round.getScore(basePlayer.id,     ch.hole);
           final sReceiver = round.getScore(receiverPlayer.id, ch.hole);
           if (!sBase.hasScore && !sReceiver.hasScore) return const SizedBox.shrink();
 
-          // Strokes que recibe el rival (diferencia de HCPs en este hoyo)
-          final strokesHere = GameEngine.strokesReceivedVs(
-            hcpHigher:    hcpReceiver,
-          hcpLower:     hcpBase,
-          ch:           ch,
-          allHoles:     allHoles,
-          startingNine: round.startingNine,
-        );
+          // Strokes usando el MISMO método que el engine (skins/nassau/medal):
+          // - Con pairSliding oficial: strokesReceivedFromOfficial18Sliding
+          //   → distribución proporcional entre hoyos jugados (consistente con ledger)
+          // - Sin pairSliding (solo HCPs): strokesReceivedVs (vs campo)
+          final strokesHere = recvAbsOfficial > 0
+              ? GameEngine.strokesReceivedFromOfficial18Sliding(
+                  diff18:              recvAbsOfficial,
+                  ch:                  ch,
+                  playedHolesInSameNine: receiverF9holes.any((h) => h.hole == ch.hole)
+                      ? receiverF9holes
+                      : receiverB9holes,
+                  startingNine:        round.startingNine,
+                )
+              : GameEngine.strokesReceivedVs(
+                  hcpHigher:    hcpReceiver,
+                  hcpLower:     hcpBase,
+                  ch:           ch,
+                  allHoles:     allHoles,
+                  startingNine: round.startingNine,
+                );
 
         // Scores a mostrar
         final grossBase     = sBase.hasScore     ? sBase.grossScore!     : null;
