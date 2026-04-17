@@ -4095,10 +4095,13 @@ class _HoleByHoleMatch extends StatelessWidget {
           order = round.course.holes.map((c) => c.hole).toList()..sort();
         }
 
-        // Pre-calcular hoyos del receptor divididos en F9/B9 para la
-        // distribución de strokes oficial (igual que en _skins1v1 y skinsScorecard).
-        final (receiverF9holes, receiverB9holes) =
-            BetEngine.splitHolesForPlayerPublic(round, receiverPlayer.id, allHoles);
+        // Pre-calcular hoyos del CURSO divididos en F9/B9 (no jugados, sino todos
+        // los hoyos del curso) para distribución correcta de SI en rondas parciales.
+        // CORRECCIÓN: usar courseHolesInSameNine (no playedHolesInSameNine) para que
+        // los strokes se distribuyan sobre los 9 hoyos completos aunque la ronda
+        // esté en progreso (evita concentrar todas las ventajas en el hoyo 1).
+        final (courseF9ui, courseB9ui) =
+            BetEngine.courseHolesF9B9Public(allHoles, round.startingNine);
 
         // Diferencia oficial de strokes (del pairSliding o diff de HCP)
         final recvOfficial = BetEngine.strokesP1ReceivesFromP2(round, p1.id, p2.id);
@@ -4113,15 +4116,15 @@ class _HoleByHoleMatch extends StatelessWidget {
 
           // Strokes usando el MISMO método que el engine (skins/nassau/medal):
           // - Con pairSliding oficial: strokesReceivedFromOfficial18Sliding
-          //   → distribución proporcional entre hoyos jugados (consistente con ledger)
+          //   → distribución proporcional sobre TODOS los hoyos del curso (consistente con ledger)
           // - Sin pairSliding (solo HCPs): strokesReceivedVs (vs campo)
+          final courseHolesForUI = courseF9ui.any((h) => h.hole == ch.hole)
+              ? courseF9ui : courseB9ui;
           final strokesHere = recvAbsOfficial > 0
               ? GameEngine.strokesReceivedFromOfficial18Sliding(
                   diff18:              recvAbsOfficial,
                   ch:                  ch,
-                  playedHolesInSameNine: receiverF9holes.any((h) => h.hole == ch.hole)
-                      ? receiverF9holes
-                      : receiverB9holes,
+                  courseHolesInSameNine: courseHolesForUI,
                   startingNine:        round.startingNine,
                 )
               : GameEngine.strokesReceivedVs(

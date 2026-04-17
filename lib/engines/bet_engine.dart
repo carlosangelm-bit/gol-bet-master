@@ -191,13 +191,48 @@ class BetEngine {
   /// • Campo 10-18 con startingNine=front → análogamente se reclasifican como F9.
   ///
   /// Retorna (playedF9, playedB9) correctamente clasificados.
-  /// Versión pública para uso en la UI (garantiza consistencia con el engine).
+  /// Devuelve los hoyos del CURSO (no filtrados por si fueron jugados) divididos
+  /// en (F9, B9), respetando campos de 9 hoyos con numeración invertida.
+  /// Usar para strokesReceivedFromOfficial18Sliding: la distribución de SI
+  /// debe hacerse sobre los 9 hoyos completos del curso.
+  static (List<CourseHole>, List<CourseHole>) _courseHolesF9B9(
+    List<CourseHole> allHoles,
+    StartingNine startingNine,
+  ) {
+    final courseHasOnlyF9nums = allHoles.isNotEmpty && allHoles.every((h) => h.hole <= 9);
+    final courseHasOnlyB9nums = allHoles.isNotEmpty && allHoles.every((h) => h.hole >  9);
+
+    if (courseHasOnlyF9nums && startingNine == StartingNine.back) {
+      // Campo 1-9 jugado como back-nine: todos son "B9" (vuelta de inicio)
+      return (<CourseHole>[], [...allHoles]);
+    } else if (courseHasOnlyB9nums && startingNine == StartingNine.front) {
+      // Campo 10-18 jugado como front-nine: todos son "F9" (vuelta de inicio)
+      return ([...allHoles], <CourseHole>[]);
+    } else {
+      return (
+        allHoles.where((ch) => ch.hole <= 9).toList(),
+        allHoles.where((ch) => ch.hole >  9).toList(),
+      );
+    }
+  }
+
+  /// Versión pública para uso en la UI.
+  /// Devuelve los hoyos del CURSO divididos en (F9, B9).
   static (List<CourseHole>, List<CourseHole>) splitHolesForPlayerPublic(
     Round round,
     String playerId,
     List<CourseHole> allHoles,
-  ) => _splitHolesForPlayer(round, playerId, allHoles);
+  ) => _courseHolesF9B9(allHoles, round.startingNine);
 
+  /// Versión pública directa: devuelve los hoyos del CURSO divididos en (F9, B9)
+  /// sin necesitar round ni playerId. Usar para la UI cuando solo se tienen
+  /// los hoyos del curso y el startingNine.
+  static (List<CourseHole>, List<CourseHole>) courseHolesF9B9Public(
+    List<CourseHole> allHoles,
+    StartingNine startingNine,
+  ) => _courseHolesF9B9(allHoles, startingNine);
+
+  // LEGACY — mantener para no romper otros usos que necesiten hoyos jugados.
   static (List<CourseHole>, List<CourseHole>) _splitHolesForPlayer(
     Round round,
     String playerId,
@@ -207,19 +242,16 @@ class BetEngine {
     final courseHasOnlyB9nums = allHoles.isNotEmpty && allHoles.every((h) => h.hole >  9);
 
     if (courseHasOnlyF9nums && round.startingNine == StartingNine.back) {
-      // Campo 1-9 jugado como back-nine: todos los hoyos son la vuelta de inicio (B9)
       return (
         <CourseHole>[],
         allHoles.where((ch) => round.getScore(playerId, ch.hole).hasScore).toList(),
       );
     } else if (courseHasOnlyB9nums && round.startingNine == StartingNine.front) {
-      // Campo 10-18 jugado como front-nine: todos son la vuelta de inicio (F9)
       return (
         allHoles.where((ch) => round.getScore(playerId, ch.hole).hasScore).toList(),
         <CourseHole>[],
       );
     } else {
-      // Campo de 18 hoyos o campo de 9 hoyos con numeración "correcta"
       return (
         allHoles.where((ch) => ch.hole <= 9 && round.getScore(playerId, ch.hole).hasScore).toList(),
         allHoles.where((ch) => ch.hole >  9 && round.getScore(playerId, ch.hole).hasScore).toList(),
@@ -422,9 +454,10 @@ class BetEngine {
     final recvAbs     = recv.abs().round();
     final allHoles    = round.course.holes;
 
-    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final (receiverPlayedF9skins, receiverPlayedB9skins) =
-        _splitHolesForPlayer(round, receiverId, allHoles);
+    // Hoyos del CURSO (no jugados) en F9 y B9 — para distribución de SI correcta
+    // independientemente de cuántos hoyos se hayan jugado ya.
+    final (courseF9skins, courseB9skins) =
+        _courseHolesF9B9(allHoles, round.startingNine);
 
     // Iterar en orden real de la ronda para un carry correcto.
     // Usar hoyos reales del curso (igual que _nassauPair) para evitar null en
@@ -448,12 +481,17 @@ class BetEngine {
       // (el carry solo se acumula cuando el hoyo es JUGADO y resulta en empate)
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
 
-      // Distribuir strokes por vuelta usando el sliding oficial de 18 hoyos
+      // Distribuir strokes por vuelta usando el sliding oficial de 18 hoyos.
+      // Usar hoyos del CURSO (no solo jugados) para que el share se distribuya
+      // correctamente sobre los 9 hoyos de la vuelta, incluso en rondas parciales.
+      final courseHolesForHole = courseF9skins.any((hh) => hh.hole == ch.hole)
+          ? courseF9skins
+          : courseB9skins;
       final strokesHere = mod.useHandicap && recvAbs > 0
           ? GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: receiverPlayedF9skins.any((h) => h.hole == ch.hole) ? receiverPlayedF9skins : receiverPlayedB9skins,
+              courseHolesInSameNine: courseHolesForHole,
               startingNine:        round.startingNine,
             )
           : 0;
@@ -515,9 +553,9 @@ class BetEngine {
 
     final holeMap = { for (final ch in allHoles) ch.hole: ch };
 
-    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final (receiverPlayedF9, receiverPlayedB9) =
-        _splitHolesForPlayer(round, receiverId, allHoles);
+    // Hoyos del CURSO (no jugados) en F9 y B9 — distribución de SI correcta
+    final (courseF9nassau, courseB9nassau) =
+        _courseHolesF9B9(allHoles, round.startingNine);
 
     // Orden lógico de hoyos: usa los hoyos reales del curso, no un rango fijo.
     // Así funciona correctamente tanto para rondas de 9 hoyos (B9 o F9) como de 18.
@@ -543,11 +581,13 @@ class BetEngine {
       final sReceiver = round.getScore(receiverId, h);
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
 
+      final courseHolesForHoleN = courseF9nassau.any((hh) => hh.hole == ch.hole)
+          ? courseF9nassau : courseB9nassau;
       final strokesHere = mod.useHandicap && recvAbs > 0
           ? GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: receiverPlayedF9.any((h) => h.hole == ch.hole) ? receiverPlayedF9 : receiverPlayedB9,
+              courseHolesInSameNine: courseHolesForHoleN,
               startingNine:        round.startingNine,
             )
           : 0;
@@ -605,9 +645,9 @@ class BetEngine {
     final recvAbs     = recv.abs().round();
     final allHoles    = round.course.holes;
 
-    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final (receiverPlayedF9press, receiverPlayedB9press) =
-        _splitHolesForPlayer(round, receiverId, allHoles);
+    // Hoyos del CURSO (no jugados) en F9 y B9 — distribución de SI correcta
+    final (courseF9press, courseB9press) =
+        _courseHolesF9B9(allHoles, round.startingNine);
 
     // ── Determinar rango de hoyos según startingNine ─────────────────────────
     final bool isBackStart = round.startingNine == StartingNine.back;
@@ -623,11 +663,13 @@ class BetEngine {
       final sBase     = round.getScore(baseId, h);
       final sReceiver = round.getScore(receiverId, h);
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
+      final courseHolesForPress = courseF9press.any((hh) => hh.hole == ch.hole)
+          ? courseF9press : courseB9press;
       final strokes = mod.useHandicap && recvAbs > 0
           ? GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: receiverPlayedF9press.any((h) => h.hole == ch.hole) ? receiverPlayedF9press : receiverPlayedB9press,
+              courseHolesInSameNine: courseHolesForPress,
               startingNine:        round.startingNine,
             )
           : 0;
@@ -815,16 +857,18 @@ class BetEngine {
         return net;
       }
       final diff18 = recv.round();
-      // Clasificación de hoyos con corrección para campos de 9 hoyos
-      final (playedF9, playedB9) = _splitHolesForPlayer(round, pA, allHoles);
-      final allPlayed = [...playedF9, ...playedB9];
-      for (final ch in allPlayed) {
+      // Hoyos del CURSO en F9/B9 (no filtrados por jugados) — distribución SI correcta
+      final (courseF9medal, courseB9medal) = _courseHolesF9B9(allHoles, round.startingNine);
+      // Iterar solo hoyos efectivamente jugados, pero con SI del curso completo
+      final playedHoles = allHoles.where((ch) => round.getScore(pA, ch.hole).hasScore).toList();
+      for (final ch in playedHoles) {
         final score = round.getScore(pA, ch.hole);
-        final nineHoles = playedF9.contains(ch) ? playedF9 : playedB9;
+        final courseHolesForMedal = courseF9medal.any((hh) => hh.hole == ch.hole)
+            ? courseF9medal : courseB9medal;
         final strokes = GameEngine.strokesReceivedFromOfficial18Sliding(
           diff18: diff18,
           ch: ch,
-          playedHolesInSameNine: nineHoles,
+          courseHolesInSameNine: courseHolesForMedal,
           startingNine: round.startingNine,
         );
         net += score.grossScore! - strokes;
@@ -1571,13 +1615,14 @@ class BetEngine {
     final receiverId = p1IsBase ? p2Id : p1Id;
     final recvAbs  = recv.abs().round();
 
-    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final (receiverPlayedF9match, receiverPlayedB9match) =
-        _splitHolesForPlayer(round, receiverId, allHoles);
+    // Hoyos del CURSO en F9/B9 — distribución de SI correcta
+    final (courseF9match, courseB9match) =
+        _courseHolesF9B9(allHoles, round.startingNine);
 
     final holeOrder = round.startingNine == StartingNine.back
-        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
-        : List.generate(round.totalHoles, (i) => i + 1);
+        ? [...allHoles.where((c) => c.hole >= 10).map((c) => c.hole).toList()..sort(),
+           ...allHoles.where((c) => c.hole <= 9).map((c) => c.hole).toList()..sort()]
+        : allHoles.map((c) => c.hole).toList()..sort();
     final holeMap = { for (final ch in allHoles) ch.hole: ch };
 
     // deltas[0] no se usa; índice 1-based
@@ -1590,11 +1635,13 @@ class BetEngine {
       final s2 = round.getScore(p2Id, h);
       if (!s1.hasScore || !s2.hasScore) continue;
 
+      final courseHolesForMatch = courseF9match.any((hh) => hh.hole == ch.hole)
+          ? courseF9match : courseB9match;
       final strokesHere = mod.useHandicap && recvAbs > 0
           ? GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: receiverPlayedF9match.any((h) => h.hole == ch.hole) ? receiverPlayedF9match : receiverPlayedB9match,
+              courseHolesInSameNine: courseHolesForMatch,
               startingNine:        round.startingNine,
             )
           : 0;
@@ -1764,19 +1811,23 @@ class BetEngine {
         }
 
         // Mismo cálculo que _medal: usar sliding oficial 18 hoyos con split F9/B9.
+        // Hoyos del CURSO (no jugados) para distribución correcta de SI.
+        final (courseF9diag, courseB9diag) = _courseHolesF9B9(allHoles, round.startingNine);
+
         int netInPairDiag(String pA, String pB) {
           if (!mod.useHandicap) return grosses[pA] ?? 0;
           final recv = _strokesP1ReceivesFromP2(round, pA, pB);
           if (recv <= 0) return grosses[pA] ?? 0;
           final diff18 = recv.round();
-          final (playedF9, playedB9) = _splitHolesForPlayer(round, pA, allHoles);
+          final playedHolesA = allHoles.where((ch) => round.getScore(pA, ch.hole).hasScore).toList();
           int net = 0;
-          for (final ch in [...playedF9, ...playedB9]) {
+          for (final ch in playedHolesA) {
             final score = round.getScore(pA, ch.hole);
-            final nineHoles = playedF9.any((h) => h.hole == ch.hole) ? playedF9 : playedB9;
+            final courseHolesForDiag = courseF9diag.any((hh) => hh.hole == ch.hole)
+                ? courseF9diag : courseB9diag;
             final strokes = GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18: diff18, ch: ch,
-              playedHolesInSameNine: nineHoles,
+              courseHolesInSameNine: courseHolesForDiag,
               startingNine: round.startingNine,
             );
             net += score.grossScore! - strokes;
@@ -1790,13 +1841,14 @@ class BetEngine {
           final recv = _strokesP1ReceivesFromP2(round, pA, pB);
           if (recv <= 0) return 0;
           final diff18 = recv.round();
-          final (playedF9, playedB9) = _splitHolesForPlayer(round, pA, allHoles);
+          final playedHolesA = allHoles.where((ch) => round.getScore(pA, ch.hole).hasScore).toList();
           int total = 0;
-          for (final ch in [...playedF9, ...playedB9]) {
-            final nineHoles = playedF9.any((h) => h.hole == ch.hole) ? playedF9 : playedB9;
+          for (final ch in playedHolesA) {
+            final courseHolesForDiag = courseF9diag.any((hh) => hh.hole == ch.hole)
+                ? courseF9diag : courseB9diag;
             total += GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18: diff18, ch: ch,
-              playedHolesInSameNine: nineHoles,
+              courseHolesInSameNine: courseHolesForDiag,
               startingNine: round.startingNine,
             );
           }
@@ -1947,9 +1999,9 @@ class BetEngine {
     final receiverId  = p1Receives ? p1Id : p2Id;
     final recvAbs1v1  = recv1v1.abs().round();
 
-    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final (receiverPlayedF9scorecard, receiverPlayedB9scorecard) =
-        _splitHolesForPlayer(round, receiverId, allHoles);
+    // Hoyos del CURSO en F9/B9 — distribución de SI correcta para skinsScorecard
+    final (courseF9scorecard, courseB9scorecard) =
+        _courseHolesF9B9(allHoles, round.startingNine);
 
     // Construir resultados en orden de la ronda
     final orderedResults = <SkinHoleResult>[];
@@ -2008,11 +2060,13 @@ class BetEngine {
         final grossBase     = round.getScore(baseId,     h).grossScore!;
         final grossReceiver = round.getScore(receiverId, h).grossScore!;
 
+        final courseHolesForScorecard = courseF9scorecard.any((hh) => hh.hole == ch.hole)
+            ? courseF9scorecard : courseB9scorecard;
         final strokesHere = mod.useHandicap && recvAbs1v1 > 0
             ? GameEngine.strokesReceivedFromOfficial18Sliding(
                 diff18:              recvAbs1v1,
                 ch:                  ch,
-                playedHolesInSameNine: receiverPlayedF9scorecard.any((h) => h.hole == ch.hole) ? receiverPlayedF9scorecard : receiverPlayedB9scorecard,
+                courseHolesInSameNine: courseHolesForScorecard,
                 startingNine:        round.startingNine,
               )
             : 0;
@@ -2058,9 +2112,9 @@ class BetEngine {
     final recvAbs     = recv.abs().round();
     final allHoles    = round.course.holes;
 
-    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final (receiverPlayedF9live, receiverPlayedB9live) =
-        _splitHolesForPlayer(round, receiverId, allHoles);
+    // Hoyos del CURSO en F9/B9 — distribución de SI correcta para nassauLiveStatus
+    final (courseF9live, courseB9live) =
+        _courseHolesF9B9(allHoles, round.startingNine);
 
     // Respetar startingNine: primer segmento = hoyos que se juegan primero
     final bool isBack   = round.startingNine == StartingNine.back;
@@ -2081,11 +2135,13 @@ class BetEngine {
       final sReceiver = round.getScore(receiverId, h);
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
 
+      final courseHolesForLive = courseF9live.any((hh) => hh.hole == ch.hole)
+          ? courseF9live : courseB9live;
       final strokesHere = mod.useHandicap && recvAbs > 0
           ? GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: receiverPlayedF9live.any((h) => h.hole == ch.hole) ? receiverPlayedF9live : receiverPlayedB9live,
+              courseHolesInSameNine: courseHolesForLive,
               startingNine:        round.startingNine,
             )
           : 0;
@@ -2147,9 +2203,9 @@ class BetEngine {
     final recvAbs     = recv.abs().round();
     final allHoles    = round.course.holes;
 
-    // Hoyos jugados por el receptor en F9 y B9 por separado (para la nueva lógica)
-    final (receiverPlayedF9press2, receiverPlayedB9press2) =
-        _splitHolesForPlayer(round, receiverId, allHoles);
+    // Hoyos del CURSO en F9/B9 — distribución de SI correcta para nassauPressLiveStatus
+    final (courseF9press2, courseB9press2) =
+        _courseHolesF9B9(allHoles, round.startingNine);
 
     // Respetar startingNine: si la ronda es back, el "primer segmento" es hoyos 10-18
     final bool liveIsBack  = round.startingNine == StartingNine.back;
@@ -2169,11 +2225,13 @@ class BetEngine {
       final sBase     = round.getScore(baseId,     h);
       final sReceiver = round.getScore(receiverId, h);
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
+      final courseHolesForPress2 = courseF9press2.any((hh) => hh.hole == ch.hole)
+          ? courseF9press2 : courseB9press2;
       final strokes = mod.useHandicap && recvAbs > 0
           ? GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: receiverPlayedF9press2.any((h) => h.hole == ch.hole) ? receiverPlayedF9press2 : receiverPlayedB9press2,
+              courseHolesInSameNine: courseHolesForPress2,
               startingNine:        round.startingNine,
             )
           : 0;
