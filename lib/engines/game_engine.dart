@@ -170,6 +170,15 @@ class GameEngine {
     // para garantizar distribución correcta en rondas parciales.
     List<CourseHole> courseHolesInSameNine = const [],
     required StartingNine startingNine,
+    // Parámetro explícito que indica si [courseHolesInSameNine] corresponde a la vuelta
+    // de inicio (startingNine). Necesario para campos de 9 hoyos con numeración invertida:
+    //   • Campo 1-9 jugado como B9 (startingNine=back): todos los hoyos son ≤9 pero son
+    //     la vuelta de inicio → isNineHolesStartingNine=true.
+    //   • Campo 10-18 jugado como F9 (startingNine=front): todos son >9 pero son la vuelta
+    //     de inicio → isNineHolesStartingNine=true.
+    // Si null (default), se determina automáticamente a partir de ch.hole y startingNine
+    // (comportamiento estándar para campos de 18 hoyos).
+    bool? isNineHolesStartingNine,
     // Alias de compatibilidad — DEPRECATED: usar courseHolesInSameNine
     List<CourseHole>? playedHolesInSameNine,
   }) {
@@ -180,11 +189,26 @@ class GameEngine {
         : (playedHolesInSameNine ?? []);
     if (nineHoles.isEmpty) return 0;
 
-    // Determinar si [ch] pertenece a la vuelta de inicio
-    final chIsF9 = ch.hole <= 9;
-    final targetIsStartingNine = startingNine == StartingNine.front
-        ? chIsF9           // front start → F9 es la vuelta de inicio
-        : !chIsF9;         // back start  → B9 (hoyo>9) es la vuelta de inicio
+    // Determinar si [ch] pertenece a la vuelta de inicio (startingNine).
+    //
+    // Caso estándar 18 hoyos:
+    //   startingNine=front → la vuelta de inicio es F9 (hoyos 1-9), targetIsStartingNine = chIsF9.
+    //   startingNine=back  → la vuelta de inicio es B9 (hoyos 10-18), targetIsStartingNine = !chIsF9.
+    //
+    // Caso especial campo 9 hoyos numerados 1-9 jugado como B9 (o 10-18 jugado como F9):
+    //   El caller pasa isNineHolesStartingNine=true para indicar que los nineHoles
+    //   son la vuelta de inicio, independientemente del número del hoyo.
+    final bool targetIsStartingNine;
+    if (isNineHolesStartingNine != null) {
+      // El caller ya calculó esto correctamente.
+      targetIsStartingNine = isNineHolesStartingNine;
+    } else {
+      // Fallback estándar: basarse en el número del hoyo.
+      final chIsF9 = ch.hole <= 9;
+      targetIsStartingNine = startingNine == StartingNine.front
+          ? chIsF9   // front start → F9 es la vuelta de inicio
+          : !chIsF9; // back start  → B9 (hoyo>9) es la vuelta de inicio
+    }
 
     final share = slidingShareForNine(
       diff18: diff18,
@@ -400,6 +424,9 @@ class GameEngine {
               ch:                  ch,
               courseHolesInSameNine: courseHolesForMP,
               startingNine:        round.startingNine,
+              isNineHolesStartingNine: courseF9mp.any((h) => h.hole == ch.hole)
+                  ? (round.startingNine == StartingNine.front)
+                  : (round.startingNine == StartingNine.back),
             )
           : 0;
 

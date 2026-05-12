@@ -216,6 +216,31 @@ class BetEngine {
     }
   }
 
+  /// Dado un hoyo [ch] y las listas [courseF9]/[courseB9] producidas por
+  /// [_courseHolesF9B9] (o [courseHolesF9B9Public]), calcula si los
+  /// [courseHolesInSameNine] correspondientes al hoyo son la vuelta de inicio.
+  ///
+  /// Esto es necesario para campos de 9 hoyos con numeración "invertida":
+  ///   • Campo 1-9 jugado como B9 (startingNine=back): courseB9 tiene todos los
+  ///     hoyos ≤9, que SON la vuelta de inicio → devuelve true.
+  ///   • Campo 10-18 jugado como F9 (startingNine=front): courseF9 tiene todos
+  ///     los hoyos >9, que SON la vuelta de inicio → devuelve true.
+  ///   • Campo 18H estándar: comportamiento normal (F9=starting si front, B9=starting si back).
+  ///
+  /// Usar el resultado como [isNineHolesStartingNine] en
+  /// [GameEngine.strokesReceivedFromOfficial18Sliding].
+  static bool isNineStartingNine({
+    required CourseHole ch,
+    required List<CourseHole> courseF9,
+    required List<CourseHole> courseB9,
+    required StartingNine startingNine,
+  }) {
+    final isF9 = courseF9.any((h) => h.hole == ch.hole);
+    return isF9
+        ? startingNine == StartingNine.front
+        : startingNine == StartingNine.back;
+  }
+
   /// Versión pública para uso en la UI.
   /// Devuelve los hoyos del CURSO divididos en (F9, B9).
   static (List<CourseHole>, List<CourseHole>) splitHolesForPlayerPublic(
@@ -493,6 +518,7 @@ class BetEngine {
               ch:                  ch,
               courseHolesInSameNine: courseHolesForHole,
               startingNine:        round.startingNine,
+              isNineHolesStartingNine: BetEngine.isNineStartingNine(ch: ch, courseF9: courseF9skins, courseB9: courseB9skins, startingNine: round.startingNine),
             )
           : 0;
 
@@ -589,6 +615,7 @@ class BetEngine {
               ch:                  ch,
               courseHolesInSameNine: courseHolesForHoleN,
               startingNine:        round.startingNine,
+              isNineHolesStartingNine: BetEngine.isNineStartingNine(ch: ch, courseF9: courseF9nassau, courseB9: courseB9nassau, startingNine: round.startingNine),
             )
           : 0;
 
@@ -671,6 +698,7 @@ class BetEngine {
               ch:                  ch,
               courseHolesInSameNine: courseHolesForPress,
               startingNine:        round.startingNine,
+              isNineHolesStartingNine: BetEngine.isNineStartingNine(ch: ch, courseF9: courseF9press, courseB9: courseB9press, startingNine: round.startingNine),
             )
           : 0;
       final grossBase    = sBase.grossScore!;
@@ -869,7 +897,8 @@ class BetEngine {
           diff18: diff18,
           ch: ch,
           courseHolesInSameNine: courseHolesForMedal,
-          startingNine: round.startingNine,
+          startingNine:        round.startingNine,
+          isNineHolesStartingNine: BetEngine.isNineStartingNine(ch: ch, courseF9: courseF9medal, courseB9: courseB9medal, startingNine: round.startingNine),
         );
         net += score.grossScore! - strokes;
       }
@@ -1643,6 +1672,7 @@ class BetEngine {
               ch:                  ch,
               courseHolesInSameNine: courseHolesForMatch,
               startingNine:        round.startingNine,
+              isNineHolesStartingNine: BetEngine.isNineStartingNine(ch: ch, courseF9: courseF9match, courseB9: courseB9match, startingNine: round.startingNine),
             )
           : 0;
 
@@ -1828,7 +1858,8 @@ class BetEngine {
             final strokes = GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18: diff18, ch: ch,
               courseHolesInSameNine: courseHolesForDiag,
-              startingNine: round.startingNine,
+              startingNine:        round.startingNine,
+              isNineHolesStartingNine: BetEngine.isNineStartingNine(ch: ch, courseF9: courseF9diag, courseB9: courseB9diag, startingNine: round.startingNine),
             );
             net += score.grossScore! - strokes;
           }
@@ -1849,7 +1880,8 @@ class BetEngine {
             total += GameEngine.strokesReceivedFromOfficial18Sliding(
               diff18: diff18, ch: ch,
               courseHolesInSameNine: courseHolesForDiag,
-              startingNine: round.startingNine,
+              startingNine:        round.startingNine,
+              isNineHolesStartingNine: BetEngine.isNineStartingNine(ch: ch, courseF9: courseF9diag, courseB9: courseB9diag, startingNine: round.startingNine),
             );
           }
           return total;
@@ -2068,6 +2100,7 @@ class BetEngine {
                 ch:                  ch,
                 courseHolesInSameNine: courseHolesForScorecard,
                 startingNine:        round.startingNine,
+                isNineHolesStartingNine: BetEngine.isNineStartingNine(ch: ch, courseF9: courseF9scorecard, courseB9: courseB9scorecard, startingNine: round.startingNine),
               )
             : 0;
         final netReceiver = grossReceiver - strokesHere;
@@ -2143,6 +2176,7 @@ class BetEngine {
               ch:                  ch,
               courseHolesInSameNine: courseHolesForLive,
               startingNine:        round.startingNine,
+              isNineHolesStartingNine: BetEngine.isNineStartingNine(ch: ch, courseF9: courseF9live, courseB9: courseB9live, startingNine: round.startingNine),
             )
           : 0;
       final grossBase   = sBase.grossScore!;
@@ -2233,6 +2267,7 @@ class BetEngine {
               ch:                  ch,
               courseHolesInSameNine: courseHolesForPress2,
               startingNine:        round.startingNine,
+              isNineHolesStartingNine: BetEngine.isNineStartingNine(ch: ch, courseF9: courseF9press2, courseB9: courseB9press2, startingNine: round.startingNine),
             )
           : 0;
       final grossBase   = sBase.grossScore!;

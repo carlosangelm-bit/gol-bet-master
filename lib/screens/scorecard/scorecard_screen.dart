@@ -1456,34 +1456,41 @@ class _FiltersBar extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: t.card,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-        child: Column(mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('¿Cuál jugador eres tú?',
-              style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
-          const SizedBox(height: 4),
-          Text('Filtrará solo los duelos donde participas.',
-              style: TextStyle(color: t.sub, fontSize: 12)),
-          const SizedBox(height: 14),
-          ...allPlayers.map((p) => ListTile(
-            leading: GAvatar(name: p.name, colorIndex: p.colorIndex, size: 36),
-            title: Text(p.name,
-                style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
-            subtitle: Text('HCP ${p.handicapBase.toStringAsFixed(0)}',
-                style: TextStyle(color: t.sub)),
-            trailing: myPlayer?.id == p.id
-                ? Icon(Icons.check_circle, color: t.primary, size: 20)
-                : null,
-            onTap: () {
-              onPickPlayer(p.id);
-              Navigator.pop(context);
-            },
-          )),
-        ]),
-      ),
+      builder: (ctx) {
+        final bottomPad = MediaQuery.of(ctx).viewPadding.bottom;
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 20, 20, bottomPad > 0 ? bottomPad : 20),
+            child: Column(mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('¿Cuál jugador eres tú?',
+                  style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
+              const SizedBox(height: 4),
+              Text('Filtrará solo los duelos donde participas.',
+                  style: TextStyle(color: t.sub, fontSize: 12)),
+              const SizedBox(height: 14),
+              ...allPlayers.map((p) => ListTile(
+                leading: GAvatar(name: p.name, colorIndex: p.colorIndex, size: 36),
+                title: Text(p.name,
+                    style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
+                subtitle: Text('HCP ${p.handicapBase.toStringAsFixed(0)}',
+                    style: TextStyle(color: t.sub)),
+                trailing: myPlayer?.id == p.id
+                    ? Icon(Icons.check_circle, color: t.primary, size: 20)
+                    : null,
+                onTap: () {
+                  onPickPlayer(p.id);
+                  Navigator.pop(ctx);
+                },
+              )),
+            ]),
+          ),
+        );
+      },
     );
   }
 
@@ -1679,34 +1686,41 @@ class _MyMatchesToggle extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: t.card,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-        child: Column(mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('¿Cuál jugador eres tú?',
-              style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
-          const SizedBox(height: 4),
-          Text('Filtrará solo los duelos donde participas.',
-              style: TextStyle(color: t.sub, fontSize: 12)),
-          const SizedBox(height: 14),
-          ...allPlayers.map((p) => ListTile(
-            leading: GAvatar(name: p.name, colorIndex: p.colorIndex, size: 36),
-            title: Text(p.name,
-                style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
-            subtitle: Text('HCP ${p.handicapBase.toStringAsFixed(0)}',
-                style: TextStyle(color: t.sub)),
-            trailing: myPlayer?.id == p.id
-                ? Icon(Icons.check_circle, color: t.primary, size: 20)
-                : null,
-            onTap: () {
-              onPickPlayer(p.id);
-              Navigator.pop(context);
-            },
-          )),
-        ]),
-      ),
+      builder: (ctx) {
+        final bottomPad = MediaQuery.of(ctx).viewPadding.bottom;
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 20, 20, bottomPad > 0 ? bottomPad : 20),
+            child: Column(mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('¿Cuál jugador eres tú?',
+                  style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
+              const SizedBox(height: 4),
+              Text('Filtrará solo los duelos donde participas.',
+                  style: TextStyle(color: t.sub, fontSize: 12)),
+              const SizedBox(height: 14),
+              ...allPlayers.map((p) => ListTile(
+                leading: GAvatar(name: p.name, colorIndex: p.colorIndex, size: 36),
+                title: Text(p.name,
+                    style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
+                subtitle: Text('HCP ${p.handicapBase.toStringAsFixed(0)}',
+                    style: TextStyle(color: t.sub)),
+                trailing: myPlayer?.id == p.id
+                    ? Icon(Icons.check_circle, color: t.primary, size: 20)
+                    : null,
+                onTap: () {
+                  onPickPlayer(p.id);
+                  Navigator.pop(ctx);
+                },
+              )),
+            ]),
+          ),
+        );
+      },
     );
   }
 
@@ -4126,6 +4140,9 @@ class _HoleByHoleMatch extends StatelessWidget {
                   ch:                  ch,
                   courseHolesInSameNine: courseHolesForUI,
                   startingNine:        round.startingNine,
+                  isNineHolesStartingNine: courseF9ui.any((h) => h.hole == ch.hole)
+                      ? (round.startingNine == StartingNine.front)
+                      : (round.startingNine == StartingNine.back),
                 )
               : GameEngine.strokesReceivedVs(
                   hcpHigher:    hcpReceiver,
