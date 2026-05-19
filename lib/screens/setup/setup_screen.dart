@@ -1567,9 +1567,11 @@ class _SetupScreenState extends State<SetupScreen> {
   /// El orden de aparición sigue el orden del primer módulo de cada familia.
   List<Widget> _renderModules(int groupIdx, BetGroup g, GolfTheme t) {
     final modules = g.modules;
-    // Mantener orden de inserción de familias
-    final seen    = <String>{};            // betGroupId ya renderizados
-    final result  = <Widget>[];
+    // Mantener orden de inserción de familias.
+    // La clave es COMPUESTA: betGroupId + tipo, para que Nassau/Skins/Oyeses/Units
+    // con el mismo betGroupId generen cards independientes.
+    final seen   = <String>{};            // 'betGroupId|typeName' ya renderizados
+    final result = <Widget>[];
 
     for (int i = 0; i < modules.length; i++) {
       final mod = modules[i];
@@ -1578,17 +1580,22 @@ class _SetupScreenState extends State<SetupScreen> {
       if (fid == null) {
         // ── módulo individual ──────────────────────────────────────────
         result.add(_moduleTile(groupIdx, i, mod, g, t));
-      } else if (!seen.contains(fid)) {
-        // ── primera vez que vemos esta familia → card agrupada ─────────
-        seen.add(fid);
-        final family = modules
-            .asMap()
-            .entries
-            .where((e) => e.value.betGroupId == fid)
-            .toList(); // List<MapEntry<int, BetModuleInstance>>
-        result.add(_groupModuleTile(groupIdx, family, g, t));
+      } else {
+        // ── clave compuesta: mismo betGroupId Y mismo tipo ─────────────
+        final familyKey = '$fid|${mod.type.name}';
+        if (!seen.contains(familyKey)) {
+          seen.add(familyKey);
+          final family = modules
+              .asMap()
+              .entries
+              .where((e) =>
+                  e.value.betGroupId == fid &&
+                  e.value.type       == mod.type)
+              .toList(); // List<MapEntry<int, BetModuleInstance>>
+          result.add(_groupModuleTile(groupIdx, family, g, t));
+        }
+        // Si ya vimos la clave compuesta, lo saltamos (ya se renderizó la card)
       }
-      // Si ya vimos el fid, lo saltamos (ya se renderizó la card)
     }
 
     return result;
@@ -1666,9 +1673,13 @@ class _SetupScreenState extends State<SetupScreen> {
             GestureDetector(
               onTap: () {
                 setState(() {
-                  final gid  = template.betGroupId!;
+                  final gid   = template.betGroupId!;
+                  final gtype = template.type;
+                  // Eliminar solo los módulos que coincidan en betGroupId Y tipo.
+                  // Así Nassau, Skins, Units y Oyeses con el mismo betGroupId
+                  // tienen botones de borrado independientes.
                   final mods = _groups[groupIdx].modules
-                      .where((m) => m.betGroupId != gid)
+                      .where((m) => !(m.betGroupId == gid && m.type == gtype))
                       .toList();
                   _groups[groupIdx] = _groups[groupIdx].copyWith(modules: mods);
                 });
