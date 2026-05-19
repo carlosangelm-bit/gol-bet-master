@@ -144,33 +144,71 @@ class GameEngine {
   // REGLA CENTRAL:
   //   1. Identifica a qué vuelta pertenece [ch] (F9: hoyo≤9, B9: hoyo>9).
   //   2. Calcula el share de esa vuelta usando [slidingShareForNine].
-  //   3. Distribuye ese share SOLO entre los hoyos jugados en esa misma vuelta.
+  //   3. Distribuye ese share entre TODOS los hoyos del curso en esa vuelta (por SI).
+  //      La distribución se basa en el orden de SI de los 9 hoyos completos,
+  //      independientemente de cuántos se hayan jugado ya.
+  //
+  // IMPORTANTE: courseHolesInSameNine son los hoyos DEL CURSO (no solo jugados).
+  // Usar todos los hoyos de la vuelta garantiza que los strokes se distribuyen
+  // correctamente aunque la ronda esté en progreso (ej: solo H1-H3 de F9 jugados).
   //
   // Esto es correcto para:
   //   • Ronda completa de 18 hoyos: F9 recibe ceil, B9 recibe floor (o viceversa).
   //   • Ronda de solo 9 hoyos: solo se usa el share de la vuelta jugada.
-  //   • Ronda parcial dentro de una vuelta: el share se distribuye entre los
-  //     hoyos efectivamente jugados de esa vuelta.
+  //   • Ronda en progreso: los strokes se distribuyen sobre los 9 hoyos del curso,
+  //     no concentrados en los pocos hoyos ya jugados.
   //
-  // [diff18]             : valor oficial de 18 hoyos (positivo).
-  // [ch]                 : hoyo objetivo (donde se consulta el stroke).
-  // [playedHolesInSameNine]: hoyos CON score del receptor en la MISMA vuelta que [ch].
-  // [startingNine]       : la vuelta que se juega primero en la ronda.
+  // [diff18]               : valor oficial de 18 hoyos (positivo).
+  // [ch]                   : hoyo objetivo (donde se consulta el stroke).
+  // [courseHolesInSameNine]: TODOS los hoyos del CURSO en la MISMA vuelta que [ch].
+  // [startingNine]         : la vuelta que se juega primero en la ronda.
   static int strokesReceivedFromOfficial18Sliding({
     required int diff18,
     required CourseHole ch,
-    required List<CourseHole> playedHolesInSameNine,
+    // Hoyos del CURSO en la misma vuelta (F9 o B9) que [ch].
+    // Usar siempre todos los hoyos del curso, no solo los jugados,
+    // para garantizar distribución correcta en rondas parciales.
+    List<CourseHole> courseHolesInSameNine = const [],
     required StartingNine startingNine,
+    // Parámetro explícito que indica si [courseHolesInSameNine] corresponde a la vuelta
+    // de inicio (startingNine). Necesario para campos de 9 hoyos con numeración invertida:
+    //   • Campo 1-9 jugado como B9 (startingNine=back): todos los hoyos son ≤9 pero son
+    //     la vuelta de inicio → isNineHolesStartingNine=true.
+    //   • Campo 10-18 jugado como F9 (startingNine=front): todos son >9 pero son la vuelta
+    //     de inicio → isNineHolesStartingNine=true.
+    // Si null (default), se determina automáticamente a partir de ch.hole y startingNine
+    // (comportamiento estándar para campos de 18 hoyos).
+    bool? isNineHolesStartingNine,
+    // Alias de compatibilidad — DEPRECATED: usar courseHolesInSameNine
+    List<CourseHole>? playedHolesInSameNine,
   }) {
     if (diff18 <= 0) return 0;
-    final nineHoles = playedHolesInSameNine;
+    // Usar courseHolesInSameNine; si no se pasa, usar playedHolesInSameNine (legacy)
+    final nineHoles = courseHolesInSameNine.isNotEmpty
+        ? courseHolesInSameNine
+        : (playedHolesInSameNine ?? []);
     if (nineHoles.isEmpty) return 0;
 
-    // Determinar si [ch] pertenece a la vuelta de inicio
-    final chIsF9 = ch.hole <= 9;
-    final targetIsStartingNine = startingNine == StartingNine.front
-        ? chIsF9           // front start → F9 es la vuelta de inicio
-        : !chIsF9;         // back start  → B9 (hoyo>9) es la vuelta de inicio
+    // Determinar si [ch] pertenece a la vuelta de inicio (startingNine).
+    //
+    // Caso estándar 18 hoyos:
+    //   startingNine=front → la vuelta de inicio es F9 (hoyos 1-9), targetIsStartingNine = chIsF9.
+    //   startingNine=back  → la vuelta de inicio es B9 (hoyos 10-18), targetIsStartingNine = !chIsF9.
+    //
+    // Caso especial campo 9 hoyos numerados 1-9 jugado como B9 (o 10-18 jugado como F9):
+    //   El caller pasa isNineHolesStartingNine=true para indicar que los nineHoles
+    //   son la vuelta de inicio, independientemente del número del hoyo.
+    final bool targetIsStartingNine;
+    if (isNineHolesStartingNine != null) {
+      // El caller ya calculó esto correctamente.
+      targetIsStartingNine = isNineHolesStartingNine;
+    } else {
+      // Fallback estándar: basarse en el número del hoyo.
+      final chIsF9 = ch.hole <= 9;
+      targetIsStartingNine = startingNine == StartingNine.front
+          ? chIsF9   // front start → F9 es la vuelta de inicio
+          : !chIsF9; // back start  → B9 (hoyo>9) es la vuelta de inicio
+    }
 
     final share = slidingShareForNine(
       diff18: diff18,
@@ -179,7 +217,7 @@ class GameEngine {
     );
     if (share <= 0) return 0;
 
-    // Distribuir el share entre los hoyos jugados en esta vuelta (por SI)
+    // Distribuir el share entre TODOS los hoyos del curso en esta vuelta (por SI)
     return strokesReceivedInPlayedHoles(
       diff:        share,
       ch:          ch,
@@ -331,23 +369,23 @@ class GameEngine {
 
     final allCh = round.course.holes;
 
-    // Hoyos jugados por el receptor en F9 y B9 por separado.
+    // Hoyos del CURSO en F9/B9 (no filtrados por jugados) — distribución SI correcta.
     // CORRECCIÓN para campos de 9 hoyos con numeración "invertida":
     //   Campo 1-9 con back-start → todos los hoyos son la vuelta de inicio (B9).
     //   Campo 10-18 con front-start → todos son la vuelta de inicio (F9).
-    final List<CourseHole> receiverPlayedF9mp;
-    final List<CourseHole> receiverPlayedB9mp;
+    final List<CourseHole> courseF9mp;
+    final List<CourseHole> courseB9mp;
     final _courseHasOnlyF9nums = allCh.isNotEmpty && allCh.every((h) => h.hole <= 9);
     final _courseHasOnlyB9nums = allCh.isNotEmpty && allCh.every((h) => h.hole >  9);
     if (_courseHasOnlyF9nums && round.startingNine == StartingNine.back) {
-      receiverPlayedF9mp = [];
-      receiverPlayedB9mp = allCh.where((ch) => round.getScore(receiverId, ch.hole).hasScore).toList();
+      courseF9mp = [];
+      courseB9mp = [...allCh];
     } else if (_courseHasOnlyB9nums && round.startingNine == StartingNine.front) {
-      receiverPlayedF9mp = allCh.where((ch) => round.getScore(receiverId, ch.hole).hasScore).toList();
-      receiverPlayedB9mp = [];
+      courseF9mp = [...allCh];
+      courseB9mp = [];
     } else {
-      receiverPlayedF9mp = allCh.where((ch) => ch.hole <= 9 && round.getScore(receiverId, ch.hole).hasScore).toList();
-      receiverPlayedB9mp = allCh.where((ch) => ch.hole >  9 && round.getScore(receiverId, ch.hole).hasScore).toList();
+      courseF9mp = allCh.where((ch) => ch.hole <= 9).toList();
+      courseB9mp = allCh.where((ch) => ch.hole >  9).toList();
     }
 
     // Orden lógico de hoyos del curso (igual que en _nassauPair):
@@ -377,13 +415,18 @@ class GameEngine {
       final s2 = round.getScore(p2Id, h);
       if (!s1.hasScore || !s2.hasScore) continue;
 
-      // Strokes distribuidos usando el sliding oficial de 18 hoyos (F9/B9 separados)
+      // Strokes distribuidos usando el sliding oficial de 18 hoyos (F9/B9 separados).
+      // Usar hoyos del CURSO (no solo jugados) para distribución correcta en rondas parciales.
+      final courseHolesForMP = courseF9mp.any((hh) => hh.hole == ch.hole) ? courseF9mp : courseB9mp;
       final strokesHere = useHandicap && recvAbs > 0
           ? strokesReceivedFromOfficial18Sliding(
               diff18:              recvAbs,
               ch:                  ch,
-              playedHolesInSameNine: receiverPlayedF9mp.any((h) => h.hole == ch.hole) ? receiverPlayedF9mp : receiverPlayedB9mp,
+              courseHolesInSameNine: courseHolesForMP,
               startingNine:        round.startingNine,
+              isNineHolesStartingNine: courseF9mp.any((h) => h.hole == ch.hole)
+                  ? (round.startingNine == StartingNine.front)
+                  : (round.startingNine == StartingNine.back),
             )
           : 0;
 

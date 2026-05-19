@@ -1456,34 +1456,41 @@ class _FiltersBar extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: t.card,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-        child: Column(mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('¿Cuál jugador eres tú?',
-              style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
-          const SizedBox(height: 4),
-          Text('Filtrará solo los duelos donde participas.',
-              style: TextStyle(color: t.sub, fontSize: 12)),
-          const SizedBox(height: 14),
-          ...allPlayers.map((p) => ListTile(
-            leading: GAvatar(name: p.name, colorIndex: p.colorIndex, size: 36),
-            title: Text(p.name,
-                style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
-            subtitle: Text('HCP ${p.handicapBase.toStringAsFixed(0)}',
-                style: TextStyle(color: t.sub)),
-            trailing: myPlayer?.id == p.id
-                ? Icon(Icons.check_circle, color: t.primary, size: 20)
-                : null,
-            onTap: () {
-              onPickPlayer(p.id);
-              Navigator.pop(context);
-            },
-          )),
-        ]),
-      ),
+      builder: (ctx) {
+        final bottomPad = MediaQuery.of(ctx).viewPadding.bottom;
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 20, 20, bottomPad > 0 ? bottomPad : 20),
+            child: Column(mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('¿Cuál jugador eres tú?',
+                  style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
+              const SizedBox(height: 4),
+              Text('Filtrará solo los duelos donde participas.',
+                  style: TextStyle(color: t.sub, fontSize: 12)),
+              const SizedBox(height: 14),
+              ...allPlayers.map((p) => ListTile(
+                leading: GAvatar(name: p.name, colorIndex: p.colorIndex, size: 36),
+                title: Text(p.name,
+                    style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
+                subtitle: Text('HCP ${p.handicapBase.toStringAsFixed(0)}',
+                    style: TextStyle(color: t.sub)),
+                trailing: myPlayer?.id == p.id
+                    ? Icon(Icons.check_circle, color: t.primary, size: 20)
+                    : null,
+                onTap: () {
+                  onPickPlayer(p.id);
+                  Navigator.pop(ctx);
+                },
+              )),
+            ]),
+          ),
+        );
+      },
     );
   }
 
@@ -1679,34 +1686,41 @@ class _MyMatchesToggle extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: t.card,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-        child: Column(mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('¿Cuál jugador eres tú?',
-              style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
-          const SizedBox(height: 4),
-          Text('Filtrará solo los duelos donde participas.',
-              style: TextStyle(color: t.sub, fontSize: 12)),
-          const SizedBox(height: 14),
-          ...allPlayers.map((p) => ListTile(
-            leading: GAvatar(name: p.name, colorIndex: p.colorIndex, size: 36),
-            title: Text(p.name,
-                style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
-            subtitle: Text('HCP ${p.handicapBase.toStringAsFixed(0)}',
-                style: TextStyle(color: t.sub)),
-            trailing: myPlayer?.id == p.id
-                ? Icon(Icons.check_circle, color: t.primary, size: 20)
-                : null,
-            onTap: () {
-              onPickPlayer(p.id);
-              Navigator.pop(context);
-            },
-          )),
-        ]),
-      ),
+      builder: (ctx) {
+        final bottomPad = MediaQuery.of(ctx).viewPadding.bottom;
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 20, 20, bottomPad > 0 ? bottomPad : 20),
+            child: Column(mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('¿Cuál jugador eres tú?',
+                  style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
+              const SizedBox(height: 4),
+              Text('Filtrará solo los duelos donde participas.',
+                  style: TextStyle(color: t.sub, fontSize: 12)),
+              const SizedBox(height: 14),
+              ...allPlayers.map((p) => ListTile(
+                leading: GAvatar(name: p.name, colorIndex: p.colorIndex, size: 36),
+                title: Text(p.name,
+                    style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
+                subtitle: Text('HCP ${p.handicapBase.toStringAsFixed(0)}',
+                    style: TextStyle(color: t.sub)),
+                trailing: myPlayer?.id == p.id
+                    ? Icon(Icons.check_circle, color: t.primary, size: 20)
+                    : null,
+                onTap: () {
+                  onPickPlayer(p.id);
+                  Navigator.pop(ctx);
+                },
+              )),
+            ]),
+          ),
+        );
+      },
     );
   }
 
@@ -4083,24 +4097,60 @@ class _HoleByHoleMatch extends StatelessWidget {
       // Mostrar en el orden que se jugaron para que los skins y el marcador
       // sean coherentes visualmente con la secuencia real de la partida.
       ...() {
+        // Usar los hoyos REALES del curso (no un rango fijo 1-18/10-18+1-9).
+        // Esto soporta campos de 9 hoyos numerados 1-9 jugados como B9.
         final holeMap = { for (final ch in round.course.holes) ch.hole: ch };
-        final order = round.startingNine == StartingNine.back
-            ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
-            : List.generate(18, (i) => i + 1);
+        final List<int> order;
+        if (round.startingNine == StartingNine.back) {
+          final b9 = round.course.holes.where((c) => c.hole >= 10).map((c) => c.hole).toList()..sort();
+          final f9 = round.course.holes.where((c) => c.hole <= 9).map((c) => c.hole).toList()..sort();
+          order = [...b9, ...f9];
+        } else {
+          order = round.course.holes.map((c) => c.hole).toList()..sort();
+        }
+
+        // Pre-calcular hoyos del CURSO divididos en F9/B9 (no jugados, sino todos
+        // los hoyos del curso) para distribución correcta de SI en rondas parciales.
+        // CORRECCIÓN: usar courseHolesInSameNine (no playedHolesInSameNine) para que
+        // los strokes se distribuyan sobre los 9 hoyos completos aunque la ronda
+        // esté en progreso (evita concentrar todas las ventajas en el hoyo 1).
+        final (courseF9ui, courseB9ui) =
+            BetEngine.courseHolesF9B9Public(allHoles, round.startingNine);
+
+        // Diferencia oficial de strokes (del pairSliding o diff de HCP)
+        final recvOfficial = BetEngine.strokesP1ReceivesFromP2(round, p1.id, p2.id);
+        final recvAbsOfficial = recvOfficial.abs().round();
+
         return order.map((hNum) {
-          final ch = holeMap[hNum]!;
+          final ch = holeMap[hNum];
+          if (ch == null) return const SizedBox.shrink();
           final sBase     = round.getScore(basePlayer.id,     ch.hole);
           final sReceiver = round.getScore(receiverPlayer.id, ch.hole);
           if (!sBase.hasScore && !sReceiver.hasScore) return const SizedBox.shrink();
 
-          // Strokes que recibe el rival (diferencia de HCPs en este hoyo)
-          final strokesHere = GameEngine.strokesReceivedVs(
-            hcpHigher:    hcpReceiver,
-          hcpLower:     hcpBase,
-          ch:           ch,
-          allHoles:     allHoles,
-          startingNine: round.startingNine,
-        );
+          // Strokes usando el MISMO método que el engine (skins/nassau/medal):
+          // - Con pairSliding oficial: strokesReceivedFromOfficial18Sliding
+          //   → distribución proporcional sobre TODOS los hoyos del curso (consistente con ledger)
+          // - Sin pairSliding (solo HCPs): strokesReceivedVs (vs campo)
+          final courseHolesForUI = courseF9ui.any((h) => h.hole == ch.hole)
+              ? courseF9ui : courseB9ui;
+          final strokesHere = recvAbsOfficial > 0
+              ? GameEngine.strokesReceivedFromOfficial18Sliding(
+                  diff18:              recvAbsOfficial,
+                  ch:                  ch,
+                  courseHolesInSameNine: courseHolesForUI,
+                  startingNine:        round.startingNine,
+                  isNineHolesStartingNine: courseF9ui.any((h) => h.hole == ch.hole)
+                      ? (round.startingNine == StartingNine.front)
+                      : (round.startingNine == StartingNine.back),
+                )
+              : GameEngine.strokesReceivedVs(
+                  hcpHigher:    hcpReceiver,
+                  hcpLower:     hcpBase,
+                  ch:           ch,
+                  allHoles:     allHoles,
+                  startingNine: round.startingNine,
+                );
 
         // Scores a mostrar
         final grossBase     = sBase.hasScore     ? sBase.grossScore!     : null;
