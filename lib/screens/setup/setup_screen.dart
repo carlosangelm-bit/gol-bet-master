@@ -1467,7 +1467,7 @@ class _SetupScreenState extends State<SetupScreen> {
             ),
           ),
 
-        ...g.modules.asMap().entries.map((e) => _moduleTile(idx, e.key, e.value, g, t)),
+        ..._renderModules(idx, g, t),
         const SizedBox(height: 8),
 
         // ── Botón agregar módulo ──────────────────────────────────────────
@@ -1559,6 +1559,272 @@ class _SetupScreenState extends State<SetupScreen> {
     ),
     child: Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
   );
+
+  // ── Renderizado agrupado de módulos ──────────────────────────────────────
+  /// Agrupa los módulos del BetGroup por betGroupId.
+  /// - Módulos sin betGroupId (o con betGroupId único): tile individual.
+  /// - Módulos que comparten betGroupId: una sola card de familia.
+  /// El orden de aparición sigue el orden del primer módulo de cada familia.
+  List<Widget> _renderModules(int groupIdx, BetGroup g, GolfTheme t) {
+    final modules = g.modules;
+    // Mantener orden de inserción de familias
+    final seen    = <String>{};            // betGroupId ya renderizados
+    final result  = <Widget>[];
+
+    for (int i = 0; i < modules.length; i++) {
+      final mod = modules[i];
+      final fid = mod.betGroupId;          // null → módulo individual
+
+      if (fid == null) {
+        // ── módulo individual ──────────────────────────────────────────
+        result.add(_moduleTile(groupIdx, i, mod, g, t));
+      } else if (!seen.contains(fid)) {
+        // ── primera vez que vemos esta familia → card agrupada ─────────
+        seen.add(fid);
+        final family = modules
+            .asMap()
+            .entries
+            .where((e) => e.value.betGroupId == fid)
+            .toList(); // List<MapEntry<int, BetModuleInstance>>
+        result.add(_groupModuleTile(groupIdx, family, g, t));
+      }
+      // Si ya vimos el fid, lo saltamos (ya se renderizó la card)
+    }
+
+    return result;
+  }
+
+  // ── Card de familia (varios módulos con mismo betGroupId) ────────────────
+  Widget _groupModuleTile(
+    int groupIdx,
+    List<MapEntry<int, BetModuleInstance>> family,
+    BetGroup g,
+    GolfTheme t,
+  ) {
+    final template  = family.first.value;               // primer módulo como referencia
+    final groupName = template.betGroupName ?? template.type.label;
+    final count     = family.length;
+
+    // Pairings legibles: "A vs B", "A vs C", …
+    String nameOf(String id) =>
+        _players.firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id)).name;
+
+    final pairings = family.map((e) {
+      final pids = e.value.participantIds;
+      if (pids.length == 2) return '${nameOf(pids[0])} vs ${nameOf(pids[1])}';
+      return pids.map(nameOf).join(', ');
+    }).toList();
+
+    // Color del acento según tipo
+    final isMatch  = template.type == BetModuleType.nassau ||
+                     template.type == BetModuleType.matchAutoPress;
+    final accent   = isMatch ? t.accent : t.primary;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: t.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: accent.withValues(alpha: 0.35), width: 1.5),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+          // ── Cabecera ────────────────────────────────────────────────────
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(template.type.icon, style: const TextStyle(fontSize: 14)),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(groupName,
+                  style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 14)),
+              Text('$count enfrentamientos · ${template.summaryLabel}',
+                  style: TextStyle(color: t.sub, fontSize: 11)),
+            ])),
+            // ── Botón Editar grupo ───────────────────────────────────────
+            GestureDetector(
+              onTap: () => _editGroupModules(groupIdx, family, g, t),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text('Editar grupo',
+                    style: TextStyle(color: accent, fontWeight: FontWeight.w700, fontSize: 12)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // ── Botón Eliminar grupo ─────────────────────────────────────
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  final gid  = template.betGroupId!;
+                  final mods = _groups[groupIdx].modules
+                      .where((m) => m.betGroupId != gid)
+                      .toList();
+                  _groups[groupIdx] = _groups[groupIdx].copyWith(modules: mods);
+                });
+              },
+              child: Icon(Icons.close, color: t.sub, size: 16),
+            ),
+          ]),
+
+          // ── Lista compacta de pairings ───────────────────────────────────
+          const SizedBox(height: 8),
+          ...pairings.take(5).map((p) => Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Row(children: [
+              Icon(Icons.sports_golf, color: t.sub, size: 11),
+              const SizedBox(width: 4),
+              Text(p, style: TextStyle(color: t.sub, fontSize: 11)),
+            ]),
+          )),
+          if (pairings.length > 5)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text('… y ${pairings.length - 5} más',
+                  style: TextStyle(color: t.sub, fontSize: 11)),
+            ),
+
+          // ── Chips ────────────────────────────────────────────────────────
+          const SizedBox(height: 8),
+          Wrap(spacing: 6, runSpacing: 4, children: [
+            _infoChip(_structureLabelShort(template.structure), accent, t),
+            _infoChip(template.useHandicap ? 'Net' : 'Gross', t.primary, t),
+            if (template.type == BetModuleType.skins && template.skins.carryOver)
+              _infoChip('🔥 Carry ON', t.accent, t),
+            if (template.type == BetModuleType.nassau && template.nassau.pressEnabled)
+              _infoChip('Press ON', t.accent, t),
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  // ── Editor en lote para una familia de módulos ───────────────────────────
+  /// Abre el editor usando el primer módulo como template.
+  /// Al guardar, aplica la config tipada a TODOS los módulos del mismo betGroupId,
+  /// conservando por módulo: id, participantIds, sides, name, betGroupId,
+  /// betGroupName, structure, anchorPlayerId.
+  void _editGroupModules(
+    int groupIdx,
+    List<MapEntry<int, BetModuleInstance>> family,
+    BetGroup g,
+    GolfTheme t,
+  ) {
+    // Usamos el primer módulo solo como fuente de configuración tipada.
+    // Los participantIds no se editan en este sheet (cada módulo tiene su 1v1).
+    var cfg = family.first.value;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setSt) {
+          return DraggableScrollableSheet(
+            initialChildSize: 0.85,
+            minChildSize: 0.5,
+            maxChildSize: 0.95,
+            expand: false,
+            builder: (_, sc) {
+              final groupName = cfg.betGroupName ?? cfg.type.label;
+              return Padding(
+                padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(ctx2).viewInsets.bottom),
+                child: SingleChildScrollView(
+                  controller: sc,
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Header ─────────────────────────────────────────
+                      Row(children: [
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('${cfg.type.icon} ${cfg.type.label}',
+                              style: TextStyle(
+                                  color: t.text, fontSize: 20, fontWeight: FontWeight.w800)),
+                          Text(groupName,
+                              style: TextStyle(color: t.sub, fontSize: 12)),
+                        ])),
+                        GestureDetector(
+                            onTap: () => Navigator.pop(ctx2),
+                            child: Icon(Icons.close, color: t.sub)),
+                      ]),
+                      const SizedBox(height: 6),
+                      // Banner informativo
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: t.primary.withValues(alpha: 0.07),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: t.primary.withValues(alpha: 0.2)),
+                        ),
+                        child: Row(children: [
+                          Icon(Icons.info_outline, color: t.primary, size: 14),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(
+                            'La configuración se aplicará a los ${family.length} enfrentamientos del grupo.',
+                            style: TextStyle(color: t.primary, fontSize: 11),
+                          )),
+                        ]),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // ── Config específica por tipo ──────────────────────
+                      ..._configWidgets(
+                          cfg, t, setSt, (updated) => cfg = updated),
+
+                      const SizedBox(height: 24),
+                      GPrimaryButton(
+                        label: 'Aplicar a los ${family.length} enfrentamientos',
+                        onTap: () {
+                          setState(() {
+                            final mods = List<BetModuleInstance>.from(
+                                _groups[groupIdx].modules);
+                            for (final entry in family) {
+                              final mi  = entry.key;
+                              final old = entry.value;
+                              // Conservar campos propios de cada módulo 1v1;
+                              // copiar solo la config tipada del template.
+                              mods[mi] = old.copyWith(
+                                formatMode:           cfg.formatMode,
+                                skinsConfig:          cfg.skinsConfig,
+                                nassauConfig:         cfg.nassauConfig,
+                                matchAutoPressConfig: cfg.matchAutoPressConfig,
+                                medalConfig:          cfg.medalConfig,
+                                puttsConfig:          cfg.puttsConfig,
+                                oyesesConfig:         cfg.oyesesConfig,
+                                unitsConfig:          cfg.unitsConfig,
+                              );
+                            }
+                            _groups[groupIdx] =
+                                _groups[groupIdx].copyWith(modules: mods);
+                          });
+                          Navigator.pop(ctx2);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
 
   // ── Editor de instancia (bottom sheet con config tipada) ─────────────────
   void _editModuleInstance(int gi, int mi, BetModuleInstance mod, BetGroup g, GolfTheme t) {
