@@ -3753,6 +3753,7 @@ class _LaunchSheetState extends State<_LaunchSheet> {
   bool _saveTemplate  = false;
   bool _startLive     = false;
   String _scoringMode = 'open'; // 'admin' | 'open'
+  StartingNine? _selectedStartingNine;
   final _nameCtrl  = TextEditingController();
   final _emojiCtrl = TextEditingController(text: '⛳️');
   final _descCtrl  = TextEditingController();
@@ -3915,11 +3916,14 @@ class _LaunchSheetState extends State<_LaunchSheet> {
           const SizedBox(height: 10),
           Row(children: [
             Expanded(child: _startBtn(t, '1️⃣', 'Front 9 primero',
-                'Hoyos 1–9 con stroke extra', () => _launch(StartingNine.front))),
+                'Hoyos 1–9 con stroke extra', StartingNine.front)),
             const SizedBox(width: 10),
             Expanded(child: _startBtn(t, '2️⃣', 'Back 9 primero',
-                'Hoyos 10–18 con stroke extra', () => _launch(StartingNine.back))),
+                'Hoyos 10–18 con stroke extra', StartingNine.back)),
           ]),
+          const SizedBox(height: 12),
+          // ── Botón confirmar ──────────────────────────────────────────────
+          _confirmBtn(t),
           const SizedBox(height: 8),
         ],
       ),
@@ -3978,22 +3982,69 @@ class _LaunchSheetState extends State<_LaunchSheet> {
   bool get _hasLinkedPlayers =>
       widget.players.any((p) => p.hasLinkedAccount);
 
-  Widget _startBtn(GolfTheme t, String icon, String title, String subtitle, VoidCallback onTap) {
+  Widget _startBtn(GolfTheme t, String icon, String title, String subtitle, StartingNine nine) {
+    final sel = _selectedStartingNine == nine;
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
+      onTap: () => setState(() => _selectedStartingNine = nine),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: t.primary.withValues(alpha: 0.08),
+          color: sel ? t.primary.withValues(alpha: 0.12) : t.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: t.primary.withValues(alpha: 0.3)),
+          border: Border.all(
+            color: sel ? t.primary : t.divider,
+            width: sel ? 1.5 : 1,
+          ),
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(icon, style: const TextStyle(fontSize: 22)),
+          Row(children: [
+            Text(icon, style: const TextStyle(fontSize: 22)),
+            const Spacer(),
+            if (sel) Icon(Icons.check_circle_rounded, color: t.primary, size: 18),
+          ]),
           const SizedBox(height: 6),
-          Text(title, style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 13)),
+          Text(title, style: TextStyle(
+              color: sel ? t.primary : t.text,
+              fontWeight: FontWeight.w700,
+              fontSize: 13)),
           Text(subtitle, style: TextStyle(color: t.sub, fontSize: 11)),
         ]),
+      ),
+    );
+  }
+
+  Widget _confirmBtn(GolfTheme t) {
+    final enabled = _selectedStartingNine != null;
+    return GestureDetector(
+      onTap: enabled ? () => _launch(_selectedStartingNine!) : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 15),
+        decoration: BoxDecoration(
+          color: enabled ? t.primary : t.divider,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.flag_rounded,
+              color: enabled ? Colors.white : t.sub,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Confirmar e iniciar ronda',
+              style: TextStyle(
+                color: enabled ? Colors.white : t.sub,
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
