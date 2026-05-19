@@ -1711,18 +1711,31 @@ class _SetupScreenState extends State<SetupScreen> {
 
   // ── Editor en lote para una familia de módulos ───────────────────────────
   /// Abre el editor usando el primer módulo como template.
-  /// Al guardar, aplica la config tipada a TODOS los módulos del mismo betGroupId,
-  /// conservando por módulo: id, participantIds, sides, name, betGroupId,
-  /// betGroupName, structure, anchorPlayerId.
+  /// Al guardar:
+  ///   1. Aplica la config tipada a TODOS los módulos del mismo betGroupId.
+  ///   2. Recalcula la config tipada de cada módulo 1v1 según overrides de sus
+  ///      jugadores (effectiveValueForDuel), preservando id/participantIds/etc.
   void _editGroupModules(
     int groupIdx,
     List<MapEntry<int, BetModuleInstance>> family,
     BetGroup g,
     GolfTheme t,
   ) {
-    // Usamos el primer módulo solo como fuente de configuración tipada.
-    // Los participantIds no se editan en este sheet (cada módulo tiene su 1v1).
     var cfg = family.first.value;
+    // ── Estado de overrides: playerId → valor (null = desactivado) ───────────
+    final overrides = <String, TextEditingController>{};
+    final overrideEnabled = <String, bool>{};
+
+    // Inicializar desde overrides existentes en el template
+    for (final pid in g.playerIds) {
+      final existing = cfg.playerConfigOverrides?[pid];
+      final key = cfg.type == BetModuleType.units ? 'allEvents' : 'value';
+      final existingVal = existing?[key] as double?;
+      overrides[pid] = TextEditingController(
+        text: existingVal != null ? existingVal.toStringAsFixed(0) : '',
+      );
+      overrideEnabled[pid] = existingVal != null;
+    }
 
     showModalBottomSheet(
       context: context,
@@ -1733,10 +1746,54 @@ class _SetupScreenState extends State<SetupScreen> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx2, setSt) {
+          // ── Reconstruir overrides vigentes desde el estado UI ──────────────
+          Map<String, Map<String, dynamic>> _buildOverridesMap() {
+            final result = <String, Map<String, dynamic>>{};
+            final key = cfg.type == BetModuleType.units ? 'allEvents' : 'value';
+            for (final pid in g.playerIds) {
+              if (overrideEnabled[pid] == true) {
+                final val = double.tryParse(overrides[pid]!.text.trim());
+                if (val != null && val > 0) {
+                  result[pid] = {key: val};
+                }
+              }
+            }
+            return result;
+          }
+
+          // ── Preview de duelos con valor efectivo ───────────────────────────
+          // Construye un módulo temporal con los overrides actuales para calcular
+          List<({String label, double value, bool conflict})> _buildPreview() {
+            final ovsMap = _buildOverridesMap();
+            final temp = cfg.copyWith(playerConfigOverrides: ovsMap);
+            final lines = <({String label, double value, bool conflict})>[];
+            String nameOf(String id) => _players
+                .firstWhere((p) => p.id == id,
+                    orElse: () => Player(id: id, name: id))
+                .name;
+            for (final entry in family) {
+              final pids = entry.value.participantIds;
+              if (pids.length == 2) {
+                final (val, conflict) =
+                    temp.effectiveValueForDuel(pids[0], pids[1]);
+                lines.add((
+                  label: '${nameOf(pids[0])} vs ${nameOf(pids[1])}',
+                  value: val,
+                  conflict: conflict,
+                ));
+              }
+            }
+            return lines;
+          }
+
+          final supportsOverride = cfg.supportsPlayerOverride;
+          final preview = supportsOverride ? _buildPreview() : <({String label, double value, bool conflict})>[];
+          final hasConflicts = preview.any((p) => p.conflict);
+
           return DraggableScrollableSheet(
-            initialChildSize: 0.85,
+            initialChildSize: 0.90,
             minChildSize: 0.5,
-            maxChildSize: 0.95,
+            maxChildSize: 0.97,
             expand: false,
             builder: (_, sc) {
               final groupName = cfg.betGroupName ?? cfg.type.label;
@@ -1749,12 +1806,16 @@ class _SetupScreenState extends State<SetupScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // ── Header ─────────────────────────────────────────
+                      // ── Header ──────────────────────────────────────────────
                       Row(children: [
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Expanded(child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                           Text('${cfg.type.icon} ${cfg.type.label}',
                               style: TextStyle(
-                                  color: t.text, fontSize: 20, fontWeight: FontWeight.w800)),
+                                  color: t.text,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800)),
                           Text(groupName,
                               style: TextStyle(color: t.sub, fontSize: 12)),
                         ])),
@@ -1763,50 +1824,315 @@ class _SetupScreenState extends State<SetupScreen> {
                             child: Icon(Icons.close, color: t.sub)),
                       ]),
                       const SizedBox(height: 6),
-                      // Banner informativo
+                      // Banner info
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 7),
                         decoration: BoxDecoration(
                           color: t.primary.withValues(alpha: 0.07),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: t.primary.withValues(alpha: 0.2)),
+                          border: Border.all(
+                              color: t.primary.withValues(alpha: 0.2)),
                         ),
                         child: Row(children: [
-                          Icon(Icons.info_outline, color: t.primary, size: 14),
+                          Icon(Icons.info_outline,
+                              color: t.primary, size: 14),
                           const SizedBox(width: 8),
-                          Expanded(child: Text(
-                            'La configuración se aplicará a los ${family.length} enfrentamientos del grupo.',
-                            style: TextStyle(color: t.primary, fontSize: 11),
+                          Expanded(
+                              child: Text(
+                            'La configuración base y excepciones se aplicarán a los ${family.length} enfrentamientos.',
+                            style:
+                                TextStyle(color: t.primary, fontSize: 11),
                           )),
                         ]),
                       ),
                       const SizedBox(height: 20),
 
-                      // ── Config específica por tipo ──────────────────────
+                      // ── Config base por tipo ──────────────────────────────
                       ..._configWidgets(
-                          cfg, t, setSt, (updated) => cfg = updated),
+                          cfg, t, setSt, (updated) {
+                            cfg = updated;
+                            setSt(() {}); // rebuild preview
+                          }),
 
+                      // ── Excepciones por jugador (solo tipos soportados) ───
+                      if (supportsOverride) ...[
+                        const SizedBox(height: 24),
+                        _sectionLabel('EXCEPCIONES POR JUGADOR', t),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Activa la excepción de un jugador para personalizar su valor. '
+                          'Si ambos jugadores de un duelo tienen valores distintos, '
+                          'se usa el menor.',
+                          style: TextStyle(color: t.sub, fontSize: 11),
+                        ),
+                        const SizedBox(height: 10),
+                        ...g.playerIds.map((pid) {
+                          final player = _players.firstWhere(
+                              (p) => p.id == pid,
+                              orElse: () => Player(id: pid, name: pid));
+                          final enabled = overrideEnabled[pid] ?? false;
+                          final ctrl = overrides[pid]!;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: enabled
+                                    ? t.primary.withValues(alpha: 0.07)
+                                    : t.surface,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: enabled
+                                      ? t.primary.withValues(alpha: 0.4)
+                                      : t.divider,
+                                  width: enabled ? 1.5 : 1,
+                                ),
+                              ),
+                              child: Row(children: [
+                                // Toggle enable
+                                GestureDetector(
+                                  onTap: () => setSt(() {
+                                    overrideEnabled[pid] = !enabled;
+                                    if (!overrideEnabled[pid]!) {
+                                      ctrl.clear();
+                                    }
+                                  }),
+                                  child: AnimatedContainer(
+                                    duration:
+                                        const Duration(milliseconds: 130),
+                                    width: 20,
+                                    height: 20,
+                                    decoration: BoxDecoration(
+                                      color: enabled
+                                          ? t.primary
+                                          : Colors.transparent,
+                                      borderRadius:
+                                          BorderRadius.circular(5),
+                                      border: Border.all(
+                                          color: enabled
+                                              ? t.primary
+                                              : t.sub),
+                                    ),
+                                    child: enabled
+                                        ? const Icon(Icons.check,
+                                            color: Colors.white, size: 13)
+                                        : null,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                // Avatar + nombre
+                                GAvatar(
+                                    name: player.name,
+                                    colorIndex: player.colorIndex,
+                                    size: 20),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                    child: Text(
+                                  player.name.split(' ').first,
+                                  style: TextStyle(
+                                    color: enabled ? t.text : t.sub,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                  ),
+                                )),
+                                // Campo de valor (activo solo si enabled)
+                                if (enabled)
+                                  SizedBox(
+                                    width: 70,
+                                    child: TextField(
+                                      controller: ctrl,
+                                      keyboardType: TextInputType.number,
+                                      textAlign: TextAlign.center,
+                                      onChanged: (_) => setSt(() {}),
+                                      style: TextStyle(
+                                          color: t.text,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 14),
+                                      decoration: InputDecoration(
+                                        isDense: true,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 6),
+                                        prefixText: '\$',
+                                        prefixStyle: TextStyle(
+                                            color: t.primary,
+                                            fontWeight: FontWeight.w700),
+                                        filled: true,
+                                        fillColor: t.card,
+                                        border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          borderSide:
+                                              BorderSide(color: t.primary),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          borderSide: BorderSide(
+                                              color: t.primary
+                                                  .withValues(alpha: 0.5)),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          borderSide: BorderSide(
+                                              color: t.primary, width: 1.5),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  Text('Default',
+                                      style: TextStyle(
+                                          color: t.sub, fontSize: 11)),
+                              ]),
+                            ),
+                          );
+                        }),
+                      ],
+
+                      // ── Preview de duelos con valor efectivo ─────────────
+                      if (supportsOverride && preview.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        _sectionLabel('PREVIEW DE DUELOS', t),
+                        const SizedBox(height: 6),
+                        if (hasConflicts)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: t.loss.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(7),
+                                border: Border.all(
+                                    color: t.loss.withValues(alpha: 0.3)),
+                              ),
+                              child: Row(children: [
+                                Icon(Icons.warning_amber_rounded,
+                                    color: t.loss, size: 14),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                    child: Text(
+                                  'Conflicto de valores: se usa el menor.',
+                                  style: TextStyle(
+                                      color: t.loss, fontSize: 11),
+                                )),
+                              ]),
+                            ),
+                          ),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: t.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: t.divider),
+                          ),
+                          child: Column(
+                            children: preview.map((p) => Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 3),
+                              child: Row(children: [
+                                Icon(
+                                  p.conflict
+                                      ? Icons.warning_amber_rounded
+                                      : Icons.sports_golf,
+                                  color: p.conflict ? t.loss : t.sub,
+                                  size: 13,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                    child: Text(p.label,
+                                        style: TextStyle(
+                                            color: t.sub, fontSize: 12))),
+                                Text(
+                                  '\$${p.value.toStringAsFixed(0)}',
+                                  style: TextStyle(
+                                    color: p.conflict ? t.loss : t.text,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ]),
+                            )).toList(),
+                          ),
+                        ),
+                      ],
+
+                      // ── Botón guardar ─────────────────────────────────────
                       const SizedBox(height: 24),
                       GPrimaryButton(
-                        label: 'Aplicar a los ${family.length} enfrentamientos',
+                        label:
+                            'Aplicar a los ${family.length} enfrentamientos',
                         onTap: () {
+                          final ovsMap = _buildOverridesMap();
                           setState(() {
                             final mods = List<BetModuleInstance>.from(
                                 _groups[groupIdx].modules);
                             for (final entry in family) {
-                              final mi  = entry.key;
+                              final mi = entry.key;
                               final old = entry.value;
-                              // Conservar campos propios de cada módulo 1v1;
-                              // copiar solo la config tipada del template.
+                              final pids = old.participantIds;
+
+                              // Calcular config efectiva para este duelo 1v1
+                              // usando effectiveValueForDuel si hay overrides.
+                              SkinsConfig?  effectiveSkins  = cfg.skinsConfig;
+                              OyesesConfig? effectiveOyeses = cfg.oyesesConfig;
+                              UnitsConfig?  effectiveUnits  = cfg.unitsConfig;
+
+                              if (ovsMap.isNotEmpty && pids.length == 2) {
+                                // Crear instancia temporal con los overrides
+                                // para poder llamar effectiveValueForDuel.
+                                final temp = cfg.copyWith(
+                                    playerConfigOverrides: ovsMap);
+                                final (effVal, _) = temp
+                                    .effectiveValueForDuel(pids[0], pids[1]);
+
+                                switch (cfg.type) {
+                                  case BetModuleType.skins:
+                                    effectiveSkins = (cfg.skinsConfig ??
+                                            SkinsConfig.def)
+                                        .copyWith(valuePerSkin: effVal);
+                                    break;
+                                  case BetModuleType.oyeses:
+                                    effectiveOyeses = (cfg.oyesesConfig ??
+                                            OyesesConfig.def)
+                                        .copyWith(value: effVal);
+                                    break;
+                                  case BetModuleType.units:
+                                    final baseMap = Map<UnitEventType,
+                                        double>.from(
+                                      cfg.unitsConfig?.eventValues ??
+                                          UnitsConfig.defaults,
+                                    );
+                                    for (final k in baseMap.keys) {
+                                      baseMap[k] = effVal;
+                                    }
+                                    effectiveUnits =
+                                        UnitsConfig(eventValues: baseMap);
+                                    break;
+                                  default:
+                                    break;
+                                }
+                              }
+
                               mods[mi] = old.copyWith(
                                 formatMode:           cfg.formatMode,
-                                skinsConfig:          cfg.skinsConfig,
+                                skinsConfig:          effectiveSkins,
                                 nassauConfig:         cfg.nassauConfig,
                                 matchAutoPressConfig: cfg.matchAutoPressConfig,
                                 medalConfig:          cfg.medalConfig,
                                 puttsConfig:          cfg.puttsConfig,
-                                oyesesConfig:         cfg.oyesesConfig,
-                                unitsConfig:          cfg.unitsConfig,
+                                oyesesConfig:         effectiveOyeses,
+                                unitsConfig:          effectiveUnits,
+                                // Guardamos los overrides en el módulo para
+                                // que la card de familia pueda reconstruir
+                                // el estado al volver a editar.
+                                playerConfigOverrides:
+                                    ovsMap.isEmpty ? null : ovsMap,
                               );
                             }
                             _groups[groupIdx] =
