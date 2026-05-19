@@ -22,6 +22,21 @@ DateTime _parseDate(dynamic value) {
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 enum BetModuleType { skins, nassau, matchAutoPress, medal, putts, oyeses, units }
+
+/// Estructura de expansión de una apuesta.
+/// Determina cómo se generan los BetModuleInstance internos.
+enum BetStructure {
+  /// Un único módulo con todos los participantes (comportamiento original).
+  group,
+  /// Duelo estrictamente 1 vs 1 (2 jugadores exactos).
+  headToHead,
+  /// Un jugador ancla contra cada uno de los rivales: N módulos 1v1.
+  anchorVsMany,
+  /// Todos contra todos: un módulo por cada combinación de 2 jugadores.
+  roundRobin,
+  /// Módulos añadidos manualmente; no se auto-expanden.
+  manual,
+}
 enum UnitEventType { birdie, eagle, sandyPar, parUnico, birdieUnico, holeOut }
 enum PartidaFormat { 
   allInOnePot,    // Todos en un solo pozo grupal
@@ -1079,6 +1094,17 @@ class BetModuleInstance {
   // Presiones dinámicas para Match + Auto Press
   final List<PressInstance> presses;
 
+  // ── Estructura de expansión ───────────────────────────────────────────────
+  /// Cómo se generó este módulo. group = clásico (default, retrocompat).
+  final BetStructure structure;
+  /// ID del grupo lógico al que pertenece cuando se expande desde
+  /// anchorVsMany o roundRobin. Null en módulos group/headToHead.
+  final String? betGroupId;
+  /// Nombre legible del grupo lógico (ej. "Nassau todos vs todos").
+  final String? betGroupName;
+  /// ID del jugador ancla cuando structure == anchorVsMany.
+  final String? anchorPlayerId;
+
   const BetModuleInstance({
     required this.id,
     required this.type,
@@ -1095,6 +1121,10 @@ class BetModuleInstance {
     this.oyesesConfig,
     this.unitsConfig,
     this.presses = const [],
+    this.structure = BetStructure.group,
+    this.betGroupId,
+    this.betGroupName,
+    this.anchorPlayerId,
   });
 
   // ── Acceso a lados con validación rápida ─────────────────────────────────
@@ -1200,6 +1230,10 @@ class BetModuleInstance {
     OyesesConfig?         oyesesConfig,
     UnitsConfig?          unitsConfig,
     List<PressInstance>?  presses,
+    BetStructure?         structure,
+    String?               betGroupId,
+    String?               betGroupName,
+    String?               anchorPlayerId,
   }) => BetModuleInstance(
     id: id, type: type,
     name: name ?? this.name,
@@ -1215,6 +1249,10 @@ class BetModuleInstance {
     oyesesConfig:         oyesesConfig         ?? this.oyesesConfig,
     unitsConfig:          unitsConfig          ?? this.unitsConfig,
     presses:              presses              ?? this.presses,
+    structure:            structure            ?? this.structure,
+    betGroupId:           betGroupId           ?? this.betGroupId,
+    betGroupName:         betGroupName         ?? this.betGroupName,
+    anchorPlayerId:       anchorPlayerId       ?? this.anchorPlayerId,
   );
 
   // ── JSON ──────────────────────────────────────────────────────────────────
@@ -1223,6 +1261,12 @@ class BetModuleInstance {
     'participantIds': participantIds,
     'status': status.name,
     'formatMode': formatMode.name,
+    // structure: solo se serializa si no es el default (retrocompat — rondas
+    // viejas sin este campo se deserializan como BetStructure.group).
+    if (structure != BetStructure.group) 'structure': structure.name,
+    if (betGroupId    != null) 'betGroupId':    betGroupId,
+    if (betGroupName  != null) 'betGroupName':  betGroupName,
+    if (anchorPlayerId != null) 'anchorPlayerId': anchorPlayerId,
     // sides: solo se serializa si existe. Rondas sin sides → no tienen clave (retrocompat).
     if (sides != null) 'sides': sides!.map((s) => s.toJson()).toList(),
     if (skinsConfig          != null) 'skinsConfig':          skinsConfig!.toJson(),
@@ -1303,6 +1347,13 @@ class BetModuleInstance {
               catch (_) { return null; }
             }).whereType<PressInstance>().toList()
           : const [],
+      // Retrocompat: si no existe 'structure' (rondas viejas) → BetStructure.group.
+      structure: BetStructure.values.firstWhere(
+          (s) => s.name == (j['structure'] as String? ?? 'group'),
+          orElse: () => BetStructure.group),
+      betGroupId:    j['betGroupId']    as String?,
+      betGroupName:  j['betGroupName']  as String?,
+      anchorPlayerId: j['anchorPlayerId'] as String?,
     );
   }
 
@@ -1326,6 +1377,125 @@ class BetModuleInstance {
       oyesesConfig:         type == BetModuleType.oyeses        ? OyesesConfig.def         : null,
       unitsConfig:          type == BetModuleType.units         ? UnitsConfig.def          : null,
     );
+  }
+
+  // ── expandBetModules ─────────────────────────────────────────────────────────
+  /// Expande una configuración de apuesta en uno o varios [BetModuleInstance]
+  /// que el engine ya entiende (sin modificar BetEngine).
+  ///
+  /// Reglas:
+  ///  • [group]        → 1 módulo con todos los [participantIds].
+  ///  • [headToHead]   → 1 módulo; exige exactamente 2 jugadores.
+  ///  • [anchorVsMany] → N módulos 1v1 (anchor vs cada rival).
+  ///  • [roundRobin]   → C(n,2) módulos 1v1 (todas las combinaciones).
+  ///  • [manual]       → 1 módulo igual que group (sin auto-expansión).
+  ///
+  /// Todos los módulos generados en anchorVsMany/roundRobin comparten
+  /// [betGroupId] y [betGroupName] para identificarlos como familia.
+  ///
+  /// Lanza [ArgumentError] si no se cumplen las validaciones de cardinalidad.
+  static List<BetModuleInstance> expandBetModules({
+    required BetModuleType type,
+    required BetStructure structure,
+    required List<String> participantIds,
+    String? anchorPlayerId,
+    String? betGroupId,
+    String? betGroupName,
+    // Configuración tipada opcional: si null se usan los defaults.
+    SkinsConfig?          skinsConfig,
+    NassauConfig?         nassauConfig,
+    MatchAutoPressConfig? matchAutoPressConfig,
+    MedalConfig?          medalConfig,
+    PuttsConfig?          puttsConfig,
+    OyesesConfig?         oyesesConfig,
+    UnitsConfig?          unitsConfig,
+  }) {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+
+    // ── Función interna: construye un módulo 1v1 entre dos jugadores ──────────
+    BetModuleInstance _make1v1(String pA, String pB, int index) {
+      final uid = '${type.name}_${structure.name}_${pA}_${pB}_$ts$index';
+      return BetModuleInstance(
+        id: uid, type: type, name: type.label,
+        participantIds: [pA, pB],
+        structure:     structure,
+        betGroupId:    betGroupId,
+        betGroupName:  betGroupName,
+        anchorPlayerId: anchorPlayerId,
+        skinsConfig:          skinsConfig          ?? (type == BetModuleType.skins         ? SkinsConfig.def          : null),
+        nassauConfig:         nassauConfig         ?? (type == BetModuleType.nassau        ? NassauConfig.def         : null),
+        matchAutoPressConfig: matchAutoPressConfig ?? (type == BetModuleType.matchAutoPress? MatchAutoPressConfig.def : null),
+        medalConfig:          medalConfig          ?? (type == BetModuleType.medal         ? MedalConfig.def          : null),
+        puttsConfig:          puttsConfig          ?? (type == BetModuleType.putts         ? PuttsConfig.def          : null),
+        oyesesConfig:         oyesesConfig         ?? (type == BetModuleType.oyeses        ? OyesesConfig.def         : null),
+        unitsConfig:          unitsConfig          ?? (type == BetModuleType.units         ? UnitsConfig.def          : null),
+      );
+    }
+
+    // ── Función interna: construye un módulo grupal ───────────────────────────
+    BetModuleInstance _makeGroup(List<String> pids) {
+      final uid = '${type.name}_${structure.name}_$ts';
+      return BetModuleInstance(
+        id: uid, type: type, name: type.label,
+        participantIds: pids,
+        structure:     structure,
+        betGroupId:    betGroupId,
+        betGroupName:  betGroupName,
+        skinsConfig:          skinsConfig          ?? (type == BetModuleType.skins         ? SkinsConfig.def          : null),
+        nassauConfig:         nassauConfig         ?? (type == BetModuleType.nassau        ? NassauConfig.def         : null),
+        matchAutoPressConfig: matchAutoPressConfig ?? (type == BetModuleType.matchAutoPress? MatchAutoPressConfig.def : null),
+        medalConfig:          medalConfig          ?? (type == BetModuleType.medal         ? MedalConfig.def          : null),
+        puttsConfig:          puttsConfig          ?? (type == BetModuleType.putts         ? PuttsConfig.def          : null),
+        oyesesConfig:         oyesesConfig         ?? (type == BetModuleType.oyeses        ? OyesesConfig.def         : null),
+        unitsConfig:          unitsConfig          ?? (type == BetModuleType.units         ? UnitsConfig.def          : null),
+      );
+    }
+
+    switch (structure) {
+      // ── group / manual: un único módulo con todos los participantes ─────────
+      case BetStructure.group:
+      case BetStructure.manual:
+        if (participantIds.length < 2) {
+          throw ArgumentError('group requiere mínimo 2 jugadores.');
+        }
+        return [_makeGroup(participantIds)];
+
+      // ── headToHead: exactamente 2 jugadores ─────────────────────────────────
+      case BetStructure.headToHead:
+        if (participantIds.length != 2) {
+          throw ArgumentError('headToHead requiere exactamente 2 jugadores.');
+        }
+        return [_makeGroup(participantIds)];
+
+      // ── anchorVsMany: jugador ancla vs cada rival (N módulos 1v1) ───────────
+      case BetStructure.anchorVsMany:
+        if (anchorPlayerId == null) {
+          throw ArgumentError('anchorVsMany requiere anchorPlayerId.');
+        }
+        final rivals = participantIds.where((id) => id != anchorPlayerId).toList();
+        if (rivals.isEmpty) {
+          throw ArgumentError('anchorVsMany requiere al menos 1 rival.');
+        }
+        return rivals
+            .asMap()
+            .entries
+            .map((e) => _make1v1(anchorPlayerId, e.value, e.key))
+            .toList();
+
+      // ── roundRobin: todas las combinaciones C(n,2) ──────────────────────────
+      case BetStructure.roundRobin:
+        if (participantIds.length < 3) {
+          throw ArgumentError('roundRobin requiere mínimo 3 jugadores.');
+        }
+        final result = <BetModuleInstance>[];
+        int idx = 0;
+        for (int i = 0; i < participantIds.length; i++) {
+          for (int k = i + 1; k < participantIds.length; k++) {
+            result.add(_make1v1(participantIds[i], participantIds[k], idx++));
+          }
+        }
+        return result;
+    }
   }
 }
 

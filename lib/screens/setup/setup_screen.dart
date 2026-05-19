@@ -2443,59 +2443,288 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   void _addModule(int gi, BetGroup g, GolfTheme t) {
-    final selected = <BetModuleType>{};
+    // ── Estado local del sheet (paso 1 = tipo, paso 2 = estructura) ──────────
+    final selected    = <BetModuleType>{};
+    BetStructure      structure       = BetStructure.group;
+    String?           anchorPlayerId;
+
+    // ── Helpers de validación ────────────────────────────────────────────────
+    String? _validateStructure(BetStructure s, List<String> pids, String? anchor) {
+      switch (s) {
+        case BetStructure.group:
+        case BetStructure.manual:
+          return pids.length < 2 ? 'Mínimo 2 jugadores para Grupo único.' : null;
+        case BetStructure.headToHead:
+          return pids.length != 2 ? 'Head to head requiere exactamente 2 jugadores.' : null;
+        case BetStructure.anchorVsMany:
+          if (anchor == null) return 'Selecciona el jugador ancla.';
+          if (pids.where((id) => id != anchor).isEmpty) return 'El ancla necesita al menos 1 rival.';
+          return null;
+        case BetStructure.roundRobin:
+          return pids.length < 3 ? 'Todos vs todos requiere mínimo 3 jugadores.' : null;
+      }
+    }
+
+    // ── Resumen del número de módulos que se crearán ─────────────────────────
+    String _previewCount(BetStructure s, List<String> pids, String? anchor, Set<BetModuleType> sel) {
+      if (sel.isEmpty) return '';
+      int modsPerType;
+      switch (s) {
+        case BetStructure.group:
+        case BetStructure.manual:
+        case BetStructure.headToHead:
+          modsPerType = 1; break;
+        case BetStructure.anchorVsMany:
+          final rivals = pids.where((id) => id != anchor).length;
+          modsPerType = rivals > 0 ? rivals : 0; break;
+        case BetStructure.roundRobin:
+          final n = pids.length;
+          modsPerType = n >= 2 ? (n * (n - 1)) ~/ 2 : 0; break;
+      }
+      final total = sel.length * modsPerType;
+      return total == 0 ? '' :
+          'Se crearán $total apuesta${total > 1 ? 's' : ''}'
+          '${sel.length > 1 ? " ($modsPerType por tipo × ${sel.length} tipos)" : ""}';
+    }
+
+    // ── Resumen detallado para anchorVsMany / roundRobin ─────────────────────
+    String _detailPreview(BetStructure s, List<String> pids, String? anchor,
+        Set<BetModuleType> sel, List<Player> players) {
+      if (sel.isEmpty) return '';
+      String nameOf(String id) =>
+          players.firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id)).name;
+
+      final lines = <String>[];
+      for (final bt in sel) {
+        switch (s) {
+          case BetStructure.anchorVsMany:
+            if (anchor == null) break;
+            final rivals = pids.where((id) => id != anchor).toList();
+            lines.addAll(rivals.map((r) => '${bt.label}: ${nameOf(anchor)} vs ${nameOf(r)}'));
+            break;
+          case BetStructure.roundRobin:
+            for (int i = 0; i < pids.length; i++) {
+              for (int k = i + 1; k < pids.length; k++) {
+                lines.add('${bt.label}: ${nameOf(pids[i])} vs ${nameOf(pids[k])}');
+              }
+            }
+            break;
+          default:
+            break;
+        }
+      }
+      return lines.join('\n');
+    }
+
     showModalBottomSheet(
       context: context, backgroundColor: t.card, isScrollControlled: true, useRootNavigator: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(builder: (ctx2, setSt) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx2).viewInsets.bottom + 24, left: 20, right: 20, top: 24),
-        child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Text('Agregar apuesta', style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
-            const Spacer(),
-            GestureDetector(onTap: () => Navigator.pop(ctx2), child: Icon(Icons.close, color: t.sub)),
-          ]),
-          const SizedBox(height: 4),
-          Text('Selecciona el tipo de apuesta a agregar', style: TextStyle(color: t.sub, fontSize: 12)),
-          const SizedBox(height: 16),
+      builder: (ctx) => StatefulBuilder(builder: (ctx2, setSt) {
+        final pids       = g.playerIds;
+        final validErr   = _validateStructure(structure, pids, anchorPlayerId);
+        final canConfirm = selected.isNotEmpty && validErr == null;
+        final preview    = _previewCount(structure, pids, anchorPlayerId, selected);
+        final detail     = _detailPreview(structure, pids, anchorPlayerId, selected, _players);
 
-          // ── Grupo Match / Apuestas de 18 hoyos ──────────────────────────
-          Text('MATCH PLAY', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
-          const SizedBox(height: 8),
-          ...[BetModuleType.nassau, BetModuleType.matchAutoPress].map((bt) => _betTypeTile(bt, selected, setSt, t)),
-          const SizedBox(height: 16),
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx2).viewInsets.bottom + 24, left: 20, right: 20, top: 24),
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-          // ── Grupo apuestas individuales ───────────────────────────────
-          Text('OTRAS APUESTAS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
-          const SizedBox(height: 8),
-          ...[BetModuleType.skins, BetModuleType.medal, BetModuleType.putts, BetModuleType.oyeses, BetModuleType.units].map((bt) => _betTypeTile(bt, selected, setSt, t)),
+            // ── Cabecera ────────────────────────────────────────────────────
+            Row(children: [
+              Text('Agregar apuesta', style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
+              const Spacer(),
+              GestureDetector(onTap: () => Navigator.pop(ctx2), child: Icon(Icons.close, color: t.sub)),
+            ]),
+            const SizedBox(height: 4),
+            Text('Tipo de apuesta y formato de enfrentamiento', style: TextStyle(color: t.sub, fontSize: 12)),
+            const SizedBox(height: 16),
 
-          const SizedBox(height: 16),
-          GPrimaryButton(
-            label: selected.isEmpty ? 'Selecciona al menos uno' : 'Agregar ${selected.length} módulo${selected.length > 1 ? 's' : ''}',
-            onTap: selected.isEmpty ? null : () {
-              final startIdx = _groups[gi].modules.length;
-              setState(() {
-                final mods = List<BetModuleInstance>.from(_groups[gi].modules);
-                for (final bt in selected) {
-                  mods.add(BetModuleInstance.defaultFor(bt, g.playerIds));
-                }
-                _groups[gi] = _groups[gi].copyWith(modules: mods);
-              });
-              Navigator.pop(ctx2);
-              if (selected.length == 1) {
-                final newGroup = _groups[gi];
-                final newMod   = newGroup.modules[startIdx];
-                Future.delayed(const Duration(milliseconds: 220), () {
-                  if (mounted) _editModuleInstance(gi, startIdx, newMod, newGroup, t);
+            // ── Tipo de apuesta ─────────────────────────────────────────────
+            Text('MATCH PLAY', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+            const SizedBox(height: 8),
+            ...[BetModuleType.nassau, BetModuleType.matchAutoPress].map((bt) => _betTypeTile(bt, selected, setSt, t)),
+            const SizedBox(height: 16),
+            Text('OTRAS APUESTAS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+            const SizedBox(height: 8),
+            ...[BetModuleType.skins, BetModuleType.medal, BetModuleType.putts, BetModuleType.oyeses, BetModuleType.units].map((bt) => _betTypeTile(bt, selected, setSt, t)),
+            const SizedBox(height: 20),
+
+            // ── Selector de estructura ──────────────────────────────────────
+            Text('FORMATO DE ENFRENTAMIENTO', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+            const SizedBox(height: 8),
+            ..._structureOptions(pids.length).map((opt) {
+              final (s, icon, label, desc) = opt;
+              final isSel = structure == s;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: GestureDetector(
+                  onTap: () => setSt(() {
+                    structure = s;
+                    // Resetear anchor si cambia a otro modo
+                    if (s != BetStructure.anchorVsMany) anchorPlayerId = null;
+                  }),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                    decoration: BoxDecoration(
+                      color: isSel ? t.primary.withValues(alpha: 0.10) : t.surface,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: isSel ? t.primary : t.divider, width: isSel ? 1.5 : 1),
+                    ),
+                    child: Row(children: [
+                      Text(icon, style: const TextStyle(fontSize: 18)),
+                      const SizedBox(width: 12),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(label, style: TextStyle(color: isSel ? t.primary : t.text, fontWeight: FontWeight.w700, fontSize: 13)),
+                        Text(desc,  style: TextStyle(color: t.sub, fontSize: 11)),
+                      ])),
+                      if (isSel) Icon(Icons.check_circle, color: t.primary, size: 18)
+                      else       Icon(Icons.radio_button_unchecked, color: t.divider, size: 18),
+                    ]),
+                  ),
+                ),
+              );
+            }),
+
+            // ── Selector de ancla (solo anchorVsMany) ───────────────────────
+            if (structure == BetStructure.anchorVsMany) ...[
+              const SizedBox(height: 12),
+              Text('JUGADOR ANCLA', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: _players
+                  .where((p) => pids.contains(p.id))
+                  .map((p) {
+                    final sel = anchorPlayerId == p.id;
+                    return GestureDetector(
+                      onTap: () => setSt(() => anchorPlayerId = sel ? null : p.id),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 120),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: sel ? t.accent.withValues(alpha: 0.15) : t.surface,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: sel ? t.accent : t.divider, width: sel ? 1.5 : 1),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          if (sel) ...[Icon(Icons.anchor, color: t.accent, size: 13), const SizedBox(width: 4)],
+                          Text(p.name, style: TextStyle(color: sel ? t.accent : t.text, fontWeight: FontWeight.w600, fontSize: 13)),
+                        ]),
+                      ),
+                    );
+                  }).toList()),
+            ],
+
+            // ── Error de validación ─────────────────────────────────────────
+            if (validErr != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: t.loss.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: t.loss.withValues(alpha: 0.3)),
+                ),
+                child: Row(children: [
+                  Icon(Icons.warning_amber_rounded, color: t.loss, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(validErr, style: TextStyle(color: t.loss, fontSize: 12))),
+                ]),
+              ),
+            ],
+
+            // ── Resumen / preview ───────────────────────────────────────────
+            if (canConfirm && preview.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: t.primary.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: t.primary.withValues(alpha: 0.2)),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Icon(Icons.info_outline, color: t.primary, size: 14),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text(preview,
+                        style: TextStyle(color: t.primary, fontSize: 12, fontWeight: FontWeight.w700))),
+                  ]),
+                  if (detail.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(detail, style: TextStyle(color: t.sub, fontSize: 11)),
+                  ],
+                ]),
+              ),
+            ],
+
+            // ── Botón confirmar ─────────────────────────────────────────────
+            const SizedBox(height: 16),
+            GPrimaryButton(
+              label: selected.isEmpty
+                  ? 'Selecciona al menos un tipo'
+                  : !canConfirm
+                      ? 'Corrige los errores'
+                      : preview.isNotEmpty ? preview : 'Agregar apuesta',
+              onTap: canConfirm ? () {
+                final grpId   = 'grp_${DateTime.now().millisecondsSinceEpoch}';
+                final grpName = '${selected.map((bt) => bt.label).join(' + ')} '
+                    '— ${_structureLabelShort(structure)}';
+                final startIdx = _groups[gi].modules.length;
+                setState(() {
+                  final mods = List<BetModuleInstance>.from(_groups[gi].modules);
+                  for (final bt in selected) {
+                    try {
+                      final expanded = BetModuleInstance.expandBetModules(
+                        type: bt,
+                        structure: structure,
+                        participantIds: g.playerIds,
+                        anchorPlayerId: anchorPlayerId,
+                        betGroupId:    structure == BetStructure.anchorVsMany || structure == BetStructure.roundRobin ? grpId : null,
+                        betGroupName:  structure == BetStructure.anchorVsMany || structure == BetStructure.roundRobin ? grpName : null,
+                      );
+                      mods.addAll(expanded);
+                    } catch (_) {
+                      // Fallback graceful: añadir módulo básico
+                      mods.add(BetModuleInstance.defaultFor(bt, g.playerIds));
+                    }
+                  }
+                  _groups[gi] = _groups[gi].copyWith(modules: mods);
                 });
-              }
-            },
-          ),
-        ])),
-      )),
+                Navigator.pop(ctx2);
+                // Abrir editor solo si se creó exactamente 1 módulo
+                final newGroup = _groups[gi];
+                if (newGroup.modules.length == startIdx + 1) {
+                  final newMod = newGroup.modules[startIdx];
+                  Future.delayed(const Duration(milliseconds: 220), () {
+                    if (mounted) _editModuleInstance(gi, startIdx, newMod, newGroup, t);
+                  });
+                }
+              } : null,
+            ),
+          ])),
+        );
+      }),
     );
   }
+
+  /// Opciones de estructura disponibles según el número de jugadores del grupo.
+  List<(BetStructure, String, String, String)> _structureOptions(int playerCount) => [
+    (BetStructure.group,       '👥', 'Grupo único',         'Un pot para todos los jugadores'),
+    if (playerCount == 2)
+      (BetStructure.headToHead, '⚔️', 'Head to head',        '1 vs 1, exactamente 2 jugadores'),
+    (BetStructure.anchorVsMany,'🎯', 'Jugador vs varios',   'Un ancla enfrenta a cada rival por separado'),
+    (BetStructure.roundRobin,  '🔄', 'Todos contra todos',  'Un duelo por cada combinación de jugadores'),
+  ];
+
+  String _structureLabelShort(BetStructure s) => switch (s) {
+    BetStructure.group       => 'Grupo',
+    BetStructure.headToHead  => '1v1',
+    BetStructure.anchorVsMany=> 'Ancla vs varios',
+    BetStructure.roundRobin  => 'Todos vs todos',
+    BetStructure.manual      => 'Manual',
+  };
 
   Widget _betTypeTile(BetModuleType bt, Set<BetModuleType> selected, StateSetter setSt, GolfTheme t) {
     final isSel = selected.contains(bt);
