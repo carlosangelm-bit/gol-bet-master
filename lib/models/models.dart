@@ -1105,21 +1105,26 @@ class BetModuleInstance {
   /// ID del jugador ancla cuando structure == anchorVsMany.
   final String? anchorPlayerId;
 
-  // ── Overrides por jugador ─────────────────────────────────────────────────
-  /// Excepciones de valor por jugador para Skins, Oyeses y Units.
+  // ── Overrides por jugador (LEGACY — solo retrocompat) ──────────────────────
+  /// Campo heredado. Las nuevas ediciones usan [pairConfigOverrides].
+  /// Se preserva solo para deserializar rondas ya guardadas.
+  final Map<String, Map<String, dynamic>>? playerConfigOverrides;
+
+  // ── Overrides por duelo/par ───────────────────────────────────────────────
+  /// Excepciones de valor por par de jugadores para Skins, Oyeses y Units.
   ///
-  /// Clave: playerId  Valor: mapa de configuración plano, ej:
-  ///   { 'value': 25.0 }           → para Skins (valuePerSkin) y Oyeses (value)
-  ///   { 'allEvents': 25.0 }       → para Units (todos los eventos del jugador)
+  /// Clave: [pairKey(pidA, pidB)] — dos playerIds ordenados alfabéticamente
+  ///        unidos con "__", ej. "AAM__CAM".
+  /// Valor: mapa de configuración plano, ej:
+  ///   { 'value': 25.0 }      → Skins (valuePerSkin) y Oyeses (value)
+  ///   { 'allEvents': 25.0 }  → Units (todos los eventos del duelo)
   ///
-  /// Regla de resolución al calcular el valor efectivo de un duelo 1v1:
-  ///   • Ningún override  → config default del grupo.
-  ///   • Solo un jugador  → usa su override.
-  ///   • Ambos diferentes → valor mínimo (+ warning en preview).
-  ///   • Ambos iguales    → ese valor.
+  /// Regla de resolución:
+  ///   • Sin override de pareja → config default del grupo.
+  ///   • Con override de pareja → ese valor (sin conflictos).
   ///
   /// Null = no hay overrides (retrocompat, módulos viejos).
-  final Map<String, Map<String, dynamic>>? playerConfigOverrides;
+  final Map<String, Map<String, dynamic>>? pairConfigOverrides;
 
   const BetModuleInstance({
     required this.id,
@@ -1142,6 +1147,7 @@ class BetModuleInstance {
     this.betGroupName,
     this.anchorPlayerId,
     this.playerConfigOverrides,
+    this.pairConfigOverrides,
   });
 
   // ── Acceso a lados con validación rápida ─────────────────────────────────
@@ -1253,6 +1259,8 @@ class BetModuleInstance {
     String?                              anchorPlayerId,
     Map<String, Map<String, dynamic>>?   playerConfigOverrides,
     bool                                 clearPlayerOverrides = false,
+    Map<String, Map<String, dynamic>>?   pairConfigOverrides,
+    bool                                 clearPairOverrides = false,
   }) => BetModuleInstance(
     id: id, type: type,
     name: name ?? this.name,
@@ -1275,6 +1283,9 @@ class BetModuleInstance {
     playerConfigOverrides: clearPlayerOverrides
         ? null
         : (playerConfigOverrides ?? this.playerConfigOverrides),
+    pairConfigOverrides: clearPairOverrides
+        ? null
+        : (pairConfigOverrides ?? this.pairConfigOverrides),
   );
 
   // ── JSON ──────────────────────────────────────────────────────────────────
@@ -1293,6 +1304,11 @@ class BetModuleInstance {
     if (playerConfigOverrides != null && playerConfigOverrides!.isNotEmpty)
       'playerConfigOverrides': {
         for (final e in playerConfigOverrides!.entries) e.key: e.value,
+      },
+    // pairConfigOverrides: nuevo modelo de overrides por duelo.
+    if (pairConfigOverrides != null && pairConfigOverrides!.isNotEmpty)
+      'pairConfigOverrides': {
+        for (final e in pairConfigOverrides!.entries) e.key: e.value,
       },
     // sides: solo se serializa si existe. Rondas sin sides → no tienen clave (retrocompat).
     if (sides != null) 'sides': sides!.map((s) => s.toJson()).toList(),
@@ -1389,7 +1405,21 @@ class BetModuleInstance {
         try {
           (raw as Map).forEach((k, v) {
             if (k is String && v is Map) {
-              result[k] = Map<String, dynamic>.from(v as Map);
+              result[k] = Map<String, dynamic>.from(v);
+            }
+          });
+        } catch (_) {}
+        return result.isEmpty ? null : result;
+      }(),
+      // pairConfigOverrides: nuevo modelo por duelo.
+      pairConfigOverrides: () {
+        final raw = j['pairConfigOverrides'];
+        if (raw == null) return null;
+        final result = <String, Map<String, dynamic>>{};
+        try {
+          (raw as Map).forEach((k, v) {
+            if (k is String && v is Map) {
+              result[k] = Map<String, dynamic>.from(v);
             }
           });
         } catch (_) {}
@@ -1400,11 +1430,32 @@ class BetModuleInstance {
 
   // ── Helpers de overrides ──────────────────────────────────────────────────
 
-  /// Devuelve el valor de override para un jugador, o null si no tiene.
-  /// La clave buscada depende del tipo de módulo:
-  ///   Skins  → 'value'      (== valuePerSkin)
-  ///   Oyeses → 'value'      (== value por oyés)
-  ///   Units  → 'allEvents'  (aplica a todos los eventos del jugador)
+  /// Clave canónica para un par de jugadores: IDs ordenados alfabéticamente
+  /// separados por "__". Ej: pairKey("CAM","AAM") == "AAM__CAM".
+  static String pairKey(String a, String b) {
+    final sorted = [a, b]..sort();
+    return '${sorted[0]}__${sorted[1]}';
+  }
+
+  /// Devuelve el valor de override para el par [pidA]/[pidB], o null si no hay.
+  /// Clave dependiente del tipo:
+  ///   Skins/Oyeses → 'value'     Units → 'allEvents'
+  double? overrideForPair(String pidA, String pidB) {
+    final ov = pairConfigOverrides?[pairKey(pidA, pidB)];
+    if (ov == null) return null;
+    switch (type) {
+      case BetModuleType.skins:
+      case BetModuleType.oyeses:
+        return (ov['value'] as num?)?.toDouble();
+      case BetModuleType.units:
+        return (ov['allEvents'] as num?)?.toDouble();
+      default:
+        return null;
+    }
+  }
+
+  /// Devuelve el valor de override LEGACY por jugador individual, o null.
+  /// Solo se usa para leer datos viejos; las nuevas ediciones usan [overrideForPair].
   double? overrideFor(String playerId) {
     final ov = playerConfigOverrides?[playerId];
     if (ov == null) return null;
@@ -1419,32 +1470,43 @@ class BetModuleInstance {
     }
   }
 
-  /// Calcula el valor efectivo del duelo entre [pidA] y [pidB] según reglas:
-  ///   ninguno → default, uno → su override, ambos distintos → mínimo,
-  ///   ambos iguales → ese valor.
-  /// Devuelve (valor, hasConflict).
+  /// Calcula el valor efectivo del duelo entre [pidA] y [pidB].
+  ///
+  /// Prioridad (de mayor a menor):
+  ///  1. [pairConfigOverrides] para el par → valor del par (sin conflicto).
+  ///  2. [playerConfigOverrides] legacy → regla mínimo entre ambos jugadores.
+  ///  3. Default del grupo.
+  ///
+  /// Devuelve (valor, hasConflict). Con el nuevo modelo hasConflict=false siempre.
   (double, bool) effectiveValueForDuel(String pidA, String pidB) {
+    // 1. Override de pareja (nuevo modelo)
+    final pairOv = overrideForPair(pidA, pidB);
+    if (pairOv != null) return (pairOv, false);
+
+    // 2. Legacy: overrides por jugador (retrocompat)
     final ovA = overrideFor(pidA);
     final ovB = overrideFor(pidB);
     final base = _baseValue;
-
     if (ovA == null && ovB == null) return (base, false);
     if (ovA != null && ovB == null) return (ovA, false);
     if (ovA == null && ovB != null) return (ovB, false);
-    // Ambos tienen override
     if (ovA == ovB) return (ovA!, false);
-    return (ovA! < ovB! ? ovA : ovB, true); // mínimo + warning
+    return (ovA! < ovB! ? ovA : ovB, true); // mínimo legacy + warning
   }
 
   /// Valor base del módulo según su tipo (sin overrides).
-  double get _baseValue => switch (type) {
+  /// Público para que la UI pueda usarlo como hint/placeholder.
+  double get baseValue => switch (type) {
     BetModuleType.skins  => skins.valuePerSkin,
     BetModuleType.oyeses => oyeses.value,
     BetModuleType.units  => units.valueFor(UnitEventType.birdie),
     _                    => value, // otros tipos no soportan override
   };
 
-  /// true si este tipo de módulo soporta override de valor por jugador.
+  // Alias privado para uso interno (retrocompat de llamadas internas).
+  double get _baseValue => baseValue;
+
+  /// true si este tipo de módulo soporta override de valor por duelo.
   bool get supportsPlayerOverride =>
       type == BetModuleType.skins ||
       type == BetModuleType.oyeses ||
@@ -1495,6 +1557,7 @@ class BetModuleInstance {
     String? betGroupId,
     String? betGroupName,
     Map<String, Map<String, dynamic>>? playerConfigOverrides,
+    Map<String, Map<String, dynamic>>? pairConfigOverrides,
     // Configuración tipada opcional: si null se usan los defaults.
     SkinsConfig?          skinsConfig,
     NassauConfig?         nassauConfig,
@@ -1517,6 +1580,7 @@ class BetModuleInstance {
         betGroupName:  betGroupName,
         anchorPlayerId: anchorPlayerId,
         playerConfigOverrides: playerConfigOverrides,
+        pairConfigOverrides:   pairConfigOverrides,
         skinsConfig:          skinsConfig          ?? (type == BetModuleType.skins         ? SkinsConfig.def          : null),
         nassauConfig:         nassauConfig         ?? (type == BetModuleType.nassau        ? NassauConfig.def         : null),
         matchAutoPressConfig: matchAutoPressConfig ?? (type == BetModuleType.matchAutoPress? MatchAutoPressConfig.def : null),
