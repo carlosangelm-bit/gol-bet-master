@@ -1032,6 +1032,25 @@ class UnitsConfig {
   UnitsConfig copyWith({Map<UnitEventType, double>? eventValues}) =>
       UnitsConfig(eventValues: eventValues ?? this.eventValues);
 
+  /// Devuelve una nueva instancia donde TODOS los eventos tienen el mismo [value].
+  /// Útil para el editor agrupado donde se configura un único valor por pareja.
+  UnitsConfig withAllEventsValue(double v) =>
+      UnitsConfig(eventValues: {for (final e in UnitEventType.values) e: v});
+
+  /// true si todos los eventos configurados tienen el mismo valor (o el mapa
+  /// está vacío → todos usan [defaultValue]).
+  bool get isUniform {
+    if (eventValues.isEmpty) return true;
+    final vals = UnitEventType.values.map(valueFor);
+    return vals.every((v) => v == vals.first);
+  }
+
+  /// Valor único representativo:
+  ///   • Si todos los eventos tienen el mismo valor → ese valor.
+  ///   • Si hay heterogeneidad → valor de birdie como canónico.
+  double get representativeValue =>
+      isUniform ? valueFor(UnitEventType.birdie) : valueFor(UnitEventType.birdie);
+
   Map<String, dynamic> toJson() => {
     'eventValues': {
       for (final e in eventValues.entries) e.key.name: e.value,
@@ -1233,7 +1252,8 @@ class BetModuleInstance {
                             '${putts.threePuttPenalty ? ' · 3-putt' : ''}',
     BetModuleType.oyeses => '\$${oyeses.value.toStringAsFixed(0)}/oyés'
                             '${oyeses.zapatoEnabled ? ' · zapato 👟' : ''}',
-    BetModuleType.units  => '\$${units.valueFor(UnitEventType.birdie).toStringAsFixed(0)}/unit · ${UnitEventType.values.length} eventos',
+    BetModuleType.units  => '\$${units.representativeValue.toStringAsFixed(0)} / unidad'
+                            ' · ${UnitEventType.values.length} eventos',
   };
 
   // ── copyWith ──────────────────────────────────────────────────────────────
@@ -1501,7 +1521,8 @@ class BetModuleInstance {
   double get baseValue => switch (type) {
     BetModuleType.skins  => skins.valuePerSkin,
     BetModuleType.oyeses => oyeses.value,
-    BetModuleType.units  => units.valueFor(UnitEventType.birdie),
+    // Units: valor representativo (uniforme si todos iguales, birdie si heterogéneo).
+    BetModuleType.units  => units.representativeValue,
     BetModuleType.putts  => putts.value,
     BetModuleType.medal  => medal.value,
     _                    => value,
