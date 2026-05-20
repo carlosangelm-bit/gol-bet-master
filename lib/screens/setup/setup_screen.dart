@@ -1866,20 +1866,30 @@ class _SetupScreenState extends State<SetupScreen> {
                       const SizedBox(height: 20),
 
                       // ── Config base por tipo ──────────────────────────────
+                      // groupMode: true → para Units muestra campo único de valor
+                      // base en lugar de la lista detallada por evento.
                       ..._configWidgets(
                           cfg, t, setSt, (updated) {
                             cfg = updated;
                             setSt(() {}); // rebuild preview
-                          }),
+                          }, groupMode: true),
 
                       // ── Valores por duelo (solo tipos soportados) ─────────
                       if (supportsOverride && pairEntries.isNotEmpty) ...[
                         const SizedBox(height: 24),
-                        _sectionLabel('VALORES POR DUELO', t),
+                        _sectionLabel(
+                          cfg.type == BetModuleType.units
+                              ? 'VALOR DE UNIDAD POR DUELO'
+                              : 'VALORES POR DUELO',
+                          t,
+                        ),
                         const SizedBox(height: 4),
                         Text(
-                          'Edita el valor de cada enfrentamiento individualmente. '
-                          'Deja el campo vacío o con el valor base para usar el default.',
+                          cfg.type == BetModuleType.units
+                              ? 'Valor de la unidad para cada enfrentamiento. '
+                                'Todas las unidades del duelo valen este monto.'
+                              : 'Edita el valor de cada enfrentamiento individualmente. '
+                                'Deja el campo vacío o con el valor base para usar el default.',
                           style: TextStyle(color: t.sub, fontSize: 11),
                         ),
                         const SizedBox(height: 10),
@@ -2057,16 +2067,10 @@ class _SetupScreenState extends State<SetupScreen> {
                                         .copyWith(value: effVal);
                                     break;
                                   case BetModuleType.units:
-                                    final baseMap = Map<UnitEventType,
-                                        double>.from(
-                                      cfg.unitsConfig?.eventValues ??
-                                          UnitsConfig.defaults,
-                                    );
-                                    for (final k in baseMap.keys) {
-                                      baseMap[k] = effVal;
-                                    }
-                                    effectiveUnits =
-                                        UnitsConfig(eventValues: baseMap);
+                                    // Aplicar el mismo valor a todos los eventos
+                                    // del duelo usando el helper withAllEventsValue.
+                                    effectiveUnits = (cfg.unitsConfig ?? UnitsConfig.def)
+                                        .withAllEventsValue(effVal);
                                     break;
                                   case BetModuleType.putts:
                                     effectivePutts = (cfg.puttsConfig ??
@@ -2254,7 +2258,9 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   // ── Widgets de config según tipo ─────────────────────────────────────────
-  List<Widget> _configWidgets(BetModuleInstance cfg, GolfTheme t, StateSetter setSt, void Function(BetModuleInstance) update) {
+  // [groupMode] = true → editor agrupado: para Units muestra solo el campo
+  // de valor base único en lugar de la lista detallada por evento.
+  List<Widget> _configWidgets(BetModuleInstance cfg, GolfTheme t, StateSetter setSt, void Function(BetModuleInstance) update, {bool groupMode = false}) {
     // Tipos donde el selector de formato aplica (no Units, que son siempre individuales)
     final showFormatSelector = cfg.type != BetModuleType.units;
 
@@ -2693,6 +2699,32 @@ class _SetupScreenState extends State<SetupScreen> {
 
       case BetModuleType.units:
         final u = cfg.units;
+
+        // ── Modo agrupado: campo único de valor base ──────────────────────
+        if (groupMode) {
+          final ctrlBase = TextEditingController(
+              text: u.representativeValue.toStringAsFixed(0));
+          ctrlBase.addListener(() {
+            final v = double.tryParse(ctrlBase.text);
+            if (v != null && v > 0) {
+              update(cfg.copyWith(
+                  unitsConfig: u.withAllEventsValue(v)));
+            }
+          });
+          return [
+            _sectionLabel('VALOR DE UNIDAD (BASE)', t),
+            const SizedBox(height: 6),
+            Text(
+              'Valor por defecto de cada unidad para todos los duelos. '
+              'Personaliza por pareja en la sección "Valor de unidad por duelo".',
+              style: TextStyle(color: t.sub, fontSize: 11),
+            ),
+            const SizedBox(height: 10),
+            _amountField('Valor por unidad', ctrlBase, t),
+          ];
+        }
+
+        // ── Modo individual: lista completa de eventos ────────────────────
         // Un controller por cada tipo de evento
         final ctrls = <UnitEventType, TextEditingController>{
           for (final e in UnitEventType.values)

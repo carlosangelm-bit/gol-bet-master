@@ -2122,7 +2122,7 @@ class _ActiveRoundView extends StatelessWidget {
             Text(g.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 14)),
             const SizedBox(height: 8),
             Wrap(spacing: 6, runSpacing: 6, children: [
-              ...g.modules.map((m) => _buildBetModuleChip(m, g, prov, context, t)),
+              ..._buildConsolidatedBetChips(g, prov, context, t),
               // ── Chip + Añadir apuesta ──────────────────────────────────
               GestureDetector(
                 onTap: () => _openAddBet(context, prov, g, t),
@@ -2365,6 +2365,178 @@ class _ActiveRoundView extends StatelessWidget {
       child: Center(child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 13))),
     ),
   );
+
+  // ── Chips consolidados para la sección PARTIDAS ──────────────────────────
+  // Agrupa módulos con mismo betGroupId+type en un único chip resumen.
+  // Módulos sin betGroupId (o con betGroupId único) se muestran individualmente.
+  List<Widget> _buildConsolidatedBetChips(
+    BetGroup group, RoundProvider prov, BuildContext context, GolfTheme t) {
+
+    final modules = group.modules;
+    final result  = <Widget>[];
+    // Clave de familia: 'betGroupId__typeName'  (o solo id del módulo si no tiene grupo)
+    final seen    = <String>{};
+
+    for (int i = 0; i < modules.length; i++) {
+      final mod = modules[i];
+      final gid = mod.betGroupId;
+
+      if (gid == null) {
+        // ── Módulo individual ────────────────────────────────────────────
+        result.add(_buildBetModuleChip(mod, group, prov, context, t));
+      } else {
+        final familyKey = '${gid}__${mod.type.name}';
+        if (!seen.contains(familyKey)) {
+          seen.add(familyKey);
+          // Reunir todos los módulos de esta familia (mismo gid + mismo type)
+          final family = modules
+              .asMap()
+              .entries
+              .where((e) =>
+                  e.value.betGroupId == gid &&
+                  e.value.type       == mod.type)
+              .toList();
+
+          if (family.length == 1) {
+            // Familia de 1 → chip individual normal
+            result.add(_buildBetModuleChip(mod, group, prov, context, t));
+          } else {
+            // Familia de N → chip consolidado
+            result.add(_buildGroupChip(family, group, prov, context, t));
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  // ── Chip resumen para una familia de módulos (mismo betGroupId + type) ────
+  Widget _buildGroupChip(
+    List<MapEntry<int, BetModuleInstance>> family,
+    BetGroup group,
+    RoundProvider prov,
+    BuildContext context,
+    GolfTheme t,
+  ) {
+    final template = family.first.value;
+    final count    = family.length;
+    final isMatch  = template.type == BetModuleType.nassau ||
+                     template.type == BetModuleType.matchAutoPress;
+    final accent   = isMatch ? t.accent : t.primary;
+
+    // ¿Algún módulo tiene overrides por par personalizados?
+    final hasOverrides = family.any((e) =>
+        e.value.pairConfigOverrides != null &&
+        e.value.pairConfigOverrides!.isNotEmpty);
+
+    // Etiqueta compacta de valor
+    final shortLabel = _shortChipLabel(template);
+
+    return GestureDetector(
+      onTap: () => _openGroupBetEdit(context, prov, group, family, t),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: accent.withValues(alpha: 0.40), width: 1.5),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(template.type.icon, style: const TextStyle(fontSize: 13)),
+          const SizedBox(width: 5),
+          // Tipo + valor compacto
+          Text(
+            '${template.type.label} · $shortLabel · $count duelos',
+            style: TextStyle(color: accent, fontWeight: FontWeight.w700, fontSize: 12),
+          ),
+          // Indicador de overrides personalizados
+          if (hasOverrides) ...[
+            const SizedBox(width: 4),
+            Icon(Icons.tune, color: accent.withValues(alpha: 0.75), size: 11),
+          ],
+          const SizedBox(width: 4),
+          Icon(Icons.edit_outlined, color: accent.withValues(alpha: 0.60), size: 11),
+        ]),
+      ),
+    );
+  }
+
+  // ── Etiqueta de valor corta para el chip ──────────────────────────────────
+  String _shortChipLabel(BetModuleInstance m) {
+    switch (m.type) {
+      case BetModuleType.skins:
+        return '\$${m.skins.valuePerSkin.toStringAsFixed(0)}/skin';
+      case BetModuleType.nassau:
+        return 'F\$${m.nassau.frontValue.toStringAsFixed(0)}'
+               '·B\$${m.nassau.backValue.toStringAsFixed(0)}'
+               '·T\$${m.nassau.totalValue.toStringAsFixed(0)}';
+      case BetModuleType.matchAutoPress:
+        return '\$${m.matchAutoPress.matchValue.toStringAsFixed(0)} match';
+      case BetModuleType.medal:
+        return '\$${m.medal.value.toStringAsFixed(0)}';
+      case BetModuleType.putts:
+        return '\$${m.putts.value.toStringAsFixed(0)}/putt';
+      case BetModuleType.oyeses:
+        return '\$${m.oyeses.value.toStringAsFixed(0)}/oyés';
+      case BetModuleType.units:
+        return '\$${m.units.representativeValue.toStringAsFixed(0)}/u';
+    }
+  }
+
+  // ── Abrir editor de grupo para una familia de módulos ─────────────────────
+  // Usa BetModuleEditSheet con el template (primer módulo) y aplica el
+  // resultado a todos los módulos de la familia.
+  void _openGroupBetEdit(
+    BuildContext context,
+    RoundProvider prov,
+    BetGroup group,
+    List<MapEntry<int, BetModuleInstance>> family,
+    GolfTheme t,
+  ) {
+    final template = family.first.value;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => BetModuleEditSheet(
+        group: group,
+        mod: template,
+        t: t,
+        courseInfo: prov.round!.course,
+        players: prov.round!.players,
+        onSave: (updatedTemplate) {
+          // Propagar la config base del template a todos los módulos del grupo,
+          // preservando id, participantIds, sides, betGroupId y overrides propios.
+          final updatedMods = List<BetModuleInstance>.from(group.modules);
+          for (final entry in family) {
+            final idx = entry.key;
+            final old = entry.value;
+            updatedMods[idx] = old.copyWith(
+              formatMode:           updatedTemplate.formatMode,
+              skinsConfig:          updatedTemplate.skinsConfig,
+              nassauConfig:         updatedTemplate.nassauConfig,
+              matchAutoPressConfig: updatedTemplate.matchAutoPressConfig,
+              medalConfig:          updatedTemplate.medalConfig,
+              puttsConfig:          updatedTemplate.puttsConfig,
+              oyesesConfig:         updatedTemplate.oyesesConfig,
+              unitsConfig:          updatedTemplate.unitsConfig,
+              // Los overrides por par se conservan del módulo original (no se sobreescriben)
+            );
+          }
+          final newGroup  = BetGroup(
+              id: group.id, name: group.name,
+              format: group.format, playerIds: group.playerIds,
+              modules: updatedMods);
+          final newGroups = prov.round!.betGroups
+              .map((g) => g.id == group.id ? newGroup : g)
+              .toList();
+          prov.updateBetGroups(newGroups);
+        },
+      ),
+    );
+  }
 
   Widget _buildBetModuleChip(BetModuleInstance m, BetGroup group, RoundProvider prov, BuildContext context, GolfTheme t) {
     final hasTeams = m.hasTeamSides;
