@@ -1609,8 +1609,11 @@ class _SetupScreenState extends State<SetupScreen> {
     GolfTheme t,
   ) {
     final template  = family.first.value;               // primer módulo como referencia
-    final groupName = template.betGroupName ?? template.type.label;
-    final count     = family.length;
+    // ── Título principal: siempre el tipo de apuesta (Nassau, Skins, Putts, …)
+    // betGroupName se usa solo como subtítulo contextual.
+    final typeTitle  = template.type.label;
+    final groupName  = template.betGroupName;           // null si no hay nombre de grupo
+    final count      = family.length;
 
     // Pairings legibles: "A vs B", "A vs C", …
     String nameOf(String id) =>
@@ -1650,10 +1653,16 @@ class _SetupScreenState extends State<SetupScreen> {
             ),
             const SizedBox(width: 8),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(groupName,
+              Text(typeTitle,
                   style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 14)),
-              Text('$count enfrentamientos · ${template.summaryLabel}',
-                  style: TextStyle(color: t.sub, fontSize: 11)),
+              Text(
+                // Subtítulo: "N enfrentamientos · resumeLabel"
+                // Si hay betGroupName contextual, se muestra como prefijo.
+                groupName != null
+                    ? '$count enfrentamientos · $groupName · ${template.summaryLabel}'
+                    : '$count enfrentamientos · ${template.summaryLabel}',
+                style: TextStyle(color: t.sub, fontSize: 11),
+              ),
             ])),
             // ── Botón Editar grupo ───────────────────────────────────────
             GestureDetector(
@@ -2021,6 +2030,8 @@ class _SetupScreenState extends State<SetupScreen> {
                               SkinsConfig?  effectiveSkins  = cfg.skinsConfig;
                               OyesesConfig? effectiveOyeses = cfg.oyesesConfig;
                               UnitsConfig?  effectiveUnits  = cfg.unitsConfig;
+                              PuttsConfig?  effectivePutts  = cfg.puttsConfig;
+                              MedalConfig?  effectiveMedal  = cfg.medalConfig;
 
                               if (supportsOverride && pids.length == 2) {
                                 final pk  = BetModuleInstance.pairKey(
@@ -2057,6 +2068,16 @@ class _SetupScreenState extends State<SetupScreen> {
                                     effectiveUnits =
                                         UnitsConfig(eventValues: baseMap);
                                     break;
+                                  case BetModuleType.putts:
+                                    effectivePutts = (cfg.puttsConfig ??
+                                            PuttsConfig.def)
+                                        .copyWith(value: effVal);
+                                    break;
+                                  case BetModuleType.medal:
+                                    effectiveMedal = (cfg.medalConfig ??
+                                            MedalConfig.def)
+                                        .copyWith(value: effVal);
+                                    break;
                                   default:
                                     break;
                                 }
@@ -2067,8 +2088,8 @@ class _SetupScreenState extends State<SetupScreen> {
                                 skinsConfig:          effectiveSkins,
                                 nassauConfig:         cfg.nassauConfig,
                                 matchAutoPressConfig: cfg.matchAutoPressConfig,
-                                medalConfig:          cfg.medalConfig,
-                                puttsConfig:          cfg.puttsConfig,
+                                medalConfig:          effectiveMedal,
+                                puttsConfig:          effectivePutts,
                                 oyesesConfig:         effectiveOyeses,
                                 unitsConfig:          effectiveUnits,
                                 // Guardar los overrides por par para que al

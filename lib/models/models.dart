@@ -1439,13 +1439,15 @@ class BetModuleInstance {
 
   /// Devuelve el valor de override para el par [pidA]/[pidB], o null si no hay.
   /// Clave dependiente del tipo:
-  ///   Skins/Oyeses → 'value'     Units → 'allEvents'
+  ///   Skins/Oyeses/Putts/Medal → 'value'    Units → 'allEvents'
   double? overrideForPair(String pidA, String pidB) {
     final ov = pairConfigOverrides?[pairKey(pidA, pidB)];
     if (ov == null) return null;
     switch (type) {
       case BetModuleType.skins:
       case BetModuleType.oyeses:
+      case BetModuleType.putts:
+      case BetModuleType.medal:
         return (ov['value'] as num?)?.toDouble();
       case BetModuleType.units:
         return (ov['allEvents'] as num?)?.toDouble();
@@ -1500,7 +1502,9 @@ class BetModuleInstance {
     BetModuleType.skins  => skins.valuePerSkin,
     BetModuleType.oyeses => oyeses.value,
     BetModuleType.units  => units.valueFor(UnitEventType.birdie),
-    _                    => value, // otros tipos no soportan override
+    BetModuleType.putts  => putts.value,
+    BetModuleType.medal  => medal.value,
+    _                    => value,
   };
 
   // Alias privado para uso interno (retrocompat de llamadas internas).
@@ -1508,9 +1512,11 @@ class BetModuleInstance {
 
   /// true si este tipo de módulo soporta override de valor por duelo.
   bool get supportsPlayerOverride =>
-      type == BetModuleType.skins ||
-      type == BetModuleType.oyeses ||
-      type == BetModuleType.units;
+      type == BetModuleType.skins   ||
+      type == BetModuleType.oyeses  ||
+      type == BetModuleType.units   ||
+      type == BetModuleType.putts   ||
+      type == BetModuleType.medal;
 
   // ── Factory helpers para crear instancias por defecto ─────────────────────
   static BetModuleInstance defaultFor(
