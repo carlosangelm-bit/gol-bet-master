@@ -2484,8 +2484,11 @@ class _ActiveRoundView extends StatelessWidget {
   }
 
   // ── Abrir editor de grupo para una familia de módulos ─────────────────────
-  // Usa BetModuleEditSheet con el template (primer módulo) y aplica el
-  // resultado a todos los módulos de la familia.
+  // ── Editor de grupo: config base + valores por duelo (pairConfigOverrides) ──
+  // Abre un modal propio con dos secciones:
+  //   1. Botón "Editar config base" → BetModuleEditSheet (config tipada del tipo)
+  //   2. Sección "VALORES POR DUELO" → pairCtrl indexado por pairKey canónico
+  // Al guardar, aplica config base + overrides a TODOS los módulos de la familia.
   void _openGroupBetEdit(
     BuildContext context,
     RoundProvider prov,
@@ -2493,46 +2496,432 @@ class _ActiveRoundView extends StatelessWidget {
     List<MapEntry<int, BetModuleInstance>> family,
     GolfTheme t,
   ) {
-    final template = family.first.value;
+    // cfg: template mutable que se actualiza si el usuario edita la config base.
+    var cfg = family.first.value;
+    final players = prov.round!.players;
+
+    // ── Pares 1v1 de la familia ───────────────────────────────────────────────
+    final pairEntries = family
+        .where((e) => e.value.participantIds.length == 2)
+        .toList();
+
+    // ── Controladores por pairKey ─────────────────────────────────────────────
+    final pairCtrl = <String, TextEditingController>{};
+    for (final e in pairEntries) {
+      final pids = e.value.participantIds;
+      final pk   = BetModuleInstance.pairKey(pids[0], pids[1]);
+      final existingOv = cfg.pairConfigOverrides?[pk];
+      final ovKey      = cfg.type == BetModuleType.units ? 'allEvents' : 'value';
+      final initVal    = (existingOv?[ovKey] as num?)?.toDouble();
+      // Fallback a legacy playerConfigOverrides si existen
+      final legacyVal  = cfg.playerConfigOverrides != null
+          ? cfg.effectiveValueForDuel(pids[0], pids[1]).$1
+          : null;
+      final preload    = initVal ?? legacyVal;
+      pairCtrl[pk] = TextEditingController(
+        text: preload != null ? preload.toStringAsFixed(0) : '',
+      );
+    }
+
     showModalBottomSheet(
       context: context,
       backgroundColor: t.card,
       isScrollControlled: true,
+      useRootNavigator: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => BetModuleEditSheet(
-        group: group,
-        mod: template,
-        t: t,
-        courseInfo: prov.round!.course,
-        players: prov.round!.players,
-        onSave: (updatedTemplate) {
-          // Propagar la config base del template a todos los módulos del grupo,
-          // preservando id, participantIds, sides, betGroupId y overrides propios.
-          final updatedMods = List<BetModuleInstance>.from(group.modules);
-          for (final entry in family) {
-            final idx = entry.key;
-            final old = entry.value;
-            updatedMods[idx] = old.copyWith(
-              formatMode:           updatedTemplate.formatMode,
-              skinsConfig:          updatedTemplate.skinsConfig,
-              nassauConfig:         updatedTemplate.nassauConfig,
-              matchAutoPressConfig: updatedTemplate.matchAutoPressConfig,
-              medalConfig:          updatedTemplate.medalConfig,
-              puttsConfig:          updatedTemplate.puttsConfig,
-              oyesesConfig:         updatedTemplate.oyesesConfig,
-              unitsConfig:          updatedTemplate.unitsConfig,
-              // Los overrides por par se conservan del módulo original (no se sobreescriben)
-            );
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setSt) {
+
+          // ── Construir mapa de overrides desde los campos del UI ───────────
+          Map<String, Map<String, dynamic>> _buildPairOverridesMap() {
+            final result = <String, Map<String, dynamic>>{};
+            final ovKey  = cfg.type == BetModuleType.units ? 'allEvents' : 'value';
+            final defVal = cfg.baseValue;
+            for (final e in pairEntries) {
+              final pids = e.value.participantIds;
+              final pk   = BetModuleInstance.pairKey(pids[0], pids[1]);
+              final text = pairCtrl[pk]?.text.trim() ?? '';
+              final val  = double.tryParse(text);
+              if (val != null && val > 0 && val != defVal) {
+                result[pk] = {ovKey: val};
+              }
+            }
+            return result;
           }
-          final newGroup  = BetGroup(
-              id: group.id, name: group.name,
-              format: group.format, playerIds: group.playerIds,
-              modules: updatedMods);
-          final newGroups = prov.round!.betGroups
-              .map((g) => g.id == group.id ? newGroup : g)
-              .toList();
-          prov.updateBetGroups(newGroups);
+
+          final supportsOverride = cfg.supportsPlayerOverride;
+          final groupName        = cfg.betGroupName ?? cfg.type.label;
+
+          String nameOf(String id) => players
+              .firstWhere((p) => p.id == id,
+                  orElse: () => Player(id: id, name: id))
+              .name
+              .split(' ')
+              .first;
+
+          int colorOf(String id) => players
+              .firstWhere((p) => p.id == id,
+                  orElse: () => Player(id: id, name: id))
+              .colorIndex;
+
+          return DraggableScrollableSheet(
+            initialChildSize: 0.88,
+            minChildSize: 0.5,
+            maxChildSize: 0.97,
+            expand: false,
+            builder: (_, sc) => Padding(
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(ctx2).viewInsets.bottom),
+              child: SingleChildScrollView(
+                controller: sc,
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+
+                    // ── Header ────────────────────────────────────────────
+                    Row(children: [
+                      Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${cfg.type.icon} ${cfg.type.label}',
+                              style: TextStyle(
+                                  color: t.text,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800)),
+                          Text(groupName,
+                              style: TextStyle(color: t.sub, fontSize: 12)),
+                        ],
+                      )),
+                      GestureDetector(
+                          onTap: () => Navigator.pop(ctx2),
+                          child: Icon(Icons.close, color: t.sub)),
+                    ]),
+                    const SizedBox(height: 8),
+
+                    // ── Banner info ───────────────────────────────────────
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: t.primary.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: t.primary.withValues(alpha: 0.2)),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.info_outline,
+                            color: t.primary, size: 14),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'La configuración base y los valores por duelo se aplicarán a los ${family.length} enfrentamientos.',
+                            style: TextStyle(color: t.primary, fontSize: 11),
+                          ),
+                        ),
+                      ]),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // ── Sección: config base ──────────────────────────────
+                    Row(children: [
+                      Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('CONFIG BASE',
+                              style: TextStyle(
+                                  color: t.sub,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.6)),
+                          const SizedBox(height: 4),
+                          Text(cfg.summaryLabel,
+                              style: TextStyle(color: t.sub, fontSize: 12)),
+                        ],
+                      )),
+                      GestureDetector(
+                        onTap: () {
+                          // Abre BetModuleEditSheet para editar config base.
+                          // Al guardar, actualiza cfg en este modal.
+                          showModalBottomSheet(
+                            context: ctx2,
+                            backgroundColor: t.card,
+                            isScrollControlled: true,
+                            useRootNavigator: true,
+                            shape: const RoundedRectangleBorder(
+                                borderRadius: BorderRadius.vertical(
+                                    top: Radius.circular(20))),
+                            builder: (_) => BetModuleEditSheet(
+                              group: group,
+                              mod: cfg,
+                              t: t,
+                              courseInfo: prov.round!.course,
+                              players: players,
+                              onSave: (updated) {
+                                setSt(() { cfg = updated; });
+                              },
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: t.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.edit_outlined,
+                                color: t.primary, size: 13),
+                            const SizedBox(width: 4),
+                            Text('Editar',
+                                style: TextStyle(
+                                    color: t.primary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12)),
+                          ]),
+                        ),
+                      ),
+                    ]),
+
+                    // ── Sección: VALORES POR DUELO ────────────────────────
+                    if (supportsOverride && pairEntries.isNotEmpty) ...[
+                      const SizedBox(height: 24),
+                      Text(
+                        cfg.type == BetModuleType.units
+                            ? 'VALOR DE UNIDAD POR DUELO'
+                            : 'VALORES POR DUELO',
+                        style: TextStyle(
+                            color: t.sub,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        cfg.type == BetModuleType.units
+                            ? 'Valor de la unidad para cada enfrentamiento. '
+                              'Todas las unidades del duelo valen este monto.'
+                            : 'Edita el valor de cada enfrentamiento individualmente. '
+                              'Deja el campo vacío o con el valor base para usar el default.',
+                        style: TextStyle(color: t.sub, fontSize: 11),
+                      ),
+                      const SizedBox(height: 10),
+                      ...pairEntries.map((e) {
+                        final pids  = e.value.participantIds;
+                        final pk    = BetModuleInstance.pairKey(pids[0], pids[1]);
+                        final ctrl  = pairCtrl[pk]!;
+                        final nA    = nameOf(pids[0]);
+                        final nB    = nameOf(pids[1]);
+                        final hasOv = ctrl.text.trim().isNotEmpty &&
+                            double.tryParse(ctrl.text.trim()) != null &&
+                            double.tryParse(ctrl.text.trim()) != cfg.baseValue;
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: hasOv
+                                  ? t.primary.withValues(alpha: 0.07)
+                                  : t.surface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: hasOv
+                                    ? t.primary.withValues(alpha: 0.4)
+                                    : t.divider,
+                                width: hasOv ? 1.5 : 1,
+                              ),
+                            ),
+                            child: Row(children: [
+                              GAvatar(
+                                  name: nA,
+                                  colorIndex: colorOf(pids[0]),
+                                  size: 18),
+                              const SizedBox(width: 4),
+                              Text('vs',
+                                  style: TextStyle(
+                                      color: t.sub,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600)),
+                              const SizedBox(width: 4),
+                              GAvatar(
+                                  name: nB,
+                                  colorIndex: colorOf(pids[1]),
+                                  size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '$nA vs $nB',
+                                  style: TextStyle(
+                                    color: hasOv ? t.text : t.sub,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 80,
+                                child: TextField(
+                                  controller: ctrl,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                          decimal: false),
+                                  textAlign: TextAlign.center,
+                                  onChanged: (_) => setSt(() {}),
+                                  style: TextStyle(
+                                      color: t.text,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14),
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    hintText: cfg.baseValue.toStringAsFixed(0),
+                                    hintStyle: TextStyle(
+                                        color: t.sub, fontSize: 13),
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 6),
+                                    prefixText: '\$',
+                                    prefixStyle: TextStyle(
+                                        color: t.primary,
+                                        fontWeight: FontWeight.w700),
+                                    filled: true,
+                                    fillColor: hasOv ? t.card : t.surface,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide:
+                                          BorderSide(color: t.primary),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(
+                                          color: hasOv
+                                              ? t.primary.withValues(alpha: 0.5)
+                                              : t.divider),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(
+                                          color: t.primary, width: 1.5),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ]),
+                          ),
+                        );
+                      }),
+                    ],
+
+                    // ── Botón guardar ─────────────────────────────────────
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          final pairOvsMap = supportsOverride
+                              ? _buildPairOverridesMap()
+                              : <String, Map<String, dynamic>>{};
+
+                          final updatedMods =
+                              List<BetModuleInstance>.from(group.modules);
+                          for (final entry in family) {
+                            final idx  = entry.key;
+                            final old  = entry.value;
+                            final pids = old.participantIds;
+
+                            // Config tipada efectiva para este módulo 1v1
+                            SkinsConfig?  effSkins  = cfg.skinsConfig;
+                            OyesesConfig? effOyeses = cfg.oyesesConfig;
+                            UnitsConfig?  effUnits  = cfg.unitsConfig;
+                            PuttsConfig?  effPutts  = cfg.puttsConfig;
+                            MedalConfig?  effMedal  = cfg.medalConfig;
+
+                            if (supportsOverride && pids.length == 2) {
+                              final pk    = BetModuleInstance.pairKey(pids[0], pids[1]);
+                              final ov    = pairOvsMap[pk];
+                              final ovKey = cfg.type == BetModuleType.units
+                                  ? 'allEvents'
+                                  : 'value';
+                              final effVal = ov != null
+                                  ? (ov[ovKey] as num?)?.toDouble() ?? cfg.baseValue
+                                  : cfg.baseValue;
+
+                              switch (cfg.type) {
+                                case BetModuleType.skins:
+                                  effSkins = (cfg.skinsConfig ?? SkinsConfig.def)
+                                      .copyWith(valuePerSkin: effVal);
+                                  break;
+                                case BetModuleType.oyeses:
+                                  effOyeses = (cfg.oyesesConfig ?? OyesesConfig.def)
+                                      .copyWith(value: effVal);
+                                  break;
+                                case BetModuleType.units:
+                                  effUnits = (cfg.unitsConfig ?? UnitsConfig.def)
+                                      .withAllEventsValue(effVal);
+                                  break;
+                                case BetModuleType.putts:
+                                  effPutts = (cfg.puttsConfig ?? PuttsConfig.def)
+                                      .copyWith(value: effVal);
+                                  break;
+                                case BetModuleType.medal:
+                                  effMedal = (cfg.medalConfig ?? MedalConfig.def)
+                                      .copyWith(value: effVal);
+                                  break;
+                                default:
+                                  break;
+                              }
+                            }
+
+                            updatedMods[idx] = old.copyWith(
+                              formatMode:           cfg.formatMode,
+                              skinsConfig:          effSkins,
+                              nassauConfig:         cfg.nassauConfig,
+                              matchAutoPressConfig: cfg.matchAutoPressConfig,
+                              medalConfig:          effMedal,
+                              puttsConfig:          effPutts,
+                              oyesesConfig:         effOyeses,
+                              unitsConfig:          effUnits,
+                              pairConfigOverrides:
+                                  pairOvsMap.isEmpty ? null : pairOvsMap,
+                              clearPlayerOverrides: true,
+                            );
+                          }
+
+                          final newGroup = BetGroup(
+                              id: group.id,
+                              name: group.name,
+                              format: group.format,
+                              playerIds: group.playerIds,
+                              modules: updatedMods);
+                          final newGroups = prov.round!.betGroups
+                              .map((g) => g.id == group.id ? newGroup : g)
+                              .toList();
+                          prov.updateBetGroups(newGroups);
+                          Navigator.pop(ctx2);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: t.primary,
+                          foregroundColor: t.onPrimary,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: Text(
+                          'Aplicar a los ${family.length} enfrentamientos',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 14),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
         },
       ),
     );
