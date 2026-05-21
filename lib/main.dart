@@ -15,6 +15,7 @@ import 'providers/auth_provider.dart';
 import 'providers/player_provider.dart';
 import 'providers/user_profile_provider.dart';
 import 'providers/handicap_provider.dart';
+import 'providers/betting_group_provider.dart';
 import 'app_shell.dart';
 import 'screens/guest/guest_join_screen.dart';
 import 'screens/caddie/caddie_join_screen.dart';
@@ -83,6 +84,7 @@ void main() {
           ChangeNotifierProvider<PlayerProvider>(create: (_) => PlayerProvider()),
           ChangeNotifierProvider<UserProfileProvider>(create: (_) => UserProfileProvider()),
           ChangeNotifierProvider<HandicapProvider>(create: (_) => HandicapProvider()),
+          ChangeNotifierProvider<BettingGroupProvider>(create: (_) => BettingGroupProvider()),
         ],
         child: const GolfBetApp(),
       ),

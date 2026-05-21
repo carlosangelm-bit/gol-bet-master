@@ -9,6 +9,7 @@ import 'providers/auth_provider.dart';
 import 'providers/player_provider.dart';
 import 'providers/user_profile_provider.dart';
 import 'providers/handicap_provider.dart';
+import 'providers/betting_group_provider.dart';
 import 'screens/capture/capture_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/results/results_screen.dart';
@@ -35,6 +36,7 @@ class _AppShellState extends State<AppShell> {
     context.read<PlayerProvider>().startListening();
     context.read<UserProfileProvider>().startListening();
     context.read<HandicapProvider>().startListening();
+    context.read<BettingGroupProvider>().init();
   }
 
   @override

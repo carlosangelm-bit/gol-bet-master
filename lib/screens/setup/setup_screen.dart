@@ -20,6 +20,8 @@ import '../../services/player_service.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/live_round_service.dart';
 import '../../services/course_corrections_service.dart';
+import '../../providers/betting_group_provider.dart';
+import '../betting_groups/betting_groups_screen.dart';
 
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
@@ -1294,6 +1296,16 @@ class _SetupScreenState extends State<SetupScreen> {
           const SizedBox(height: 8),
         ],
 
+        // ── Betting Groups compatibles ────────────────────────────────────
+        if (_players.length >= 2) ...[
+          _BettingGroupsBanner(
+            presentIds: _players.map((p) => p.id).toSet(),
+            onApply:    (BettingGroup bg) => _applyBettingGroup(bg),
+            t:          t,
+          ),
+          const SizedBox(height: 16),
+        ],
+
         // ── Apuestas guardadas (acceso directo) ───────────────────────────
         GSectionHeader(title: 'CONFIGURACIONES GUARDADAS'),
         if (_presetsLoading)
@@ -1408,6 +1420,35 @@ class _SetupScreenState extends State<SetupScreen> {
         ],
       ]),
     );
+  }
+
+  // ── BettingGroup: aplicar automáticamente ────────────────────────────────
+  void _applyBettingGroup(BettingGroup bg) {
+    final presentIds = _players.map((p) => p.id).toSet();
+    final instances  = bg.toBetModuleInstances(
+      presentIds:   presentIds,
+      betGroupId:   _uuid.v4(),
+      betGroupName: bg.name,
+    );
+    if (instances.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('No hay duelos activos para los jugadores seleccionados'),
+      ));
+      return;
+    }
+    final bgId = _uuid.v4();
+    final newGroup = BetGroup(
+      id:        bgId,
+      name:      bg.name,
+      format:    PartidaFormat.allInOnePot,
+      playerIds: presentIds.toList(),
+      modules:   bg.toBetModuleInstances(
+        presentIds:   presentIds,
+        betGroupId:   bgId,
+        betGroupName: bg.name,
+      ),
+    );
+    setState(() => _groups.add(newGroup));
   }
 
   /// Aplica un preset directamente sin sheet intermedio (usa todos los jugadores del grupo).
@@ -5001,5 +5042,350 @@ class _CorrectionBanner extends StatelessWidget {
       ]),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _BettingGroupsBanner — Muestra grupos compatibles en el paso de Apuestas
+// ─────────────────────────────────────────────────────────────────────────────
+class _BettingGroupsBanner extends StatelessWidget {
+  const _BettingGroupsBanner({
+    required this.presentIds,
+    required this.onApply,
+    required this.t,
+  });
+
+  final Set<String>          presentIds;
+  final void Function(BettingGroup) onApply;
+  final GolfTheme            t;
+
+  @override
+  Widget build(BuildContext context) {
+    final bgProv = context.watch<BettingGroupProvider>();
+    if (bgProv.isLoading) return const SizedBox.shrink();
+
+    final compatible = bgProv.compatibleGroups(presentIds);
+    if (compatible.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Encabezado sección ──────────────────────────────────────────────
+        GSectionHeader(title: 'GRUPOS DE APUESTA COMPATIBLES'),
+        const SizedBox(height: 8),
+
+        ...compatible.map((bg) {
+          final summary = bgProv.summaryFor(bg, presentIds);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _BettingGroupCard(
+              bg:      bg,
+              summary: summary,
+              t:       t,
+              onApply: () => onApply(bg),
+              onReview: () => _showReviewSheet(context, bg, summary),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  // Muestra un sheet de revisión antes de aplicar
+  void _showReviewSheet(
+      BuildContext context, BettingGroup bg, BettingGroupSummary summary) {
+    final playerProv = context.read<PlayerProvider>();
+
+    // Helper: nombre del jugador por ID
+    String nameOf(String id) {
+      try {
+        return playerProv.directory
+            .firstWhere((p) => p.player.id == id)
+            .player
+            .name;
+      } catch (_) {
+        return id;
+      }
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.92,
+        builder: (_, ctrl) => Container(
+          decoration: BoxDecoration(
+            color: t.bg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(children: [
+            // Handle
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: t.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Row(children: [
+                Text(bg.emoji, style: const TextStyle(fontSize: 24)),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(bg.name,
+                      style: TextStyle(color: t.text,
+                          fontWeight: FontWeight.w800, fontSize: 17)),
+                  Text(
+                    '${summary.activeRules.length} duelos · '
+                    '${summary.totalModules} apuestas activas',
+                    style: TextStyle(color: t.sub, fontSize: 12),
+                  ),
+                ])),
+              ]),
+            ),
+            const Divider(height: 1),
+            // Lista de reglas
+            Expanded(
+              child: ListView.separated(
+                controller: ctrl,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                itemCount: summary.activeRules.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (_, i) {
+                  final rule = summary.activeRules[i];
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: t.card,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: t.divider),
+                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      // Duelo
+                      Row(children: [
+                        Icon(Icons.sports_golf, color: t.primary, size: 16),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${nameOf(rule.playerAId)} vs ${nameOf(rule.playerBId)}',
+                          style: TextStyle(color: t.text,
+                              fontWeight: FontWeight.w700, fontSize: 14),
+                        ),
+                      ]),
+                      if (rule.modules.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Wrap(spacing: 6, runSpacing: 4,
+                          children: rule.modules.map((m) => Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: t.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              m.summaryLabel,
+                              style: TextStyle(color: t.primary,
+                                  fontSize: 11, fontWeight: FontWeight.w600),
+                            ),
+                          )).toList(),
+                        ),
+                      ],
+                    ]),
+                  );
+                },
+              ),
+            ),
+            // Botones
+            Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16,
+                  MediaQuery.of(context).padding.bottom + 12),
+              child: Row(children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: t.divider),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: Text('Cancelar',
+                        style: TextStyle(
+                            color: t.sub, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      onApply(bg);
+                    },
+                    icon: const Icon(Icons.bolt, size: 16),
+                    label: const Text('Aplicar grupo'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: t.primary,
+                      foregroundColor: t.onPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _BettingGroupCard — Tarjeta individual de grupo compatible
+// ─────────────────────────────────────────────────────────────────────────────
+class _BettingGroupCard extends StatelessWidget {
+  const _BettingGroupCard({
+    required this.bg,
+    required this.summary,
+    required this.t,
+    required this.onApply,
+    required this.onReview,
+  });
+
+  final BettingGroup         bg;
+  final BettingGroupSummary  summary;
+  final GolfTheme            t;
+  final VoidCallback         onApply;
+  final VoidCallback         onReview;
+
+  @override
+  Widget build(BuildContext context) {
+    final nDuelos    = summary.activeRules.length;
+    final nApuestas  = summary.totalModules;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.primary.withValues(alpha: 0.35), width: 1.5),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // ── Encabezado ──────────────────────────────────────────────────────
+        Row(children: [
+          Text(bg.emoji, style: const TextStyle(fontSize: 22)),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+            Text(bg.name,
+                style: TextStyle(color: t.text,
+                    fontWeight: FontWeight.w800, fontSize: 15)),
+            if (bg.description != null && bg.description!.isNotEmpty)
+              Text(bg.description!,
+                  style: TextStyle(color: t.sub, fontSize: 11),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+          ])),
+          // Botón Gestionar
+          GestureDetector(
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const BettingGroupsScreen())),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: t.surface,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: t.divider),
+              ),
+              child: Text('Gestionar',
+                  style: TextStyle(color: t.sub,
+                      fontSize: 10, fontWeight: FontWeight.w600)),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        // ── Chips de stats ──────────────────────────────────────────────────
+        Wrap(spacing: 6, runSpacing: 4, children: [
+          _StatChip(
+            icon: Icons.sports_golf,
+            label: '$nDuelos ${nDuelos == 1 ? 'duelo' : 'duelos'}',
+            t: t,
+          ),
+          _StatChip(
+            icon: Icons.casino_outlined,
+            label: '$nApuestas ${nApuestas == 1 ? 'apuesta' : 'apuestas'}',
+            t: t,
+          ),
+        ]),
+        const SizedBox(height: 12),
+        // ── Botones de acción ───────────────────────────────────────────────
+        Row(children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: onReview,
+              icon: Icon(Icons.visibility_outlined, size: 14, color: t.sub),
+              label: Text('Revisar',
+                  style: TextStyle(color: t.sub,
+                      fontSize: 12, fontWeight: FontWeight.w600)),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: t.divider),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 2,
+            child: ElevatedButton.icon(
+              onPressed: onApply,
+              icon: const Icon(Icons.bolt, size: 14),
+              label: const Text('Aplicar grupo',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: t.primary,
+                foregroundColor: t.onPrimary,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ),
+        ]),
+      ]),
+    );
+  }
+}
+
+// Helper chip pequeño para stats
+class _StatChip extends StatelessWidget {
+  const _StatChip({required this.icon, required this.label, required this.t});
+  final IconData  icon;
+  final String    label;
+  final GolfTheme t;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: t.primary.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 11, color: t.primary),
+      const SizedBox(width: 4),
+      Text(label,
+          style: TextStyle(color: t.primary,
+              fontSize: 11, fontWeight: FontWeight.w600)),
+    ]),
+  );
 }
 

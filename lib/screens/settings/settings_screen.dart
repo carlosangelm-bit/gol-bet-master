@@ -17,6 +17,7 @@ import '../../services/firestore_service.dart';
 import '../presets/game_presets_screen.dart';
 import '../../services/course_corrections_service.dart';
 import '../players/players_screen.dart';
+import '../betting_groups/betting_groups_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -83,6 +84,13 @@ class SettingsScreen extends StatelessWidget {
                   GSectionHeader(title: 'MIS CONFIGURACIONES DE PARTIDA'),
                   const SizedBox(height: 8),
                   _GamePresetsCard(t: t),
+
+                  const SizedBox(height: 28),
+
+                  // ── BETTING GROUPS ─────────────────────────────────────
+                  GSectionHeader(title: 'GRUPOS DE APUESTA'),
+                  const SizedBox(height: 8),
+                  _BettingGroupsCard(t: t),
 
                   const SizedBox(height: 28),
 
@@ -1987,6 +1995,46 @@ class _CompanionsCard extends StatelessWidget {
                   : '$count compañero${count != 1 ? 's' : ''} en tu directorio',
               style: TextStyle(color: t.sub, fontSize: 12),
             ),
+          ])),
+          Icon(Icons.arrow_forward_ios, color: t.sub, size: 14),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _BettingGroupsCard — Entrada hacia BettingGroupsScreen desde Ajustes
+// ─────────────────────────────────────────────────────────────────────────────
+class _BettingGroupsCard extends StatelessWidget {
+  const _BettingGroupsCard({required this.t});
+  final GolfTheme t;
+
+  @override
+  Widget build(BuildContext context) {
+    return GCard(
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const BettingGroupsScreen()),
+        ),
+        child: Row(children: [
+          Container(
+            width: 42, height: 42,
+            decoration: BoxDecoration(
+              color: t.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.group_outlined, color: t.primary, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+            Text('Grupos de apuesta',
+                style: TextStyle(color: t.text,
+                    fontWeight: FontWeight.w700, fontSize: 14)),
+            Text('Apuestas automáticas para círculos habituales',
+                style: TextStyle(color: t.sub, fontSize: 12)),
           ])),
           Icon(Icons.arrow_forward_ios, color: t.sub, size: 14),
         ]),

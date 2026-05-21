@@ -376,6 +376,56 @@ class FirestoreService {
     list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return list;
   }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // BETTING GROUPS — Grupos habituales con apuestas por duelo
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  static CollectionReference<Map<String, dynamic>> _bettingGroups() =>
+      _db.collection('users').doc(AuthService.uid).collection('bettingGroups');
+
+  /// Guarda o actualiza un BettingGroup en Firestore.
+  static Future<BettingGroup> saveBettingGroup(BettingGroup group) async {
+    if (AuthService.uid == null) throw Exception('No autenticado');
+    final id   = group.id.isEmpty ? _uuid.v4() : group.id;
+    final data = group.copyWith(id: id, updatedAt: DateTime.now()).toFirestore();
+    data['updatedAt'] = FieldValue.serverTimestamp();
+    await _bettingGroups().doc(id).set(data, SetOptions(merge: true));
+    return group.copyWith(id: id, updatedAt: DateTime.now());
+  }
+
+  /// Elimina un BettingGroup.
+  static Future<void> deleteBettingGroup(String groupId) async {
+    if (AuthService.uid == null) return;
+    await _bettingGroups().doc(groupId).delete();
+  }
+
+  /// Stream reactivo de BettingGroups del usuario.
+  static Stream<List<BettingGroup>> bettingGroupsStream() {
+    if (AuthService.uid == null) return Stream.value([]);
+    return _bettingGroups().snapshots().map((snap) {
+      final list = snap.docs
+          .map((d) => BettingGroup.fromFirestore(d.data(), d.id))
+          .toList();
+      list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return list;
+    });
+  }
+
+  /// Carga todos los BettingGroups una sola vez.
+  static Future<List<BettingGroup>> getBettingGroups() async {
+    if (AuthService.uid == null) return [];
+    try {
+      final snap = await _bettingGroups().get();
+      final list = snap.docs
+          .map((d) => BettingGroup.fromFirestore(d.data(), d.id))
+          .toList();
+      list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return list;
+    } catch (_) {
+      return [];
+    }
+  }
 }
 
 // ── Resumen de ronda para historial (ligero, sin scores completos) ─────────────

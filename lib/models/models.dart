@@ -2003,3 +2003,351 @@ class Round {
     pairSliding: pairSliding ?? this.pairSliding,
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BETTING GROUPS — Sistema de grupos habituales con apuestas por duelo
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Plantilla de módulo de apuesta para uso en PairBetRule.
+/// Análogo a BetModuleInstance pero sin id de ronda ni participantIds
+/// (los participantes se conocen al activar la regla en una ronda).
+class BetModuleTemplate {
+  final BetModuleType            type;
+  final BetFormatMode            formatMode;
+  final SkinsConfig?             skinsConfig;
+  final NassauConfig?            nassauConfig;
+  final MatchAutoPressConfig?    matchAutoPressConfig;
+  final MedalConfig?             medalConfig;
+  final PuttsConfig?             puttsConfig;
+  final OyesesConfig?            oyesesConfig;
+  final UnitsConfig?             unitsConfig;
+
+  const BetModuleTemplate({
+    required this.type,
+    this.formatMode  = BetFormatMode.allVsAll,
+    this.skinsConfig,
+    this.nassauConfig,
+    this.matchAutoPressConfig,
+    this.medalConfig,
+    this.puttsConfig,
+    this.oyesesConfig,
+    this.unitsConfig,
+  });
+
+  // ── Getters de acceso rápido (igual que BetModuleInstance) ─────────────────
+  SkinsConfig          get skins  => skinsConfig          ?? SkinsConfig.def;
+  NassauConfig         get nassau => nassauConfig         ?? NassauConfig.def;
+  MedalConfig          get medal  => medalConfig          ?? MedalConfig.def;
+  PuttsConfig          get putts  => puttsConfig          ?? PuttsConfig.def;
+  OyesesConfig         get oyeses => oyesesConfig         ?? OyesesConfig.def;
+  UnitsConfig          get units  => unitsConfig          ?? UnitsConfig.def;
+
+  /// Etiqueta corta del valor principal.
+  String get summaryLabel {
+    switch (type) {
+      case BetModuleType.skins:
+        return '\$${skins.valuePerSkin.toStringAsFixed(0)}/skin';
+      case BetModuleType.nassau:
+        final n = nassau;
+        return 'F\$${n.frontValue.toStringAsFixed(0)}·'
+               'B\$${n.backValue.toStringAsFixed(0)}·'
+               'T\$${n.totalValue.toStringAsFixed(0)}';
+      case BetModuleType.matchAutoPress:
+        return '\$…/hoyo';
+      case BetModuleType.medal:
+        return '\$${medal.value.toStringAsFixed(0)}';
+      case BetModuleType.putts:
+        return '\$${putts.value.toStringAsFixed(0)}/putts';
+      case BetModuleType.oyeses:
+        return '\$${oyeses.value.toStringAsFixed(0)}/oyés';
+      case BetModuleType.units:
+        return '\$${units.representativeValue.toStringAsFixed(0)}/u';
+    }
+  }
+
+  /// Crea un template con la configuración por defecto para el tipo dado.
+  factory BetModuleTemplate.defaultFor(BetModuleType t) => BetModuleTemplate(
+    type:                  t,
+    skinsConfig:          t == BetModuleType.skins         ? SkinsConfig.def          : null,
+    nassauConfig:         t == BetModuleType.nassau        ? NassauConfig.def         : null,
+    matchAutoPressConfig: t == BetModuleType.matchAutoPress? MatchAutoPressConfig()   : null,
+    medalConfig:          t == BetModuleType.medal         ? MedalConfig.def          : null,
+    puttsConfig:          t == BetModuleType.putts         ? PuttsConfig.def          : null,
+    oyesesConfig:         t == BetModuleType.oyeses        ? OyesesConfig.def         : null,
+    unitsConfig:          t == BetModuleType.units         ? UnitsConfig.def          : null,
+  );
+
+  /// Convierte la plantilla a un BetModuleInstance 1v1 listo para el engine.
+  /// Se asigna betGroupId para que los chips consolidados lo agrupen.
+  BetModuleInstance toInstance({
+    required String id,
+    required List<String> participantIds,
+    String? betGroupId,
+    String? betGroupName,
+  }) => BetModuleInstance(
+    id:                   id,
+    type:                 type,
+    name:                 type.label,
+    participantIds:       participantIds,
+    formatMode:           formatMode,
+    skinsConfig:          skinsConfig,
+    nassauConfig:         nassauConfig,
+    matchAutoPressConfig: matchAutoPressConfig,
+    medalConfig:          medalConfig,
+    puttsConfig:          puttsConfig,
+    oyesesConfig:         oyesesConfig,
+    unitsConfig:          unitsConfig,
+    betGroupId:           betGroupId,
+    betGroupName:         betGroupName,
+    structure:            BetStructure.headToHead,
+  );
+
+  BetModuleTemplate copyWith({
+    BetModuleType?         type,
+    BetFormatMode?         formatMode,
+    SkinsConfig?           skinsConfig,
+    NassauConfig?          nassauConfig,
+    MatchAutoPressConfig?  matchAutoPressConfig,
+    MedalConfig?           medalConfig,
+    PuttsConfig?           puttsConfig,
+    OyesesConfig?          oyesesConfig,
+    UnitsConfig?           unitsConfig,
+  }) => BetModuleTemplate(
+    type:                  type                 ?? this.type,
+    formatMode:            formatMode           ?? this.formatMode,
+    skinsConfig:           skinsConfig          ?? this.skinsConfig,
+    nassauConfig:          nassauConfig         ?? this.nassauConfig,
+    matchAutoPressConfig:  matchAutoPressConfig ?? this.matchAutoPressConfig,
+    medalConfig:           medalConfig          ?? this.medalConfig,
+    puttsConfig:           puttsConfig          ?? this.puttsConfig,
+    oyesesConfig:          oyesesConfig         ?? this.oyesesConfig,
+    unitsConfig:           unitsConfig          ?? this.unitsConfig,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'type':                  type.name,
+    'formatMode':            formatMode.name,
+    if (skinsConfig          != null) 'skinsConfig':          skinsConfig!.toJson(),
+    if (nassauConfig         != null) 'nassauConfig':         nassauConfig!.toJson(),
+    if (matchAutoPressConfig != null) 'matchAutoPressConfig': matchAutoPressConfig!.toJson(),
+    if (medalConfig          != null) 'medalConfig':          medalConfig!.toJson(),
+    if (puttsConfig          != null) 'puttsConfig':          puttsConfig!.toJson(),
+    if (oyesesConfig         != null) 'oyesesConfig':         oyesesConfig!.toJson(),
+    if (unitsConfig          != null) 'unitsConfig':          unitsConfig!.toJson(),
+  };
+
+  factory BetModuleTemplate.fromJson(Map<String, dynamic> j) {
+    final type = BetModuleType.values.firstWhere(
+      (t) => t.name == j['type'], orElse: () => BetModuleType.skins);
+    return BetModuleTemplate(
+      type:       type,
+      formatMode: BetFormatMode.values.firstWhere(
+          (f) => f.name == j['formatMode'],
+          orElse: () => BetFormatMode.allVsAll),
+      skinsConfig: j['skinsConfig'] != null
+          ? SkinsConfig.fromJson(Map<String, dynamic>.from(j['skinsConfig'] as Map)) : null,
+      nassauConfig: j['nassauConfig'] != null
+          ? NassauConfig.fromJson(Map<String, dynamic>.from(j['nassauConfig'] as Map)) : null,
+      matchAutoPressConfig: j['matchAutoPressConfig'] != null
+          ? MatchAutoPressConfig.fromJson(Map<String, dynamic>.from(j['matchAutoPressConfig'] as Map)) : null,
+      medalConfig: j['medalConfig'] != null
+          ? MedalConfig.fromJson(Map<String, dynamic>.from(j['medalConfig'] as Map)) : null,
+      puttsConfig: j['puttsConfig'] != null
+          ? PuttsConfig.fromJson(Map<String, dynamic>.from(j['puttsConfig'] as Map)) : null,
+      oyesesConfig: j['oyesesConfig'] != null
+          ? OyesesConfig.fromJson(Map<String, dynamic>.from(j['oyesesConfig'] as Map)) : null,
+      unitsConfig: j['unitsConfig'] != null
+          ? UnitsConfig.fromJson(Map<String, dynamic>.from(j['unitsConfig'] as Map)) : null,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Regla de apuesta para un duelo específico entre dos jugadores.
+/// Contiene una lista de plantillas de módulos (puede haber Nassau + Skins, etc.)
+class PairBetRule {
+  final String id;
+  final String playerAId;
+  final String playerBId;
+  final List<BetModuleTemplate> modules;
+
+  const PairBetRule({
+    required this.id,
+    required this.playerAId,
+    required this.playerBId,
+    this.modules = const [],
+  });
+
+  /// Clave canónica del duelo (orden alfabético de IDs).
+  String get pairKey {
+    final sorted = [playerAId, playerBId]..sort();
+    return '${sorted[0]}__${sorted[1]}';
+  }
+
+  /// true si ambos jugadores están en el conjunto dado.
+  bool isActive(Set<String> presentIds) =>
+      presentIds.contains(playerAId) && presentIds.contains(playerBId);
+
+  PairBetRule copyWith({
+    String? id,
+    String? playerAId,
+    String? playerBId,
+    List<BetModuleTemplate>? modules,
+  }) => PairBetRule(
+    id:        id        ?? this.id,
+    playerAId: playerAId ?? this.playerAId,
+    playerBId: playerBId ?? this.playerBId,
+    modules:   modules   ?? this.modules,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id':        id,
+    'playerAId': playerAId,
+    'playerBId': playerBId,
+    'modules':   modules.map((m) => m.toJson()).toList(),
+  };
+
+  factory PairBetRule.fromJson(Map<String, dynamic> j) => PairBetRule(
+    id:        (j['id']        as String?) ?? '',
+    playerAId: (j['playerAId'] as String?) ?? '',
+    playerBId: (j['playerBId'] as String?) ?? '',
+    modules:   (j['modules'] as List? ?? [])
+        .map((m) => BetModuleTemplate.fromJson(
+            Map<String, dynamic>.from(m as Map)))
+        .toList(),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Grupo habitual de golf/apuestas.
+/// NO representa una ronda. Solo define el ecosistema de jugadores habituales
+/// y las reglas de apuesta que existen entre ellos por duelo.
+class BettingGroup {
+  final String          id;
+  final String          name;
+  final String?         description;
+  final String          emoji;
+  final List<String>    playerIds;   // IDs de los jugadores habituales
+  final List<PairBetRule> pairRules; // reglas por duelo
+  final DateTime        updatedAt;
+
+  const BettingGroup({
+    required this.id,
+    required this.name,
+    this.description,
+    this.emoji        = '⛳',
+    this.playerIds    = const [],
+    this.pairRules    = const [],
+    required this.updatedAt,
+  });
+
+  /// Número de reglas que tienen al menos un módulo configurado.
+  int get activeRulesCount =>
+      pairRules.where((r) => r.modules.isNotEmpty).length;
+
+  /// Número total de módulos de apuesta en el grupo.
+  int get totalModules =>
+      pairRules.fold(0, (sum, r) => sum + r.modules.length);
+
+  /// Reglas activas dado el conjunto de jugadores presentes.
+  List<PairBetRule> activeRulesFor(Set<String> presentIds) =>
+      pairRules
+          .where((r) => r.isActive(presentIds) && r.modules.isNotEmpty)
+          .toList();
+
+  /// Número de duelos activos dado el conjunto de jugadores presentes.
+  int activeDuelsFor(Set<String> presentIds) =>
+      activeRulesFor(presentIds).length;
+
+  /// Número total de módulos activos dado el conjunto de jugadores presentes.
+  int activeModulesFor(Set<String> presentIds) =>
+      activeRulesFor(presentIds)
+          .fold(0, (sum, r) => sum + r.modules.length);
+
+  /// Convierte las pair rules activas en BetModuleInstances listos para el engine.
+  /// Se agrupan bajo un BetGroup de la ronda con betGroupId = pairRule.id.
+  List<BetModuleInstance> toBetModuleInstances({
+    required Set<String> presentIds,
+    required String betGroupId,    // ID del BetGroup de la ronda destino
+    required String betGroupName,  // nombre legible del BetGroup
+  }) {
+    final result = <BetModuleInstance>[];
+    final activeRules = activeRulesFor(presentIds);
+    int counter = 0;
+    for (final rule in activeRules) {
+      for (final tpl in rule.modules) {
+        counter++;
+        result.add(tpl.toInstance(
+          id:           '${betGroupId}_${rule.id}_${tpl.type.name}_$counter',
+          participantIds: [rule.playerAId, rule.playerBId],
+          betGroupId:   '${betGroupId}_${rule.id}_${tpl.type.name}',
+          betGroupName: betGroupName,
+        ));
+      }
+    }
+    return result;
+  }
+
+  BettingGroup copyWith({
+    String?             id,
+    String?             name,
+    String?             description,
+    String?             emoji,
+    List<String>?       playerIds,
+    List<PairBetRule>?  pairRules,
+    DateTime?           updatedAt,
+  }) => BettingGroup(
+    id:          id          ?? this.id,
+    name:        name        ?? this.name,
+    description: description ?? this.description,
+    emoji:       emoji       ?? this.emoji,
+    playerIds:   playerIds   ?? this.playerIds,
+    pairRules:   pairRules   ?? this.pairRules,
+    updatedAt:   updatedAt   ?? this.updatedAt,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id':          id,
+    'name':        name,
+    if (description != null) 'description': description,
+    'emoji':       emoji,
+    'playerIds':   playerIds,
+    'pairRules':   pairRules.map((r) => r.toJson()).toList(),
+    'updatedAt':   updatedAt.toIso8601String(),
+  };
+
+  factory BettingGroup.fromJson(Map<String, dynamic> j) => BettingGroup(
+    id:          (j['id']   as String?) ?? '',
+    name:        (j['name'] as String?) ?? 'Grupo',
+    description: j['description'] as String?,
+    emoji:       (j['emoji'] as String?) ?? '⛳',
+    playerIds:   (j['playerIds'] as List? ?? [])
+        .map((e) => e as String)
+        .toList(),
+    pairRules:   (j['pairRules'] as List? ?? [])
+        .map((r) => PairBetRule.fromJson(
+            Map<String, dynamic>.from(r as Map)))
+        .toList(),
+    updatedAt: j['updatedAt'] is String
+        ? (DateTime.tryParse(j['updatedAt'] as String) ?? DateTime.now())
+        : DateTime.now(),
+  );
+
+  /// Serialización para Firestore (usa FieldValue.serverTimestamp para updatedAt).
+  Map<String, dynamic> toFirestore() {
+    final j = toJson();
+    j.remove('updatedAt');  // se sustituye por serverTimestamp
+    return j;
+  }
+
+  factory BettingGroup.fromFirestore(
+      Map<String, dynamic> d, String docId) {
+    final raw = Map<String, dynamic>.from(d);
+    raw['id'] = docId;
+    // updatedAt puede ser Timestamp de Firestore (duck-typing) o String ISO
+    raw['updatedAt'] = _parseDate(d['updatedAt']).toIso8601String();
+    return BettingGroup.fromJson(raw);
+  }
+}
