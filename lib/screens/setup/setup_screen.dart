@@ -5061,7 +5061,7 @@ class _BettingGroupsBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bgProv = context.watch<BettingGroupProvider>();
-    if (bgProv.isLoading) return const SizedBox.shrink();
+    if (bgProv.loading) return const SizedBox.shrink();
 
     final compatible = bgProv.compatibleGroups(presentIds);
     if (compatible.isEmpty) return const SizedBox.shrink();
