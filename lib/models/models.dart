@@ -2160,6 +2160,22 @@ class BetModuleTemplate {
           ? UnitsConfig.fromJson(Map<String, dynamic>.from(j['unitsConfig'] as Map)) : null,
     );
   }
+
+  /// Copia snapshot de un BetModuleInstance existente (p.ej. al exportar desde
+  /// un duelo ya configurado).  Independiente: cambiar uno no afecta al otro.
+  factory BetModuleTemplate.fromInstance(BetModuleInstance inst) =>
+      BetModuleTemplate(
+        type:                  inst.type,
+        formatMode:            inst.formatMode,
+        skinsConfig:           inst.skinsConfig,
+        nassauConfig:          inst.nassauConfig,
+        matchAutoPressConfig:  inst.matchAutoPressConfig,
+        medalConfig:           inst.medalConfig,
+        puttsConfig:           inst.puttsConfig,
+        oyesesConfig:          inst.oyesesConfig,
+        unitsConfig:           inst.unitsConfig,
+      );
+
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
