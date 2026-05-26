@@ -1279,14 +1279,24 @@ class _OneVOneViewState extends State<_OneVOneView> {
           ...finalPairs.asMap().entries.map((entry) {
             final i    = entry.key;
             final pair = entry.value;
+
+            // ── Garantizar que myPlayer siempre aparezca como p1 (izquierda) ──
+            // Si el jugador propio está en la posición p2, intercambiar el par
+            // para que la tarjeta lo muestre siempre a la izquierda como base.
+            final bool swapNeeded = myPlayer != null &&
+                pair.$2.id == myPlayer.id &&
+                pair.$1.id != myPlayer.id;
+            final effP1 = swapNeeded ? pair.$2 : pair.$1;
+            final effP2 = swapNeeded ? pair.$1 : pair.$2;
+
             return Padding(
               padding: EdgeInsets.only(bottom: i < finalPairs.length - 1 ? 12 : 0),
               child: _MatchDuelCard(
-                round: round, p1: pair.$1, p2: pair.$2, t: t,
+                round: round, p1: effP1, p2: effP2, t: t,
                 expanded: finalPairs.length == 1,
                 myPlayerId: myPlayer?.id,
                 onApplyCarry: (ctx, factor, nassauMods, matchMods) =>
-                    _applyCarry(ctx, pair.$1.id, pair.$2.id, factor, nassauMods, matchMods),
+                    _applyCarry(ctx, effP1.id, effP2.id, factor, nassauMods, matchMods),
               ),
             );
           }),
