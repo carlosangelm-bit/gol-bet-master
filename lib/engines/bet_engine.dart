@@ -334,6 +334,24 @@ class BetEngine {
   static double strokesP1ReceivesFromP2(Round round, String p1Id, String p2Id) =>
       _strokesP1ReceivesFromP2(round, p1Id, p2Id);
 
+  /// Retorna true si existe un acuerdo explícito de strokes entre p1 y p2
+  /// (ya sea en pairSliding o en manualHandicaps), aunque el valor sea 0.
+  ///
+  /// Útil para distinguir "acordaron jugar parejo" (0 explícito)
+  /// de "sin acuerdo → usar diferencia de HCP" (fallback).
+  static bool hasExplicitAgreement(Round round, String p1Id, String p2Id) {
+    // 1. pairSliding canónico
+    if (canonicalSlidingBetween(round, p1Id, p2Id) != null) return true;
+    // 2. legacy manualHandicaps
+    final rp1 = round.roundPlayers.cast<RoundPlayer?>().firstWhere(
+        (r) => r?.playerId == p1Id, orElse: () => null);
+    final rp2 = round.roundPlayers.cast<RoundPlayer?>().firstWhere(
+        (r) => r?.playerId == p2Id, orElse: () => null);
+    if (rp1?.manualHandicaps.containsKey(p2Id) == true) return true;
+    if (rp2?.manualHandicaps.containsKey(p1Id) == true) return true;
+    return false;
+  }
+
   /// Genera todos los LedgerEntries para una BetGroup completa
   static List<LedgerEntry> computeGroup(Round round, BetGroup group) {
     final entries = <LedgerEntry>[];

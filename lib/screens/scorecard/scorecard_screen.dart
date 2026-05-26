@@ -3984,6 +3984,8 @@ class _HoleByHoleMatch extends StatelessWidget {
     // Usar el mismo helper centralizado del engine para consistencia total.
     // Prioridad: manual[p1][p2] → manual[p2][p1] invertido → HCP diff
     final recv = BetEngine.strokesP1ReceivesFromP2(round, p1.id, p2.id);
+    // ¿Hay un acuerdo explícito (incluyendo acuerdo de 0 = parejo)?
+    final hasExplicitHoleByHole = BetEngine.hasExplicitAgreement(round, p1.id, p2.id);
 
     final Player basePlayer;
     final Player receiverPlayer;
@@ -4002,8 +4004,15 @@ class _HoleByHoleMatch extends StatelessWidget {
       receiverPlayer = p2;
       hcpBase        = hcp1;
       hcpReceiver    = hcp1 + (-recv);
+    } else if (hasExplicitHoleByHole) {
+      // Acuerdo explícito de parejo (0 strokes) — la leyenda debe mostrar
+      // 'Sin ventaja' y NO calcular diff por HCP. Igualamos hcpReceiver = hcpBase.
+      basePlayer     = p1;
+      receiverPlayer = p2;
+      hcpBase        = hcp1;
+      hcpReceiver    = hcp1; // forzar diff = 0 en la leyenda
     } else {
-      // Sin ventaja entre este par
+      // Sin acuerdo — fallback: diferencia de HCP del campo
       basePlayer     = p1;
       receiverPlayer = p2;
       hcpBase        = hcp1;
@@ -4117,6 +4126,8 @@ class _HoleByHoleMatch extends StatelessWidget {
         // Diferencia oficial de strokes (del pairSliding o diff de HCP)
         final recvOfficial = BetEngine.strokesP1ReceivesFromP2(round, p1.id, p2.id);
         final recvAbsOfficial = recvOfficial.abs().round();
+        // ¿Hay acuerdo explícito para este par (incluyendo acuerdo de 0 = parejo)?
+        final hasExplicit = BetEngine.hasExplicitAgreement(round, p1.id, p2.id);
 
         return order.map((hNum) {
           final ch = holeMap[hNum];
@@ -4126,9 +4137,11 @@ class _HoleByHoleMatch extends StatelessWidget {
           if (!sBase.hasScore && !sReceiver.hasScore) return const SizedBox.shrink();
 
           // Strokes usando el MISMO método que el engine (skins/nassau/medal):
-          // - Con pairSliding oficial: strokesReceivedFromOfficial18Sliding
-          //   → distribución proporcional sobre TODOS los hoyos del curso (consistente con ledger)
-          // - Sin pairSliding (solo HCPs): strokesReceivedVs (vs campo)
+          // - Con pairSliding > 0: strokesReceivedFromOfficial18Sliding
+          //   → distribución proporcional sobre TODOS los hoyos del curso
+          // - Acuerdo explícito de 0 (parejo manual): 0 strokes — NO usar HCP fallback.
+          //   Sin esta comprobación, un acuerdo "parejo" mostraría la diferencia de HCP.
+          // - Sin acuerdo alguno: strokesReceivedVs (diferencia de HCP del campo)
           final courseHolesForUI = courseF9ui.any((h) => h.hole == ch.hole)
               ? courseF9ui : courseB9ui;
           final strokesHere = recvAbsOfficial > 0
@@ -4141,13 +4154,15 @@ class _HoleByHoleMatch extends StatelessWidget {
                       ? (round.startingNine == StartingNine.front)
                       : (round.startingNine == StartingNine.back),
                 )
-              : GameEngine.strokesReceivedVs(
-                  hcpHigher:    hcpReceiver,
-                  hcpLower:     hcpBase,
-                  ch:           ch,
-                  allHoles:     allHoles,
-                  startingNine: round.startingNine,
-                );
+              : hasExplicit
+                  ? 0  // acuerdo explícito de parejo → siempre 0 strokes
+                  : GameEngine.strokesReceivedVs(
+                      hcpHigher:    hcpReceiver,
+                      hcpLower:     hcpBase,
+                      ch:           ch,
+                      allHoles:     allHoles,
+                      startingNine: round.startingNine,
+                    );
 
         // Scores a mostrar
         final grossBase     = sBase.hasScore     ? sBase.grossScore!     : null;
