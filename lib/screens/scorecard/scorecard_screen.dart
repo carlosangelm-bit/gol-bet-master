@@ -1400,17 +1400,17 @@ class _OneVOneViewState extends State<_OneVOneView> {
   List<BetModuleInstance> _findModules(Round round, String p1Id, String p2Id, BetModuleType type) {
     final mods = <BetModuleInstance>[];
     for (final g in round.betGroups) {
-      final ids = g.playerIds;
-      if (ids.length == 2 && ids.contains(p1Id) && ids.contains(p2Id)) {
-        mods.addAll(g.modules.where((m) => m.type == type));
-      }
-    }
-    if (mods.isEmpty) {
-      for (final g in round.betGroups) {
-        if (g.playerIds.contains(p1Id) && g.playerIds.contains(p2Id)) {
-          mods.addAll(g.modules.where((m) => m.type == type));
+      if (!g.playerIds.contains(p1Id) || !g.playerIds.contains(p2Id)) continue;
+      mods.addAll(g.modules.where((m) {
+        if (m.type != type) return false;
+        // Si el módulo tiene participantIds propios, verificar que incluyan al par exacto.
+        // Esto evita que módulos de otros duelos 1v1 dentro del mismo BetGroup aparezcan aquí.
+        if (m.participantIds.isNotEmpty) {
+          return m.participantIds.contains(p1Id) && m.participantIds.contains(p2Id);
         }
-      }
+        // Sin participantIds propios: el grupo los define → ya verificamos arriba.
+        return true;
+      }));
     }
     return mods;
   }
@@ -1900,17 +1900,14 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
     final p2Id  = widget.p2.id;
     final mods  = <BetModuleInstance>[];
     for (final g in round.betGroups) {
-      final ids = g.playerIds;
-      if (ids.length == 2 && ids.contains(p1Id) && ids.contains(p2Id)) {
-        mods.addAll(g.modules.where((m) => m.type == type));
-      }
-    }
-    if (mods.isEmpty) {
-      for (final g in round.betGroups) {
-        if (g.playerIds.contains(p1Id) && g.playerIds.contains(p2Id)) {
-          mods.addAll(g.modules.where((m) => m.type == type));
+      if (!g.playerIds.contains(p1Id) || !g.playerIds.contains(p2Id)) continue;
+      mods.addAll(g.modules.where((m) {
+        if (m.type != type) return false;
+        if (m.participantIds.isNotEmpty) {
+          return m.participantIds.contains(p1Id) && m.participantIds.contains(p2Id);
         }
-      }
+        return true;
+      }));
     }
     return mods;
   }
@@ -4587,13 +4584,21 @@ class _FinancialBreakdown extends StatelessWidget {
   final GolfTheme t;
   const _FinancialBreakdown({required this.round, required this.p1, required this.p2, required this.t});
 
-  // Obtiene los módulos de un tipo dado que incluyen a p1 y p2
+  // Obtiene los módulos de un tipo dado que incluyen a p1 y p2.
+  // IMPORTANTE: si el módulo tiene participantIds propios, ambos jugadores deben aparecer
+  // en ellos — así se evita que módulos de otros duelos 1v1 dentro del mismo BetGroup
+  // se mezclen con el par (p1, p2) (bug de Nassau quintuplicado).
   List<BetModuleInstance> _modsOf(BetModuleType type) {
     final result = <BetModuleInstance>[];
     for (final g in round.betGroups) {
-      if (g.playerIds.contains(p1.id) && g.playerIds.contains(p2.id)) {
-        result.addAll(g.modules.where((m) => m.type == type));
-      }
+      if (!g.playerIds.contains(p1.id) || !g.playerIds.contains(p2.id)) continue;
+      result.addAll(g.modules.where((m) {
+        if (m.type != type) return false;
+        if (m.participantIds.isNotEmpty) {
+          return m.participantIds.contains(p1.id) && m.participantIds.contains(p2.id);
+        }
+        return true;
+      }));
     }
     return result;
   }
@@ -4602,9 +4607,11 @@ class _FinancialBreakdown extends StatelessWidget {
   List<BetModuleType> _allModuleTypes() {
     final types = <BetModuleType>{};
     for (final g in round.betGroups) {
-      final pids = g.playerIds;
-      if (!pids.contains(p1.id) || !pids.contains(p2.id)) continue;
+      if (!g.playerIds.contains(p1.id) || !g.playerIds.contains(p2.id)) continue;
       for (final m in g.modules) {
+        // Aplicar mismo filtro de participantIds
+        if (m.participantIds.isNotEmpty &&
+            (!m.participantIds.contains(p1.id) || !m.participantIds.contains(p2.id))) continue;
         types.add(m.type);
       }
     }

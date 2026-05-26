@@ -1425,28 +1425,26 @@ class _SetupScreenState extends State<SetupScreen> {
   // ── BettingGroup: aplicar automáticamente ────────────────────────────────
   void _applyBettingGroup(BettingGroup bg) {
     final presentIds = _players.map((p) => p.id).toSet();
-    final instances  = bg.toBetModuleInstances(
+    // Generar el ID del grupo UNA sola vez para que todos los módulos compartan
+    // el mismo betGroupId (evita el bug de doble llamada con UUIDs distintos).
+    final bgId    = _uuid.v4();
+    final modules = bg.toBetModuleInstances(
       presentIds:   presentIds,
-      betGroupId:   _uuid.v4(),
+      betGroupId:   bgId,
       betGroupName: bg.name,
     );
-    if (instances.isEmpty) {
+    if (modules.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('No hay duelos activos para los jugadores seleccionados'),
       ));
       return;
     }
-    final bgId = _uuid.v4();
     final newGroup = BetGroup(
       id:        bgId,
       name:      bg.name,
       format:    PartidaFormat.allInOnePot,
       playerIds: presentIds.toList(),
-      modules:   bg.toBetModuleInstances(
-        presentIds:   presentIds,
-        betGroupId:   bgId,
-        betGroupName: bg.name,
-      ),
+      modules:   modules,
     );
     setState(() => _groups.add(newGroup));
   }
