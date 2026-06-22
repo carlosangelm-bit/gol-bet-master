@@ -2215,17 +2215,15 @@ class BetEngine {
       }
     }
 
-    // Normalizar history a perspectiva de p1: positivo = p1 arriba.
-    // Si p1 no es el base, el delta fue calculado con signo invertido,
-    // por lo que hay que multiplicar por -1 antes de detectar presiones.
-    final List<int> normFrontHistory = p1IsBase ? frontHistory : frontHistory.map((v) => -v).toList();
-    final List<int> normBackHistory  = p1IsBase ? backHistory  : backHistory.map((v) => -v).toList();
-
+    // El delta ya está calculado en perspectiva de p1 (positivo = p1 arriba):
+    //   p1IsBase=true : delta= 1 si base(p1) gana, -1 si pierde
+    //   p1IsBase=false: delta=-1 si base(p2) gana, +1 si pierde  →  +1 = p1 arriba
+    // Por tanto NO se normaliza: pasar frontHistory/backHistory directamente.
     final List<NassauPress> presses = [];
     if (cfg.pressEnabled) {
-      _detectPresses(presses, normFrontHistory, seg1From, seg1To, frontPlayed,
+      _detectPresses(presses, frontHistory, seg1From, seg1To, frontPlayed,
           p1Id, p2Id, cfg.autoPressTrigger);
-      _detectPresses(presses, normBackHistory, seg2From, seg2To, backPlayed,
+      _detectPresses(presses, backHistory, seg2From, seg2To, backPlayed,
           p1Id, p2Id, cfg.autoPressTrigger);
     }
 
@@ -2312,18 +2310,18 @@ class BetEngine {
     final effBackPressVal  = carryActive ? cfg.backPressValue * cfg.carryFactor : cfg.backPressValue;
     final effTotalVal      = carryActive ? cfg.totalValue     * cfg.carryFactor : cfg.totalValue;
 
-    // Normalizar history a perspectiva de p1: positivo = p1 arriba.
-    // Si p1 no es el base, el delta fue calculado con signo invertido.
-    final List<int> normFrontHistoryP = p1IsBase ? frontHistory : frontHistory.map((v) => -v).toList();
-    final List<int> normBackHistoryP  = p1IsBase ? backHistory  : backHistory.map((v) => -v).toList();
+    // El delta ya está calculado en perspectiva de p1 (positivo = p1 arriba):
+    //   p1IsBase=true : delta= 1 si base(p1) gana, -1 si pierde
+    //   p1IsBase=false: delta=-1 si base(p2) gana, +1 si pierde  →  +1 = p1 arriba
+    // Por tanto NO se normaliza: pasar frontHistory/backHistory directamente.
 
     // Presiones primer segmento (físicamente liveSeg1From..liveSeg1To)
     final List<NassauPress> frontPresses = [];
-    _detectPresses(frontPresses, normFrontHistoryP, liveSeg1From, liveSeg1To, frontPlayed,
+    _detectPresses(frontPresses, frontHistory, liveSeg1From, liveSeg1To, frontPlayed,
         p1Id, p2Id, cfg.autoPressTrigger);
     // Presiones segundo segmento (físicamente liveSeg2From..liveSeg2To)
     final List<NassauPress> backPresses  = [];
-    _detectPresses(backPresses, normBackHistoryP, liveSeg2From, liveSeg2To, backPlayed,
+    _detectPresses(backPresses, backHistory, liveSeg2From, liveSeg2To, backPlayed,
         p1Id, p2Id, cfg.autoPressTrigger);
 
     return NassauPressLiveStatus(
