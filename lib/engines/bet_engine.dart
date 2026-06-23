@@ -1170,8 +1170,13 @@ class BetEngine {
     final entries = <LedgerEntry>[];
     final cfg = mod.units;
 
+    // Iterar sobre los hoyos reales del curso respetando startingNine.
+    // Antes se usaba h=1..totalHoles, que fallaba cuando startingNine=back
+    // porque los eventos estaban guardados en los hoyos físicos 10-18.
+    final holeNums = round.course.holes.map((ch) => ch.hole).toList();
+
     for (final pid in pids) {
-      for (int h = 1; h <= round.totalHoles; h++) {
+      for (final h in holeNums) {
         final evts = round.getEvents(pid, h);
         for (final evt in evts.where((e) => pids.contains(e.playerId))) {
           // Valor individual por evento — configurado en UnitsConfig

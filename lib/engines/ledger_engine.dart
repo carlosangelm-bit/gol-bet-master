@@ -93,7 +93,9 @@ class LedgerEngine {
     final entries = BetEngine.computeAll(round);
     final result = <int, double>{};
     double running = 0;
-    for (int h = 1; h <= 18; h++) {
+    // Iterar sobre los hoyos reales del curso ordenados, no 1..18 hardcoded
+    final holeNums = round.course.holes.map((ch) => ch.hole).toList()..sort();
+    for (final h in holeNums) {
       for (final e in entries.where((e) => e.hole == h)) {
         if (e.fromPlayerId == playerId) running -= e.amount;
         if (e.toPlayerId   == playerId) running += e.amount;

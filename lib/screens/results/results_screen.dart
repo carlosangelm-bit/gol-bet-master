@@ -930,7 +930,10 @@ class _PlayerFaceToFace extends StatelessWidget {
 
     final Map<UnitEventType, List<int>> unitsByType = {};
     if (playerHasUnitsModule) {
-      for (int h = 1; h <= 18; h++) {
+      // Iterar sobre los hoyos reales del curso (no 1..18 hardcoded),
+      // para que startingNine=back encuentre los eventos en H10-H18.
+      final holeNums = round.course.holes.map((ch) => ch.hole);
+      for (final h in holeNums) {
         for (final evt in round.getEvents(player.id, h)) {
           unitsByType.putIfAbsent(evt.type, () => []).add(h);
         }
