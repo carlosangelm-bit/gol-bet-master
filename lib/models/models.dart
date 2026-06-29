@@ -1884,6 +1884,120 @@ class SlidingRelation {
   );
 }
 
+// ── BetChangeProposal — cambio colaborativo de apuesta pendiente de aprobación ──
+//
+// Flujo:
+//   1. participante propone cambio → status = pending
+//   2. la otra parte ve banner "cambio pendiente" con Accept/Reject
+//   3. Accept → status = approved → RoundProvider aplica el cambio al BetModuleInstance
+//      Reject → status = rejected → se descarta
+//   4. Owner puede aplicar directamente (sin aprobación) → status = approved inmediatamente
+//
+// El campo [payload] es un mapa plano serializable con el delta de configuración.
+// Ejemplos:
+//   Cambio de monto Nassau: {'nassauFront': 25.0, 'nassauBack': 25.0, 'nassauTotal': 50.0}
+//   Cambio de ventaja:      {'manualStrokes': 2.0, 'p1ReceivesFrom': 'pB_id'}
+//   Cambio de modo:         {'mode': 'gross'}
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum BetProposalStatus { pending, approved, rejected, disputed }
+
+class BetChangeProposal {
+  final String id;
+  /// Grupo y módulo al que aplica. null moduleId = propuesta de ventaja del duelo.
+  final String groupId;
+  final String? moduleId;
+  /// Par de jugadores del duelo.
+  final String p1Id;
+  final String p2Id;
+  /// UID del usuario que hizo la propuesta.
+  final String proposedByUid;
+  /// ID del jugador del proponente (para mostrar nombre).
+  final String proposedByPlayerId;
+  /// El cambio propuesto como mapa serializable.
+  final Map<String, dynamic> payload;
+  /// Tipo de cambio: 'amount', 'handicap', 'mode', 'rules'.
+  final String changeType;
+  /// Estado actual de la propuesta.
+  final BetProposalStatus status;
+  /// UID que aprobó/rechazó (null si pendiente).
+  final String? resolvedByUid;
+  /// Timestamp ISO de creación.
+  final String createdAt;
+  /// UIDs que ya han aprobado (para mayoría o unanimidad).
+  final List<String> approvedByUids;
+
+  const BetChangeProposal({
+    required this.id,
+    required this.groupId,
+    this.moduleId,
+    required this.p1Id,
+    required this.p2Id,
+    required this.proposedByUid,
+    required this.proposedByPlayerId,
+    required this.payload,
+    required this.changeType,
+    this.status = BetProposalStatus.pending,
+    this.resolvedByUid,
+    required this.createdAt,
+    this.approvedByUids = const [],
+  });
+
+  bool get isPending  => status == BetProposalStatus.pending;
+  bool get isApproved => status == BetProposalStatus.approved;
+  bool get isRejected => status == BetProposalStatus.rejected;
+
+  BetChangeProposal copyWith({
+    BetProposalStatus? status,
+    String? resolvedByUid,
+    List<String>? approvedByUids,
+  }) => BetChangeProposal(
+    id: id, groupId: groupId, moduleId: moduleId,
+    p1Id: p1Id, p2Id: p2Id,
+    proposedByUid: proposedByUid, proposedByPlayerId: proposedByPlayerId,
+    payload: payload, changeType: changeType,
+    status: status ?? this.status,
+    resolvedByUid: resolvedByUid ?? this.resolvedByUid,
+    createdAt: createdAt,
+    approvedByUids: approvedByUids ?? this.approvedByUids,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'groupId': groupId,
+    if (moduleId != null) 'moduleId': moduleId,
+    'p1Id': p1Id,
+    'p2Id': p2Id,
+    'proposedByUid': proposedByUid,
+    'proposedByPlayerId': proposedByPlayerId,
+    'payload': payload,
+    'changeType': changeType,
+    'status': status.name,
+    if (resolvedByUid != null) 'resolvedByUid': resolvedByUid,
+    'createdAt': createdAt,
+    'approvedByUids': approvedByUids,
+  };
+
+  factory BetChangeProposal.fromJson(Map<String, dynamic> j) => BetChangeProposal(
+    id:                   (j['id'] as String?) ?? '',
+    groupId:              (j['groupId'] as String?) ?? '',
+    moduleId:             j['moduleId'] as String?,
+    p1Id:                 (j['p1Id'] as String?) ?? '',
+    p2Id:                 (j['p2Id'] as String?) ?? '',
+    proposedByUid:        (j['proposedByUid'] as String?) ?? '',
+    proposedByPlayerId:   (j['proposedByPlayerId'] as String?) ?? '',
+    payload:              (j['payload'] as Map?)?.map((k, v) => MapEntry(k.toString(), v)) ?? {},
+    changeType:           (j['changeType'] as String?) ?? 'amount',
+    status: BetProposalStatus.values.firstWhere(
+      (s) => s.name == j['status'],
+      orElse: () => BetProposalStatus.pending,
+    ),
+    resolvedByUid:    j['resolvedByUid'] as String?,
+    createdAt:        (j['createdAt'] as String?) ?? '',
+    approvedByUids:   (j['approvedByUids'] as List?)?.map((e) => e.toString()).toList() ?? [],
+  );
+}
+
 // ── Round ─────────────────────────────────────────────────────────────────────
 class Round {
   final String id;
@@ -1926,6 +2040,10 @@ class Round {
   /// true si solo el admin puede capturar scores
   bool get isAdminScoring => scoringMode == 'admin';
 
+  /// Propuestas de cambio colaborativo de apuestas pendientes de aprobación.
+  /// Solo se persisten en rondas en vivo (liveRounds Firestore).
+  final List<BetChangeProposal> pendingProposals;
+
   Round({
     required this.id, required this.name, required this.course,
     required this.players, required this.roundPlayers,
@@ -1940,7 +2058,9 @@ class Round {
     this.liveCode,
     this.scoringMode = 'open',
     Map<String, double>? pairSliding,
-  }) : pairSliding = pairSliding ?? const {};
+    List<BetChangeProposal>? pendingProposals,
+  }) : pairSliding = pairSliding ?? const {},
+       pendingProposals = pendingProposals ?? const [];
 
   HoleScore getScore(String playerId, int hole) =>
       scores[playerId]?[hole] ?? HoleScore(playerId: playerId, hole: hole);
@@ -1983,6 +2103,7 @@ class Round {
     String? liveCode,
     String? scoringMode,
     Map<String, double>? pairSliding,
+    List<BetChangeProposal>? pendingProposals,
   }) => Round(
     id: id, name: name, course: course,
     players: players ?? this.players,
@@ -2001,6 +2122,7 @@ class Round {
     liveCode: liveCode ?? this.liveCode,
     scoringMode: scoringMode ?? this.scoringMode,
     pairSliding: pairSliding ?? this.pairSliding,
+    pendingProposals: pendingProposals ?? this.pendingProposals,
   );
 }
 

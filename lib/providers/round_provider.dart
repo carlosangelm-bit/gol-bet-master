@@ -45,6 +45,9 @@ Map<String, dynamic> roundToJson(Round r) {
   'sliding': r.sliding.map((s) => s.toJson()).toList(),
   // pairSliding: fuente canónica de acuerdos bilaterales (solo si hay valores)
   if (r.pairSliding.isNotEmpty) 'pairSliding': r.pairSliding,
+  // pendingProposals: propuestas colaborativas de cambio de apuestas
+  if (r.pendingProposals.isNotEmpty)
+    'pendingProposals': r.pendingProposals.map((p) => p.toJson()).toList(),
   };
 }
 
@@ -141,6 +144,14 @@ Round roundFromJson(Map<String, dynamic> j) {
     scores: scores, events: events, oyeseRankings: oyeses, sliding: sliding,
     // ── pairSliding: leer campo canónico y aplicar migración legacy ──────────
     pairSliding: _buildPairSliding(j, roundPlayers),
+    // ── pendingProposals: propuestas colaborativas ───────────────────────────
+    pendingProposals: asList(j['pendingProposals'])
+        .map((p) {
+          try { return BetChangeProposal.fromJson(asMap(p)); }
+          catch (_) { return null; }
+        })
+        .whereType<BetChangeProposal>()
+        .toList(),
   );
 }
 
@@ -579,6 +590,288 @@ class RoundProvider extends ChangeNotifier {
     _round = _round!.copyWith(roundPlayers: newRPs);
     notifyListeners();
     _persist();
+  }
+
+  // ── Permisos colaborativos ─────────────────────────────────────────────────
+
+  /// Jugador de la ronda cuyo [Player.linkedUserId] coincide con el UID actual.
+  /// null si el usuario no tiene un jugador asociado en esta ronda.
+  Player? get myPlayerInRound {
+    final uid = AuthService.uid;
+    if (uid == null || _round == null) return null;
+    try {
+      return _round!.players.firstWhere(
+        (p) => p.linkedUserId != null && p.linkedUserId == uid,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// true si el usuario actual participa en el duelo (es p1 o p2).
+  bool isParticipantInDuel(String p1Id, String p2Id) {
+    final me = myPlayerInRound;
+    if (me == null) return false;
+    return me.id == p1Id || me.id == p2Id;
+  }
+
+  /// true si el usuario puede editar apuestas directamente:
+  /// - es el owner de la ronda en vivo, O
+  /// - la ronda no es en vivo.
+  bool get canEditBets {
+    if (_round == null) return true;
+    if (!_round!.isLive) return true;
+    return isLiveOwner;
+  }
+
+  /// true si el usuario puede proponer un cambio de apuesta en este duelo:
+  /// - ronda en vivo, scoringMode == 'open' o 'collaborative'
+  /// - usuario es participante del duelo
+  /// - usuario NO es el owner (el owner edita directamente)
+  bool canProposeBetChange(String p1Id, String p2Id) {
+    if (_round == null) return false;
+    if (!_round!.isLive) return false;
+    if (isLiveOwner) return false; // owner edita directo, no propone
+    if (_round!.isAdminScoring) return false; // en admin mode, invitados = read-only
+    return isParticipantInDuel(p1Id, p2Id);
+  }
+
+  /// true si el usuario NO es participante del duelo de la propuesta ni owner.
+  bool isOutsiderForProposal(BetChangeProposal proposal) {
+    if (isLiveOwner) return false;
+    return !isParticipantInDuel(proposal.p1Id, proposal.p2Id);
+  }
+
+  /// Propuestas activas (pendientes) para un duelo concreto.
+  List<BetChangeProposal> pendingProposalsForDuel(String p1Id, String p2Id) {
+    if (_round == null) return [];
+    return _round!.pendingProposals.where((pr) =>
+      pr.isPending &&
+      ((pr.p1Id == p1Id && pr.p2Id == p2Id) ||
+       (pr.p1Id == p2Id && pr.p2Id == p1Id)),
+    ).toList();
+  }
+
+  // ── CRUD propuestas colaborativas ──────────────────────────────────────────
+
+  /// Añade una nueva propuesta de cambio. Requiere que el usuario sea
+  /// participante del duelo y que el scoringMode permita propuestas.
+  void proposeBetChange(BetChangeProposal proposal) {
+    if (_round == null) return;
+    if (!canProposeBetChange(proposal.p1Id, proposal.p2Id)) return;
+
+    // Descartar propuestas anteriores del mismo tipo y duelo (reemplazar)
+    final filtered = _round!.pendingProposals.where((pr) =>
+      !(pr.isPending &&
+        pr.changeType == proposal.changeType &&
+        ((pr.p1Id == proposal.p1Id && pr.p2Id == proposal.p2Id) ||
+         (pr.p1Id == proposal.p2Id && pr.p2Id == proposal.p1Id)) &&
+        pr.moduleId == proposal.moduleId),
+    ).toList();
+
+    _round = _round!.copyWith(
+      pendingProposals: [...filtered, proposal],
+    );
+    notifyListeners();
+    _persist();
+  }
+
+  /// El usuario actual aprueba una propuesta. Si el quórum es suficiente
+  /// (ambos jugadores del duelo la aprobaron o el owner la aprueba),
+  /// la propuesta se aplica y su estado cambia a [approved].
+  void approveBetChange(String proposalId) {
+    if (_round == null) return;
+    final uid = AuthService.uid;
+    if (uid == null) return;
+
+    final idx = _round!.pendingProposals.indexWhere(
+      (pr) => pr.id == proposalId && pr.isPending,
+    );
+    if (idx < 0) return;
+
+    final proposal = _round!.pendingProposals[idx];
+
+    // Calcular nuevo estado de aprobación
+    final newApprovedBy = [...proposal.approvedByUids];
+    if (!newApprovedBy.contains(uid)) newApprovedBy.add(uid);
+
+    // Quórum: el owner puede aprobar solo; participantes necesitan ambos
+    final quorumReached = isLiveOwner ||
+        (_quorumUidsForDuel(proposal.p1Id, proposal.p2Id)
+            .every((u) => newApprovedBy.contains(u)));
+
+    final updated = proposal.copyWith(
+      approvedByUids: newApprovedBy,
+      status: quorumReached ? BetProposalStatus.approved : BetProposalStatus.pending,
+      resolvedByUid: quorumReached ? uid : null,
+    );
+
+    final newProposals = List<BetChangeProposal>.from(_round!.pendingProposals);
+    newProposals[idx] = updated;
+    _round = _round!.copyWith(pendingProposals: newProposals);
+
+    if (quorumReached) _applyProposalPayload(updated);
+
+    notifyListeners();
+    _persist();
+  }
+
+  /// Rechaza una propuesta (cualquier participante o el owner puede rechazar).
+  void rejectBetChange(String proposalId) {
+    if (_round == null) return;
+    final uid = AuthService.uid;
+    if (uid == null) return;
+
+    final idx = _round!.pendingProposals.indexWhere(
+      (pr) => pr.id == proposalId && pr.isPending,
+    );
+    if (idx < 0) return;
+
+    final updated = _round!.pendingProposals[idx].copyWith(
+      status: BetProposalStatus.rejected,
+      resolvedByUid: uid,
+    );
+    final newProposals = List<BetChangeProposal>.from(_round!.pendingProposals);
+    newProposals[idx] = updated;
+    _round = _round!.copyWith(pendingProposals: newProposals);
+    notifyListeners();
+    _persist();
+  }
+
+  /// Elimina propuestas ya resueltas (approved / rejected) de la lista.
+  void clearResolvedProposals() {
+    if (_round == null) return;
+    final active = _round!.pendingProposals
+        .where((pr) => pr.isPending)
+        .toList();
+    if (active.length == _round!.pendingProposals.length) return;
+    _round = _round!.copyWith(pendingProposals: active);
+    notifyListeners();
+    _persist();
+  }
+
+  /// UIDs de los dos jugadores del duelo (para calcular quórum).
+  List<String> _quorumUidsForDuel(String p1Id, String p2Id) {
+    if (_round == null) return [];
+    final uids = <String>[];
+    for (final p in _round!.players) {
+      if ((p.id == p1Id || p.id == p2Id) &&
+          p.linkedUserId != null &&
+          p.linkedUserId!.isNotEmpty) {
+        uids.add(p.linkedUserId!);
+      }
+    }
+    return uids;
+  }
+
+  /// Aplica el payload de una propuesta aprobada al modelo de la ronda.
+  void _applyProposalPayload(BetChangeProposal p) {
+    if (_round == null) return;
+    final payload = p.payload;
+
+    switch (p.changeType) {
+      case 'handicap':
+        // payload: {'manualStrokes': 2.0, 'p1ReceivesFrom': 'pB_id'}
+        final strokes = (payload['manualStrokes'] as num?)?.toDouble();
+        final receiver = payload['p1ReceivesFrom'] as String?;
+        final giver = receiver == p.p1Id ? p.p2Id : p.p1Id;
+        if (receiver != null && strokes != null) {
+          // Actualizar pairSliding: cuánto recibe el lowId
+          final lowId  = receiver.compareTo(giver) <= 0 ? receiver : giver;
+          final highId = receiver.compareTo(giver) <= 0 ? giver : receiver;
+          final canonicalVal = receiver == lowId ? strokes : -strokes;
+          final newPs = Map<String, double>.from(_round!.pairSliding);
+          newPs['$lowId|$highId'] = canonicalVal;
+          _round = _round!.copyWith(pairSliding: newPs);
+        }
+
+      case 'amount':
+      case 'mode':
+      case 'rules':
+        // Aplicar cambios al BetModuleInstance si moduleId está presente
+        if (p.moduleId != null) {
+          final groupIdx = _round!.betGroups.indexWhere((g) => g.id == p.groupId);
+          if (groupIdx < 0) break;
+          final group = _round!.betGroups[groupIdx];
+          final modIdx = group.modules.indexWhere((m) => m.id == p.moduleId);
+          if (modIdx < 0) break;
+
+          final mod = group.modules[modIdx];
+          final updatedMod = _applyPayloadToModule(mod, payload);
+          final newMods = List<BetModuleInstance>.from(group.modules);
+          newMods[modIdx] = updatedMod;
+          final newGroups = List<BetGroup>.from(_round!.betGroups);
+          newGroups[groupIdx] = group.copyWith(modules: newMods);
+          _round = _round!.copyWith(betGroups: newGroups);
+        }
+    }
+  }
+
+  /// Aplica el mapa [payload] a los campos de un [BetModuleInstance].
+  /// Solo modifica los campos que el payload contiene; devuelve una copia.
+  BetModuleInstance _applyPayloadToModule(
+      BetModuleInstance mod, Map<String, dynamic> payload) {
+    // Configuración de Nassau
+    NassauConfig? nassauCfg = mod.nassauConfig;
+    if (nassauCfg != null) {
+      nassauCfg = nassauCfg.copyWith(
+        frontValue:   (payload['nassauFront']  as num?)?.toDouble(),
+        backValue:    (payload['nassauBack']   as num?)?.toDouble(),
+        totalValue:   (payload['nassauTotal']  as num?)?.toDouble(),
+        pressEnabled: payload.containsKey('pressEnabled')
+            ? payload['pressEnabled'] == true : null,
+      );
+    }
+
+    // Configuración de Skins
+    SkinsConfig? skinsCfg = mod.skinsConfig;
+    if (skinsCfg != null) {
+      skinsCfg = skinsCfg.copyWith(
+        valuePerSkin: (payload['valuePerSkin'] as num?)?.toDouble(),
+        carryOver:    payload.containsKey('carryOver')
+            ? payload['carryOver'] == true : null,
+      );
+    }
+
+    // Configuración de Putts
+    PuttsConfig? puttsCfg = mod.puttsConfig;
+    if (puttsCfg != null) {
+      puttsCfg = puttsCfg.copyWith(
+        value: (payload['valuePerPutt'] as num?)?.toDouble(),
+      );
+    }
+
+    // Configuración de Medal
+    MedalConfig? medalCfg = mod.medalConfig;
+    if (medalCfg != null) {
+      medalCfg = medalCfg.copyWith(
+        value: (payload['valuePerStroke'] as num?)?.toDouble(),
+      );
+    }
+
+    return BetModuleInstance(
+      id:                    mod.id,
+      type:                  mod.type,
+      name:                  mod.name,
+      participantIds:        mod.participantIds,
+      sides:                 mod.sides,
+      status:                mod.status,
+      formatMode:            mod.formatMode,
+      nassauConfig:          nassauCfg,
+      skinsConfig:           skinsCfg,
+      matchAutoPressConfig:  mod.matchAutoPressConfig,
+      medalConfig:           medalCfg,
+      puttsConfig:           puttsCfg,
+      oyesesConfig:          mod.oyesesConfig,
+      unitsConfig:           mod.unitsConfig,
+      presses:               mod.presses,
+      structure:             mod.structure,
+      betGroupId:            mod.betGroupId,
+      betGroupName:          mod.betGroupName,
+      anchorPlayerId:        mod.anchorPlayerId,
+      playerConfigOverrides: mod.playerConfigOverrides,
+      pairConfigOverrides:   mod.pairConfigOverrides,
+    );
   }
 
   // ── Round players (ventajas manuales) ──────────────────────────────────────

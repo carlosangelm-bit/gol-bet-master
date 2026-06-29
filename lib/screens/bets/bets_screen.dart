@@ -1,5 +1,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// BETS SCREEN — Gestión de apuestas agrupadas por duelo
+// BETS SCREEN — Gestión colaborativa de apuestas agrupadas por duelo
+//
+// Modelo de permisos:
+//   owner       → edita directamente; cambios se aplican en tiempo real
+//   participant (open)  → puede proponer cambios; la contraparte debe aprobar
+//   participant (admin) → solo lectura
+//   outsider    → solo lectura
+//
+// Flujo de propuesta:
+//   1. Participante abre "Proponer cambio" → rellena payload → llama proposeBetChange()
+//   2. La otra parte ve _PendingProposalBanner con Aceptar/Rechazar
+//   3. Aceptar → approveBetChange() → se aplica payload si hay quórum
+//   4. Rechazar → rejectBetChange()
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +21,52 @@ import '../../providers/round_provider.dart';
 import '../../engines/bet_engine.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/bet_module_edit_sheet.dart';
+import '../../services/auth_service.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modelo de permisos por duelo
+// ─────────────────────────────────────────────────────────────────────────────
+enum _Permission { owner, participantEditable, participantReadOnly, outsider }
+
+class _DuelPermission {
+  final _Permission level;
+  const _DuelPermission(this.level);
+
+  bool get canEdit       => level == _Permission.owner;
+  bool get canPropose    => level == _Permission.participantEditable;
+  bool get isReadOnly    => level == _Permission.participantReadOnly || level == _Permission.outsider;
+  bool get isOutsider    => level == _Permission.outsider;
+
+  String get bannerLabel {
+    switch (level) {
+      case _Permission.owner:               return '✏️ Puedes editar este duelo';
+      case _Permission.participantEditable: return '💬 Puedes proponer cambios';
+      case _Permission.participantReadOnly: return '👁 Solo lectura (modo admin)';
+      case _Permission.outsider:            return '🔒 No participas en este duelo';
+    }
+  }
+
+  Color bannerColor(GolfTheme t) {
+    switch (level) {
+      case _Permission.owner:               return t.primary;
+      case _Permission.participantEditable: return t.accent;
+      case _Permission.participantReadOnly: return t.sub;
+      case _Permission.outsider:            return t.sub;
+    }
+  }
+}
+
+_DuelPermission _computePermission(RoundProvider prov, String p1Id, String p2Id) {
+  if (prov.isLiveOwner) return const _DuelPermission(_Permission.owner);
+  if (!prov.isLiveRound) return const _DuelPermission(_Permission.owner); // local: edit libre
+  if (!prov.isParticipantInDuel(p1Id, p2Id)) {
+    return const _DuelPermission(_Permission.outsider);
+  }
+  if (prov.round?.isAdminScoring ?? false) {
+    return const _DuelPermission(_Permission.participantReadOnly);
+  }
+  return const _DuelPermission(_Permission.participantEditable);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Punto de entrada del tab
@@ -45,12 +103,9 @@ class BetsScreen extends StatelessWidget {
 class _DuelInfo {
   final Player p1;
   final Player p2;
-  /// Módulos que involucran exactamente a este par (participantIds contiene ambos IDs).
   final List<_ModuleRef> modules;
-  /// Ventaja: cuántos strokes recibe p1 de p2.
-  /// positivo = p1 recibe; negativo = p2 recibe; null = usa diff de HCP.
   final double? manualStrokes;
-  final double hcpDiff; // p1HCP - p2HCP redondeado
+  final double hcpDiff;
 
   const _DuelInfo({
     required this.p1,
@@ -60,7 +115,6 @@ class _DuelInfo {
     required this.hcpDiff,
   });
 
-  /// Descripción legible de la ventaja
   String get handicapLabel {
     final s = (manualStrokes ?? hcpDiff).round();
     if (s == 0) return 'Igualados';
@@ -75,19 +129,17 @@ class _DuelInfo {
 class _ModuleRef {
   final BetGroup group;
   final BetModuleInstance module;
-
   const _ModuleRef({required this.group, required this.module});
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Lógica de agrupación: deriva los duelos desde los BetGroups
+// Lógica de agrupación
 // ─────────────────────────────────────────────────────────────────────────────
 List<_DuelInfo> _buildDuels(Round round) {
   final activePlayers = round.players
       .where((p) => round.scores.containsKey(p.id))
       .toList();
 
-  // Generar todos los pares únicos
   final duels = <String, _DuelInfo>{};
   for (int i = 0; i < activePlayers.length; i++) {
     for (int j = i + 1; j < activePlayers.length; j++) {
@@ -95,7 +147,6 @@ List<_DuelInfo> _buildDuels(Round round) {
       final pB = activePlayers[j];
       final key = BetModuleInstance.pairKey(pA.id, pB.id);
 
-      // Ventaja manual (buscamos en los RoundPlayers de ambos)
       final rpA = round.roundPlayers.firstWhere(
         (r) => r.playerId == pA.id,
         orElse: () => RoundPlayer(playerId: pA.id, handicapEnRonda: 0),
@@ -109,11 +160,9 @@ List<_DuelInfo> _buildDuels(Round round) {
       if (rpA.manualHandicaps.containsKey(pB.id)) {
         manual = rpA.manualHandicaps[pB.id];
       } else if (rpB.manualHandicaps.containsKey(pA.id)) {
-        // rpB tiene manual hacia pA → p1 da a p2 → negativo desde perspectiva p1
         manual = -(rpB.manualHandicaps[pA.id]!);
       }
 
-      // También revisar pairSliding canónico
       final canonical = BetEngine.canonicalSlidingBetween(round, pA.id, pB.id);
       if (manual == null && canonical != null) {
         manual = canonical;
@@ -123,16 +172,12 @@ List<_DuelInfo> _buildDuels(Round round) {
       final hcpB = round.getHandicap(pB.id);
 
       duels[key] = _DuelInfo(
-        p1: pA,
-        p2: pB,
-        modules: [],
-        manualStrokes: manual,
-        hcpDiff: hcpA - hcpB,
+        p1: pA, p2: pB, modules: [],
+        manualStrokes: manual, hcpDiff: hcpA - hcpB,
       );
     }
   }
 
-  // Asignar módulos a los duelos
   final duelModules = <String, List<_ModuleRef>>{};
   for (final g in round.betGroups) {
     for (final mod in g.modules) {
@@ -141,7 +186,6 @@ List<_DuelInfo> _buildDuels(Round round) {
         final k = BetModuleInstance.pairKey(pids[0], pids[1]);
         duelModules[k] = [...(duelModules[k] ?? []), _ModuleRef(group: g, module: mod)];
       } else {
-        // Módulo de grupo (más de 2 participantes): asignarlo a todos los pares
         for (int i = 0; i < pids.length; i++) {
           for (int j = i + 1; j < pids.length; j++) {
             final k = BetModuleInstance.pairKey(pids[i], pids[j]);
@@ -154,15 +198,12 @@ List<_DuelInfo> _buildDuels(Round round) {
     }
   }
 
-  // Reconstruir con los módulos asignados
   return duels.entries.map((e) {
     final d = e.value;
     return _DuelInfo(
-      p1: d.p1,
-      p2: d.p2,
+      p1: d.p1, p2: d.p2,
       modules: duelModules[e.key] ?? [],
-      manualStrokes: d.manualStrokes,
-      hcpDiff: d.hcpDiff,
+      manualStrokes: d.manualStrokes, hcpDiff: d.hcpDiff,
     );
   }).toList();
 }
@@ -182,10 +223,7 @@ class _BetsBody extends StatelessWidget {
 
     return CustomScrollView(
       slivers: [
-        // ── Header ──────────────────────────────────────────────────────────
-        SliverToBoxAdapter(child: _BetsHeader(round: round, t: t)),
-
-        // ── Lista de duelos ──────────────────────────────────────────────────
+        SliverToBoxAdapter(child: _BetsHeader(round: round, prov: prov, t: t)),
         if (duels.isEmpty)
           SliverFillRemaining(
             child: Center(
@@ -194,10 +232,8 @@ class _BetsBody extends StatelessWidget {
                 children: [
                   Icon(Icons.paid_outlined, color: t.sub, size: 48),
                   const SizedBox(height: 12),
-                  Text(
-                    'No hay apuestas configuradas',
-                    style: TextStyle(color: t.sub, fontSize: 15),
-                  ),
+                  Text('No hay apuestas configuradas',
+                      style: TextStyle(color: t.sub, fontSize: 15)),
                   const SizedBox(height: 6),
                   Text(
                     'Configura apuestas desde la pantalla de inicio',
@@ -214,10 +250,7 @@ class _BetsBody extends StatelessWidget {
             sliver: SliverList(
               delegate: SliverChildBuilderDelegate(
                 (ctx, i) => _DuelCard(
-                  duel: duels[i],
-                  round: round,
-                  prov: prov,
-                  t: t,
+                  duel: duels[i], round: round, prov: prov, t: t,
                 ),
                 childCount: duels.length,
               ),
@@ -233,29 +266,25 @@ class _BetsBody extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 class _BetsHeader extends StatelessWidget {
   final Round round;
+  final RoundProvider prov;
   final GolfTheme t;
-  const _BetsHeader({required this.round, required this.t});
+  const _BetsHeader({required this.round, required this.prov, required this.t});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(
-          '💰 Apuestas',
-          style: TextStyle(
-            color: t.text,
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
+        Text('💰 Apuestas',
+            style: TextStyle(color: t.text, fontSize: 22, fontWeight: FontWeight.w800)),
         const SizedBox(height: 2),
-        Text(
-          round.name,
-          style: TextStyle(color: t.sub, fontSize: 13),
-        ),
+        Text(round.name, style: TextStyle(color: t.sub, fontSize: 13)),
+        // Banner de modo en rondas live
+        if (round.isLive) ...[
+          const SizedBox(height: 10),
+          _LiveModeBanner(prov: prov, t: t),
+        ],
         const SizedBox(height: 12),
-        // Resumen rápido
         Row(children: [
           _QuickStat(
             icon: Icons.people_outline,
@@ -263,29 +292,74 @@ class _BetsHeader extends StatelessWidget {
             t: t,
           ),
           const SizedBox(width: 12),
-          _QuickStat(
-            icon: Icons.compare_arrows,
-            label: '${_countDuels(round)} duelos',
-            t: t,
-          ),
+          _QuickStat(icon: Icons.compare_arrows,
+              label: '${_countDuels(round)} duelos', t: t),
           const SizedBox(width: 12),
-          _QuickStat(
-            icon: Icons.list_alt,
-            label: '${_countModules(round)} apuestas',
-            t: t,
-          ),
+          _QuickStat(icon: Icons.list_alt,
+              label: '${_countModules(round)} apuestas', t: t),
         ]),
       ]),
     );
   }
 
-  int _countDuels(Round round) {
-    final active = round.players.where((p) => round.scores.containsKey(p.id)).toList();
+  int _countDuels(Round r) {
+    final active = r.players.where((p) => r.scores.containsKey(p.id)).toList();
     return active.length * (active.length - 1) ~/ 2;
   }
+  int _countModules(Round r) => r.betGroups.fold(0, (s, g) => s + g.modules.length);
+}
 
-  int _countModules(Round round) =>
-      round.betGroups.fold(0, (s, g) => s + g.modules.length);
+// Banner informativo del modo de la ronda live
+class _LiveModeBanner extends StatelessWidget {
+  final RoundProvider prov;
+  final GolfTheme t;
+  const _LiveModeBanner({required this.prov, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final isOwner = prov.isLiveOwner;
+    final isAdmin = prov.round?.isAdminScoring ?? false;
+    final myPlayer = prov.myPlayerInRound;
+
+    String label;
+    Color color;
+    IconData icon;
+
+    if (isOwner) {
+      label = 'Organizador · Puedes editar todas las apuestas';
+      color = t.primary;
+      icon  = Icons.manage_accounts_outlined;
+    } else if (myPlayer == null) {
+      label = 'Observador · Solo lectura';
+      color = t.sub;
+      icon  = Icons.visibility_outlined;
+    } else if (isAdmin) {
+      label = 'Modo admin · Solo el organizador edita';
+      color = t.sub;
+      icon  = Icons.lock_outline;
+    } else {
+      label = 'Puedes proponer cambios en tus duelos';
+      color = t.accent;
+      icon  = Icons.handshake_outlined;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(children: [
+        Icon(icon, color: color, size: 13),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(label,
+              style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+        ),
+      ]),
+    );
+  }
 }
 
 class _QuickStat extends StatelessWidget {
@@ -328,41 +402,52 @@ class _DuelCardState extends State<_DuelCard> {
 
   @override
   Widget build(BuildContext context) {
-    final duel = widget.duel;
+    final duel  = widget.duel;
+    final perm  = _computePermission(widget.prov, duel.p1.id, duel.p2.id);
+    final proposals = widget.prov.pendingProposalsForDuel(duel.p1.id, duel.p2.id);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: t.card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: t.divider),
+        border: Border.all(
+          color: proposals.isNotEmpty
+              ? Colors.orange.withValues(alpha: 0.5)
+              : t.divider,
+          width: proposals.isNotEmpty ? 1.5 : 1,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            blurRadius: 8, offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header del duelo ─────────────────────────────────────────────
           _DuelHeader(
-            duel: duel,
-            t: t,
+            duel: duel, t: t, perm: perm,
             expanded: _expanded,
             onTap: () => setState(() => _expanded = !_expanded),
-            onEditHandicap: () => _openHandicapEdit(context),
+            onEditHandicap: () => _openHandicapEdit(context, perm),
           ),
 
-          // ── Contenido expandible ─────────────────────────────────────────
-          if (_expanded) ...[
-            const Divider(height: 1),
-            _DuelBetsSection(
-              duel: duel,
+          // ── Banners de propuestas pendientes ─────────────────────────────
+          if (proposals.isNotEmpty)
+            ...proposals.map((pr) => _PendingProposalBanner(
+              proposal: pr,
               round: widget.round,
               prov: widget.prov,
               t: t,
+            )),
+
+          if (_expanded) ...[
+            const Divider(height: 1),
+            _DuelBetsSection(
+              duel: duel, round: widget.round,
+              prov: widget.prov, t: t, perm: perm,
             ),
           ],
         ],
@@ -370,40 +455,35 @@ class _DuelCardState extends State<_DuelCard> {
     );
   }
 
-  void _openHandicapEdit(BuildContext context) {
+  void _openHandicapEdit(BuildContext context, _DuelPermission perm) {
     showModalBottomSheet(
       context: context,
       backgroundColor: t.card,
       isScrollControlled: true,
       useRootNavigator: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => _HandicapEditSheet(
-        duel: widget.duel,
-        round: widget.round,
-        prov: widget.prov,
-        t: t,
+        duel: widget.duel, round: widget.round,
+        prov: widget.prov, t: t, perm: perm,
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Header interno de una tarjeta de duelo
+// Header del duelo
 // ─────────────────────────────────────────────────────────────────────────────
 class _DuelHeader extends StatelessWidget {
   final _DuelInfo duel;
   final GolfTheme t;
+  final _DuelPermission perm;
   final bool expanded;
   final VoidCallback onTap;
   final VoidCallback onEditHandicap;
   const _DuelHeader({
-    required this.duel,
-    required this.t,
-    required this.expanded,
-    required this.onTap,
-    required this.onEditHandicap,
+    required this.duel, required this.t, required this.perm,
+    required this.expanded, required this.onTap, required this.onEditHandicap,
   });
 
   @override
@@ -411,6 +491,7 @@ class _DuelHeader extends StatelessWidget {
     final p1 = duel.p1;
     final p2 = duel.p2;
     final hasApuestas = duel.modules.isNotEmpty;
+    final tappableHandicap = !perm.isOutsider;
 
     return InkWell(
       onTap: onTap,
@@ -418,33 +499,34 @@ class _DuelHeader extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         child: Row(children: [
-          // Avatares
-          Stack(
-            children: [
-              GAvatar(name: p1.name, colorIndex: p1.colorIndex, size: 34),
-              Positioned(
-                left: 22,
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: t.card, width: 1.5),
-                  ),
-                  child: GAvatar(name: p2.name, colorIndex: p2.colorIndex, size: 34),
+          // Avatares apilados
+          Stack(children: [
+            GAvatar(name: p1.name, colorIndex: p1.colorIndex, size: 34),
+            Positioned(
+              left: 22,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: t.card, width: 1.5),
                 ),
+                child: GAvatar(name: p2.name, colorIndex: p2.colorIndex, size: 34),
               ),
-            ],
-          ),
+            ),
+          ]),
           const SizedBox(width: 28),
-          // Nombres y ventaja
+
+          // Nombres + ventaja
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
                 '${p1.name.split(' ').first} vs ${p2.name.split(' ').first}',
-                style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 15),
+                style: TextStyle(
+                    color: t.text, fontWeight: FontWeight.w800, fontSize: 15),
               ),
               const SizedBox(height: 2),
+              // Ventaja: solo tappable si no es outsider
               GestureDetector(
-                onTap: onEditHandicap,
+                onTap: tappableHandicap ? onEditHandicap : null,
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(
                     duel.hasManualOverride ? Icons.tune : Icons.compare_arrows,
@@ -457,18 +539,37 @@ class _DuelHeader extends StatelessWidget {
                     style: TextStyle(
                       color: duel.hasManualOverride ? t.accent : t.sub,
                       fontSize: 11,
-                      fontWeight: duel.hasManualOverride ? FontWeight.w700 : FontWeight.w400,
+                      fontWeight: duel.hasManualOverride
+                          ? FontWeight.w700 : FontWeight.w400,
                     ),
                   ),
-                  const SizedBox(width: 3),
-                  Icon(Icons.edit_outlined,
-                      color: (duel.hasManualOverride ? t.accent : t.sub).withValues(alpha: 0.6),
-                      size: 10),
+                  if (tappableHandicap) ...[
+                    const SizedBox(width: 3),
+                    Icon(
+                      perm.canEdit ? Icons.edit_outlined : Icons.visibility_outlined,
+                      color: (duel.hasManualOverride ? t.accent : t.sub)
+                          .withValues(alpha: 0.6),
+                      size: 10,
+                    ),
+                  ],
                 ]),
               ),
             ]),
           ),
-          // Badge de cantidad de apuestas
+
+          // Badge permiso (solo en live)
+          if (perm.isReadOnly)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              margin: const EdgeInsets.only(right: 6),
+              decoration: BoxDecoration(
+                color: t.sub.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(Icons.lock_outline, color: t.sub, size: 11),
+            ),
+
+          // Badge cantidad apuestas
           if (hasApuestas)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -480,17 +581,14 @@ class _DuelHeader extends StatelessWidget {
               child: Text(
                 '${duel.modules.length}',
                 style: TextStyle(
-                  color: t.primary,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 11,
-                ),
+                    color: t.primary, fontWeight: FontWeight.w800, fontSize: 11),
               ),
             ),
+
           // Chevron
           Icon(
             expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-            color: t.sub,
-            size: 20,
+            color: t.sub, size: 20,
           ),
         ]),
       ),
@@ -499,16 +597,148 @@ class _DuelHeader extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sección de apuestas dentro de la tarjeta de duelo
+// Banner de propuesta pendiente
+// ─────────────────────────────────────────────────────────────────────────────
+class _PendingProposalBanner extends StatelessWidget {
+  final BetChangeProposal proposal;
+  final Round round;
+  final RoundProvider prov;
+  final GolfTheme t;
+  const _PendingProposalBanner({
+    required this.proposal, required this.round,
+    required this.prov, required this.t,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = AuthService.uid;
+    final isMine = proposal.proposedByUid == uid;
+    final canAct  = !isMine && !prov.isOutsiderForProposal(proposal);
+
+    // Nombre del proponente
+    final proposerPlayer = round.players
+        .where((p) => p.id == proposal.proposedByPlayerId)
+        .firstOrNull;
+    final proposerName = proposerPlayer?.name.split(' ').first ?? 'Alguien';
+
+    final summary = _proposalSummary(proposal);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.08),
+        border: Border(
+          left: BorderSide(color: Colors.orange, width: 3),
+        ),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.pending_outlined, color: Colors.orange, size: 14),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              isMine
+                  ? 'Cambio pendiente de aprobación'
+                  : '$proposerName propone un cambio',
+              style: TextStyle(
+                  color: Colors.orange, fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 4),
+        Text(summary, style: TextStyle(color: t.sub, fontSize: 11)),
+
+        if (canAct) ...[
+          const SizedBox(height: 8),
+          Row(children: [
+            // Botón Rechazar
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => prov.rejectBetChange(proposal.id),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: t.loss,
+                  side: BorderSide(color: t.loss.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  minimumSize: const Size(0, 32),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                child: const Text('Rechazar',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Botón Aceptar
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () => prov.approveBetChange(proposal.id),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: t.primary,
+                  foregroundColor: t.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  minimumSize: const Size(0, 32),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                child: const Text('Aceptar',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+        ],
+
+        if (isMine)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'Esperando aprobación de la contraparte…',
+              style: TextStyle(
+                  color: t.sub.withValues(alpha: 0.7), fontSize: 10),
+            ),
+          ),
+      ]),
+    );
+  }
+
+  String _proposalSummary(BetChangeProposal p) {
+    switch (p.changeType) {
+      case 'handicap':
+        final strokes = p.payload['manualStrokes'];
+        final rcv     = p.payload['p1ReceivesFrom'];
+        final rcvName = round.players
+            .where((pl) => pl.id == rcv)
+            .firstOrNull?.name.split(' ').first ?? rcv ?? '?';
+        return 'Ventaja: $rcvName recibe $strokes strokes';
+      case 'amount':
+        final entries = p.payload.entries
+            .where((e) => e.key != 'moduleId')
+            .map((e) => '${e.key}: ${e.value}')
+            .join(', ');
+        return 'Cambio de monto: $entries';
+      case 'mode':
+        return 'Cambio de modo: ${p.payload['mode'] ?? ''}';
+      case 'rules':
+        return 'Cambio de reglas';
+      default:
+        return 'Cambio propuesto';
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sección de apuestas dentro de la tarjeta
 // ─────────────────────────────────────────────────────────────────────────────
 class _DuelBetsSection extends StatelessWidget {
   final _DuelInfo duel;
   final Round round;
   final RoundProvider prov;
   final GolfTheme t;
+  final _DuelPermission perm;
   const _DuelBetsSection({
     required this.duel, required this.round,
-    required this.prov, required this.t,
+    required this.prov, required this.t, required this.perm,
   });
 
   @override
@@ -520,61 +750,57 @@ class _DuelBetsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Banner de permisos en rondas live ─────────────────────────────
+          if (prov.isLiveRound && !perm.canEdit)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _PermissionBadge(perm: perm, t: t),
+            ),
+
           // ── Filas de apuestas ─────────────────────────────────────────────
           if (modules.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                'Sin apuestas en este duelo',
-                style: TextStyle(color: t.sub, fontSize: 12),
-              ),
+              child: Text('Sin apuestas en este duelo',
+                  style: TextStyle(color: t.sub, fontSize: 12)),
             )
           else
             ...modules.map((ref) => _BetRow(
-              ref: ref,
-              duel: duel,
-              round: round,
-              prov: prov,
-              t: t,
+              ref: ref, duel: duel, round: round,
+              prov: prov, t: t, perm: perm,
             )),
 
           const SizedBox(height: 6),
-          // ── Botón añadir apuesta ──────────────────────────────────────────
-          GestureDetector(
-            onTap: () => _openAddBet(context),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 9),
-              decoration: BoxDecoration(
-                color: t.accent.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: t.accent.withValues(alpha: 0.30),
-                  style: BorderStyle.solid,
-                ),
-              ),
-              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.add, color: t.accent, size: 14),
-                const SizedBox(width: 6),
-                Text(
-                  'Añadir apuesta a este duelo',
-                  style: TextStyle(
-                    color: t.accent,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
+
+          // ── Botón añadir apuesta (solo si puede editar) ───────────────────
+          if (perm.canEdit)
+            GestureDetector(
+              onTap: () => _openAddBet(context),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: t.accent.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: t.accent.withValues(alpha: 0.30),
                   ),
                 ),
-              ]),
+                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.add, color: t.accent, size: 14),
+                  const SizedBox(width: 6),
+                  Text('Añadir apuesta a este duelo',
+                      style: TextStyle(
+                          color: t.accent, fontWeight: FontWeight.w700, fontSize: 12)),
+                ]),
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 
-  // Abrir selector de tipo de apuesta + editor
   void _openAddBet(BuildContext context) {
-    // Encontrar o crear un BetGroup que contenga a estos dos jugadores
     BetGroup? existingGroup;
     for (final g in round.betGroups) {
       if (g.playerIds.contains(duel.p1.id) && g.playerIds.contains(duel.p2.id)) {
@@ -591,7 +817,6 @@ class _DuelBetsSection extends StatelessWidget {
       modules: [],
     );
 
-    // Nuevo módulo vacío tipo Skins como punto de partida
     final newMod = BetModuleInstance(
       id: 'mod_${DateTime.now().millisecondsSinceEpoch}',
       type: BetModuleType.skins,
@@ -606,25 +831,50 @@ class _DuelBetsSection extends StatelessWidget {
       isScrollControlled: true,
       useRootNavigator: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => BetModuleEditSheet(
-        group: group,
-        mod: newMod,
-        t: t,
-        courseInfo: round.course,
-        players: round.players,
+        group: group, mod: newMod, t: t,
+        courseInfo: round.course, players: round.players,
         onSave: (saved) {
           Navigator.pop(ctx);
-          // Si el grupo era nuevo, añadirlo con el módulo
           if (existingGroup == null) {
-            final newGroups = [...round.betGroups, group.copyWith(modules: [saved])];
-            prov.updateBetGroups(newGroups);
+            prov.updateBetGroups([...round.betGroups, group.copyWith(modules: [saved])]);
           } else {
             prov.updateBetModule(group.id, saved);
           }
         },
       ),
+    );
+  }
+}
+
+// Pequeño badge de permiso dentro de la sección de apuestas
+class _PermissionBadge extends StatelessWidget {
+  final _DuelPermission perm;
+  final GolfTheme t;
+  const _PermissionBadge({required this.perm, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = perm.bannerColor(t);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(
+          perm.isOutsider ? Icons.block_outlined
+              : perm.canPropose ? Icons.handshake_outlined
+              : Icons.lock_outline,
+          color: color, size: 12,
+        ),
+        const SizedBox(width: 5),
+        Text(perm.bannerLabel,
+            style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600)),
+      ]),
     );
   }
 }
@@ -638,9 +888,10 @@ class _BetRow extends StatelessWidget {
   final Round round;
   final RoundProvider prov;
   final GolfTheme t;
+  final _DuelPermission perm;
   const _BetRow({
-    required this.ref, required this.duel,
-    required this.round, required this.prov, required this.t,
+    required this.ref, required this.duel, required this.round,
+    required this.prov, required this.t, required this.perm,
   });
 
   BetGroup get group => ref.group;
@@ -648,7 +899,8 @@ class _BetRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isMatch = mod.type == BetModuleType.nassau || mod.type == BetModuleType.matchAutoPress;
+    final isMatch = mod.type == BetModuleType.nassau ||
+        mod.type == BetModuleType.matchAutoPress;
     final accentColor = isMatch ? t.accent : t.primary;
 
     return Container(
@@ -660,61 +912,66 @@ class _BetRow extends StatelessWidget {
         border: Border.all(color: accentColor.withValues(alpha: 0.18)),
       ),
       child: Row(children: [
-        // Ícono
         Text(mod.type.icon, style: const TextStyle(fontSize: 16)),
         const SizedBox(width: 8),
-        // Descripción
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // Tipo + valor
             Text(
               _buildLabel(),
               style: TextStyle(
-                color: t.text,
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-              ),
+                  color: t.text, fontWeight: FontWeight.w700, fontSize: 13),
             ),
             const SizedBox(height: 2),
-            // Modo gross/net + ventaja si aplica
             Wrap(spacing: 6, children: [
               if (_modeLabel() != null)
                 _MiniChip(label: _modeLabel()!, color: accentColor, t: t),
               if (_statusLabel() != null)
                 _StatusChip(label: _statusLabel()!, status: mod.status, t: t),
+              // Chip "Solo lectura" si está en modo read-only
+              if (perm.isReadOnly)
+                _MiniChip(label: '🔒 Solo lectura', color: t.sub, t: t),
             ]),
           ]),
         ),
-        // Botón editar
-        GestureDetector(
-          onTap: () => _openEdit(context),
-          child: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: accentColor.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(Icons.edit_outlined, color: accentColor, size: 14),
+
+        // ── Acciones según permisos ────────────────────────────────────────
+        if (perm.canEdit) ...[
+          // Owner: editar + eliminar
+          _ActionBtn(
+            icon: Icons.edit_outlined, color: accentColor,
+            onTap: () => _openEdit(context),
           ),
-        ),
-        const SizedBox(width: 6),
-        // Botón eliminar
-        GestureDetector(
-          onTap: () => _confirmDelete(context),
-          child: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: t.loss.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(Icons.delete_outline, color: t.loss, size: 14),
+          const SizedBox(width: 6),
+          _ActionBtn(
+            icon: Icons.delete_outline, color: t.loss,
+            onTap: () => _confirmDelete(context),
           ),
-        ),
+        ] else if (perm.canPropose) ...[
+          // Participante en modo open: proponer cambio
+          GestureDetector(
+            onTap: () => _openProposeChange(context),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: t.accent.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: t.accent.withValues(alpha: 0.3)),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.edit_note_outlined, color: t.accent, size: 13),
+                const SizedBox(width: 4),
+                Text('Proponer',
+                    style: TextStyle(
+                        color: t.accent, fontSize: 11, fontWeight: FontWeight.w700)),
+              ]),
+            ),
+          ),
+        ],
+        // outsider: sin botones
       ]),
     );
   }
 
-  // Construye la etiqueta de tipo + valores
   String _buildLabel() {
     final label = mod.type.label;
     switch (mod.type) {
@@ -725,8 +982,7 @@ class _BetRow extends StatelessWidget {
         final pressTag = n.pressEnabled ? ' + Press' : '';
         return '$label$pressTag · F\$${n.frontValue.toStringAsFixed(0)} B\$${n.backValue.toStringAsFixed(0)} T\$${n.totalValue.toStringAsFixed(0)}';
       case BetModuleType.matchAutoPress:
-        final m = mod.matchAutoPress;
-        return '$label · \$${m.matchValue.toStringAsFixed(0)}';
+        return '$label · \$${mod.matchAutoPress.matchValue.toStringAsFixed(0)}';
       case BetModuleType.medal:
         return '$label · \$${mod.medal.value.toStringAsFixed(0)}';
       case BetModuleType.putts:
@@ -758,10 +1014,10 @@ class _BetRow extends StatelessWidget {
 
   String? _statusLabel() {
     switch (mod.status) {
-      case BetModuleStatus.active:   return null; // no mostrar chip si está activa (default)
-      case BetModuleStatus.closed:   return 'Finalizada';
-      case BetModuleStatus.draft:    return 'Borrador';
-      case BetModuleStatus.configured: return null;
+      case BetModuleStatus.active:      return null;
+      case BetModuleStatus.closed:      return 'Finalizada';
+      case BetModuleStatus.draft:       return 'Borrador';
+      case BetModuleStatus.configured:  return null;
     }
   }
 
@@ -772,18 +1028,29 @@ class _BetRow extends StatelessWidget {
       isScrollControlled: true,
       useRootNavigator: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => BetModuleEditSheet(
-        group: group,
-        mod: mod,
-        t: t,
-        courseInfo: round.course,
-        players: round.players,
+        group: group, mod: mod, t: t,
+        courseInfo: round.course, players: round.players,
         onSave: (saved) {
           Navigator.pop(ctx);
           prov.updateBetModule(group.id, saved);
         },
+      ),
+    );
+  }
+
+  void _openProposeChange(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => _ProposeBetChangeSheet(
+        duel: duel, mod: mod, group: group,
+        prov: prov, round: round, t: t,
       ),
     );
   }
@@ -793,14 +1060,10 @@ class _BetRow extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: t.card,
-        title: Text(
-          'Eliminar apuesta',
-          style: TextStyle(color: t.text, fontWeight: FontWeight.w800),
-        ),
-        content: Text(
-          '¿Eliminar ${mod.type.label} de este duelo?',
-          style: TextStyle(color: t.sub),
-        ),
+        title: Text('Eliminar apuesta',
+            style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
+        content: Text('¿Eliminar ${mod.type.label} de este duelo?',
+            style: TextStyle(color: t.sub)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -811,12 +1074,273 @@ class _BetRow extends StatelessWidget {
               Navigator.pop(ctx);
               prov.removeBetModule(group.id, mod.id);
             },
-            child: Text(
-              'Eliminar',
-              style: TextStyle(color: t.loss, fontWeight: FontWeight.w700),
-            ),
+            child: Text('Eliminar',
+                style: TextStyle(color: t.loss, fontWeight: FontWeight.w700)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// Botón de acción reutilizable
+class _ActionBtn extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _ActionBtn({required this.icon, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, color: color, size: 14),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bottom sheet: proponer un cambio de apuesta
+// ─────────────────────────────────────────────────────────────────────────────
+class _ProposeBetChangeSheet extends StatefulWidget {
+  final _DuelInfo duel;
+  final BetModuleInstance mod;
+  final BetGroup group;
+  final Round round;
+  final RoundProvider prov;
+  final GolfTheme t;
+  const _ProposeBetChangeSheet({
+    required this.duel, required this.mod, required this.group,
+    required this.round, required this.prov, required this.t,
+  });
+
+  @override
+  State<_ProposeBetChangeSheet> createState() => _ProposeBetChangeSheetState();
+}
+
+class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
+  final _amountCtrl = TextEditingController();
+
+  GolfTheme get t => widget.t;
+  BetModuleInstance get mod => widget.mod;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-rellenar con el valor actual
+    final curVal = _currentValue();
+    _amountCtrl.text = curVal.toStringAsFixed(0);
+  }
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    super.dispose();
+  }
+
+  double _currentValue() {
+    switch (mod.type) {
+      case BetModuleType.skins:        return mod.skins.valuePerSkin;
+      case BetModuleType.nassau:       return mod.nassau.frontValue;
+      case BetModuleType.matchAutoPress: return mod.matchAutoPress.matchValue;
+      case BetModuleType.medal:        return mod.medal.value;
+      case BetModuleType.putts:        return mod.putts.value;
+      case BetModuleType.oyeses:       return mod.oyeses.value;
+      case BetModuleType.units:        return mod.units.representativeValue;
+    }
+  }
+
+  Map<String, dynamic> _buildPayload() {
+    final newVal = double.tryParse(_amountCtrl.text) ?? _currentValue();
+    switch (mod.type) {
+      case BetModuleType.skins:        return {'valuePerSkin': newVal};
+      case BetModuleType.nassau:       return {'nassauFront': newVal, 'nassauBack': newVal, 'nassauTotal': newVal * 2};
+      case BetModuleType.matchAutoPress: return {'matchValue': newVal};
+      case BetModuleType.medal:        return {'valuePerStroke': newVal};
+      case BetModuleType.putts:        return {'valuePerPutt': newVal};
+      case BetModuleType.oyeses:       return {'value': newVal};
+      case BetModuleType.units:        return {'value': newVal};
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p1Name = widget.duel.p1.name.split(' ').first;
+    final p2Name = widget.duel.p2.name.split(' ').first;
+    final myUid = AuthService.uid ?? '';
+    final myPlayer = widget.prov.myPlayerInRound;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Proponer cambio',
+                      style: TextStyle(
+                          color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
+                  Text('${mod.type.label} · $p1Name vs $p2Name',
+                      style: TextStyle(color: t.sub, fontSize: 12)),
+                ]),
+              ),
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Icon(Icons.close, color: t.sub),
+              ),
+            ]),
+            const SizedBox(height: 20),
+
+            // Info: requiere aprobación
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: t.accent.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: t.accent.withValues(alpha: 0.22)),
+              ),
+              child: Row(children: [
+                Icon(Icons.info_outline, color: t.accent, size: 13),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'El otro jugador deberá aprobar el cambio para que tenga efecto.',
+                    style: TextStyle(color: t.accent, fontSize: 11),
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 20),
+
+            // Nuevo valor
+            Text('Nuevo valor (\$)',
+                style: TextStyle(
+                    color: t.sub, fontSize: 12, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Row(children: [
+              _StepBtn(
+                icon: Icons.remove, t: t,
+                onTap: () {
+                  final v = double.tryParse(_amountCtrl.text) ?? 0;
+                  if (v > 0) setState(() => _amountCtrl.text = '${(v - 5).round()}');
+                },
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: TextField(
+                    controller: _amountCtrl,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: t.text, fontSize: 22, fontWeight: FontWeight.w800),
+                    decoration: InputDecoration(
+                      filled: true, fillColor: t.surface,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: t.divider),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: t.divider),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: t.primary, width: 1.5),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ),
+              _StepBtn(
+                icon: Icons.add, t: t,
+                onTap: () {
+                  final v = double.tryParse(_amountCtrl.text) ?? 0;
+                  setState(() => _amountCtrl.text = '${(v + 5).round()}');
+                },
+              ),
+            ]),
+            const SizedBox(height: 24),
+
+            // Botón enviar propuesta
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: myPlayer == null ? null : () {
+                  final proposal = BetChangeProposal(
+                    id: 'prop_${DateTime.now().millisecondsSinceEpoch}',
+                    groupId: widget.group.id,
+                    moduleId: mod.id,
+                    p1Id: widget.duel.p1.id,
+                    p2Id: widget.duel.p2.id,
+                    proposedByUid: myUid,
+                    proposedByPlayerId: myPlayer.id,
+                    payload: _buildPayload(),
+                    changeType: 'amount',
+                    createdAt: DateTime.now().toIso8601String(),
+                  );
+                  widget.prov.proposeBetChange(proposal);
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Propuesta enviada. Esperando aprobación.'),
+                      backgroundColor: t.primary,
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: t.accent,
+                  foregroundColor: t.onPrimary,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  elevation: 0,
+                ),
+                child: const Text('Enviar propuesta de cambio',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StepBtn extends StatelessWidget {
+  final IconData icon;
+  final GolfTheme t;
+  final VoidCallback onTap;
+  const _StepBtn({required this.icon, required this.t, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: t.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: t.divider),
+        ),
+        child: Icon(icon, color: t.text, size: 20),
       ),
     );
   }
@@ -839,10 +1363,9 @@ class _MiniChip extends StatelessWidget {
         color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(5),
       ),
-      child: Text(
-        label,
-        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600),
-      ),
+      child: Text(label,
+          style: TextStyle(
+              color: color, fontSize: 10, fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -851,7 +1374,8 @@ class _StatusChip extends StatelessWidget {
   final String label;
   final BetModuleStatus status;
   final GolfTheme t;
-  const _StatusChip({required this.label, required this.status, required this.t});
+  const _StatusChip(
+      {required this.label, required this.status, required this.t});
 
   @override
   Widget build(BuildContext context) {
@@ -863,25 +1387,25 @@ class _StatusChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(5),
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
-      child: Text(
-        label,
-        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600),
-      ),
+      child: Text(label,
+          style: TextStyle(
+              color: color, fontSize: 10, fontWeight: FontWeight.w600)),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Bottom sheet: editar ventaja de un duelo
+// Bottom sheet: editar ventaja del duelo (con permisos)
 // ─────────────────────────────────────────────────────────────────────────────
 class _HandicapEditSheet extends StatefulWidget {
   final _DuelInfo duel;
   final Round round;
   final RoundProvider prov;
   final GolfTheme t;
+  final _DuelPermission perm;
   const _HandicapEditSheet({
     required this.duel, required this.round,
-    required this.prov, required this.t,
+    required this.prov, required this.t, required this.perm,
   });
 
   @override
@@ -890,11 +1414,11 @@ class _HandicapEditSheet extends StatefulWidget {
 
 class _HandicapEditSheetState extends State<_HandicapEditSheet> {
   late TextEditingController _ctrl;
-  // true = p1 recibe de p2, false = p2 recibe de p1
   late bool _p1Receives;
 
   GolfTheme get t => widget.t;
   _DuelInfo get duel => widget.duel;
+  _DuelPermission get perm => widget.perm;
 
   @override
   void initState() {
@@ -916,9 +1440,8 @@ class _HandicapEditSheetState extends State<_HandicapEditSheet> {
     final p2Name = duel.p2.name.split(' ').first;
 
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
         child: Column(
@@ -928,10 +1451,9 @@ class _HandicapEditSheetState extends State<_HandicapEditSheet> {
             // Header
             Row(children: [
               Expanded(
-                child: Text(
-                  'Ventaja del duelo',
-                  style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w800),
-                ),
+                child: Text('Ventaja del duelo',
+                    style: TextStyle(
+                        color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
               ),
               GestureDetector(
                 onTap: () => Navigator.pop(context),
@@ -939,11 +1461,46 @@ class _HandicapEditSheetState extends State<_HandicapEditSheet> {
               ),
             ]),
             const SizedBox(height: 4),
-            Text(
-              '$p1Name vs $p2Name',
-              style: TextStyle(color: t.sub, fontSize: 13),
-            ),
-            const SizedBox(height: 20),
+            Text('$p1Name vs $p2Name',
+                style: TextStyle(color: t.sub, fontSize: 13)),
+            const SizedBox(height: 12),
+
+            // Banner si solo lectura
+            if (perm.isReadOnly || perm.canPropose)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: (perm.isOutsider ? t.sub : t.accent)
+                        .withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: (perm.isOutsider ? t.sub : t.accent)
+                          .withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Row(children: [
+                    Icon(
+                      perm.isReadOnly ? Icons.lock_outline : Icons.handshake_outlined,
+                      color: perm.isOutsider ? t.sub : t.accent,
+                      size: 13,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        perm.isReadOnly
+                            ? 'No tienes permiso para modificar esta ventaja.'
+                            : 'Tu cambio requerirá la aprobación de la contraparte.',
+                        style: TextStyle(
+                          color: perm.isOutsider ? t.sub : t.accent,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
 
             // HCP automático
             Container(
@@ -966,142 +1523,157 @@ class _HandicapEditSheetState extends State<_HandicapEditSheet> {
             ),
             const SizedBox(height: 16),
 
-            // Quién recibe
-            Text('¿Quién recibe strokes?',
-                style: TextStyle(color: t.sub, fontSize: 12, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Row(children: [
-              Expanded(
-                child: _ToggleOption(
-                  label: p1Name,
-                  selected: _p1Receives,
-                  avatar: GAvatar(name: duel.p1.name, colorIndex: duel.p1.colorIndex, size: 28),
-                  t: t,
-                  onTap: () => setState(() => _p1Receives = true),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _ToggleOption(
-                  label: p2Name,
-                  selected: !_p1Receives,
-                  avatar: GAvatar(name: duel.p2.name, colorIndex: duel.p2.colorIndex, size: 28),
-                  t: t,
-                  onTap: () => setState(() => _p1Receives = false),
-                ),
-              ),
-            ]),
-            const SizedBox(height: 16),
-
-            // Cantidad de strokes
-            Text('Strokes',
-                style: TextStyle(color: t.sub, fontSize: 12, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Row(children: [
-              GestureDetector(
-                onTap: () {
-                  final v = int.tryParse(_ctrl.text) ?? 0;
-                  if (v > 0) _ctrl.text = '${v - 1}';
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: t.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: t.divider),
-                  ),
-                  child: Icon(Icons.remove, color: t.text, size: 20),
-                ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: TextField(
-                    controller: _ctrl,
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: t.text,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                    ),
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: t.surface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(color: t.divider),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(color: t.divider),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(color: t.primary, width: 1.5),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ),
-              GestureDetector(
-                onTap: () {
-                  final v = int.tryParse(_ctrl.text) ?? 0;
-                  _ctrl.text = '${v + 1}';
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: t.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: t.divider),
-                  ),
-                  child: Icon(Icons.add, color: t.text, size: 20),
-                ),
-              ),
-            ]),
-            const SizedBox(height: 24),
-
-            // Botones
-            Row(children: [
-              // Quitar override
-              if (duel.hasManualOverride)
+            // Editor (bloqueado si no tiene permisos)
+            if (!perm.isReadOnly) ...[
+              Text('¿Quién recibe strokes?',
+                  style: TextStyle(
+                      color: t.sub, fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Row(children: [
                 Expanded(
-                  child: OutlinedButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      // Quitar overrides de ambos jugadores
-                      widget.prov.updateManualHandicap(duel.p1.id, duel.p2.id, null);
-                      widget.prov.updateManualHandicap(duel.p2.id, duel.p1.id, null);
-                    },
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: t.sub,
-                      side: BorderSide(color: t.divider),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                    ),
-                    child: const Text('Usar HCP auto'),
+                  child: _ToggleOption(
+                    label: p1Name, selected: _p1Receives,
+                    avatar: GAvatar(
+                        name: duel.p1.name,
+                        colorIndex: duel.p1.colorIndex, size: 28),
+                    t: t,
+                    onTap: () => setState(() => _p1Receives = true),
                   ),
                 ),
-              if (duel.hasManualOverride) const SizedBox(width: 10),
-              // Guardar
-              Expanded(
-                flex: 2,
-                child: ElevatedButton(
-                  onPressed: _save,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: t.primary,
-                    foregroundColor: t.onPrimary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    elevation: 0,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _ToggleOption(
+                    label: p2Name, selected: !_p1Receives,
+                    avatar: GAvatar(
+                        name: duel.p2.name,
+                        colorIndex: duel.p2.colorIndex, size: 28),
+                    t: t,
+                    onTap: () => setState(() => _p1Receives = false),
                   ),
-                  child: const Text('Guardar ventaja',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ]),
+              const SizedBox(height: 16),
+
+              Text('Strokes',
+                  style: TextStyle(
+                      color: t.sub, fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Row(children: [
+                _StepBtn(
+                  icon: Icons.remove, t: t,
+                  onTap: () {
+                    final v = int.tryParse(_ctrl.text) ?? 0;
+                    if (v > 0) setState(() => _ctrl.text = '${v - 1}');
+                  },
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: TextField(
+                      controller: _ctrl,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: t.text, fontSize: 24, fontWeight: FontWeight.w800),
+                      decoration: InputDecoration(
+                        filled: true, fillColor: t.surface,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: t.divider),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: t.divider),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: t.primary, width: 1.5),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ),
+                _StepBtn(
+                  icon: Icons.add, t: t,
+                  onTap: () {
+                    final v = int.tryParse(_ctrl.text) ?? 0;
+                    setState(() => _ctrl.text = '${v + 1}');
+                  },
+                ),
+              ]),
+              const SizedBox(height: 24),
+
+              // Botones de acción
+              Row(children: [
+                if (duel.hasManualOverride && perm.canEdit)
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        widget.prov
+                            .updateManualHandicap(duel.p1.id, duel.p2.id, null);
+                        widget.prov
+                            .updateManualHandicap(duel.p2.id, duel.p1.id, null);
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: t.sub,
+                        side: BorderSide(color: t.divider),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                      ),
+                      child: const Text('Usar HCP auto'),
+                    ),
+                  ),
+                if (duel.hasManualOverride && perm.canEdit)
+                  const SizedBox(width: 10),
+
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: perm.canEdit ? _saveHandicap : _proposeHandicap,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: perm.canEdit ? t.primary : t.accent,
+                      foregroundColor: t.onPrimary,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      perm.canEdit ? 'Guardar ventaja' : 'Proponer cambio',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ]),
+            ] else
+              // Sólo lectura: mostrar valor actual sin edición
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: t.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: t.divider),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.compare_arrows,
+                        color: duel.hasManualOverride ? t.accent : t.sub,
+                        size: 18),
+                    const SizedBox(width: 10),
+                    Text(
+                      duel.handicapLabel,
+                      style: TextStyle(
+                        color: duel.hasManualOverride ? t.accent : t.text,
+                        fontSize: 15, fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ]),
           ],
         ),
       ),
@@ -1116,15 +1688,47 @@ class _HandicapEditSheetState extends State<_HandicapEditSheet> {
     return '$receiver recibe ${diff.abs()} de $giver';
   }
 
-  void _save() {
+  void _saveHandicap() {
     Navigator.pop(context);
     final strokes = (double.tryParse(_ctrl.text) ?? 0).abs();
-    // p1Receives → p1 recibe de p2 → guardamos en rpA.manualHandicaps[p2.id] = strokes
-    // !p1Receives → p2 recibe de p1 → guardamos en rpA.manualHandicaps[p2.id] = -strokes
     final val = _p1Receives ? strokes : -strokes;
     widget.prov.updateManualHandicap(duel.p1.id, duel.p2.id, val);
-    // Limpiar el sentido inverso para evitar contradicción
     widget.prov.updateManualHandicap(duel.p2.id, duel.p1.id, null);
+  }
+
+  void _proposeHandicap() {
+    final myUid    = AuthService.uid ?? '';
+    final myPlayer = widget.prov.myPlayerInRound;
+    if (myPlayer == null) return;
+
+    final strokes = (double.tryParse(_ctrl.text) ?? 0).abs();
+    final receiverId = _p1Receives ? duel.p1.id : duel.p2.id;
+
+    final proposal = BetChangeProposal(
+      id: 'prop_hcp_${DateTime.now().millisecondsSinceEpoch}',
+      groupId: '',   // ventaja del duelo, no de un grupo específico
+      moduleId: null,
+      p1Id: duel.p1.id,
+      p2Id: duel.p2.id,
+      proposedByUid: myUid,
+      proposedByPlayerId: myPlayer.id,
+      payload: {
+        'manualStrokes': strokes,
+        'p1ReceivesFrom': receiverId,
+      },
+      changeType: 'handicap',
+      createdAt: DateTime.now().toIso8601String(),
+    );
+
+    widget.prov.proposeBetChange(proposal);
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Propuesta de ventaja enviada.'),
+        backgroundColor: t.accent,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 }
 
