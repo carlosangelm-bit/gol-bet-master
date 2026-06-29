@@ -18,6 +18,7 @@ import 'screens/settings/settings_screen.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/history/history_screen.dart';
 import 'screens/templates/templates_screen.dart';
+import 'screens/bets/bets_screen.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -112,6 +113,7 @@ class _AppShellState extends State<AppShell> {
       if (hasRound) ...[
         if (!hideScoreTab)
           _TabEntry(label: 'Score',    icon: Icons.edit_outlined,                   activeIcon: Icons.edit,                      screen: const CaptureScreen()),
+        _TabEntry(label: 'Apuestas',   icon: Icons.paid_outlined,                   activeIcon: Icons.paid,                      screen: const BetsScreen()),
         _TabEntry(label: 'Tarjeta',    icon: Icons.grid_on_outlined,                activeIcon: Icons.grid_on,                   screen: const ScorecardScreen()),
         _TabEntry(label: 'Resultados', icon: Icons.account_balance_wallet_outlined, activeIcon: Icons.account_balance_wallet,    screen: const ResultsScreen()),
       ],

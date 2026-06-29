@@ -517,6 +517,70 @@ class RoundProvider extends ChangeNotifier {
     _persist();
   }
 
+  /// Reemplaza un módulo individual dentro del betGroup correspondiente.
+  /// Busca el grupo por [groupId] y el módulo por [mod.id]. Si el módulo no
+  /// existe lo añade al final del grupo.
+  void updateBetModule(String groupId, BetModuleInstance mod) {
+    if (_round == null) return;
+    final newGroups = _round!.betGroups.map((g) {
+      if (g.id != groupId) return g;
+      final idx = g.modules.indexWhere((m) => m.id == mod.id);
+      List<BetModuleInstance> updated;
+      if (idx >= 0) {
+        updated = List<BetModuleInstance>.from(g.modules);
+        updated[idx] = mod;
+      } else {
+        updated = [...g.modules, mod];
+      }
+      return g.copyWith(modules: updated);
+    }).toList();
+    _round = _round!.copyWith(betGroups: newGroups);
+    notifyListeners();
+    _persist();
+  }
+
+  /// Elimina un módulo individual del betGroup. Si el grupo queda vacío
+  /// se elimina también el grupo.
+  void removeBetModule(String groupId, String moduleId) {
+    if (_round == null) return;
+    final newGroups = _round!.betGroups
+        .map((g) {
+          if (g.id != groupId) return g;
+          final remaining = g.modules.where((m) => m.id != moduleId).toList();
+          if (remaining.isEmpty) return null;
+          return g.copyWith(modules: remaining);
+        })
+        .whereType<BetGroup>()
+        .toList();
+    _round = _round!.copyWith(betGroups: newGroups);
+    notifyListeners();
+    _persist();
+  }
+
+  /// Actualiza la ventaja manual de p1 hacia p2 en sus RoundPlayers.
+  /// [strokes] positivo = p1 recibe de p2; null = eliminar override manual.
+  void updateManualHandicap(String p1Id, String p2Id, double? strokes) {
+    if (_round == null) return;
+    final newRPs = _round!.roundPlayers.map((rp) {
+      if (rp.playerId != p1Id) return rp;
+      final updated = Map<String, double>.from(rp.manualHandicaps);
+      if (strokes == null) {
+        updated.remove(p2Id);
+      } else {
+        updated[p2Id] = strokes;
+      }
+      return RoundPlayer(
+        playerId: rp.playerId,
+        handicapEnRonda: rp.handicapEnRonda,
+        tee: rp.tee,
+        manualHandicaps: updated,
+      );
+    }).toList();
+    _round = _round!.copyWith(roundPlayers: newRPs);
+    notifyListeners();
+    _persist();
+  }
+
   // ── Round players (ventajas manuales) ──────────────────────────────────────
   void updateRoundPlayers(List<RoundPlayer> roundPlayers) {
     if (_round == null) return;
