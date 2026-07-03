@@ -587,7 +587,20 @@ class RoundProvider extends ChangeNotifier {
         manualHandicaps: updated,
       );
     }).toList();
-    _round = _round!.copyWith(roundPlayers: newRPs);
+    // ── Sincronizar pairSliding con el nuevo valor ─────────────────────────
+    // Siempre escribir en pairSliding (fuente canónica) además del legacy
+    // manualHandicaps, para que _HoleByHoleMatch y BetEngine lean el valor
+    // actualizado inmediatamente en la tarjeta 1v1.
+    final newPs = Map<String, double>.from(_round!.pairSliding);
+    if (strokes == null) {
+      newPs.remove(_pairKey(p1Id, p2Id));
+    } else {
+      final lowId     = p1Id.compareTo(p2Id) <= 0 ? p1Id : p2Id;
+      final highId    = p1Id.compareTo(p2Id) <= 0 ? p2Id : p1Id;
+      final canonical = (p1Id == lowId) ? strokes : -strokes;
+      newPs['$lowId|$highId'] = canonical;
+    }
+    _round = _round!.copyWith(roundPlayers: newRPs, pairSliding: newPs);
     notifyListeners();
     _persist();
   }
@@ -877,9 +890,48 @@ class RoundProvider extends ChangeNotifier {
   // ── Round players (ventajas manuales) ──────────────────────────────────────
   void updateRoundPlayers(List<RoundPlayer> roundPlayers) {
     if (_round == null) return;
-    _round = _round!.copyWith(roundPlayers: roundPlayers);
+    // ── Re-sincronizar pairSliding desde los nuevos manualHandicaps ──────────
+    // Home screen escribe en roundPlayers.manualHandicaps. Para que la tarjeta
+    // 1v1 lo refleje de inmediato, fusionamos esos valores en pairSliding.
+    final mergedPs = _mergePairSlidingFromRoundPlayers(
+        _round!.pairSliding, roundPlayers);
+    _round = _round!.copyWith(roundPlayers: roundPlayers, pairSliding: mergedPs);
     notifyListeners();
     _persist();
+  }
+
+  // ── Helpers de sincronización pairSliding ──────────────────────────────────
+
+  /// Clave canónica: ids en orden lexicográfico separados por '|'.
+  static String _pairKey(String a, String b) =>
+      a.compareTo(b) <= 0 ? '$a|$b' : '$b|$a';
+
+  /// Fusiona [existingPs] con los manualHandicaps de [roundPlayers].
+  ///
+  /// Los manualHandicaps prevalecen par a par; los pares que ya estaban
+  /// en [existingPs] pero no aparecen en manualHandicaps se conservan
+  /// (para no borrar acuerdos aprobados por propuesta colaborativa).
+  static Map<String, double> _mergePairSlidingFromRoundPlayers(
+      Map<String, double> existingPs,
+      List<RoundPlayer> roundPlayers,
+  ) {
+    final result = Map<String, double>.from(existingPs);
+    final seen   = <String>{};
+
+    for (final rp in roundPlayers) {
+      final p1 = rp.playerId;
+      for (final entry in rp.manualHandicaps.entries) {
+        final p2  = entry.key;
+        final m1  = entry.value; // recv(p1, p2)
+        final key = _pairKey(p1, p2);
+        if (seen.contains(key)) continue;
+        seen.add(key);
+        final lowId     = p1.compareTo(p2) <= 0 ? p1 : p2;
+        final canonical = (p1 == lowId) ? m1 : -m1;
+        result[key] = canonical;
+      }
+    }
+    return result;
   }
 
   void setCurrentHole(int h) {
