@@ -801,6 +801,7 @@ class _DuelBetsSection extends StatelessWidget {
   }
 
   void _openAddBet(BuildContext context) {
+    // Resolver / crear el BetGroup antes de mostrar el picker
     BetGroup? existingGroup;
     for (final g in round.betGroups) {
       if (g.playerIds.contains(duel.p1.id) && g.playerIds.contains(duel.p2.id)) {
@@ -817,14 +818,7 @@ class _DuelBetsSection extends StatelessWidget {
       modules: [],
     );
 
-    final newMod = BetModuleInstance(
-      id: 'mod_${DateTime.now().millisecondsSinceEpoch}',
-      type: BetModuleType.skins,
-      name: BetModuleType.skins.label,
-      participantIds: [duel.p1.id, duel.p2.id],
-      skinsConfig: SkinsConfig.def,
-    );
-
+    // 1️⃣ Primero: picker de tipo de apuesta
     showModalBottomSheet(
       context: context,
       backgroundColor: t.card,
@@ -832,16 +826,37 @@ class _DuelBetsSection extends StatelessWidget {
       useRootNavigator: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => BetModuleEditSheet(
-        group: group, mod: newMod, t: t,
-        courseInfo: round.course, players: round.players,
-        onSave: (saved) {
-          Navigator.pop(ctx);
-          if (existingGroup == null) {
-            prov.updateBetGroups([...round.betGroups, group.copyWith(modules: [saved])]);
-          } else {
-            prov.updateBetModule(group.id, saved);
-          }
+      builder: (pickerCtx) => _BetTypePickerSheet(
+        t: t,
+        p1Name: duel.p1.name.split(' ').first,
+        p2Name: duel.p2.name.split(' ').first,
+        onTypePicked: (pickedType) {
+          Navigator.pop(pickerCtx);
+          // 2️⃣ Después: editor de configuración con el tipo elegido
+          final newMod = _buildNewModuleForType(
+            pickedType, duel.p1.id, duel.p2.id,
+          );
+          showModalBottomSheet(
+            context: context,
+            backgroundColor: t.card,
+            isScrollControlled: true,
+            useRootNavigator: true,
+            shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+            builder: (editCtx) => BetModuleEditSheet(
+              group: group, mod: newMod, t: t,
+              courseInfo: round.course, players: round.players,
+              onSave: (saved) {
+                Navigator.pop(editCtx);
+                if (existingGroup == null) {
+                  prov.updateBetGroups(
+                      [...round.betGroups, group.copyWith(modules: [saved])]);
+                } else {
+                  prov.updateBetModule(group.id, saved);
+                }
+              },
+            ),
+          );
         },
       ),
     );
@@ -1773,6 +1788,308 @@ class _ToggleOption extends StatelessWidget {
             const SizedBox(width: 6),
             Icon(Icons.check_circle, color: t.primary, size: 14),
           ],
+        ]),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: construye un BetModuleInstance nuevo con defaults según el tipo
+// ─────────────────────────────────────────────────────────────────────────────
+BetModuleInstance _buildNewModuleForType(
+    BetModuleType type, String p1Id, String p2Id) {
+  final id = 'mod_${DateTime.now().millisecondsSinceEpoch}';
+  final participants = [p1Id, p2Id];
+
+  switch (type) {
+    case BetModuleType.skins:
+      return BetModuleInstance(
+        id: id, type: type, name: type.label,
+        participantIds: participants,
+        skinsConfig: SkinsConfig.def,
+      );
+    case BetModuleType.nassau:
+      return BetModuleInstance(
+        id: id, type: type, name: type.label,
+        participantIds: participants,
+        nassauConfig: NassauConfig.def,
+      );
+    case BetModuleType.matchAutoPress:
+      return BetModuleInstance(
+        id: id, type: type, name: type.label,
+        participantIds: participants,
+        matchAutoPressConfig: MatchAutoPressConfig.def,
+      );
+    case BetModuleType.medal:
+      return BetModuleInstance(
+        id: id, type: type, name: type.label,
+        participantIds: participants,
+        medalConfig: MedalConfig.def,
+      );
+    case BetModuleType.putts:
+      return BetModuleInstance(
+        id: id, type: type, name: type.label,
+        participantIds: participants,
+        puttsConfig: PuttsConfig.def,
+      );
+    case BetModuleType.oyeses:
+      return BetModuleInstance(
+        id: id, type: type, name: type.label,
+        participantIds: participants,
+        oyesesConfig: OyesesConfig.def,
+      );
+    case BetModuleType.units:
+      return BetModuleInstance(
+        id: id, type: type, name: type.label,
+        participantIds: participants,
+        unitsConfig: UnitsConfig.def,
+      );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bottom sheet: selector de tipo de apuesta
+// ─────────────────────────────────────────────────────────────────────────────
+class _BetTypePickerSheet extends StatefulWidget {
+  final GolfTheme t;
+  final String p1Name;
+  final String p2Name;
+  final void Function(BetModuleType) onTypePicked;
+
+  const _BetTypePickerSheet({
+    required this.t,
+    required this.p1Name,
+    required this.p2Name,
+    required this.onTypePicked,
+  });
+
+  @override
+  State<_BetTypePickerSheet> createState() => _BetTypePickerSheetState();
+}
+
+class _BetTypePickerSheetState extends State<_BetTypePickerSheet> {
+  BetModuleType? _selected;
+
+  GolfTheme get t => widget.t;
+
+  static const _allTypes = BetModuleType.values;
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.72,
+      minChildSize: 0.45,
+      maxChildSize: 0.92,
+      expand: false,
+      builder: (ctx, scrollCtrl) {
+        return Column(
+          children: [
+            // ── Handle + Header ──────────────────────────────────────────────
+            Container(
+              decoration: BoxDecoration(
+                color: t.card,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Drag handle
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 10, bottom: 6),
+                      child: Container(
+                        width: 40, height: 4,
+                        decoration: BoxDecoration(
+                          color: t.divider,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+                    child: Row(children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Seleccionar tipo de apuesta',
+                              style: TextStyle(
+                                color: t.text, fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${widget.p1Name} vs ${widget.p2Name}',
+                              style: TextStyle(color: t.sub, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Icon(Icons.close, color: t.sub),
+                      ),
+                    ]),
+                  ),
+                  Divider(height: 1, color: t.divider),
+                ],
+              ),
+            ),
+
+            // ── Lista de tipos ───────────────────────────────────────────────
+            Expanded(
+              child: Container(
+                color: t.card,
+                child: ListView.separated(
+                  controller: scrollCtrl,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                  itemCount: _allTypes.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) {
+                    final type = _allTypes[i];
+                    final isSelected = _selected == type;
+                    return _BetTypeCard(
+                      type: type,
+                      selected: isSelected,
+                      t: t,
+                      onTap: () => setState(() => _selected = type),
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // ── Botón Continuar ──────────────────────────────────────────────
+            Container(
+              color: t.card,
+              padding: EdgeInsets.fromLTRB(
+                16, 12, 16,
+                MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _selected == null
+                      ? null
+                      : () => widget.onTypePicked(_selected!),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: t.primary,
+                    foregroundColor: t.onPrimary,
+                    disabledBackgroundColor: t.divider,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    _selected == null
+                        ? 'Elige un tipo de apuesta'
+                        : 'Continuar con ${_selected!.label}',
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// Tarjeta individual de tipo de apuesta
+class _BetTypeCard extends StatelessWidget {
+  final BetModuleType type;
+  final bool selected;
+  final GolfTheme t;
+  final VoidCallback onTap;
+
+  const _BetTypeCard({
+    required this.type, required this.selected,
+    required this.t, required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = selected ? t.primary : t.divider;
+    final bgColor     = selected
+        ? t.primary.withValues(alpha: 0.08)
+        : t.surface;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: borderColor,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Row(children: [
+          // Ícono grande
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: selected
+                  ? t.primary.withValues(alpha: 0.12)
+                  : t.card,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: selected
+                    ? t.primary.withValues(alpha: 0.3)
+                    : t.divider,
+              ),
+            ),
+            child: Center(
+              child: Text(type.icon, style: const TextStyle(fontSize: 22)),
+            ),
+          ),
+          const SizedBox(width: 14),
+
+          // Nombre + descripción
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                type.label,
+                style: TextStyle(
+                  color: selected ? t.primary : t.text,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                type.description,
+                style: TextStyle(
+                  color: t.sub,
+                  fontSize: 11,
+                  height: 1.3,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ]),
+          ),
+
+          // Check de selección
+          const SizedBox(width: 10),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 160),
+            child: selected
+                ? Icon(Icons.check_circle, color: t.primary, size: 22,
+                    key: const ValueKey('check'))
+                : Icon(Icons.radio_button_unchecked, color: t.sub, size: 22,
+                    key: const ValueKey('empty')),
+          ),
         ]),
       ),
     );
