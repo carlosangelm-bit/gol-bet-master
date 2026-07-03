@@ -801,7 +801,7 @@ class _DuelBetsSection extends StatelessWidget {
   }
 
   void _openAddBet(BuildContext context) {
-    // Resolver / crear el BetGroup antes de mostrar el picker
+    // Resolver / crear el BetGroup antes de mostrar el sheet
     BetGroup? existingGroup;
     for (final g in round.betGroups) {
       if (g.playerIds.contains(duel.p1.id) && g.playerIds.contains(duel.p2.id)) {
@@ -818,7 +818,7 @@ class _DuelBetsSection extends StatelessWidget {
       modules: [],
     );
 
-    // 1️⃣ Primero: picker de tipo de apuesta
+    // Un único sheet con navegación interna: picker → editor
     showModalBottomSheet(
       context: context,
       backgroundColor: t.card,
@@ -826,37 +826,23 @@ class _DuelBetsSection extends StatelessWidget {
       useRootNavigator: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (pickerCtx) => _BetTypePickerSheet(
+      builder: (sheetCtx) => _AddBetFlow(
         t: t,
         p1Name: duel.p1.name.split(' ').first,
         p2Name: duel.p2.name.split(' ').first,
-        onTypePicked: (pickedType) {
-          Navigator.pop(pickerCtx);
-          // 2️⃣ Después: editor de configuración con el tipo elegido
-          final newMod = _buildNewModuleForType(
-            pickedType, duel.p1.id, duel.p2.id,
-          );
-          showModalBottomSheet(
-            context: context,
-            backgroundColor: t.card,
-            isScrollControlled: true,
-            useRootNavigator: true,
-            shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-            builder: (editCtx) => BetModuleEditSheet(
-              group: group, mod: newMod, t: t,
-              courseInfo: round.course, players: round.players,
-              onSave: (saved) {
-                Navigator.pop(editCtx);
-                if (existingGroup == null) {
-                  prov.updateBetGroups(
-                      [...round.betGroups, group.copyWith(modules: [saved])]);
-                } else {
-                  prov.updateBetModule(group.id, saved);
-                }
-              },
-            ),
-          );
+        p1Id: duel.p1.id,
+        p2Id: duel.p2.id,
+        group: group,
+        round: round,
+        isNewGroup: existingGroup == null,
+        onSave: (saved) {
+          Navigator.pop(sheetCtx);
+          if (existingGroup == null) {
+            prov.updateBetGroups(
+                [...round.betGroups, group.copyWith(modules: [saved])]);
+          } else {
+            prov.updateBetModule(group.id, saved);
+          }
         },
       ),
     );
@@ -1998,6 +1984,343 @@ class _BetTypePickerSheetState extends State<_BetTypePickerSheet> {
           ],
         );
       },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _AddBetFlow — Un único bottom sheet con navegación interna picker → editor
+// ─────────────────────────────────────────────────────────────────────────────
+class _AddBetFlow extends StatefulWidget {
+  final GolfTheme t;
+  final String p1Name;
+  final String p2Name;
+  final String p1Id;
+  final String p2Id;
+  final BetGroup group;
+  final Round round;
+  final bool isNewGroup;
+  final void Function(BetModuleInstance saved) onSave;
+
+  const _AddBetFlow({
+    required this.t,
+    required this.p1Name,
+    required this.p2Name,
+    required this.p1Id,
+    required this.p2Id,
+    required this.group,
+    required this.round,
+    required this.isNewGroup,
+    required this.onSave,
+  });
+
+  @override
+  State<_AddBetFlow> createState() => _AddBetFlowState();
+}
+
+class _AddBetFlowState extends State<_AddBetFlow> {
+  /// null → mostrando picker; non-null → mostrando editor con ese tipo
+  BetModuleType? _selectedType;
+
+  GolfTheme get t => widget.t;
+
+  void _goToEditor(BetModuleType type) {
+    setState(() => _selectedType = type);
+  }
+
+  void _goBackToPicker() {
+    setState(() => _selectedType = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeIn,
+      transitionBuilder: (child, anim) => FadeTransition(
+        opacity: anim,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: _selectedType != null
+                ? const Offset(0.06, 0)
+                : const Offset(-0.06, 0),
+            end: Offset.zero,
+          ).animate(anim),
+          child: child,
+        ),
+      ),
+      child: _selectedType == null
+          ? _PickerView(
+              key: const ValueKey('picker'),
+              t: t,
+              p1Name: widget.p1Name,
+              p2Name: widget.p2Name,
+              onTypePicked: _goToEditor,
+            )
+          : _EditorView(
+              key: ValueKey('editor_${_selectedType!.name}'),
+              t: t,
+              type: _selectedType!,
+              group: widget.group,
+              round: widget.round,
+              p1Id: widget.p1Id,
+              p2Id: widget.p2Id,
+              onBack: _goBackToPicker,
+              onSave: widget.onSave,
+            ),
+    );
+  }
+}
+
+// ── Vista 1: Picker de tipo ──────────────────────────────────────────────────
+class _PickerView extends StatefulWidget {
+  final GolfTheme t;
+  final String p1Name;
+  final String p2Name;
+  final void Function(BetModuleType) onTypePicked;
+
+  const _PickerView({
+    super.key,
+    required this.t,
+    required this.p1Name,
+    required this.p2Name,
+    required this.onTypePicked,
+  });
+
+  @override
+  State<_PickerView> createState() => _PickerViewState();
+}
+
+class _PickerViewState extends State<_PickerView> {
+  BetModuleType? _selected;
+
+  GolfTheme get t => widget.t;
+
+  static const _allTypes = BetModuleType.values;
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.72,
+      minChildSize: 0.45,
+      maxChildSize: 0.92,
+      expand: false,
+      builder: (ctx, scrollCtrl) {
+        return Column(
+          children: [
+            // ── Handle + Header ──────────────────────────────────────────────
+            Container(
+              decoration: BoxDecoration(
+                color: t.card,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 10, bottom: 6),
+                      child: Container(
+                        width: 40, height: 4,
+                        decoration: BoxDecoration(
+                          color: t.divider,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+                    child: Row(children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Seleccionar tipo de apuesta',
+                              style: TextStyle(
+                                color: t.text, fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${widget.p1Name} vs ${widget.p2Name}',
+                              style: TextStyle(color: t.sub, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Icon(Icons.close, color: t.sub),
+                      ),
+                    ]),
+                  ),
+                  Divider(height: 1, color: t.divider),
+                ],
+              ),
+            ),
+
+            // ── Lista de tipos ───────────────────────────────────────────────
+            Expanded(
+              child: Container(
+                color: t.card,
+                child: ListView.separated(
+                  controller: scrollCtrl,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                  itemCount: _allTypes.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) {
+                    final type = _allTypes[i];
+                    final isSelected = _selected == type;
+                    return _BetTypeCard(
+                      type: type,
+                      selected: isSelected,
+                      t: t,
+                      onTap: () => setState(() => _selected = type),
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // ── Botón Continuar ──────────────────────────────────────────────
+            Container(
+              color: t.card,
+              padding: EdgeInsets.fromLTRB(
+                16, 12, 16,
+                MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _selected == null
+                      ? null
+                      : () => widget.onTypePicked(_selected!),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: t.primary,
+                    foregroundColor: t.onPrimary,
+                    disabledBackgroundColor: t.divider,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    _selected == null
+                        ? 'Elige un tipo de apuesta'
+                        : 'Continuar con ${_selected!.label}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ── Vista 2: Editor de módulo con back button ────────────────────────────────
+class _EditorView extends StatelessWidget {
+  final GolfTheme t;
+  final BetModuleType type;
+  final BetGroup group;
+  final Round round;
+  final String p1Id;
+  final String p2Id;
+  final VoidCallback onBack;
+  final void Function(BetModuleInstance saved) onSave;
+
+  const _EditorView({
+    super.key,
+    required this.t,
+    required this.type,
+    required this.group,
+    required this.round,
+    required this.p1Id,
+    required this.p2Id,
+    required this.onBack,
+    required this.onSave,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final newMod = _buildNewModuleForType(type, p1Id, p2Id);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // ── Back button header ───────────────────────────────────────────────
+        Container(
+          decoration: BoxDecoration(
+            color: t.card,
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 10, bottom: 6),
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: t.divider,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 0, 16, 8),
+                child: Row(children: [
+                  // Botón atrás
+                  IconButton(
+                    icon: Icon(Icons.arrow_back_ios_new,
+                        color: t.sub, size: 18),
+                    onPressed: onBack,
+                    tooltip: 'Cambiar tipo',
+                  ),
+                  Expanded(
+                    child: Text(
+                      type.label,
+                      style: TextStyle(
+                        color: t.text, fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Icon(Icons.close, color: t.sub),
+                  ),
+                ]),
+              ),
+              Divider(height: 1, color: t.divider),
+            ],
+          ),
+        ),
+
+        // ── Editor del módulo (sin su propio header) ─────────────────────────
+        Flexible(
+          child: SingleChildScrollView(
+            child: BetModuleEditSheet(
+              group: group,
+              mod: newMod,
+              t: t,
+              courseInfo: round.course,
+              players: round.players,
+              onSave: onSave,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
