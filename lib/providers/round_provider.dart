@@ -242,6 +242,11 @@ class RoundProvider extends ChangeNotifier {
   StreamSubscription<Round?>? _liveRoundSub;
   // Flag para ignorar el próximo evento del stream (evitar eco)
   bool _ignoringLiveUpdate = false;
+  // Contador de escrituras locales de pairSliding pendientes de confirmación
+  // remota. Cada _persist() que incluye cambios de pairSliding lo incrementa;
+  // el listener lo decrementa al procesar el eco. Mientras sea > 0, el listener
+  // preserva el pairSliding local en vez de sobreescribirlo con el remoto.
+  int _pendingPairSlidingWrites = 0;
   // Flag: el admin finalizó la ronda pero este usuario aún no presionó "Cerrar"
   bool _roundFinishedByAdmin = false;
 
@@ -324,6 +329,9 @@ class RoundProvider extends ChangeNotifier {
       // Si la ronda remota tiene isFinished=true y el usuario local NO es el owner,
       // mantenemos la ronda visible pero activamos el banner de aviso.
       if (remote.isFinished && !isLiveOwner) {
+        // La ronda está cerrando — los datos finales del admin son canónicos.
+        // Resetear el contador: ya no tiene sentido proteger el pairSliding local.
+        _pendingPairSlidingWrites = 0;
         _round = remote;          // Actualizar datos (scores, resultados finales)
         _roundFinishedByAdmin = true;
         notifyListeners();
@@ -334,11 +342,36 @@ class RoundProvider extends ChangeNotifier {
         return;
       }
 
-      // Caso normal: actualización de datos en tiempo real
-      _round = remote;
+      // Caso normal: actualización de datos en tiempo real.
+      // Si hay escrituras locales de pairSliding pendientes de confirmación
+      // (otro jugador guardó concurrentemente y llegó un segundo evento antes
+      // de que nuestro eco fuera procesado), preservamos el pairSliding local
+      // en lugar de sobreescribirlo con la versión remota que aún no incluye
+      // nuestra ventaja recién configurada.
+      final Round merged;
+      if (_pendingPairSlidingWrites > 0) {
+        _pendingPairSlidingWrites--;
+        // Fusión: entradas locales ganan sobre el remoto para pairSliding.
+        // El resto de datos (scores, etc.) viene del remoto como siempre.
+        merged = remote.copyWith(
+          pairSliding: {
+            ...remote.pairSliding,
+            ..._round!.pairSliding, // local sobreescribe — son más recientes
+          },
+        );
+        if (kDebugMode) {
+          debugPrint(
+            '[LiveRound] Merge pairSliding: remote=${remote.pairSliding} '
+            'local=${_round!.pairSliding} → merged=${merged.pairSliding}',
+          );
+        }
+      } else {
+        merged = remote;
+      }
+      _round = merged;
       notifyListeners();
       // Actualizar caché local también
-      _prefs().then((p) => p.setString('round', jsonEncode(roundToJson(remote))));
+      _prefs().then((p) => p.setString('round', jsonEncode(roundToJson(merged))));
     });
     if (kDebugMode) debugPrint('[LiveRound] Listener iniciado: $roundId');
   }
@@ -1064,8 +1097,16 @@ class RoundProvider extends ChangeNotifier {
         // Ronda en vivo: escribir en liveRounds (compartida)
         // Marcar que el próximo evento del stream es nuestro (eco)
         _ignoringLiveUpdate = true;
+        // Incrementar contador de escrituras locales de pairSliding pendientes.
+        // El listener lo decrementará al recibir el eco y, mientras sea > 0,
+        // preservará el pairSliding local ante cualquier evento remoto
+        // (incluso si llegan varios eventos concurrentes de otros jugadores).
+        _pendingPairSlidingWrites++;
         LiveRoundService.saveRound(_round!).catchError((e) {
           _ignoringLiveUpdate = false;
+          // Si el save falla, revertir el contador para no bloquear el listener
+          // indefinidamente en caso de error de red.
+          if (_pendingPairSlidingWrites > 0) _pendingPairSlidingWrites--;
           debugPrint('[_persist] LiveRound error: $e');
         });
       } else {
