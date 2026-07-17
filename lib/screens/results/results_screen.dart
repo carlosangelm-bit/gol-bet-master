@@ -952,6 +952,10 @@ class _PlayerFaceToFace extends StatelessWidget {
             for (final gr in round.betGroups) {
               if (!gr.playerIds.contains(player.id) || !gr.playerIds.contains(opp.id)) continue;
               for (final mod in gr.modules) {
+                // Resolver participantIds efectivos del módulo (igual que BetEngine)
+                final modPids = mod.participantIds.isNotEmpty ? mod.participantIds : gr.playerIds;
+                // Solo procesar el módulo si aplica a AMBOS jugadores del par
+                if (!modPids.contains(player.id) || !modPids.contains(opp.id)) continue;
                 // ── Match + Press live balance ─────────────────────────────
                 if (mod.type == BetModuleType.matchAutoPress) {
                   double mpLiveBal = 0.0;
@@ -1058,9 +1062,14 @@ class _DuelCard extends StatelessWidget {
     ];
     final allTypes = order.where((type) {
       for (final gr in round.betGroups) {
-        final pids = gr.playerIds;
-        if (!pids.contains(player.id) || !pids.contains(opponent.id)) continue;
-        if (gr.modules.any((m) => m.type == type)) return true;
+        if (!gr.playerIds.contains(player.id) || !gr.playerIds.contains(opponent.id)) continue;
+        // Verificar que exista un módulo de este tipo cuyos participantIds
+        // efectivos incluyan a AMBOS jugadores del par (no solo al grupo).
+        for (final m in gr.modules) {
+          if (m.type != type) continue;
+          final modPids = m.participantIds.isNotEmpty ? m.participantIds : gr.playerIds;
+          if (modPids.contains(player.id) && modPids.contains(opponent.id)) return true;
+        }
       }
       return false;
     }).toList();
