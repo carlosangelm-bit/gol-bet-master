@@ -2101,127 +2101,127 @@ class _PickerViewState extends State<_PickerView> {
 
   @override
   Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      initialChildSize: 0.72,
-      minChildSize: 0.45,
-      maxChildSize: 0.92,
-      expand: false,
-      builder: (ctx, scrollCtrl) {
-        return Column(
-          children: [
-            // ── Handle + Header ──────────────────────────────────────────────
-            Container(
-              decoration: BoxDecoration(
-                color: t.card,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 10, bottom: 6),
-                      child: Container(
-                        width: 40, height: 4,
-                        decoration: BoxDecoration(
-                          color: t.divider,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
+    // Usar ConstrainedBox + Column con ListView propio en lugar de
+    // DraggableScrollableSheet, que en web comparte scrollCtrl con el
+    // ListView y bloquea el scroll interno (solo se veía la primera card).
+    final screenH = MediaQuery.of(context).size.height;
+    final bottomPad = MediaQuery.of(context).viewInsets.bottom
+        + MediaQuery.of(context).padding.bottom;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: screenH * 0.88),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Handle + Header ──────────────────────────────────────────────
+          Container(
+            decoration: BoxDecoration(
+              color: t.card,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 10, bottom: 6),
+                    child: Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(
+                        color: t.divider,
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
-                    child: Row(children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Seleccionar tipo de apuesta',
-                              style: TextStyle(
-                                color: t.text, fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${widget.p1Name} vs ${widget.p2Name}',
-                              style: TextStyle(color: t.sub, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: Icon(Icons.close, color: t.sub),
-                      ),
-                    ]),
-                  ),
-                  Divider(height: 1, color: t.divider),
-                ],
-              ),
-            ),
-
-            // ── Lista de tipos ───────────────────────────────────────────────
-            Expanded(
-              child: Container(
-                color: t.card,
-                child: ListView.separated(
-                  controller: scrollCtrl,
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                  itemCount: _allTypes.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) {
-                    final type = _allTypes[i];
-                    final isSelected = _selected == type;
-                    return _BetTypeCard(
-                      type: type,
-                      selected: isSelected,
-                      t: t,
-                      onTap: () => setState(() => _selected = type),
-                    );
-                  },
                 ),
-              ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+                  child: Row(children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Seleccionar tipo de apuesta',
+                            style: TextStyle(
+                              color: t.text, fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${widget.p1Name} vs ${widget.p2Name}',
+                            style: TextStyle(color: t.sub, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Icon(Icons.close, color: t.sub),
+                    ),
+                  ]),
+                ),
+                Divider(height: 1, color: t.divider),
+              ],
             ),
+          ),
 
-            // ── Botón Continuar ──────────────────────────────────────────────
-            Container(
+          // ── Lista de tipos — scroll propio, sin DraggableScrollableSheet ──
+          Flexible(
+            child: Container(
               color: t.card,
-              padding: EdgeInsets.fromLTRB(
-                16, 12, 16,
-                MediaQuery.of(context).viewInsets.bottom + 20,
+              child: ListView.separated(
+                // Sin controller externo: el ListView maneja su propio scroll
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                itemCount: _allTypes.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (_, i) {
+                  final type = _allTypes[i];
+                  final isSelected = _selected == type;
+                  return _BetTypeCard(
+                    type: type,
+                    selected: isSelected,
+                    t: t,
+                    onTap: () => setState(() => _selected = type),
+                  );
+                },
               ),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _selected == null
-                      ? null
-                      : () => widget.onTypePicked(_selected!),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: t.primary,
-                    foregroundColor: t.onPrimary,
-                    disabledBackgroundColor: t.divider,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    _selected == null
-                        ? 'Elige un tipo de apuesta'
-                        : 'Continuar con ${_selected!.label}',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 15),
-                  ),
+            ),
+          ),
+
+          // ── Botón Continuar ──────────────────────────────────────────────
+          Container(
+            color: t.card,
+            padding: EdgeInsets.fromLTRB(16, 12, 16, bottomPad + 20),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _selected == null
+                    ? null
+                    : () => widget.onTypePicked(_selected!),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: t.primary,
+                  foregroundColor: t.onPrimary,
+                  disabledBackgroundColor: t.divider,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  elevation: 0,
+                ),
+                child: Text(
+                  _selected == null
+                      ? 'Elige un tipo de apuesta'
+                      : 'Continuar con ${_selected!.label}',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 15),
                 ),
               ),
             ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
     );
   }
 }
