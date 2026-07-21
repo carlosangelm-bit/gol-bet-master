@@ -744,6 +744,10 @@ class _DuelBetsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final modules = duel.modules;
+    // Tipos ya configurados para este par — se usan para filtrar el picker
+    final existingTypes = modules.map((r) => r.module.type).toSet();
+    final hasAllTypes =
+        existingTypes.containsAll(BetModuleType.values.toSet());
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
@@ -770,15 +774,14 @@ class _DuelBetsSection extends StatelessWidget {
               prov: prov, t: t, perm: perm,
             )),
 
-          const SizedBox(height: 6),
-
-          // ── Botón añadir apuesta (solo si puede editar) ───────────────────
-          if (perm.canEdit)
+          // ── Botón añadir apuesta (solo si puede editar y quedan tipos) ────
+          if (perm.canEdit && !hasAllTypes) ...[
+            const SizedBox(height: 8),
             GestureDetector(
-              onTap: () => _openAddBet(context),
+              onTap: () => _openAddBet(context, existingTypes),
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 9),
+                padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
                   color: t.accent.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(10),
@@ -786,21 +789,26 @@ class _DuelBetsSection extends StatelessWidget {
                     color: t.accent.withValues(alpha: 0.30),
                   ),
                 ),
-                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.add, color: t.accent, size: 14),
+                child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                  Icon(Icons.add_circle_outline, color: t.accent, size: 15),
                   const SizedBox(width: 6),
                   Text('Añadir apuesta a este duelo',
                       style: TextStyle(
-                          color: t.accent, fontWeight: FontWeight.w700, fontSize: 12)),
+                          color: t.accent,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12)),
                 ]),
               ),
             ),
+          ],
         ],
       ),
     );
   }
 
-  void _openAddBet(BuildContext context) {
+  void _openAddBet(BuildContext context, Set<BetModuleType> existingTypes) {
     // Resolver / crear el BetGroup antes de mostrar el sheet
     BetGroup? existingGroup;
     for (final g in round.betGroups) {
@@ -835,6 +843,7 @@ class _DuelBetsSection extends StatelessWidget {
         group: group,
         round: round,
         isNewGroup: existingGroup == null,
+        existingTypes: existingTypes,
         onSave: (saved) {
           Navigator.pop(sheetCtx);
           if (existingGroup == null) {
@@ -2000,6 +2009,7 @@ class _AddBetFlow extends StatefulWidget {
   final BetGroup group;
   final Round round;
   final bool isNewGroup;
+  final Set<BetModuleType> existingTypes;
   final void Function(BetModuleInstance saved) onSave;
 
   const _AddBetFlow({
@@ -2011,6 +2021,7 @@ class _AddBetFlow extends StatefulWidget {
     required this.group,
     required this.round,
     required this.isNewGroup,
+    required this.existingTypes,
     required this.onSave,
   });
 
@@ -2056,6 +2067,7 @@ class _AddBetFlowState extends State<_AddBetFlow> {
               t: t,
               p1Name: widget.p1Name,
               p2Name: widget.p2Name,
+              existingTypes: widget.existingTypes,
               onTypePicked: _goToEditor,
             )
           : _EditorView(
@@ -2078,6 +2090,7 @@ class _PickerView extends StatefulWidget {
   final GolfTheme t;
   final String p1Name;
   final String p2Name;
+  final Set<BetModuleType> existingTypes;
   final void Function(BetModuleType) onTypePicked;
 
   const _PickerView({
@@ -2085,6 +2098,7 @@ class _PickerView extends StatefulWidget {
     required this.t,
     required this.p1Name,
     required this.p2Name,
+    required this.existingTypes,
     required this.onTypePicked,
   });
 
@@ -2097,7 +2111,10 @@ class _PickerViewState extends State<_PickerView> {
 
   GolfTheme get t => widget.t;
 
-  static const _allTypes = BetModuleType.values;
+  /// Tipos disponibles = todos menos los que el par ya tiene configurados
+  List<BetModuleType> get _availableTypes => BetModuleType.values
+      .where((t) => !widget.existingTypes.contains(t))
+      .toList();
 
   @override
   Widget build(BuildContext context) {
@@ -2175,10 +2192,10 @@ class _PickerViewState extends State<_PickerView> {
               child: ListView.separated(
                 // Sin controller externo: el ListView maneja su propio scroll
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                itemCount: _allTypes.length,
+                itemCount: _availableTypes.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (_, i) {
-                  final type = _allTypes[i];
+                  final type = _availableTypes[i];
                   final isSelected = _selected == type;
                   return _BetTypeCard(
                     type: type,
