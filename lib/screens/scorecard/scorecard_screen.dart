@@ -2119,32 +2119,6 @@ class _MatchStatusCard extends StatelessWidget {
     final holesP2 = st.holesWonP2;
     final lead    = holesP1 - holesP2;  // positivo = p1 va arriba
 
-    // ── Balance en vivo (suma de segmentos + presiones) ───────────────────────
-    double npBal = 0.0;
-    if (st.frontPlayed > 0) {
-      if (st.front > 0) npBal += st.frontVal;
-      if (st.front < 0) npBal -= st.frontVal;
-    }
-    if (st.backPlayed > 0) {
-      if (st.back > 0) npBal += st.backVal;
-      if (st.back < 0) npBal -= st.backVal;
-    }
-    if (playedCount > 0) {
-      if (st.total > 0) npBal += st.totalVal;
-      if (st.total < 0) npBal -= st.totalVal;
-    }
-    // Presiones: usar valor correcto por segmento; solo liquidar presses CERRADAS
-    final isBack   = round.startingNine == StartingNine.back;
-    final seg1From = isBack ? 10 : 1;
-    final seg1To   = isBack ? 18 : 9;
-    for (final p in st.presses) {
-      if (p.isOpen) continue; // press abierta: apuesta pendiente, no liquidar
-      final inSeg1   = p.startHole >= seg1From && p.startHole <= seg1To;
-      final pressVal = inSeg1 ? mod.nassau.frontPressValue : mod.nassau.backPressValue;
-      if (p.score > 0) npBal += pressVal;
-      if (p.score < 0) npBal -= pressVal;
-    }
-
     // ── Estado de cada segmento (para el diffLabel) ───────────────────────────
     final fLabel = st.frontPlayed == 0
         ? 'F9: –'
@@ -2206,7 +2180,6 @@ class _MatchStatusCard extends StatelessWidget {
       skinsInPot: null,
       round: round,
       subLabel: subLabel,
-      liveBalance: npBal,
     );
   }
 
@@ -2357,20 +2330,13 @@ class _MatchStatusCard extends StatelessWidget {
     final s1 = status > 0 ? status : 0;
     final s2 = status < 0 ? status.abs() : 0;
 
-    // ── Métricas y balance en vivo ────────────────────────────────────────────
+    // ── Sub-label: métricas deportivas de presiones (sin dinero — el chip ────────
+    // lo toma siempre de LedgerEngine.breakdownBetween para consistencia)
     String? subLabel;
-    double? liveBalance;
 
     if (matchPressModules.isNotEmpty) {
-      final mod     = matchPressModules.first;
-      final presses = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
-      double mpBal = 0.0;
-      for (final pr in presses) {
-        if (pr.played == 0) continue;
-        if (pr.leadingPlayerId == p1.id) mpBal += pr.value;
-        if (pr.leadingPlayerId == p2.id) mpBal -= pr.value;
-      }
-      liveBalance = mpBal;
+      final mod         = matchPressModules.first;
+      final presses     = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
       final pressSegments = presses.skip(1).where((pr) => pr.played > 0).toList();
       if (pressSegments.isNotEmpty) {
         final pw1          = pressSegments.where((pr) => pr.leadingPlayerId == p1.id).length;
@@ -2381,35 +2347,9 @@ class _MatchStatusCard extends StatelessWidget {
         subLabel = 'Presiones: $n1 $pw1 – $pw2 $n2$tieStr  •  $totalPresses jugadas';
       }
     } else if (nassauModules.isNotEmpty && nassauModules.first.pressEnabled) {
-      // Nassau con presiones: mostrar balance en vivo usando nassauLiveStatus
-      final mod = nassauModules.first;
-      final st  = BetEngine.nassauLiveStatus(round, p1.id, p2.id, mod);
-      double npBal = 0.0;
-      if (st.frontPlayed > 0) {
-        if (st.front > 0) npBal += st.frontVal;
-        if (st.front < 0) npBal -= st.frontVal;
-      }
-      if (st.backPlayed > 0) {
-        if (st.back > 0) npBal += st.backVal;
-        if (st.back < 0) npBal -= st.backVal;
-      }
-      if (st.frontPlayed + st.backPlayed > 0 && round.totalHoles >= 18) {
-        if (st.total > 0) npBal += st.totalVal;
-        if (st.total < 0) npBal -= st.totalVal;
-      }
-      for (final p in st.presses) {
-        // Solo liquidar presses CERRADAS; las abiertas son apuestas pendientes
-        if (p.isOpen) continue;
-        // Determinar si la presión es del segmento 1 o 2 según startingNine
-        final isBack   = round.startingNine == StartingNine.back;
-        final seg1From = isBack ? 10 : 1;
-        final seg1To   = isBack ? 18 : 9;
-        final inSeg1   = p.startHole >= seg1From && p.startHole <= seg1To;
-        final pressVal = inSeg1 ? mod.nassau.frontPressValue : mod.nassau.backPressValue;
-        if (p.score > 0) npBal += pressVal;
-        if (p.score < 0) npBal -= pressVal;
-      }
-      liveBalance = npBal;
+      // Nassau con presiones: sub-label deportivo (F9/B9 status)
+      final mod  = nassauModules.first;
+      final st   = BetEngine.nassauLiveStatus(round, p1.id, p2.id, mod);
       final parts = <String>[];
       if (st.frontPlayed > 0) {
         final fs = st.front == 0 ? 'F9: AS' : 'F9: ${st.front > 0 ? n1 : n2} ${st.front.abs()}UP';
@@ -2438,7 +2378,6 @@ class _MatchStatusCard extends StatelessWidget {
       skinsInPot: null,
       round: round,
       subLabel: subLabel,
-      liveBalance: liveBalance,
     );
   }
 }
@@ -2564,7 +2503,6 @@ class _PremiumResultBadge extends StatelessWidget {
   final int? tieCount;
   final int? skinsInPot;
   final Round round;
-  final double? liveBalance;  // override del balance en vivo (para matchAutoPress)
 
   const _PremiumResultBadge({
     required this.p1, required this.p2, required this.t,
@@ -2574,7 +2512,7 @@ class _PremiumResultBadge extends StatelessWidget {
     required this.playedCount, required this.lastHole,
     required this.round,
     this.tieCount, this.skinsInPot,
-    this.subLabel, this.liveBalance,
+    this.subLabel,
   });
 
   @override
@@ -2742,8 +2680,7 @@ class _PremiumResultBadge extends StatelessWidget {
                 // Balance neto
                 _NetBalanceChip(
                     round: round, p1: p1, p2: p2, t: t,
-                    stateColor: accentColor,
-                    liveBalance: liveBalance),
+                    stateColor: accentColor),
               ],
             ),
           ),
@@ -2890,26 +2827,17 @@ class _NetBalanceChip extends StatelessWidget {
   final Player p1, p2;
   final GolfTheme t;
   final Color stateColor;
-  /// Si se pasa, usa este valor en lugar del ledger (para balance en vivo de Match+Press)
-  final double? liveBalance;
   const _NetBalanceChip({required this.round, required this.p1,
-      required this.p2, required this.t, required this.stateColor,
-      this.liveBalance});
+      required this.p2, required this.t, required this.stateColor});
 
   @override
   Widget build(BuildContext context) {
     context.watch<RoundProvider>(); // reconstruir al cambiar scores
 
-    // Si hay un balance en vivo (matchAutoPress activo), usarlo directamente
-    // Si no, calcular desde el ledger (balance de apuestas cerradas)
-    final double bal1;
-    if (liveBalance != null) {
-      bal1 = liveBalance!;
-    } else {
-      // Balance neto total entre p1 y p2 (suma todos los módulos activos)
-      final bd = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
-      bal1 = bd.values.fold(0.0, (sum, v) => sum + v);
-    }
+    // Fuente única de dinero: LedgerEngine (BetEngine.computeAll)
+    // Cubre todos los módulos: match, press, nassau, skins, etc.
+    final bd   = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
+    final bal1 = bd.values.fold(0.0, (sum, v) => sum + v);
 
     // balance neto desde perspectiva de p1
     final label = bal1.abs() < 0.005
