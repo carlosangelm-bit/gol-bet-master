@@ -335,26 +335,39 @@ class GameEngine {
 
     // ── Calcular recv bilateral una sola vez ──────────────────────────────────
     // Misma prioridad que BetEngine._strokesP1ReceivesFromP2:
-    //   m1 = manual[p1][p2], m2 = manual[p2][p1]
+    //   1. pairSliding (fuente canónica)
+    //   2. manualHandicaps (legacy)
+    //   3. HCP diff (fallback)
     double recv = 0;
     if (useHandicap) {
-      final rp1 = round.roundPlayers.firstWhere(
-        (r) => r.playerId == p1Id,
-        orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: round.getHandicap(p1Id)),
-      );
-      final m1 = rp1.manualHandicaps[p2Id];
-      if (m1 != null) {
-        recv = m1; // directo, 0 es acuerdo explícito
+      // 1. pairSliding — fuente canónica, idéntica lógica que BetEngine
+      final psKey = p1Id.compareTo(p2Id) <= 0 ? '$p1Id|$p2Id' : '$p2Id|$p1Id';
+      final psStored = round.pairSliding[psKey];
+      if (psStored != null) {
+        // El valor almacenado corresponde al lowId; invertir si p1 es el highId
+        final lowId = p1Id.compareTo(p2Id) <= 0 ? p1Id : p2Id;
+        recv = (p1Id == lowId) ? psStored : -psStored;
       } else {
-        final rp2 = round.roundPlayers.firstWhere(
-          (r) => r.playerId == p2Id,
-          orElse: () => RoundPlayer(playerId: p2Id, handicapEnRonda: round.getHandicap(p2Id)),
+        // 2. Legacy manualHandicaps
+        final rp1 = round.roundPlayers.firstWhere(
+          (r) => r.playerId == p1Id,
+          orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: round.getHandicap(p1Id)),
         );
-        final m2 = rp2.manualHandicaps[p1Id];
-        if (m2 != null) {
-          recv = -m2; // inverso
+        final m1 = rp1.manualHandicaps[p2Id];
+        if (m1 != null) {
+          recv = m1; // directo, 0 es acuerdo explícito
         } else {
-          recv = round.getHandicap(p1Id) - round.getHandicap(p2Id); // fallback HCP
+          final rp2 = round.roundPlayers.firstWhere(
+            (r) => r.playerId == p2Id,
+            orElse: () => RoundPlayer(playerId: p2Id, handicapEnRonda: round.getHandicap(p2Id)),
+          );
+          final m2 = rp2.manualHandicaps[p1Id];
+          if (m2 != null) {
+            recv = -m2; // inverso
+          } else {
+            // 3. Fallback HCP diff
+            recv = round.getHandicap(p1Id) - round.getHandicap(p2Id);
+          }
         }
       }
     }

@@ -925,9 +925,9 @@ class RoundProvider extends ChangeNotifier {
     if (_round == null) return;
     // ── Re-sincronizar pairSliding desde los nuevos manualHandicaps ──────────
     // Home screen escribe en roundPlayers.manualHandicaps. Para que la tarjeta
-    // 1v1 lo refleje de inmediato, fusionamos esos valores en pairSliding.
+    // 1v1 y el ledger lo reflejen de inmediato, reconstruimos pairSliding.
     final mergedPs = _mergePairSlidingFromRoundPlayers(
-        _round!.pairSliding, roundPlayers);
+        _round!.pairSliding, roundPlayers, _round!.isLive);
     _round = _round!.copyWith(roundPlayers: roundPlayers, pairSliding: mergedPs);
     notifyListeners();
     _persist();
@@ -939,29 +939,68 @@ class RoundProvider extends ChangeNotifier {
   static String _pairKey(String a, String b) =>
       a.compareTo(b) <= 0 ? '$a|$b' : '$b|$a';
 
-  /// Fusiona [existingPs] con los manualHandicaps de [roundPlayers].
+  /// Reconstruye pairSliding a partir de los manualHandicaps de [roundPlayers].
   ///
-  /// Los manualHandicaps prevalecen par a par; los pares que ya estaban
-  /// en [existingPs] pero no aparecen en manualHandicaps se conservan
-  /// (para no borrar acuerdos aprobados por propuesta colaborativa).
+  /// **Modo no-live** (rondas locales, setup):
+  ///   pairSliding = espejo EXACTO de manualHandicaps entre jugadores de la ronda.
+  ///   Los pares donde AMBOS jugadores están en la ronda se reconstruyen desde
+  ///   cero; los pares con al menos un jugador externo se conservan de [existingPs].
+  ///   Esto evita que un valor viejo quede pegado cuando el usuario baja/quita
+  ///   una ventaja desde Home.
+  ///
+  /// **Modo live** (comportamiento previo, sin cambios):
+  ///   Solo se sobreescriben/añaden los pares que aparecen en manualHandicaps;
+  ///   el resto de [existingPs] se conserva para no pisar propuestas colaborativas
+  ///   aprobadas por otros jugadores vía el sistema de proposals.
   static Map<String, double> _mergePairSlidingFromRoundPlayers(
       Map<String, double> existingPs,
       List<RoundPlayer> roundPlayers,
+      bool isLive,
   ) {
-    final result = Map<String, double>.from(existingPs);
-    final seen   = <String>{};
+    final ids = roundPlayers.map((rp) => rp.playerId).toSet();
 
+    if (isLive) {
+      // ── Live: añadir/sobreescribir, nunca borrar (preserva propuestas) ───
+      final result = Map<String, double>.from(existingPs);
+      final seen   = <String>{};
+      for (final rp in roundPlayers) {
+        final p1 = rp.playerId;
+        for (final entry in rp.manualHandicaps.entries) {
+          final p2  = entry.key;
+          final m1  = entry.value;
+          final key = _pairKey(p1, p2);
+          if (seen.contains(key)) continue;
+          seen.add(key);
+          final lowId = p1.compareTo(p2) <= 0 ? p1 : p2;
+          result[key] = (p1 == lowId) ? m1 : -m1;
+        }
+      }
+      return result;
+    }
+
+    // ── No-live: espejo exacto de manualHandicaps entre jugadores de la ronda ─
+    // Conservar solo pares con algún jugador FUERA de la ronda (datos externos).
+    final result = <String, double>{};
+    for (final entry in existingPs.entries) {
+      final parts = entry.key.split('|');
+      // Conservar si al menos uno de los dos no pertenece a roundPlayers
+      if (parts.length == 2 &&
+          !(ids.contains(parts[0]) && ids.contains(parts[1]))) {
+        result[entry.key] = entry.value;
+      }
+    }
+    // Escribir desde manualHandicaps (la ausencia de entrada = ventaja = 0 = eliminada)
+    final seen = <String>{};
     for (final rp in roundPlayers) {
       final p1 = rp.playerId;
       for (final entry in rp.manualHandicaps.entries) {
         final p2  = entry.key;
-        final m1  = entry.value; // recv(p1, p2)
+        final m1  = entry.value;
         final key = _pairKey(p1, p2);
         if (seen.contains(key)) continue;
         seen.add(key);
-        final lowId     = p1.compareTo(p2) <= 0 ? p1 : p2;
-        final canonical = (p1 == lowId) ? m1 : -m1;
-        result[key] = canonical;
+        final lowId = p1.compareTo(p2) <= 0 ? p1 : p2;
+        result[key] = (p1 == lowId) ? m1 : -m1;
       }
     }
     return result;

@@ -2074,18 +2074,38 @@ class Round {
       roundPlayers.firstWhere((rp) => rp.playerId == playerId,
           orElse: () => RoundPlayer(playerId: playerId, handicapEnRonda: 0)).handicapEnRonda;
 
+  /// Devuelve (strokesP1, strokesP2): cuántos strokes extra recibe cada jugador.
+  /// Prioridad (idéntica a BetEngine._strokesP1ReceivesFromP2):
+  ///   1. pairSliding (fuente canónica)
+  ///   2. manualHandicaps legacy
+  ///   3. HCP diff fallback
   (int, int) strokesVs(String p1Id, String p2Id) {
+    // 1. pairSliding — fuente canónica
+    final psKey = p1Id.compareTo(p2Id) <= 0 ? '$p1Id|$p2Id' : '$p2Id|$p1Id';
+    final psStored = pairSliding[psKey];
+    if (psStored != null) {
+      final lowId = p1Id.compareTo(p2Id) <= 0 ? p1Id : p2Id;
+      final recv = ((p1Id == lowId) ? psStored : -psStored).round();
+      return recv >= 0 ? (recv, 0) : (0, -recv);
+    }
+
+    // 2. Legacy manualHandicaps
     final rp1 = roundPlayers.firstWhere((r) => r.playerId == p1Id,
         orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: 0));
-    final rp2 = roundPlayers.firstWhere((r) => r.playerId == p2Id,
-        orElse: () => RoundPlayer(playerId: p2Id, handicapEnRonda: 0));
-
     if (rp1.manualHandicaps.containsKey(p2Id)) {
       final diff = rp1.manualHandicaps[p2Id]!.round();
-      return diff >= 0 ? (diff, 0) : (0, (-diff));
+      return diff >= 0 ? (diff, 0) : (0, -diff);
     }
+    final rp2 = roundPlayers.firstWhere((r) => r.playerId == p2Id,
+        orElse: () => RoundPlayer(playerId: p2Id, handicapEnRonda: 0));
+    if (rp2.manualHandicaps.containsKey(p1Id)) {
+      final diff = -(rp2.manualHandicaps[p1Id]!.round());
+      return diff >= 0 ? (diff, 0) : (0, -diff);
+    }
+
+    // 3. Fallback HCP diff
     final diff = (rp1.handicapEnRonda - rp2.handicapEnRonda).round();
-    return diff >= 0 ? (diff, 0) : (0, (-diff));
+    return diff >= 0 ? (diff, 0) : (0, -diff);
   }
 
   Round copyWith({
