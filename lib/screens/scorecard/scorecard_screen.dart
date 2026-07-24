@@ -1158,7 +1158,7 @@ class _OneVOneViewState extends State<_OneVOneView> {
       for (final m in g.modules) {
         final pids = m.hasTeamSides
             ? [m.sideA.playerIds.first, m.sideB.playerIds.first]
-            : (m.participantIds.isNotEmpty ? m.participantIds : g.playerIds);
+            : m.effectivePids(g.playerIds);
         if (!pids.contains(p1.id) || !pids.contains(p2.id)) continue;
 
         if (m.type == BetModuleType.skins) {
@@ -1347,7 +1347,7 @@ class _OneVOneViewState extends State<_OneVOneView> {
       for (final m in g.modules) {
         if (m.type == BetModuleType.nassau ||
             m.type == BetModuleType.matchAutoPress) {
-          final pids = m.participantIds.isNotEmpty ? m.participantIds : g.playerIds;
+          final pids = m.effectivePids(g.playerIds);
           if (pids.length == 2) {
             addPair(pids[0], pids[1]);
           }
@@ -1394,8 +1394,7 @@ class _OneVOneViewState extends State<_OneVOneView> {
         }
         // Nassau con carry (pressEnabled o no): aplica si tiene carryEnabled
         if (m.type == BetModuleType.nassau && m.nassau.carryEnabled) {
-          final pids = m.participantIds.isNotEmpty ? m.participantIds : g.playerIds;
-          if (pids.contains(p1Id) && pids.contains(p2Id)) {
+          if (m.containsPair(p1Id, p2Id)) {
             return m.copyWith(nassauConfig: m.nassau.copyWith(
               carryApplied: true, carryFactor: factor));
           }
@@ -1413,13 +1412,7 @@ class _OneVOneViewState extends State<_OneVOneView> {
       if (!g.playerIds.contains(p1Id) || !g.playerIds.contains(p2Id)) continue;
       mods.addAll(g.modules.where((m) {
         if (m.type != type) return false;
-        // Si el módulo tiene participantIds propios, verificar que incluyan al par exacto.
-        // Esto evita que módulos de otros duelos 1v1 dentro del mismo BetGroup aparezcan aquí.
-        if (m.participantIds.isNotEmpty) {
-          return m.participantIds.contains(p1Id) && m.participantIds.contains(p2Id);
-        }
-        // Sin participantIds propios: el grupo los define → ya verificamos arriba.
-        return true;
+        return m.containsPair(p1Id, p2Id);
       }));
     }
     return mods;
@@ -1430,9 +1423,7 @@ class _OneVOneViewState extends State<_OneVOneView> {
 List<String> _modGroupPids(Round round, BetModuleInstance mod) {
   for (final g in round.betGroups) {
     for (final m in g.modules) {
-      if (m.id == mod.id) {
-        return m.participantIds.isNotEmpty ? m.participantIds : g.playerIds;
-      }
+      if (m.id == mod.id) return m.effectivePids(g.playerIds);
     }
   }
   return [];
@@ -1913,10 +1904,7 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
       if (!g.playerIds.contains(p1Id) || !g.playerIds.contains(p2Id)) continue;
       mods.addAll(g.modules.where((m) {
         if (m.type != type) return false;
-        if (m.participantIds.isNotEmpty) {
-          return m.participantIds.contains(p1Id) && m.participantIds.contains(p2Id);
-        }
-        return true;
+        return m.containsPair(p1Id, p2Id);
       }));
     }
     return mods;
@@ -4547,10 +4535,7 @@ class _FinancialBreakdown extends StatelessWidget {
       if (!g.playerIds.contains(p1.id) || !g.playerIds.contains(p2.id)) continue;
       result.addAll(g.modules.where((m) {
         if (m.type != type) return false;
-        if (m.participantIds.isNotEmpty) {
-          return m.participantIds.contains(p1.id) && m.participantIds.contains(p2.id);
-        }
-        return true;
+        return m.containsPair(p1.id, p2.id);
       }));
     }
     return result;
@@ -4563,8 +4548,7 @@ class _FinancialBreakdown extends StatelessWidget {
       if (!g.playerIds.contains(p1.id) || !g.playerIds.contains(p2.id)) continue;
       for (final m in g.modules) {
         // Aplicar mismo filtro de participantIds
-        if (m.participantIds.isNotEmpty &&
-            (!m.participantIds.contains(p1.id) || !m.participantIds.contains(p2.id))) continue;
+        if (!m.containsPair(p1.id, p2.id)) continue;
         types.add(m.type);
       }
     }

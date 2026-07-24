@@ -151,7 +151,7 @@ class RoundDebug {
     buf.writeln('── Module: ${mod.type.label} (${mod.id}) ──────────────────');
     buf.writeln('  tipo=${mod.type.name}');
 
-    final pids = mod.participantIds.isNotEmpty ? mod.participantIds : group.playerIds;
+    final pids = mod.effectivePids(group.playerIds);
     buf.writeln('  participantes=${pids.join(', ')}');
 
     // Modo

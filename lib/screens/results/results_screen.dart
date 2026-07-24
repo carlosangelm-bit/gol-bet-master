@@ -918,7 +918,7 @@ class _PlayerFaceToFace extends StatelessWidget {
     bool playerHasUnitsModule = false;
     for (final group in round.betGroups) {
       for (final mod in group.modules) {
-        final pids = mod.participantIds.isNotEmpty ? mod.participantIds : group.playerIds;
+        final pids = mod.effectivePids(group.playerIds);
         if (!pids.contains(player.id)) continue;
         for (final pid in pids) {
           if (pid != player.id) bettingOpponentIds.add(pid);
@@ -953,7 +953,7 @@ class _PlayerFaceToFace extends StatelessWidget {
               if (!gr.playerIds.contains(player.id) || !gr.playerIds.contains(opp.id)) continue;
               for (final mod in gr.modules) {
                 // Resolver participantIds efectivos del módulo (igual que BetEngine)
-                final modPids = mod.participantIds.isNotEmpty ? mod.participantIds : gr.playerIds;
+                final modPids = mod.effectivePids(gr.playerIds);
                 // Solo procesar el módulo si aplica a AMBOS jugadores del par
                 if (!modPids.contains(player.id) || !modPids.contains(opp.id)) continue;
                 // ── Match + Press live balance ─────────────────────────────
@@ -1067,8 +1067,7 @@ class _DuelCard extends StatelessWidget {
         // efectivos incluyan a AMBOS jugadores del par (no solo al grupo).
         for (final m in gr.modules) {
           if (m.type != type) continue;
-          final modPids = m.participantIds.isNotEmpty ? m.participantIds : gr.playerIds;
-          if (modPids.contains(player.id) && modPids.contains(opponent.id)) return true;
+          if (m.containsPair(player.id, opponent.id)) return true;
         }
       }
       return false;
@@ -1237,7 +1236,7 @@ class _UnitsDetailSection extends StatelessWidget {
     for (final group in round.betGroups) {
       for (final mod in group.modules) {
         if (mod.type != BetModuleType.units) continue;
-        final pids = mod.participantIds.isNotEmpty ? mod.participantIds : group.playerIds;
+        final pids = mod.effectivePids(group.playerIds);
         if (!pids.contains(player.id)) continue;
         final holes = unitsByType[type] ?? [];
         final value = mod.units.valueFor(type);

@@ -388,9 +388,7 @@ class BetEngine {
   static List<LedgerEntry> _computeModuleIndividual(
       Round round, BetGroup group, BetModuleInstance mod) {
     final entries = <LedgerEntry>[];
-    final pids = mod.participantIds.isNotEmpty
-        ? mod.participantIds
-        : group.playerIds;
+    final pids = mod.effectivePids(group.playerIds);
     switch (mod.type) {
       case BetModuleType.skins:
         entries.addAll(_skins(round, pids, mod));
@@ -1849,7 +1847,7 @@ class BetEngine {
     for (final group in round.betGroups) {
       for (final mod in group.modules) {
         if (mod.type != BetModuleType.medal) continue;
-        final pids = mod.participantIds.isNotEmpty ? mod.participantIds : group.playerIds;
+        final pids = mod.effectivePids(group.playerIds);
         final cfg  = mod.medal;
 
         final grosses    = <String, int>{};

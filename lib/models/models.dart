@@ -1683,6 +1683,27 @@ class BetModuleInstance {
         return result;
     }
   }
+
+  // ── Helpers de participantes ───────────────────────────────────────────────
+
+  /// Participantes efectivos del módulo dentro de [groupPlayerIds].
+  ///
+  /// Regla canónica: si el módulo tiene participantIds propios no vacíos,
+  /// úsalos; de lo contrario todos los jugadores del grupo participan.
+  ///
+  /// Esta es la única implementación de esta lógica — todos los engines
+  /// y pantallas deben llamar a este método, nunca re-derivarlo.
+  List<String> effectivePids(List<String> groupPlayerIds) =>
+      participantIds.isNotEmpty ? participantIds : groupPlayerIds;
+
+  /// Devuelve true si el módulo involucra a ambos jugadores [p1Id] y [p2Id].
+  ///
+  /// Cuando participantIds está vacío, el módulo aplica a todos los jugadores
+  /// del grupo; el caller debe verificar que p1Id y p2Id pertenezcan al grupo.
+  bool containsPair(String p1Id, String p2Id) {
+    if (participantIds.isEmpty) return true; // aplica a todos
+    return participantIds.contains(p1Id) && participantIds.contains(p2Id);
+  }
 }
 
 // ── BetGroup — partida (grupo de jugadores + instancias de módulos) ───────────
