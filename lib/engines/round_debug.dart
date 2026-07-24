@@ -17,6 +17,7 @@
 
 import '../models/models.dart';
 import 'bet_engine.dart';
+import 'game_engine.dart';
 
 /// Fuente detectada para el sliding de un par.
 enum SlidingSource {
@@ -382,7 +383,8 @@ class RoundDebug {
           final sReceiver = round.getScore(receiverId, ch.hole);
           if (!sBase.hasScore || !sReceiver.hasScore) continue;
           final strokes = mod.useHandicap && recvAbs > 0
-              ? _strokesInPlayedHoles(recvAbs, ch, receiverPlayedHoles)
+              ? GameEngine.strokesReceivedInPlayedHoles(
+                  diff: recvAbs, ch: ch, playedHoles: receiverPlayedHoles)
               : 0;
           final gB = sBase.grossScore!;
           final nR = sReceiver.grossScore! - strokes;
@@ -487,23 +489,6 @@ class RoundDebug {
       if (s.hasScore) total += s.grossScore!;
     }
     return total;
-  }
-
-  /// Replica local de GameEngine.strokesReceivedInPlayedHoles para no crear
-  /// dependencia circular. Usa el mismo algoritmo: distribución proporcional
-  /// entre los hoyos jugados ordenados por SI.
-  static int _strokesInPlayedHoles(
-      int diff, CourseHole ch, List<CourseHole> playedHoles) {
-    final n = playedHoles.length;
-    if (n == 0 || diff == 0) return 0;
-    final sorted = List<CourseHole>.from(playedHoles)
-      ..sort((a, b) => a.strokeIndex.compareTo(b.strokeIndex));
-    final base  = diff ~/ n;
-    final extra = diff % n;
-    // Los primeros `extra` hoyos (SI más bajo) reciben base+1, el resto base.
-    final rank = sorted.indexWhere((h) => h.hole == ch.hole);
-    if (rank < 0) return 0;
-    return rank < extra ? base + 1 : base;
   }
 
   static String _moduleCfgSummary(BetModuleInstance m) {
