@@ -10,8 +10,20 @@ class AuthService {
   static final _auth = FirebaseAuth.instance;
   static final _db   = FirebaseFirestore.instance;
 
-  static User?   get currentUser => _auth.currentUser;
-  static String? get uid         => _auth.currentUser?.uid;
+  // Estos dos getters se consultan desde código que no es de autenticación
+  // (RoundProvider._persist, SlidingAdjustmentEngine…), a veces antes de que
+  // Firebase esté inicializado o cuando su init falló. Acceder a
+  // FirebaseAuth.instance en ese estado lanza [FirebaseException], así que se
+  // degradan a "sin sesión" en vez de propagar el error.
+  static User? get currentUser {
+    try {
+      return _auth.currentUser;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String? get uid => currentUser?.uid;
 
   // ── Registro con email/contraseña ──────────────────────────────────────────
   static Future<UserCredential> registerWithEmail({

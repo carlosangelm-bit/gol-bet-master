@@ -87,15 +87,29 @@ class _AppShellState extends State<AppShell> {
 
     // Si el usuario cierra sesión, reseteamos el flag para el próximo login
     if (auth.status == AuthStatus.unauthenticated) {
-      _listenersStarted = false;
-      context.read<HandicapProvider>().stopListening();
+      // stopListening() llama a notifyListeners(), y hacerlo DENTRO de build
+      // lanza "setState() called during build". Además solo tiene sentido en
+      // la transición sesión→sin sesión, no en cada rebuild de la pantalla de
+      // login. Por eso se condiciona al flag y se difiere al siguiente frame.
+      if (_listenersStarted) {
+        _listenersStarted = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) context.read<HandicapProvider>().stopListening();
+        });
+      }
       return const AuthScreen();
     }
 
     // NOTA: NO llamar startListening() aquí dentro del build() — causa loop infinito.
     // Se inicia UNA SOLA VEZ via _startListenersIfNeeded() (usa flag _listenersStarted).
-    if (auth.status == AuthStatus.authenticated) {
-      _startListenersIfNeeded();
+    //
+    // Los start*/init de los providers llaman a notifyListeners() de forma
+    // síncrona (ponen _loading=true), así que invocarlos durante build lanza
+    // "setState() called during build". Se difieren al siguiente frame.
+    if (auth.status == AuthStatus.authenticated && !_listenersStarted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startListenersIfNeeded();
+      });
     }
 
     final hasRound = prov.hasRound;
