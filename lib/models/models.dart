@@ -1082,6 +1082,219 @@ class UnitsConfig {
 // ─────────────────────────────────────────────────────────────────────────────
 // BetModuleInstance — instancia configurable de un módulo de apuesta
 // ─────────────────────────────────────────────────────────────────────────────
+// ── TeamHandicapConfig — allowance de handicap en duelos por equipos ─────────
+//
+// Implementa los pasos 2 y 3 del WHS para equipos. Los pasos 1 y 4 ya viven
+// en otro sitio: el Course Handicap en [TeeInfo.playingHandicap] y el reparto
+// por stroke index en GameEngine.strokesReceivedFromOfficial18Sliding.
+//
+// Los formatos habituales se reducen a DOS formas:
+//
+//   perPlayer (Four-Ball / Best Ball)
+//     Cada jugador conserva SU handicap reducido por [allowance]. Los golpes
+//     se cuentan relativos al más bajo del partido.
+//       · WHS recomienda 90%. Muchos clubes usan 85% o 75%.
+//
+//   combined (Foursomes / Chapman / Scramble)
+//     El equipo tiene UN handicap: allowance × (lowWeight×bajo + resto×alto).
+//       · Foursomes  = 100% × (0.50·L + 0.50·H)  → 50% de la suma
+//       · Chapman    = 100% × (0.60·L + 0.40·H)
+//       · Scramble   =  50% × (0.70·L + 0.30·H)  → el clásico 35%/15%
+enum TeamHcpMethod {
+  /// Cada jugador lleva su propio handicap (Four-Ball).
+  perPlayer,
+
+  /// El equipo lleva un handicap combinado (Foursomes, Chapman, Scramble).
+  combined,
+}
+
+class TeamHandicapConfig {
+  final TeamHcpMethod method;
+
+  /// Porcentaje del handicap que se concede. 1.0 = 100%.
+  /// Es el único control que se muestra normalmente en la UI.
+  final double allowance;
+
+  /// Peso del jugador de MENOR handicap dentro del equipo (solo [combined]).
+  /// El resto (1 − lowWeight) va al de mayor handicap.
+  final double lowWeight;
+
+  const TeamHandicapConfig({
+    this.method    = TeamHcpMethod.perPlayer,
+    this.allowance = 1.0,
+    this.lowWeight = 0.5,
+  });
+
+  /// Comportamiento previo a que existiera esta config: 100% por jugador.
+  /// Es el default de las rondas ya guardadas, para no cambiarles el dinero.
+  static const legacy = TeamHandicapConfig();
+
+  // ── Presets ───────────────────────────────────────────────────────────────
+  /// Four-Ball al 90% — recomendación WHS/USGA.
+  static const fourBall   = TeamHandicapConfig(allowance: 0.90);
+  /// Variante local muy extendida en clubes.
+  static const local85    = TeamHandicapConfig(allowance: 0.85);
+  /// Foursomes: 50% de la suma de los dos handicaps.
+  static const foursomes  = TeamHandicapConfig(
+      method: TeamHcpMethod.combined, allowance: 1.0, lowWeight: 0.50);
+  /// Chapman / Pinehurst: 60% del bajo + 40% del alto.
+  static const chapman    = TeamHandicapConfig(
+      method: TeamHcpMethod.combined, allowance: 1.0, lowWeight: 0.60);
+  /// Scramble: equivale al clásico 35% del bajo + 15% del alto.
+  static const scramble   = TeamHandicapConfig(
+      method: TeamHcpMethod.combined, allowance: 0.50, lowWeight: 0.70);
+
+  /// Preset por defecto según el modo de juego elegido en Setup.
+  static TeamHandicapConfig defaultFor(TeamPlayMode mode) =>
+      mode == TeamPlayMode.scramble ? scramble : fourBall;
+
+  bool get isCombined => method == TeamHcpMethod.combined;
+
+  /// Handicap combinado del equipo a partir de los handicaps de sus miembros.
+  ///
+  /// NO aplica [allowance] — eso lo hace el motor una sola vez sobre el
+  /// resultado, para no multiplicarlo dos veces.
+  ///
+  /// Con 2 jugadores usa [lowWeight]. Con 3+ reparte de forma decreciente
+  /// siguiendo la tabla USGA de Scramble (25/20/15/10 normalizada).
+  double combinedHandicap(List<double> memberHandicaps) {
+    if (memberHandicaps.isEmpty) return 0;
+    final h = [...memberHandicaps]..sort(); // menor primero
+    if (h.length == 1) return h.first;
+    if (h.length == 2) {
+      return h[0] * lowWeight + h[1] * (1 - lowWeight);
+    }
+    // 3+ jugadores: pesos decrecientes normalizados a 1
+    const raw = [25.0, 20.0, 15.0, 10.0, 8.0, 6.0];
+    final w = List<double>.generate(
+        h.length, (i) => i < raw.length ? raw[i] : 4.0);
+    final total = w.fold<double>(0, (s, v) => s + v);
+    double acc = 0;
+    for (int i = 0; i < h.length; i++) {
+      acc += h[i] * (w[i] / total);
+    }
+    return acc;
+  }
+
+  String get label {
+    if (!isCombined) return '${(allowance * 100).round()}% por jugador';
+    return '${(allowance * 100).round()}% · '
+        '${(lowWeight * 100).round()}/${((1 - lowWeight) * 100).round()}';
+  }
+
+  TeamHandicapConfig copyWith({
+    TeamHcpMethod? method,
+    double? allowance,
+    double? lowWeight,
+  }) => TeamHandicapConfig(
+        method:    method    ?? this.method,
+        allowance: allowance ?? this.allowance,
+        lowWeight: lowWeight ?? this.lowWeight,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'method':    method.name,
+        'allowance': allowance,
+        'lowWeight': lowWeight,
+      };
+
+  factory TeamHandicapConfig.fromJson(Map<String, dynamic> j) =>
+      TeamHandicapConfig(
+        method: TeamHcpMethod.values.firstWhere(
+            (m) => m.name == j['method'],
+            orElse: () => TeamHcpMethod.perPlayer),
+        allowance: (j['allowance'] as num?)?.toDouble() ?? 1.0,
+        lowWeight: (j['lowWeight'] as num?)?.toDouble() ?? 0.5,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is TeamHandicapConfig &&
+      other.method == method &&
+      other.allowance == allowance &&
+      other.lowWeight == lowWeight;
+
+  @override
+  int get hashCode => Object.hash(method, allowance, lowWeight);
+}
+
+// ── BetScope — ALCANCE de una apuesta ────────────────────────────────────────
+//
+// Separa QUIÉN juega (alcance) de QUÉ se juega (tipo + config).
+//
+// Antes, "quién juega" era una foto congelada en `participantIds`: al crear la
+// ronda se materializaba el producto cartesiano (8 jugadores todos-vs-todos =
+// 28 instancias) y quien entraba después quedaba fuera para siempre, porque su
+// id no estaba en ninguna de esas listas.
+//
+// Con un alcance declarado, los participantes se RESUELVEN en el momento del
+// cálculo contra los jugadores actuales de la ronda. Un alcance [everyone] deja
+// entrar solo al jugador que se suma tarde, sin tocar la configuración.
+enum BetScopeKind {
+  /// Todos los jugadores presentes del grupo. Se re-resuelve dinámicamente.
+  everyone,
+
+  /// Subconjunto fijo de jugadores (lista explícita e inmutable).
+  subset,
+
+  /// Duelo suelto entre exactamente dos jugadores.
+  pair,
+
+  /// Lado A vs lado B — los participantes salen de [BetModuleInstance.sides].
+  teams,
+}
+
+class BetScope {
+  final BetScopeKind kind;
+
+  /// Jugadores del alcance. Relevante solo para [subset] y [pair].
+  /// Vacío en [everyone] (dinámico) y [teams] (viven en `sides`).
+  final List<String> playerIds;
+
+  const BetScope._(this.kind, this.playerIds);
+
+  const BetScope.everyone() : this._(BetScopeKind.everyone, const []);
+  const BetScope.teams()    : this._(BetScopeKind.teams,    const []);
+  const BetScope.subset(List<String> ids) : this._(BetScopeKind.subset, ids);
+
+  BetScope.pair(String a, String b) : this._(BetScopeKind.pair, [a, b]);
+
+  bool get isEveryone => kind == BetScopeKind.everyone;
+  bool get isPair     => kind == BetScopeKind.pair;
+
+  /// Etiqueta corta para la UI.
+  String get label => switch (kind) {
+        BetScopeKind.everyone => 'Todos',
+        BetScopeKind.subset   => '${playerIds.length} jugadores',
+        BetScopeKind.pair     => 'Duelo 1v1',
+        BetScopeKind.teams    => 'Equipos',
+      };
+
+  Map<String, dynamic> toJson() => {
+        'kind': kind.name,
+        if (playerIds.isNotEmpty) 'playerIds': playerIds,
+      };
+
+  factory BetScope.fromJson(Map<String, dynamic> j) {
+    final kind = BetScopeKind.values.firstWhere(
+      (k) => k.name == j['kind'],
+      orElse: () => BetScopeKind.subset,
+    );
+    final ids = (j['playerIds'] as List? ?? []).map((e) => e.toString()).toList();
+    return BetScope._(kind, ids);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is BetScope &&
+      other.kind == kind &&
+      other.playerIds.length == playerIds.length &&
+      other.playerIds.every(playerIds.contains);
+
+  @override
+  int get hashCode => Object.hash(kind, Object.hashAllUnordered(playerIds));
+}
+
 class BetModuleInstance {
   final String id;
   final BetModuleType type;
@@ -1145,11 +1358,29 @@ class BetModuleInstance {
   /// Null = no hay overrides (retrocompat, módulos viejos).
   final Map<String, Map<String, dynamic>>? pairConfigOverrides;
 
+  // ── Alcance de la apuesta ─────────────────────────────────────────────────
+  /// Declara QUIÉN juega esta apuesta. Ver [BetScope].
+  ///
+  /// null = módulo legacy. Se infiere de `sides`/`participantIds` en
+  /// [effectiveScope], de modo que las rondas ya guardadas se comportan
+  /// exactamente igual que antes.
+  final BetScope? scope;
+
+  // ── Handicap en duelos por equipos ────────────────────────────────────────
+  /// Allowance y método de handicap del duelo por equipos. Ver
+  /// [TeamHandicapConfig]. Solo aplica cuando [hasTeamSides] es true.
+  ///
+  /// null = ronda anterior a esta config → [TeamHandicapConfig.legacy]
+  /// (100% por jugador), para no cambiar el dinero de lo ya guardado.
+  final TeamHandicapConfig? teamHandicapConfig;
+
   const BetModuleInstance({
     required this.id,
     required this.type,
     required this.name,
     required this.participantIds,
+    this.scope,
+    this.teamHandicapConfig,
     this.sides,                          // null = modo individual clásico
     this.status = BetModuleStatus.configured,
     this.formatMode = BetFormatMode.onePot,
@@ -1281,10 +1512,15 @@ class BetModuleInstance {
     bool                                 clearPlayerOverrides = false,
     Map<String, Map<String, dynamic>>?   pairConfigOverrides,
     bool                                 clearPairOverrides = false,
+    BetScope?                            scope,
+    bool                                 clearScope = false,
+    TeamHandicapConfig?                  teamHandicapConfig,
   }) => BetModuleInstance(
     id: id, type: type,
     name: name ?? this.name,
     participantIds: participantIds ?? this.participantIds,
+    scope: clearScope ? null : (scope ?? this.scope),
+    teamHandicapConfig: teamHandicapConfig ?? this.teamHandicapConfig,
     sides: clearSides ? null : (sides ?? this.sides),
     status: status ?? this.status,
     formatMode:           formatMode           ?? this.formatMode,
@@ -1314,6 +1550,13 @@ class BetModuleInstance {
     'participantIds': participantIds,
     'status': status.name,
     'formatMode': formatMode.name,
+    // scope: solo si se declaró explícitamente. Los módulos sin esta clave se
+    // deserializan con scope=null y lo infieren en effectiveScope, así que las
+    // rondas ya guardadas siguen comportándose igual.
+    if (scope != null) 'scope': scope!.toJson(),
+    // teamHandicapConfig: solo si se declaró. Sin la clave → legacy (100%).
+    if (teamHandicapConfig != null)
+      'teamHandicapConfig': teamHandicapConfig!.toJson(),
     // structure: solo se serializa si no es el default (retrocompat — rondas
     // viejas sin este campo se deserializan como BetStructure.group).
     if (structure != BetStructure.group) 'structure': structure.name,
@@ -1366,6 +1609,11 @@ class BetModuleInstance {
       type: type,
       name: j['name'] as String? ?? type.label,
       participantIds: List<String>.from((j['participantIds'] as List?) ?? []),
+      // scope null si la clave no existe → effectiveScope lo infiere (retrocompat)
+      scope: j['scope'] != null ? BetScope.fromJson(asMap(j['scope'])) : null,
+      teamHandicapConfig: j['teamHandicapConfig'] != null
+          ? TeamHandicapConfig.fromJson(asMap(j['teamHandicapConfig']))
+          : null,
       sides: sides,
       status: BetModuleStatus.values.firstWhere(
           (s) => s.name == (j['status'] ?? 'configured'),
@@ -1446,6 +1694,74 @@ class BetModuleInstance {
         return result.isEmpty ? null : result;
       }(),
     );
+  }
+
+  /// Clona esta apuesta para un duelo concreto, con id propio.
+  ///
+  /// Conserva TODA la configuración (misma [configSignature]) y solo cambia
+  /// participantes, alcance e identificador. Se usa al meter a un jugador
+  /// nuevo en una apuesta existente: se le crea un duelo contra cada rival
+  /// que ya la juega, con exactamente las mismas condiciones.
+  ///
+  /// Los overrides por par NO se copian: son excepciones de otros duelos.
+  BetModuleInstance copyForPair(String newId, String p1Id, String p2Id) =>
+      BetModuleInstance(
+        id:                    newId,
+        type:                  type,
+        name:                  name,
+        participantIds:        [p1Id, p2Id],
+        scope:                 BetScope.pair(p1Id, p2Id),
+        teamHandicapConfig:    teamHandicapConfig,
+        sides:                 null,
+        status:                status,
+        formatMode:            formatMode,
+        skinsConfig:           skinsConfig,
+        nassauConfig:          nassauConfig,
+        matchAutoPressConfig:  matchAutoPressConfig,
+        medalConfig:           medalConfig,
+        puttsConfig:           puttsConfig,
+        oyesesConfig:          oyesesConfig,
+        unitsConfig:           unitsConfig,
+        structure:             structure,
+        betGroupId:            betGroupId,
+        betGroupName:          betGroupName,
+        anchorPlayerId:        anchorPlayerId,
+      );
+
+  // ── IDENTIDAD DE LA APUESTA ────────────────────────────────────────────────
+
+  /// Firma de la CONFIGURACIÓN. Dos módulos con la misma firma son "la misma
+  /// apuesta" desde el punto de vista del usuario, aunque sean instancias
+  /// distintas para pares distintos.
+  ///
+  /// Sirve para agrupar en la UI: seis duelos con un Nassau de $50/$50/$100
+  /// son UNA fila, no seis. Y si uno está a $100, se separa solo.
+  ///
+  /// Deliberadamente NO incluye [id], [participantIds], [scope], [betGroupId]
+  /// ni [pairConfigOverrides]: eso es QUIÉN juega y qué excepciones tiene, no
+  /// QUÉ se juega.
+  String get configSignature {
+    final Map<String, dynamic> cfg = switch (type) {
+      BetModuleType.skins          => skins.toJson(),
+      BetModuleType.nassau         => nassau.toJson(),
+      BetModuleType.matchAutoPress => matchAutoPress.toJson(),
+      BetModuleType.medal          => medal.toJson(),
+      BetModuleType.putts          => putts.toJson(),
+      BetModuleType.oyeses         => oyeses.toJson(),
+      BetModuleType.units          => units.toJson(),
+    };
+    // Orden estable: el mapa podría iterar distinto entre instancias
+    final keys = cfg.keys.toList()..sort();
+    final body = keys.map((k) => '$k=${cfg[k]}').join(',');
+
+    // Los duelos por equipos son apuestas distintas entre sí aunque compartan
+    // importes: "A vs B" y "C vs D" no se pueden fusionar en una fila.
+    final teamPart = hasTeamSides
+        ? '|teams:${sides!.map((s) => (s.playerIds.toList()..sort()).join('-')).join('vs')}'
+          '|thc:${teamHandicap.toJson()}'
+        : '';
+
+    return '${type.name}|${formatMode.name}|$body$teamPart';
   }
 
   // ── Helpers de overrides ──────────────────────────────────────────────────
@@ -1694,15 +2010,68 @@ class BetModuleInstance {
   /// Esta es la única implementación de esta lógica — todos los engines
   /// y pantallas deben llamar a este método, nunca re-derivarlo.
   List<String> effectivePids(List<String> groupPlayerIds) =>
-      participantIds.isNotEmpty ? participantIds : groupPlayerIds;
+      resolveParticipants(groupPlayerIds);
 
   /// Devuelve true si el módulo involucra a ambos jugadores [p1Id] y [p2Id].
   ///
   /// Cuando participantIds está vacío, el módulo aplica a todos los jugadores
   /// del grupo; el caller debe verificar que p1Id y p2Id pertenezcan al grupo.
   bool containsPair(String p1Id, String p2Id) {
-    if (participantIds.isEmpty) return true; // aplica a todos
+    if (effectiveScope.isEveryone) return true; // aplica a todos los presentes
+    if (participantIds.isEmpty) return true;
     return participantIds.contains(p1Id) && participantIds.contains(p2Id);
+  }
+
+  /// Config de handicap de equipo efectiva. Los módulos guardados antes de
+  /// que existiera esta opción se comportan como hasta ahora: 100% por jugador.
+  TeamHandicapConfig get teamHandicap =>
+      teamHandicapConfig ?? TeamHandicapConfig.legacy;
+
+  // ── ALCANCE ────────────────────────────────────────────────────────────────
+
+  /// Alcance efectivo del módulo.
+  ///
+  /// Si [scope] es null (módulo legacy) se infiere sin cambiar el
+  /// comportamiento previo:
+  ///   • con `sides` válidos            → teams
+  ///   • participantIds vacío           → everyone (equivalía a "todo el grupo")
+  ///   • participantIds con 2 jugadores → pair
+  ///   • resto                          → subset
+  BetScope get effectiveScope {
+    final s = scope;
+    if (s != null) return s;
+    if (hasTeamSides) return const BetScope.teams();
+    if (participantIds.isEmpty) return const BetScope.everyone();
+    if (participantIds.length == 2) {
+      return BetScope.pair(participantIds[0], participantIds[1]);
+    }
+    return BetScope.subset(participantIds);
+  }
+
+  /// Resuelve los participantes reales contra los jugadores actuales.
+  ///
+  /// [groupPlayerIds] son los jugadores presentes del grupo/partida en ESTE
+  /// momento. Con alcance [BetScopeKind.everyone] el resultado cambia sola
+  /// cuando entra o sale un jugador — ése es justo el objetivo.
+  ///
+  /// Los alcances fijos (subset/pair) se filtran contra [groupPlayerIds] para
+  /// no arrastrar jugadores que ya no están en la ronda; si el filtro dejara
+  /// menos de 2 jugadores se devuelve la lista sin filtrar, para no romper
+  /// rondas cuyo grupo no tenga bien poblado playerIds.
+  List<String> resolveParticipants(List<String> groupPlayerIds) {
+    final sc = effectiveScope;
+    switch (sc.kind) {
+      case BetScopeKind.everyone:
+        return groupPlayerIds;
+      case BetScopeKind.teams:
+        return allSidePlayerIds;
+      case BetScopeKind.subset:
+      case BetScopeKind.pair:
+        final ids = sc.playerIds.isNotEmpty ? sc.playerIds : participantIds;
+        if (groupPlayerIds.isEmpty) return ids;
+        final present = ids.where(groupPlayerIds.contains).toList();
+        return present.length >= 2 ? present : ids;
+    }
   }
 }
 
