@@ -23,6 +23,13 @@ class BetModuleEditSheet extends StatefulWidget {
   /// se usa group.playerIds como IDs pero sin nombres (se muestra el ID).
   final List<Player>? players;
 
+  /// Handicap DE LA RONDA de cada jugador (playerId → handicapEnRonda).
+  ///
+  /// Es el Course Handicap ya ajustado por tee, que es lo que usa el motor.
+  /// Si no se pasa, la vista previa cae al handicap base del jugador, que
+  /// puede no coincidir con lo que se liquida.
+  final Map<String, double>? roundHandicaps;
+
   const BetModuleEditSheet({
     super.key,
     required this.group,
@@ -31,6 +38,7 @@ class BetModuleEditSheet extends StatefulWidget {
     required this.onSave,
     this.courseInfo,
     this.players,
+    this.roundHandicaps,
   });
   @override
   State<BetModuleEditSheet> createState() => _BetModuleEditSheetState();
@@ -55,6 +63,20 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   late List<String> _sideAIds;
   late List<String> _sideBIds;
   late TeamPlayMode _playMode; // Best Ball o Scramble
+
+  // ── Alcance de la apuesta ─────────────────────────────────────────────────
+  // true  → alcance abierto (BetScopeKind.everyone): los participantes se
+  //         resuelven contra los jugadores presentes de la partida, así que
+  //         quien se sume después entra solo.
+  // false → alcance fijo (pair/subset): la lista de jugadores es parte del
+  //         acuerdo y no cambia.
+  // En modo equipo el alcance es siempre `teams` y este flag se ignora.
+  late bool _scopeIsOpen;
+
+  // ── Handicap de equipo (allowance WHS) ────────────────────────────────────
+  late TeamHandicapConfig _teamHcp;
+  /// true si el usuario abrió los controles avanzados (reparto bajo/alto).
+  bool _showAdvancedHcp = false;
 
   // Nombre editable de cada lado
   final _nameACtrl = TextEditingController();
@@ -104,6 +126,16 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       _nameBCtrl.text = 'Equipo B';
       _playMode = TeamPlayMode.bestBall; // Default
     }
+
+    // Alcance actual: se lee del efectivo, que ya infiere los módulos legacy.
+    _scopeIsOpen = m.effectiveScope.isEveryone;
+
+    // Handicap de equipo: si el módulo no lo declara, proponer el default del
+    // formato en vez de arrastrar el legacy 100%. Solo se guarda si el usuario
+    // llega a pulsar Guardar, así que no cambia nada por el hecho de abrir.
+    _teamHcp = m.teamHandicapConfig ??
+        TeamHandicapConfig.defaultFor(
+            m.hasTeamSides ? m.sideA.playMode : TeamPlayMode.bestBall);
   }
 
   @override
@@ -115,7 +147,9 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _medalCtrl.dispose();
     _puttsCtrl.dispose();
     _oyesCtrl.dispose(); _zapatoCtrl.dispose();
-    for (final c in _unitCtrls.values) c.dispose();
+    for (final c in _unitCtrls.values) {
+      c.dispose();
+    }
     _nameACtrl.dispose();
     _nameBCtrl.dispose();
     super.dispose();
@@ -142,7 +176,16 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     return BetSide.validateDuel(sides);
   }
 
-  // ── Guardar: inyecta sides y actualiza participantIds ─────────────────────
+  // ── Alcance resultante según el estado de la UI ───────────────────────────
+  BetScope _resolvedScope(List<String> participants) {
+    if (_sidesEnabled) return const BetScope.teams();
+    if (_scopeIsOpen)  return const BetScope.everyone();
+    return participants.length == 2
+        ? BetScope.pair(participants[0], participants[1])
+        : BetScope.subset(participants);
+  }
+
+  // ── Guardar: inyecta sides, alcance y actualiza participantIds ────────────
   void _save() {
     final sides = _buildSides();
     // Participantes = unión de todos los jugadores de ambos lados (retrocompat)
@@ -154,6 +197,9 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       participantIds: newParticipants,
       sides: sides,
       clearSides: !_sidesEnabled,
+      scope: _resolvedScope(newParticipants),
+      // Solo tiene sentido persistirlo en duelos por equipos
+      teamHandicapConfig: _sidesEnabled ? _teamHcp : _current.teamHandicapConfig,
     );
     widget.onSave(saved);
     Navigator.pop(context);
@@ -173,13 +219,21 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         .toList();
   }
 
-  String _playerName(String id) {
-    final p = _availablePlayers.firstWhere(
-      (p) => p.id == id,
-      orElse: () => Player(id: id, name: id),
-    );
-    return p.name;
+  /// Busca un jugador en la lista COMPLETA de la ronda, no solo en los del
+  /// grupo. En Best Ball los lados contienen jugadores reales que no están en
+  /// group.playerIds (ahí van los virtuales de equipo), así que filtrar por
+  /// grupo hacía que se mostrara el id crudo y handicap 0.
+  Player _lookupPlayer(String id) {
+    final all = widget.players;
+    if (all != null) {
+      for (final p in all) {
+        if (p.id == id) return p;
+      }
+    }
+    return Player(id: id, name: id);
   }
+
+  String _playerName(String id) => _lookupPlayer(id).name;
 
   @override
   Widget build(BuildContext context) {
@@ -217,14 +271,31 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ── Alcance: quién juega esta apuesta ──────────────────────
+                _buildScopeSection(t),
+                const SizedBox(height: 20),
+
                 ..._buildFields(t),
-                
+
                 // ── Sección de equipos (SIEMPRE visible para tipos compatibles) ────────
                 if (_teamSupportedTypes.contains(_current.type)) ...[
                   const SizedBox(height: 24),
-                  _availablePlayers.length >= 2 
+                  _availablePlayers.length >= 2
                       ? _buildSidesSection(t)
                       : _buildNoPlayersWarning(t),
+
+                  // ── Allowance de handicap ────────────────────────────────
+                  // Solo con equipos activos, ambos lados poblados y la
+                  // apuesta jugándose en NETO: en gross el handicap no pinta.
+                  if (_sidesEnabled &&
+                      _current.useHandicap &&
+                      _sideAIds.isNotEmpty &&
+                      _sideBIds.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    Divider(height: 1, color: t.divider),
+                    const SizedBox(height: 16),
+                    _buildTeamHandicapSection(t),
+                  ],
                 ],
               ],
             ),
@@ -277,6 +348,343 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       case BetModuleType.oyeses:        return _oyesesFields(t);
       case BetModuleType.units:         return _unitsFields(t);
     }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SECCIÓN DE ALCANCE — quién juega esta apuesta
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildScopeSection(GolfTheme t) {
+    // En modo equipo el alcance lo determinan los lados; no hay elección.
+    if (_sidesEnabled) {
+      return _scopeCard(
+        t: t,
+        icon: Icons.groups_2_outlined,
+        title: 'Aplica a: Equipos',
+        subtitle: 'Los participantes salen de los lados configurados abajo.',
+        readOnly: true,
+      );
+    }
+
+    final groupCount = widget.group.playerIds.length;
+    final fixedIds   = _current.participantIds;
+    final fixedLabel = fixedIds.length == 2
+        ? '${_playerName(fixedIds[0])} y ${_playerName(fixedIds[1])}'
+        : '${fixedIds.length} jugadores seleccionados';
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Icon(Icons.person_search_outlined, color: t.sub, size: 16),
+        const SizedBox(width: 6),
+        Text('¿Quién juega esta apuesta?',
+            style: TextStyle(
+                color: t.text, fontWeight: FontWeight.w800, fontSize: 13)),
+      ]),
+      const SizedBox(height: 10),
+
+      _scopeOption(
+        t: t,
+        selected: _scopeIsOpen,
+        title: 'Todos los de la partida ($groupCount)',
+        subtitle: 'Quien se sume después entra automáticamente, '
+                  'sin volver a configurar la apuesta.',
+        onTap: () => setState(() => _scopeIsOpen = true),
+      ),
+      const SizedBox(height: 8),
+      _scopeOption(
+        t: t,
+        selected: !_scopeIsOpen,
+        title: 'Solo $fixedLabel',
+        subtitle: 'La lista de jugadores es parte del acuerdo y no cambia.',
+        onTap: fixedIds.length >= 2
+            ? () => setState(() => _scopeIsOpen = false)
+            : null,
+        disabledHint: fixedIds.length < 2
+            ? 'Necesitas al menos 2 jugadores fijos'
+            : null,
+      ),
+    ]);
+  }
+
+  Widget _scopeCard({
+    required GolfTheme t,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    bool readOnly = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.divider),
+      ),
+      child: Row(children: [
+        Icon(icon, color: t.sub, size: 20),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title,
+                style: TextStyle(
+                    color: t.text, fontWeight: FontWeight.w700, fontSize: 13)),
+            const SizedBox(height: 2),
+            Text(subtitle,
+                style: TextStyle(color: t.sub, fontSize: 11, height: 1.3)),
+          ]),
+        ),
+        if (readOnly) Icon(Icons.lock_outline, color: t.sub, size: 15),
+      ]),
+    );
+  }
+
+  Widget _scopeOption({
+    required GolfTheme t,
+    required bool selected,
+    required String title,
+    required String subtitle,
+    required VoidCallback? onTap,
+    String? disabledHint,
+  }) {
+    final enabled = onTap != null;
+    return Opacity(
+      opacity: enabled ? 1 : 0.45,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: selected ? t.primary.withValues(alpha: 0.08) : t.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? t.primary : t.divider,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Row(children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+              color: selected ? t.primary : t.sub,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: TextStyle(
+                        color: selected ? t.primary : t.text,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      )),
+                  const SizedBox(height: 2),
+                  Text(disabledHint ?? subtitle,
+                      style: TextStyle(color: t.sub, fontSize: 11, height: 1.3)),
+                ],
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // HANDICAP DE EQUIPO — allowance WHS
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Golpes que recibiría cada jugador con el allowance actual, para mostrar
+  /// la vista previa. Réplica exacta de GameEngine.buildTeamHcpMap.
+  Map<String, double> _previewStrokes() {
+    final ids = [..._sideAIds, ..._sideBIds];
+    if (ids.isEmpty) return {};
+    final adj = {
+      for (final id in ids) id: _hcpOf(id) * _teamHcp.allowance,
+    };
+    final lowest = adj.values.reduce((a, b) => a < b ? a : b);
+    return adj.map((k, v) => MapEntry(k, v - lowest));
+  }
+
+  /// Handicap con el que se juega la ronda. Prioriza el handicapEnRonda
+  /// (Course Handicap ya ajustado por tee) para que la vista previa coincida
+  /// exactamente con lo que liquida el motor.
+  double _hcpOf(String id) =>
+      widget.roundHandicaps?[id] ?? _lookupPlayer(id).handicapBase;
+
+  Widget _buildTeamHandicapSection(GolfTheme t) {
+    final esScramble = _playMode == TeamPlayMode.scramble;
+    final pct        = (_teamHcp.allowance * 100).round();
+    final preview    = _previewStrokes();
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Icon(Icons.tune, color: t.sub, size: 16),
+        const SizedBox(width: 6),
+        Text('Handicap del equipo',
+            style: TextStyle(
+                color: t.text, fontWeight: FontWeight.w800, fontSize: 13)),
+        const Spacer(),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+          decoration: BoxDecoration(
+            color: t.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text('$pct%',
+              style: TextStyle(
+                  color: t.primary, fontWeight: FontWeight.w800, fontSize: 14)),
+        ),
+      ]),
+      const SizedBox(height: 2),
+      Text(
+        esScramble
+            ? 'Se combina el handicap de los miembros y se aplica este porcentaje.'
+            : 'Cada jugador conserva su handicap reducido a este porcentaje.',
+        style: TextStyle(color: t.sub, fontSize: 11, height: 1.3),
+      ),
+
+      // ── Slider ──────────────────────────────────────────────────────────
+      Slider(
+        value: _teamHcp.allowance.clamp(0.3, 1.0),
+        min: 0.3,
+        max: 1.0,
+        divisions: 14, // pasos de 5%
+        activeColor: t.primary,
+        label: '$pct%',
+        onChanged: (v) => setState(
+            () => _teamHcp = _teamHcp.copyWith(allowance: v)),
+      ),
+
+      // ── Marcas de presets ───────────────────────────────────────────────
+      Row(children: [
+        for (final p in const [
+          (0.50, '50%', 'Scramble'),
+          (0.75, '75%', null),
+          (0.85, '85%', 'Local'),
+          (0.90, '90%', 'WHS'),
+          (1.00, '100%', null),
+        ])
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(
+                  () => _teamHcp = _teamHcp.copyWith(allowance: p.$1)),
+              behavior: HitTestBehavior.opaque,
+              // Área táctil completa: sin esto el objetivo era solo el alto
+              // del texto (~15 px) y fallaban casi todos los toques.
+              child: SizedBox(
+                height: 44,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(p.$2,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: (_teamHcp.allowance - p.$1).abs() < 0.001
+                                ? t.primary
+                                : t.sub,
+                            fontSize: 11,
+                            fontWeight: (_teamHcp.allowance - p.$1).abs() < 0.001
+                                ? FontWeight.w800
+                                : FontWeight.w500,
+                          )),
+                      if (p.$3 != null)
+                        Text(p.$3!,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: t.sub, fontSize: 9)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ]),
+
+      // ── Vista previa de golpes ──────────────────────────────────────────
+      if (preview.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: t.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: t.divider),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Golpes que recibiría cada uno',
+                style: TextStyle(
+                    color: t.sub, fontSize: 10.5, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            ...preview.entries.map((e) {
+              final recibe = e.value;
+              final esScratch = recibe < 0.05;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(children: [
+                  SizedBox(
+                    width: 90,
+                    child: Text(_playerName(e.key),
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: t.text, fontSize: 12)),
+                  ),
+                  Text('HCP ${_hcpOf(e.key).toStringAsFixed(0)}',
+                      style: TextStyle(color: t.sub, fontSize: 11)),
+                  const Spacer(),
+                  Text(
+                    esScratch ? 'scratch' : '+${recibe.toStringAsFixed(1)}',
+                    style: TextStyle(
+                      color: esScratch ? t.sub : t.primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ]),
+              );
+            }),
+          ]),
+        ),
+      ],
+
+      // ── Avanzado: reparto bajo/alto (solo combinado) ────────────────────
+      if (esScramble) ...[
+        const SizedBox(height: 6),
+        GestureDetector(
+          onTap: () => setState(() => _showAdvancedHcp = !_showAdvancedHcp),
+          behavior: HitTestBehavior.opaque,
+          child: Row(children: [
+            Icon(_showAdvancedHcp ? Icons.expand_less : Icons.expand_more,
+                color: t.sub, size: 16),
+            const SizedBox(width: 4),
+            Text('Personalizar reparto entre miembros',
+                style: TextStyle(color: t.sub, fontSize: 11)),
+          ]),
+        ),
+        if (_showAdvancedHcp) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Peso del jugador de MENOR handicap: '
+            '${(_teamHcp.lowWeight * 100).round()}%  ·  '
+            'el otro aporta ${((1 - _teamHcp.lowWeight) * 100).round()}%',
+            style: TextStyle(color: t.sub, fontSize: 11),
+          ),
+          Slider(
+            value: _teamHcp.lowWeight.clamp(0.5, 1.0),
+            min: 0.5, max: 1.0, divisions: 10,
+            activeColor: t.accent,
+            label: '${(_teamHcp.lowWeight * 100).round()}%',
+            onChanged: (v) => setState(
+                () => _teamHcp = _teamHcp.copyWith(lowWeight: v)),
+          ),
+          Text(
+            'Con 50% y reparto 70/30 sale el clásico 35% del bajo + 15% del alto.',
+            style: TextStyle(color: t.sub, fontSize: 10, height: 1.3),
+          ),
+        ],
+      ],
+    ]);
   }
 
   // ══════════════════════════════════════════════════════════════════════════

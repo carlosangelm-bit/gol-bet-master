@@ -559,7 +559,7 @@ void main() {
 
       final entries = BetEngine.computeAll(round);
       final pairE = _nassauEntries(entries, 'A', 'B');
-      print('[G3.3] HCP 9 en ronda parcial: ${pairE.map((e) => '${e.reason}').toList()}');
+      print('[G3.3] HCP 9 en ronda parcial: ${pairE.map((e) => e.reason).toList()}');
 
       // A gana Front (los 9 hoyos jugados)
       _expectSegmentEntry(pairE, 'A', 'B', 50, 'Front 9');
@@ -587,7 +587,7 @@ void main() {
 
       final entries = BetEngine.computeAll(round);
       final pairE = _nassauEntries(entries, 'A', 'B');
-      print('[G4.1] Empate Front: ${pairE.map((e) => '${e.reason}').toList()}');
+      print('[G4.1] Empate Front: ${pairE.map((e) => e.reason).toList()}');
 
       expect(pairE.where((e) => e.reason.contains('Front 9')), isEmpty,
           reason: 'Front empatado no debe generar entrada');
@@ -607,7 +607,7 @@ void main() {
 
       final entries = BetEngine.computeAll(round);
       final pairE = _nassauEntries(entries, 'A', 'B');
-      print('[G4.2] Empate Back: ${pairE.map((e) => '${e.reason}').toList()}');
+      print('[G4.2] Empate Back: ${pairE.map((e) => e.reason).toList()}');
 
       _expectSegmentEntry(pairE, 'A', 'B', 50, 'Front 9');
       expect(pairE.where((e) => e.reason.contains('Back 9')), isEmpty,
@@ -843,7 +843,7 @@ void main() {
 
       final entries = BetEngine.computeAll(round);
       final pairE = _nassauEntries(entries, 'A', 'B');
-      print('[G6.4] Press back-start: ${pairE.map((e) => '${e.reason}').toList()}');
+      print('[G6.4] Press back-start: ${pairE.map((e) => e.reason).toList()}');
 
       // Debe haber press entries en el Front (hoyos 10-18)
       final pressEntries = pairE.where((e) => e.reason.contains('Press')).toList();
@@ -879,7 +879,7 @@ void main() {
   group('G7 – Live status vs final ledger', () {
     /// Helper: verifica que el signo de front/back/total en liveStatus
     /// coincide con las entradas del ledger.
-    void _verifyLiveVsLedger(
+    void verifyLiveVsLedger(
       Round round,
       String p1,
       String p2,
@@ -936,7 +936,7 @@ void main() {
         scores: {'A':scoresA,'B':scoresB},
         course: _course18, totalHoles: 18,
       );
-      _verifyLiveVsLedger(round, 'A', 'B', mod, 'G7.1');
+      verifyLiveVsLedger(round, 'A', 'B', mod, 'G7.1');
     });
 
     test('G7.2 – individual sin press, back-start: live == ledger', () {
@@ -950,7 +950,7 @@ void main() {
         startingNine: StartingNine.back,
         course: _course18, totalHoles: 18,
       );
-      _verifyLiveVsLedger(round, 'A', 'B', mod, 'G7.2 back-start');
+      verifyLiveVsLedger(round, 'A', 'B', mod, 'G7.2 back-start');
     });
 
     test('G7.3 – live: isLive=true no cambia el cálculo vs isLive=false', () {
@@ -1023,7 +1023,7 @@ void main() {
           reason: 'Hoyos 10-18 deben mapearse a "front" en back-start');
       expect(live.back, equals(0),
           reason: 'Hoyos 1-9 (no jugados en este subtest) deben dar back=0');
-      _verifyLiveVsLedger(round, 'A', 'B', mod, 'G7.5');
+      verifyLiveVsLedger(round, 'A', 'B', mod, 'G7.5');
     });
   });
 
@@ -1164,7 +1164,7 @@ void main() {
 
       final entries = BetEngine.computeAll(round);
       final pairE = _nassauEntries(entries, 'A', 'B');
-      print('[G9.1] Parcial 3H: ${pairE.map((e) => '${e.reason}').toList()}');
+      print('[G9.1] Parcial 3H: ${pairE.map((e) => e.reason).toList()}');
 
       // A gana Front (parcial F9)
       _expectSegmentEntry(pairE, 'A', 'B', 50, 'Front 9');
@@ -1188,7 +1188,7 @@ void main() {
 
       final entries = BetEngine.computeAll(round);
       final pairE = _nassauEntries(entries, 'A', 'B');
-      print('[G9.2] Parcial 9H F9: ${pairE.map((e) => '${e.reason}').toList()}');
+      print('[G9.2] Parcial 9H F9: ${pairE.map((e) => e.reason).toList()}');
 
       _expectSegmentEntry(pairE, 'A', 'B', 50, 'Front 9');
       expect(pairE.where((e) => e.reason.contains('Back 9')), isEmpty);

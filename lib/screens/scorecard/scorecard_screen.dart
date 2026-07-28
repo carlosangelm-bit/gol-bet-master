@@ -2858,11 +2858,10 @@ class _AvatarScoreRow extends StatelessWidget {
   final GolfTheme t;
   const _AvatarScoreRow({
     required this.p1, required this.p2,
-    this.score1, this.score2,
     required this.label1, required this.label2,
     required this.highlightP1, required this.highlightP2,
     required this.stateColor, required this.t,
-  });
+  }) : score1 = null : score2 = null;
   @override
   Widget build(BuildContext context) {
     return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
@@ -4098,12 +4097,13 @@ class _HoleByHoleMatch extends StatelessWidget {
         // Ganador del hoyo: compara bruto base vs neto receptor
         bool? baseWins;
         if (grossBase != null && netReceiver != null) {
-          if (grossBase < netReceiver)       baseWins = true;
-          else if (grossBase > netReceiver)  baseWins = false;
+          if (grossBase < netReceiver) {
+            baseWins = true;
+          } else if (grossBase > netReceiver)  baseWins = false;
           // null = empate
         }
 
-        final skinResult = (hasSkins && skinsResults != null)
+        final skinResult = (hasSkins)
             ? skinsResults.firstWhere(
                 (r) => r.hole == ch.hole,
                 orElse: () => SkinHoleResult(
@@ -4483,8 +4483,8 @@ class _SkinsTotalsRow extends StatelessWidget {
     final total1 = last.cumP1;
     final total2 = last.cumP2;
     // Balance SOLO de skins (excluye nassau u otras apuestas del mismo grupo)
-    final _bd   = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
-    final gain1 = _bd[BetModuleType.skins] ?? 0.0;
+    final bd   = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
+    final gain1 = bd[BetModuleType.skins] ?? 0.0;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),

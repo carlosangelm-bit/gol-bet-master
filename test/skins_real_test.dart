@@ -201,7 +201,9 @@ void main() {
     
     final entries = BetEngine.computeGroup(round, group);
     print('\nSkins entries:');
-    for (final e in entries) print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    for (final e in entries) {
+      print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    }
     
     final toCAM  = entries.where((e) => e.toPlayerId == 'CAM').toList();
     final toRAFA = entries.where((e) => e.toPlayerId == 'RAFA').toList();
@@ -266,7 +268,9 @@ void main() {
     
     final entries = BetEngine.computeGroup(round, group);
     print('\nSkins entries con carry:');
-    for (final e in entries) print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [pot=${e.amount}]');
+    for (final e in entries) {
+      print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [pot=${e.amount}]');
+    }
     
     final toCAM = entries.where((e) => e.toPlayerId == 'CAM').toList();
     final totalCAM = toCAM.fold<double>(0, (s, e) => s + e.amount);
@@ -340,7 +344,9 @@ void main() {
     
     final entries = BetEngine.computeGroup(round, group);
     print('\nSkins entries:');
-    for (final e in entries) print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    for (final e in entries) {
+      print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    }
     
     final toCAM  = entries.where((e) => e.toPlayerId == 'CAM').toList();
     final toRAFA = entries.where((e) => e.toPlayerId == 'RAFA').toList();

@@ -1174,7 +1174,7 @@ class _DuelCard extends StatelessWidget {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
                         // Icono y nombre del tipo de apuesta
-                        Text('${betType.icon}', style: const TextStyle(fontSize: 12)),
+                        Text(betType.icon, style: const TextStyle(fontSize: 12)),
                         const SizedBox(width: 6),
                         Expanded(child: Text(betType.label,
                           style: TextStyle(color: t.sub, fontSize: 11, fontWeight: FontWeight.w500))),

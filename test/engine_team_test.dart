@@ -419,11 +419,14 @@ void _sectionB() {
   });
 
   group('B7. Hoyo incompleto → null', () {
-    test('Un jugador del lado sin score → delta = null', () {
+    // REGLA ACTUAL: en Best Ball basta con que UN jugador del lado anote.
+    // Levantar la bola es normal — el que queda fuera del hoyo no lo termina —
+    // y antes eso anulaba el hoyo para ambos lados.
+    test('Un compañero sin score NO anula el hoyo: cuenta la mejor bola', () {
       final round = _makeRound(
         hcps: {'p1':0,'p2':0,'p3':0,'p4':0},
-        // p2 no tiene score en H1
-        gross: {'p1':{1:4},'p3':{1:4},'p4':{1:4}},
+        // p2 levantó la bola en H1; p1 sí anotó y gana el hoyo
+        gross: {'p1':{1:3},'p3':{1:4},'p4':{1:4}},
         course: c,
       );
       final sA = _sideMulti('sA', ['p1','p2']);
@@ -432,7 +435,24 @@ void _sectionB() {
         round: round, sideA: sA, sideB: sB,
         holeNum: 1, useHandicap: false, hcpMap: {},
       );
-      expect(delta, isNull, reason: 'p2 sin score → lado A incompleto → null');
+      expect(delta, 1,
+          reason: 'mejor bola de A = 3 (p1) vs 4 de B → gana A');
+    });
+
+    test('Si NINGÚN jugador del lado anotó, el hoyo sí es null', () {
+      final round = _makeRound(
+        hcps: {'p1':0,'p2':0,'p3':0,'p4':0},
+        // el lado A entero sin score
+        gross: {'p3':{1:4},'p4':{1:4}},
+        course: c,
+      );
+      final sA = _sideMulti('sA', ['p1','p2']);
+      final sB = _sideMulti('sB', ['p3','p4']);
+      final delta = GameEngine.holeDeltaVs(
+        round: round, sideA: sA, sideB: sB,
+        holeNum: 1, useHandicap: false, hcpMap: {},
+      );
+      expect(delta, isNull, reason: 'el lado A no jugó el hoyo');
     });
 
     test('Si todos tienen score el resultado no es null', () {

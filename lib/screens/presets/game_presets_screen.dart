@@ -647,7 +647,11 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
         onTap: () => setSt(() {
-          if (isSel) selected.remove(bt); else selected.add(bt);
+          if (isSel) {
+            selected.remove(bt);
+          } else {
+            selected.add(bt);
+          }
         }),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
@@ -1208,7 +1212,9 @@ class _PresetConfigWidgets {
       }
       update(cfg.copyWith(unitsConfig: UnitsConfig(eventValues: newMap)));
     }
-    for (final e in UnitEventType.values) ctrls[e]!.addListener(rebuild);
+    for (final e in UnitEventType.values) {
+      ctrls[e]!.addListener(rebuild);
+    }
 
     return [
       _label('VALOR POR EVENTO', t),

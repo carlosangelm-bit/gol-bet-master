@@ -35,7 +35,7 @@ class HoleContext {
     if (relativeToPar ==  0) return 'Par';
     if (relativeToPar ==  1) return 'Bogey';
     if (relativeToPar ==  2) return 'Doble';
-    return '+${relativeToPar}';
+    return '+$relativeToPar';
   }
 }
 
@@ -388,12 +388,12 @@ class GameEngine {
     //   Campo 10-18 con front-start → todos son la vuelta de inicio (F9).
     final List<CourseHole> courseF9mp;
     final List<CourseHole> courseB9mp;
-    final _courseHasOnlyF9nums = allCh.isNotEmpty && allCh.every((h) => h.hole <= 9);
-    final _courseHasOnlyB9nums = allCh.isNotEmpty && allCh.every((h) => h.hole >  9);
-    if (_courseHasOnlyF9nums && round.startingNine == StartingNine.back) {
+    final courseHasOnlyF9nums = allCh.isNotEmpty && allCh.every((h) => h.hole <= 9);
+    final courseHasOnlyB9nums = allCh.isNotEmpty && allCh.every((h) => h.hole >  9);
+    if (courseHasOnlyF9nums && round.startingNine == StartingNine.back) {
       courseF9mp = [];
       courseB9mp = [...allCh];
-    } else if (_courseHasOnlyB9nums && round.startingNine == StartingNine.front) {
+    } else if (courseHasOnlyB9nums && round.startingNine == StartingNine.front) {
       courseF9mp = [...allCh];
       courseB9mp = [];
     } else {
@@ -449,11 +449,13 @@ class GameEngine {
 
       // Resultado en perspectiva p1
       if (p1IsBase) {
-        if      (grossBase < netReceiver) status++;
-        else if (grossBase > netReceiver) status--;
+        if      (grossBase < netReceiver) {
+          status++;
+        } else if (grossBase > netReceiver) status--;
       } else {
-        if      (netReceiver < grossBase) status++;
-        else if (netReceiver > grossBase) status--;
+        if      (netReceiver < grossBase) {
+          status++;
+        } else if (netReceiver > grossBase) status--;
       }
     }
     return status;
@@ -497,7 +499,7 @@ class GameEngine {
     );
 
     // ── Score válido de un jugador en el hoyo ─────────────────────────────
-    int? _playerScore(String pid) {
+    int? playerScore(String pid) {
       final s = round.getScore(pid, holeNum);
       if (!s.hasScore) return null;
       if (!useHandicap) return s.grossScore;
@@ -506,19 +508,26 @@ class GameEngine {
       return s.grossScore! - strokes;
     }
 
-    // ── Best ball de un lado: menor score neto/bruto. null si falta score ──
-    int? _bestBall(BetSide side) {
+    // ── Best ball de un lado: menor score neto/bruto de los que SÍ anotaron ──
+    //
+    // Basta con que UN jugador del lado tenga score. Es la regla real de Best
+    // Ball: se juega la mejor bola y quien queda fuera del hoyo no necesita
+    // terminarlo. Antes se exigía score de todos, así que un compañero que
+    // levantaba la bola anulaba el hoyo para ambos lados.
+    //
+    // null solo si NINGÚN jugador del lado anotó → el hoyo no se ha jugado.
+    int? bestBall(BetSide side) {
       int? best;
       for (final pid in side.playerIds) {
-        final sc = _playerScore(pid);
-        if (sc == null) return null; // cualquier jugador sin score → lado incompleto
+        final sc = playerScore(pid);
+        if (sc == null) continue; // ese jugador levantó la bola
         if (best == null || sc < best) best = sc;
       }
       return best;
     }
 
-    final scoreA = _bestBall(sideA);
-    final scoreB = _bestBall(sideB);
+    final scoreA = bestBall(sideA);
+    final scoreB = bestBall(sideB);
 
     // Si algún lado no tiene score completo, el hoyo no está listo
     if (scoreA == null || scoreB == null) return null;
@@ -540,21 +549,38 @@ class GameEngine {
   //   Jugador D: HCP 18 → 13 strokes
   //
   // Este mapa se usa en holeDeltaVs() para calcular scores netos.
-  static Map<String, double> buildTeamHcpMap(Round round, List<String> playerIds) {
+  //
+  // [cfg] aplica el allowance del WHS (paso 2): cada handicap se reduce al
+  // porcentaje acordado ANTES de calcular la diferencia. Con el default
+  // ([TeamHandicapConfig.legacy], 100%) el resultado es idéntico al previo.
+  //
+  // Ejemplo Four-Ball al 90% con HCP 5 / 10 / 12 / 18:
+  //   ajustados → 4.5 / 9 / 10.8 / 16.2   (el más bajo pasa a ser scratch)
+  //   strokes   →   0 / 4.5 / 6.3 / 11.7
+  //
+  // En Scramble los "jugadores" son los virtuales de equipo, cuyo handicap ya
+  // viene combinado desde Setup con lowWeight; aquí solo se les aplica el
+  // allowance, de modo que 50% × (70/30) reproduce el clásico 35%/15%.
+  static Map<String, double> buildTeamHcpMap(
+    Round round,
+    List<String> playerIds, {
+    TeamHandicapConfig cfg = TeamHandicapConfig.legacy,
+  }) {
     if (playerIds.isEmpty) return {};
-    
-    // Encontrar el HCP más bajo (jugador mejor)
-    double lowestHcp = double.infinity;
-    for (final pid in playerIds) {
-      final hcp = round.getHandicap(pid);
-      if (hcp < lowestHcp) lowestHcp = hcp;
-    }
-    
-    // Calcular strokes relativos: cada jugador recibe (su HCP - menor HCP)
-    return {
-      for (final pid in playerIds)
-        pid: round.getHandicap(pid) - lowestHcp,
+
+    // Handicap con allowance aplicado
+    final adjusted = {
+      for (final pid in playerIds) pid: round.getHandicap(pid) * cfg.allowance,
     };
+
+    // Encontrar el HCP más bajo (jugador mejor) — pasa a ser el "scratch"
+    double lowestHcp = double.infinity;
+    for (final v in adjusted.values) {
+      if (v < lowestHcp) lowestHcp = v;
+    }
+
+    // Calcular strokes relativos: cada jugador recibe (su HCP - menor HCP)
+    return adjusted.map((pid, v) => MapEntry(pid, v - lowestHcp));
   }
 
   // ── Calcular handicap de equipo para modo SCRAMBLE ────────────────────────

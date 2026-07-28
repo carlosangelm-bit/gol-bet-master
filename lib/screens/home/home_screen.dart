@@ -431,7 +431,7 @@ class _InvitationCard extends StatefulWidget {
 }
 
 class _InvitationCardState extends State<_InvitationCard> {
-  bool _loading = false;
+  final bool _loading = false;
 
   // Abre el diálogo usando widget.stableContext (HomeScreen) como parentContext.
   void _showJoinDialog() {
@@ -2244,7 +2244,7 @@ class _ActiveRoundView extends StatelessWidget {
                       final autoVal = (playingHcp(pA) - playingHcp(pB)).round();
                       final manualVal = manuals[pA.id]?[pB.id];
                       final isManual  = manualVal != null;
-                      final current   = isManual ? manualVal!.round() : autoVal;
+                      final current   = isManual ? manualVal.round() : autoVal;
 
                       void applyEdit(int newVal) {
                         setSt(() {
@@ -2534,7 +2534,7 @@ class _ActiveRoundView extends StatelessWidget {
         builder: (ctx2, setSt) {
 
           // ── Construir mapa de overrides desde los campos del UI ───────────
-          Map<String, Map<String, dynamic>> _buildPairOverridesMap() {
+          Map<String, Map<String, dynamic>> buildPairOverridesMap() {
             final result = <String, Map<String, dynamic>>{};
             final ovKey  = cfg.type == BetModuleType.units ? 'allEvents' : 'value';
             final defVal = cfg.baseValue;
@@ -2658,6 +2658,10 @@ class _ActiveRoundView extends StatelessWidget {
                               t: t,
                               courseInfo: prov.round!.course,
                               players: players,
+                              roundHandicaps: {
+                                for (final rp in prov.round!.roundPlayers)
+                                  rp.playerId: rp.handicapEnRonda,
+                              },
                               onSave: (updated) {
                                 setSt(() { cfg = updated; });
                               },
@@ -2823,7 +2827,7 @@ class _ActiveRoundView extends StatelessWidget {
                       child: ElevatedButton(
                         onPressed: () {
                           final pairOvsMap = supportsOverride
-                              ? _buildPairOverridesMap()
+                              ? buildPairOverridesMap()
                               : <String, Map<String, dynamic>>{};
 
                           final updatedMods =
@@ -3000,6 +3004,10 @@ class _ActiveRoundView extends StatelessWidget {
         t: t,
         courseInfo: prov.round!.course,
         players: prov.round!.players,
+        roundHandicaps: {
+          for (final rp in prov.round!.roundPlayers)
+            rp.playerId: rp.handicapEnRonda,
+        },
         onSave: (updatedMod) {
           final newModules = group.modules.map((m) => m.id == updatedMod.id ? updatedMod : m).toList();
           final newGroup   = BetGroup(id: group.id, name: group.name, format: group.format, playerIds: group.playerIds, modules: newModules);
@@ -3099,7 +3107,11 @@ class _ActiveRoundView extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
         onTap: alreadyAdded ? null : () => setSt(() {
-          if (isSel) selected.remove(bt); else selected.add(bt);
+          if (isSel) {
+            selected.remove(bt);
+          } else {
+            selected.add(bt);
+          }
         }),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
@@ -3791,7 +3803,7 @@ class _InviteGuestButtonState extends State<_InviteGuestButton> {
               Text(
                 _limitReached
                     ? '5/5 jugadores en la ronda'
-                    : '${_realPlayerCount}/5 jugadores · Genera un enlace de invitación',
+                    : '$_realPlayerCount/5 jugadores · Genera un enlace de invitación',
                 style: TextStyle(color: t.sub, fontSize: 11),
               ),
             ])),

@@ -275,8 +275,9 @@ void main() {
       for (final pid in pids) {
         double bal = 0;
         for (final e in medalEntries) {
-          if (e.toPlayerId == pid) bal += e.amount;
-          else if (e.fromPlayerId == pid) bal -= e.amount;
+          if (e.toPlayerId == pid) {
+            bal += e.amount;
+          } else if (e.fromPlayerId == pid) bal -= e.amount;
         }
         final fmt = bal >= 0 ? '+\$${bal.toStringAsFixed(0)}' : '-\$${bal.abs().toStringAsFixed(0)}';
         print('  ${pid.padRight(10)}: $fmt');
@@ -303,8 +304,11 @@ void main() {
         } else {
           double balP1 = 0;
           for (final e in pairEntries) {
-            if (e.toPlayerId == p1) balP1 += e.amount;
-            else balP1 -= e.amount;
+            if (e.toPlayerId == p1) {
+              balP1 += e.amount;
+            } else {
+              balP1 -= e.amount;
+            }
           }
           final winner = balP1 > 0 ? p1 : p2;
           final loser  = balP1 > 0 ? p2 : p1;
@@ -358,12 +362,14 @@ void main() {
       for (final pid in sorted) {
         double matchBal = 0, medalBal = 0;
         for (final e in matchEntries) {
-          if (e.toPlayerId == pid) matchBal += e.amount;
-          else if (e.fromPlayerId == pid) matchBal -= e.amount;
+          if (e.toPlayerId == pid) {
+            matchBal += e.amount;
+          } else if (e.fromPlayerId == pid) matchBal -= e.amount;
         }
         for (final e in medalEntries) {
-          if (e.toPlayerId == pid) medalBal += e.amount;
-          else if (e.fromPlayerId == pid) medalBal -= e.amount;
+          if (e.toPlayerId == pid) {
+            medalBal += e.amount;
+          } else if (e.fromPlayerId == pid) medalBal -= e.amount;
         }
         final total = balances[pid] ?? 0;
         final emoji = total > 0 ? '🟢' : (total < 0 ? '🔴' : '⚪');

@@ -582,8 +582,11 @@ class _BettingGroupEditorScreenState
                           value:       sel,
                           activeColor: t.primary,
                           onChanged:   (_) => setSt(() {
-                            if (sel) selected.remove(p.id);
-                            else     selected.add(p.id);
+                            if (sel) {
+                              selected.remove(p.id);
+                            } else {
+                              selected.add(p.id);
+                            }
                           }),
                           title: Text(p.name,
                               style: TextStyle(color: t.text,
@@ -1080,7 +1083,7 @@ class _PairRuleCardState extends State<_PairRuleCard> {
                       selected.addAll(others.map((e) => e.key));
                     }
                   }),
-                  activeColor: t.primary,
+                  activeThumbColor: t.primary,
                 ),
               ]),
             ),
@@ -1100,8 +1103,11 @@ class _PairRuleCardState extends State<_PairRuleCard> {
                     value:       sel,
                     activeColor: t.primary,
                     onChanged:   (_) => setSt(() {
-                      if (sel) selected.remove(e.key);
-                      else     selected.add(e.key);
+                      if (sel) {
+                        selected.remove(e.key);
+                      } else {
+                        selected.add(e.key);
+                      }
                     }),
                     title: Text('$nameA2 vs $nameB2',
                         style: TextStyle(color: t.text,
@@ -1560,8 +1566,11 @@ class _ApplyToManySheetState extends State<_ApplyToManySheet> {
                   final sel  = _targetIndices.contains(idx);
                   return GestureDetector(
                     onTap: () => setState(() {
-                      if (sel) _targetIndices.remove(idx);
-                      else     _targetIndices.add(idx);
+                      if (sel) {
+                        _targetIndices.remove(idx);
+                      } else {
+                        _targetIndices.add(idx);
+                      }
                     }),
                     child: Container(
                       margin: const EdgeInsets.only(bottom: 6),

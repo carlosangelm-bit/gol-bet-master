@@ -290,8 +290,11 @@ String verifyBestBallCalculations(Round round) {
         final net = sc.grossScore! - strokesHere;
         if (bestNeto == null || net < bestNeto) bestNeto = net;
       }
-      if (team == teamA) netoA = bestNeto;
-      else netoB = bestNeto;
+      if (team == teamA) {
+        netoA = bestNeto;
+      } else {
+        netoB = bestNeto;
+      }
     }
     final winner = netoA == null || netoB == null
         ? 'N/A'

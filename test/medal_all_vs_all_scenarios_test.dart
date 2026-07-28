@@ -162,7 +162,7 @@ void _printPairDiag(Round round, String pA, String pB,
   ).toList();
 
   print('  ┌─ Par: $pA vs $pB');
-  print('  │  gross($pA)=${grossA}  gross($pB)=${grossB}');
+  print('  │  gross($pA)=$grossA  gross($pB)=$grossB');
   print('  │  manual[$pA][$pB]=${mAB ?? "null"}  manual[$pB][$pA]=${mBA ?? "null"}');
   print('  │  recv($pA,$pB)=$recvAB  recv($pB,$pA)=$recvBA');
   print('  │  netApprox($pA)=$netA  netApprox($pB)=$netB');
@@ -214,7 +214,7 @@ Round _roundThroughJson(Round r) {
   // ── Deserializar (replica roundFromJson de round_provider.dart) ─────────
   List<dynamic> asList(dynamic v) => v is List ? v : [];
   Map<String, dynamic> asMap(dynamic v) =>
-      v is Map ? Map<String, dynamic>.from(v as Map) : <String, dynamic>{};
+      v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
 
   final players = asList(decoded['players'])
       .map((p) => Player.fromJson(asMap(p))).toList();

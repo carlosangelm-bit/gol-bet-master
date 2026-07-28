@@ -7,9 +7,43 @@ import '../models/models.dart';
 import 'bet_engine.dart';
 
 class LedgerEngine {
+  // ── Memoización del cálculo completo ──────────────────────────────────────
+  //
+  // Cada método público necesita el ledger entero. La UI los llama decenas de
+  // veces por frame (breakdownBetween se invoca una vez por par de jugadores,
+  // y el IndexedStack de AppShell reconstruye Tarjeta y Resultados aunque estén
+  // ocultas), así que sin caché son O(n²) recálculos completos por pulsación.
+  //
+  // Round es inmutable — copyWith devuelve una instancia nueva ante cualquier
+  // cambio — por lo que la identidad del objeto es una clave de caché válida.
+  static Round?             _cacheKey;
+  static LedgerComputation? _cacheValue;
+
+  static LedgerComputation _computation(Round round) {
+    final cached = _cacheValue;
+    if (cached != null && identical(_cacheKey, round)) return cached;
+    final fresh = BetEngine.safeComputeAll(round);
+    _cacheKey   = round;
+    _cacheValue = fresh;
+    return fresh;
+  }
+
+  /// Invalida la caché. Solo necesario en tests que mutan una Round en sitio.
+  static void invalidateCache() {
+    _cacheKey   = null;
+    _cacheValue = null;
+  }
+
+  /// Entries de la ronda, sin lanzar si hay datos de ventajas corruptos.
+  static List<LedgerEntry> entriesOf(Round round) => _computation(round).entries;
+
+  /// Mensajes de integridad de los módulos que no se pudieron liquidar.
+  /// Vacío si todo está correcto. La UI debería mostrarlos como aviso.
+  static List<String> integrityErrors(Round round) => _computation(round).errors;
+
   /// Balance neto por jugador (positivo = gana, negativo = debe)
   static Map<String, double> playerBalances(Round round) {
-    final entries = BetEngine.computeAll(round);
+    final entries = entriesOf(round);
     final balances = <String, double>{for (final p in round.players) p.id: 0.0};
     for (final e in entries) {
       if (e.amount <= 0) continue;
@@ -21,7 +55,7 @@ class LedgerEngine {
 
   /// Neteo simplificado: deudas mínimas entre pares
   static List<NetDebt> compute(Round round) {
-    return _netEntries(BetEngine.computeAll(round), round.players);
+    return _netEntries(entriesOf(round), round.players);
   }
 
   static List<NetDebt> _netEntries(List<LedgerEntry> entries, List<Player> players) {
@@ -56,7 +90,7 @@ class LedgerEngine {
 
   /// Balance entre dos jugadores específicos (desde perspectiva de p1Id)
   static double balanceBetween(Round round, String p1Id, String p2Id) {
-    final entries = BetEngine.computeAll(round);
+    final entries = entriesOf(round);
     double balance = 0;
     for (final e in entries) {
       if (e.fromPlayerId == p1Id && e.toPlayerId == p2Id) balance -= e.amount;
@@ -67,7 +101,7 @@ class LedgerEngine {
 
   /// Entries de un jugador contra otro, agrupados por tipo
   static Map<BetModuleType, double> breakdownBetween(Round round, String p1Id, String p2Id) {
-    final entries = BetEngine.computeAll(round);
+    final entries = entriesOf(round);
     final result = <BetModuleType, double>{};
     for (final e in entries) {
       double delta = 0;
@@ -80,7 +114,7 @@ class LedgerEngine {
 
   /// Todos los entries agrupados por tipo de apuesta (para la vista detalle)
   static Map<BetModuleType, List<LedgerEntry>> byBetType(Round round) {
-    final entries = BetEngine.computeAll(round);
+    final entries = entriesOf(round);
     final result = <BetModuleType, List<LedgerEntry>>{};
     for (final e in entries) {
       result[e.betType] = [...(result[e.betType] ?? []), e];
@@ -90,7 +124,7 @@ class LedgerEngine {
 
   /// Balance acumulado hoyo a hoyo de un jugador (para curva de progreso)
   static Map<int, double> runningBalance(Round round, String playerId) {
-    final entries = BetEngine.computeAll(round);
+    final entries = entriesOf(round);
     final result = <int, double>{};
     double running = 0;
     // Iterar sobre los hoyos reales del curso ordenados, no 1..18 hardcoded

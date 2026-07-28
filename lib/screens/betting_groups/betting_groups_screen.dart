@@ -10,7 +10,6 @@ import '../../providers/player_provider.dart';
 import '../../providers/round_provider.dart';
 import '../../widgets/common_widgets.dart';
 import 'betting_group_editor_screen.dart';
-import '../../services/player_service.dart' show PlayerWithLink;
 
 class BettingGroupsScreen extends StatelessWidget {
   const BettingGroupsScreen({super.key});

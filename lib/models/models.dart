@@ -1597,12 +1597,10 @@ class BetModuleInstance {
 
     // sides: null si no existe la clave (modo individual clásico, retrocompat)
     final rawSides = j['sides'] as List?;
-    final sides = rawSides != null
-        ? rawSides.map((s) {
+    final sides = rawSides?.map((s) {
             try { return BetSide.fromJson(s is Map ? Map<String, dynamic>.from(s) : {}); }
             catch (_) { return null; }
-          }).whereType<BetSide>().toList()
-        : null;
+          }).whereType<BetSide>().toList();
 
     return BetModuleInstance(
       id:   (j['id']   as String?) ?? 'mod_${DateTime.now().millisecondsSinceEpoch}',
@@ -1913,7 +1911,7 @@ class BetModuleInstance {
     final ts = DateTime.now().millisecondsSinceEpoch;
 
     // ── Función interna: construye un módulo 1v1 entre dos jugadores ──────────
-    BetModuleInstance _make1v1(String pA, String pB, int index) {
+    BetModuleInstance make1v1(String pA, String pB, int index) {
       final uid = '${type.name}_${structure.name}_${pA}_${pB}_$ts$index';
       return BetModuleInstance(
         id: uid, type: type, name: type.label,
@@ -1935,7 +1933,7 @@ class BetModuleInstance {
     }
 
     // ── Función interna: construye un módulo grupal ───────────────────────────
-    BetModuleInstance _makeGroup(List<String> pids) {
+    BetModuleInstance makeGroup(List<String> pids) {
       final uid = '${type.name}_${structure.name}_$ts';
       return BetModuleInstance(
         id: uid, type: type, name: type.label,
@@ -1960,14 +1958,14 @@ class BetModuleInstance {
         if (participantIds.length < 2) {
           throw ArgumentError('group requiere mínimo 2 jugadores.');
         }
-        return [_makeGroup(participantIds)];
+        return [makeGroup(participantIds)];
 
       // ── headToHead: exactamente 2 jugadores ─────────────────────────────────
       case BetStructure.headToHead:
         if (participantIds.length != 2) {
           throw ArgumentError('headToHead requiere exactamente 2 jugadores.');
         }
-        return [_makeGroup(participantIds)];
+        return [makeGroup(participantIds)];
 
       // ── anchorVsMany: jugador ancla vs cada rival (N módulos 1v1) ───────────
       case BetStructure.anchorVsMany:
@@ -1981,7 +1979,7 @@ class BetModuleInstance {
         return rivals
             .asMap()
             .entries
-            .map((e) => _make1v1(anchorPlayerId, e.value, e.key))
+            .map((e) => make1v1(anchorPlayerId, e.value, e.key))
             .toList();
 
       // ── roundRobin: todas las combinaciones C(n,2) ──────────────────────────
@@ -1993,7 +1991,7 @@ class BetModuleInstance {
         int idx = 0;
         for (int i = 0; i < participantIds.length; i++) {
           for (int k = i + 1; k < participantIds.length; k++) {
-            result.add(_make1v1(participantIds[i], participantIds[k], idx++));
+            result.add(make1v1(participantIds[i], participantIds[k], idx++));
           }
         }
         return result;

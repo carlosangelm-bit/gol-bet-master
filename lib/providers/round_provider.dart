@@ -167,11 +167,22 @@ Round roundFromJson(Map<String, dynamic> j) {
 Map<String, double> _buildPairSliding(
     Map<String, dynamic> j, List<RoundPlayer> roundPlayers) {
   // ── Paso 1: leer campo canónico si existe ─────────────────────────────────
+  // Se descartan las claves mal formadas. Una versión anterior escribía la
+  // clave literal '$lowId|$highId' (interpolación escapada por error), y ese
+  // valor quedó persistido en Firestore/prefs de rondas ya creadas. Si tras
+  // sanear no queda ninguna entrada válida, se cae a la migración legacy.
   final rawPs = j['pairSliding'];
-  if (rawPs != null && rawPs is Map && (rawPs as Map).isNotEmpty) {
-    return (rawPs as Map).map(
-      (k, v) => MapEntry(k.toString(), (v as num?)?.toDouble() ?? 0.0),
-    );
+  if (rawPs is Map && rawPs.isNotEmpty) {
+    final sanitized = <String, double>{};
+    for (final e in rawPs.entries) {
+      final k = e.key.toString();
+      if (!_isValidPairKey(k)) {
+        debugPrint('[pairSliding] Clave inválida descartada: "$k"');
+        continue;
+      }
+      sanitized[k] = (e.value as num?)?.toDouble() ?? 0.0;
+    }
+    if (sanitized.isNotEmpty) return sanitized;
   }
 
   // ── Paso 2: migración desde manualHandicaps legacy ────────────────────────
@@ -186,9 +197,8 @@ Map<String, double> _buildPairSliding(
       final m1 = entry.value; // cuánto recibe p1 de p2 (según legacy)
 
       // Clave canónica: ids ordenados lexicográficamente
-      final lowId  = p1.compareTo(p2) <= 0 ? p1 : p2;
-      final highId = p1.compareTo(p2) <= 0 ? p2 : p1;
-      final key = '\$lowId|\$highId';
+      final lowId = p1.compareTo(p2) <= 0 ? p1 : p2;
+      final key   = _pairKeyOf(p1, p2);
 
       if (seen.contains(key)) continue; // ya procesado desde el otro sentido
       seen.add(key);
@@ -200,36 +210,38 @@ Map<String, double> _buildPairSliding(
       );
       final m2 = rp2.manualHandicaps[p1]; // cuánto recibe p2 de p1 (legacy)
 
-      double canonicalValue; // valor desde perspectiva de lowId
-      if (m1 != null && m2 != null) {
-        // Ambos lados existen: validar consistencia (m1 == -m2)
-        if ((m1 + m2).abs() > 0.01) {
-          // Inconsistencia legacy: registrar pero no migrar silenciosamente
-          // El error se lanzará cuando el engine lo consulte.
-          // Guardamos el valor de m1 como señal de conflicto y continuamos.
-          debugPrint(
-            '[pairSliding] Inconsistencia legacy en par (\$p1, \$p2): '
-            'manual[\$p1][\$p2]=\$m1 pero manual[\$p2][\$p1]=\$m2 '
-            '(se esperaba \$m1 == \${-m2}). '
-            'El engine lanzará StateError al consultar este par.',
-          );
-          // Persistir ambos en manualHandicaps (sin cambiar) — el engine lo detecta
-          continue; // no migrar este par conflictivo
-        }
-        // Consistentes: valor canónico es recv(lowId, highId)
-        canonicalValue = (p1 == lowId) ? m1 : -m1;
-      } else if (m1 != null) {
-        // Solo un lado: inferir el canónico
-        canonicalValue = (p1 == lowId) ? m1 : -m1;
-      } else {
-        continue; // null — no hay dato, saltar
+      // Ambos lados existen: deben ser opuestos (m1 == -m2).
+      if (m2 != null && (m1 + m2).abs() > 0.01) {
+        // Inconsistencia legacy: no se migra este par. El engine la detecta y
+        // BetEngine.computeAll la reporta sin lanzar (ver safeComputeAll).
+        debugPrint(
+          '[pairSliding] Inconsistencia legacy en par ($p1, $p2): '
+          'manual[$p1][$p2]=$m1 pero manual[$p2][$p1]=$m2 '
+          '(se esperaba $m1 == ${-m2}). Par omitido en la migración.',
+        );
+        continue;
       }
 
-      result[key] = canonicalValue;
+      // Valor canónico desde la perspectiva del lowId
+      result[key] = (p1 == lowId) ? m1 : -m1;
     }
   }
 
   return result;
+}
+
+/// Clave canónica de un par: ids en orden lexicográfico separados por '|'.
+String _pairKeyOf(String a, String b) =>
+    a.compareTo(b) <= 0 ? '$a|$b' : '$b|$a';
+
+/// true si [key] tiene la forma canónica 'idBajo|idAlto' con ids no vacíos,
+/// distintos y en orden lexicográfico.
+bool _isValidPairKey(String key) {
+  final parts = key.split('|');
+  if (parts.length != 2) return false;
+  if (parts[0].isEmpty || parts[1].isEmpty) return false;
+  if (parts[0] == parts[1]) return false;
+  return parts[0].compareTo(parts[1]) < 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -601,41 +613,169 @@ class RoundProvider extends ChangeNotifier {
     _persist();
   }
 
-  /// Actualiza la ventaja manual de p1 hacia p2 en sus RoundPlayers.
-  /// [strokes] positivo = p1 recibe de p2; null = eliminar override manual.
-  void updateManualHandicap(String p1Id, String p2Id, double? strokes) {
-    if (_round == null) return;
+  /// Fija la ventaja acordada del par (p1, p2) de forma ATÓMICA y BILATERAL.
+  ///
+  /// [strokes] positivo = p1 recibe de p2; negativo = p1 da; null = eliminar
+  /// el acuerdo y volver a la diferencia de HCP.
+  ///
+  /// Escribe la fuente canónica ([Round.pairSliding]) y espeja el legacy
+  /// [RoundPlayer.manualHandicaps] en AMBOS jugadores en una sola operación.
+  ///
+  /// IMPORTANTE — no llamar dos veces para "limpiar el otro lado". La clave de
+  /// pairSliding es simétrica: una segunda llamada invertida con strokes=null
+  /// borraría el valor que acaba de escribir la primera.
+  void setPairSliding(String p1Id, String p2Id, double? strokes) {
+    if (_round == null || p1Id == p2Id) return;
+
+    // ── Fuente canónica ────────────────────────────────────────────────────
+    final key   = _pairKey(p1Id, p2Id);
+    final newPs = Map<String, double>.from(_round!.pairSliding);
+    if (strokes == null) {
+      newPs.remove(key);
+    } else {
+      final lowId = p1Id.compareTo(p2Id) <= 0 ? p1Id : p2Id;
+      newPs[key] = (p1Id == lowId) ? strokes : -strokes;
+    }
+
+    // ── Espejo legacy en los DOS RoundPlayers ──────────────────────────────
+    // Si solo se escribiera un lado, quedaría un manualHandicaps unilateral
+    // desactualizado que el engine podría leer como fuente alternativa.
     final newRPs = _round!.roundPlayers.map((rp) {
-      if (rp.playerId != p1Id) return rp;
+      if (rp.playerId != p1Id && rp.playerId != p2Id) return rp;
+      final otherId = rp.playerId == p1Id ? p2Id : p1Id;
       final updated = Map<String, double>.from(rp.manualHandicaps);
       if (strokes == null) {
-        updated.remove(p2Id);
+        updated.remove(otherId);
       } else {
-        updated[p2Id] = strokes;
+        updated[otherId] = rp.playerId == p1Id ? strokes : -strokes;
       }
       return RoundPlayer(
-        playerId: rp.playerId,
+        playerId:        rp.playerId,
         handicapEnRonda: rp.handicapEnRonda,
-        tee: rp.tee,
+        tee:             rp.tee,
         manualHandicaps: updated,
       );
     }).toList();
-    // ── Sincronizar pairSliding con el nuevo valor ─────────────────────────
-    // Siempre escribir en pairSliding (fuente canónica) además del legacy
-    // manualHandicaps, para que _HoleByHoleMatch y BetEngine lean el valor
-    // actualizado inmediatamente en la tarjeta 1v1.
-    final newPs = Map<String, double>.from(_round!.pairSliding);
-    if (strokes == null) {
-      newPs.remove(_pairKey(p1Id, p2Id));
-    } else {
-      final lowId     = p1Id.compareTo(p2Id) <= 0 ? p1Id : p2Id;
-      final highId    = p1Id.compareTo(p2Id) <= 0 ? p2Id : p1Id;
-      final canonical = (p1Id == lowId) ? strokes : -strokes;
-      newPs['$lowId|$highId'] = canonical;
-    }
+
     _round = _round!.copyWith(roundPlayers: newRPs, pairSliding: newPs);
     notifyListeners();
     _persist();
+  }
+
+  /// Actualiza la ventaja manual de p1 hacia p2.
+  /// [strokes] positivo = p1 recibe de p2; null = eliminar override manual.
+  ///
+  /// Alias de [setPairSliding], que ya mantiene ambos lados sincronizados.
+  void updateManualHandicap(String p1Id, String p2Id, double? strokes) =>
+      setPairSliding(p1Id, p2Id, strokes);
+
+  // ── Alta de jugador en las apuestas de una partida ─────────────────────────
+
+  /// Suma [playerId] a la partida [groupId] de la ronda en curso.
+  ///
+  /// El jugador queda dentro de todas las apuestas de esa partida con alcance
+  /// [BetScopeKind.everyone] sin tocar su configuración: esos módulos resuelven
+  /// participantes contra `group.playerIds` en cada cálculo.
+  ///
+  /// Las apuestas de alcance fijo (duelo, subconjunto, equipos) NO se tocan —
+  /// meter a alguien en un duelo acordado entre otros dos no sería correcto.
+  ///
+  /// Devuelve cuántos módulos pasan a incluirlo (0 si no había ninguno con
+  /// alcance abierto, lo que indica que hay que añadirlo a mano).
+  int addPlayerToGroupBets(String playerId, String groupId) {
+    if (_round == null) return 0;
+
+    final groups = _round!.betGroups;
+    final gi = groups.indexWhere((g) => g.id == groupId);
+    if (gi < 0) return 0;
+
+    final group = groups[gi];
+    if (group.playerIds.contains(playerId)) {
+      // Ya estaba: informar cuántas apuestas abiertas le aplican.
+      return group.modules.where((m) => m.effectiveScope.isEveryone).length;
+    }
+
+    final newGroups = List<BetGroup>.from(groups);
+    newGroups[gi] = group.copyWith(
+      playerIds: [...group.playerIds, playerId],
+    );
+
+    // Asegurar que el jugador tenga contenedores de score/eventos, si no la
+    // captura y los motores lo tratan como ausente.
+    final newScores = Map<String, Map<int, HoleScore>>.from(_round!.scores);
+    newScores.putIfAbsent(playerId, () => {});
+    final newEvents = Map<String, Map<int, List<HoleEvent>>>.from(_round!.events);
+    newEvents.putIfAbsent(playerId, () => {});
+
+    // RoundPlayer con su handicap, si aún no existe
+    final newRPs = List<RoundPlayer>.from(_round!.roundPlayers);
+    if (!newRPs.any((rp) => rp.playerId == playerId)) {
+      final player = _round!.players
+          .where((p) => p.id == playerId)
+          .firstOrNull;
+      newRPs.add(RoundPlayer(
+        playerId: playerId,
+        handicapEnRonda: player?.handicapBase ?? 0,
+      ));
+    }
+
+    _round = _round!.copyWith(
+      betGroups:    newGroups,
+      scores:       newScores,
+      events:       newEvents,
+      roundPlayers: newRPs,
+    );
+    notifyListeners();
+    _persist();
+
+    return newGroups[gi].modules.where((m) => m.effectiveScope.isEveryone).length;
+  }
+
+  // ── Apertura de alcance en rondas ya creadas ───────────────────────────────
+
+  /// true si [mod] cubre exactamente a toda su partida pero tiene el alcance
+  /// fijado a esa lista concreta de jugadores.
+  ///
+  /// Abrirlo NO cambia quién juega hoy — los participantes son los mismos —,
+  /// solo hace que quien se sume más tarde entre automáticamente.
+  static bool _isOpenable(BetModuleInstance mod, BetGroup group) {
+    if (mod.effectiveScope.isEveryone) return false; // ya está abierto
+    if (mod.hasTeamSides) return false;              // los equipos son fijos
+    final pids = mod.participantIds.toSet();
+    if (pids.length < 2) return false;
+    final groupIds = group.playerIds.toSet();
+    return pids.length == groupIds.length && pids.containsAll(groupIds);
+  }
+
+  /// Cuántas apuestas de la ronda podrían abrirse a toda su partida.
+  int get openableBetsCount {
+    if (_round == null) return 0;
+    return _round!.betGroups.fold(
+      0,
+      (acc, g) => acc + g.modules.where((m) => _isOpenable(m, g)).length,
+    );
+  }
+
+  /// Convierte a alcance abierto todas las apuestas de [openableBetsCount].
+  /// Devuelve cuántas se convirtieron.
+  int openAllWholeGroupBets() {
+    if (_round == null) return 0;
+    int changed = 0;
+
+    final newGroups = _round!.betGroups.map((g) {
+      final mods = g.modules.map((m) {
+        if (!_isOpenable(m, g)) return m;
+        changed++;
+        return m.copyWith(scope: const BetScope.everyone());
+      }).toList();
+      return g.copyWith(modules: mods);
+    }).toList();
+
+    if (changed == 0) return 0;
+    _round = _round!.copyWith(betGroups: newGroups);
+    notifyListeners();
+    _persist();
+    return changed;
   }
 
   // ── Permisos colaborativos ─────────────────────────────────────────────────
@@ -936,8 +1076,7 @@ class RoundProvider extends ChangeNotifier {
   // ── Helpers de sincronización pairSliding ──────────────────────────────────
 
   /// Clave canónica: ids en orden lexicográfico separados por '|'.
-  static String _pairKey(String a, String b) =>
-      a.compareTo(b) <= 0 ? '$a|$b' : '$b|$a';
+  static String _pairKey(String a, String b) => _pairKeyOf(a, b);
 
   /// Reconstruye pairSliding a partir de los manualHandicaps de [roundPlayers].
   ///

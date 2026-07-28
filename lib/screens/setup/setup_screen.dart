@@ -1292,6 +1292,7 @@ class _SetupScreenState extends State<SetupScreen> {
         // ── Partidas configuradas ─────────────────────────────────────────
         if (_groups.isNotEmpty) ...[
           GSectionHeader(title: 'PARTIDAS CONFIGURADAS'),
+          _betsLegend(t),
           ..._groups.asMap().entries.map((e) => _groupCard(e.key, e.value, t)),
           const SizedBox(height: 8),
         ],
@@ -1472,6 +1473,66 @@ class _SetupScreenState extends State<SetupScreen> {
     FirestoreService.saveGamePreset(preset.copyWith(useCount: preset.useCount + 1));
   }
 
+  /// Leyenda que explica cómo leer la lista de apuestas.
+  ///
+  /// Las tarjetas agrupan apuestas idénticas, así que "1 apuesta ×6" no es
+  /// obvio a primera vista; y el alta de jugador con un icono solo pasaba
+  /// desapercibida.
+  Widget _betsLegend(GolfTheme t) {
+    Widget linea(IconData icon, String titulo, String detalle) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              margin: const EdgeInsets.only(top: 1),
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: t.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(icon, color: t.primary, size: 13),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(titulo,
+                    style: TextStyle(
+                        color: t.text, fontWeight: FontWeight.w700, fontSize: 12)),
+                Text(detalle,
+                    style: TextStyle(color: t.sub, fontSize: 11, height: 1.3)),
+              ]),
+            ),
+          ]),
+        );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 5),
+      decoration: BoxDecoration(
+        color: t.primary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.primary.withValues(alpha: 0.25)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.lightbulb_outline, color: t.primary, size: 15),
+          const SizedBox(width: 6),
+          Text('Cómo leer esta lista',
+              style: TextStyle(
+                  color: t.primary, fontWeight: FontWeight.w800, fontSize: 12.5)),
+        ]),
+        const SizedBox(height: 10),
+        linea(Icons.layers_outlined, 'Una tarjeta = una apuesta',
+            'Las apuestas iguales se agrupan. "×6" significa que ese mismo '
+            'acuerdo corre en 6 duelos.'),
+        linea(Icons.call_split, 'Lo distinto se separa solo',
+            'Si un duelo tiene otro importe, aparece en su propia tarjeta.'),
+        linea(Icons.person_add_alt_1, 'Puedes meter jugadores a cada apuesta',
+            'El botón verde con el número indica cuántos jugadores de la '
+            'partida aún NO juegan esa apuesta. Tócalo para añadirlos.'),
+      ]),
+    );
+  }
+
   Widget _groupCard(int idx, BetGroup g, GolfTheme t) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1532,6 +1593,12 @@ class _SetupScreenState extends State<SetupScreen> {
 
   Widget _moduleTile(int groupIdx, int modIdx, BetModuleInstance mod, BetGroup g, GolfTheme t) {
     final pCount = mod.participantIds.isEmpty ? g.playerIds.length : mod.participantIds.length;
+    // Familia de un solo módulo: se reutiliza la misma lógica de alta que en
+    // las tarjetas agrupadas.
+    final familiaUnica = [MapEntry(modIdx, mod)];
+    final faltantes = mod.participantIds.isEmpty
+        ? const <Player>[]   // ya cubre a toda la partida
+        : _playersMissingFrom(familiaUnica, g);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
@@ -1584,6 +1651,12 @@ class _SetupScreenState extends State<SetupScreen> {
 
             _infoChip(mod.useHandicap ? 'Net' : 'Gross', t.primary, t),
           ]),
+
+          // ── Alta de jugadores ────────────────────────────────────────────
+          if (!mod.hasTeamSides && faltantes.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _addPlayersRow(groupIdx, familiaUnica, g, faltantes, t),
+          ],
         ]),
       ),
     );
@@ -1606,41 +1679,186 @@ class _SetupScreenState extends State<SetupScreen> {
   /// El orden de aparición sigue el orden del primer módulo de cada familia.
   List<Widget> _renderModules(int groupIdx, BetGroup g, GolfTheme t) {
     final modules = g.modules;
-    // Mantener orden de inserción de familias.
-    // La clave es COMPUESTA: betGroupId + tipo, para que Nassau/Skins/Oyeses/Units
-    // con el mismo betGroupId generen cards independientes.
-    final seen   = <String>{};            // 'betGroupId|typeName' ya renderizados
+
+    // ── Agrupar por CONFIGURACIÓN, no por par ────────────────────────────────
+    //
+    // Antes la clave incluía el betGroupId, que BettingGroup.toBetModuleInstances
+    // construye con el id de la PairBetRule. Resultado: cada duelo estrenaba su
+    // propia familia y 4 jugadores × 5 tipos daban 30 tarjetas.
+    //
+    // Ahora la clave es la firma de configuración: seis Nassau de $50 son UNA
+    // tarjeta, y si uno está a $100 se separa solo. Los duelos por equipos
+    // llevan sus lados en la firma, así que nunca se fusionan entre sí.
+    final seen   = <String>{};
     final result = <Widget>[];
+
+    // ── Diagnóstico ──────────────────────────────────────────────────────────
+    // Si las tarjetas no colapsan, es porque las firmas difieren. Esto imprime
+    // cuántos módulos hay, cuántas familias salen y en qué difieren las firmas.
+    if (kDebugMode) {
+      final firmas = modules.map((m) => m.configSignature).toSet();
+      debugPrint('[Setup] ══ AGRUPACIÓN DE APUESTAS ══');
+      debugPrint('[Setup] módulos=${modules.length}  familias=${firmas.length}');
+      if (firmas.length > 1) {
+        for (final f in firmas) {
+          final n = modules.where((m) => m.configSignature == f).length;
+          debugPrint('[Setup]   ($n) $f');
+        }
+      }
+    }
 
     for (int i = 0; i < modules.length; i++) {
       final mod = modules[i];
-      final fid = mod.betGroupId;          // null → módulo individual
+      final familyKey = mod.configSignature;
+      if (seen.contains(familyKey)) continue;
+      seen.add(familyKey);
 
-      if (fid == null) {
-        // ── módulo individual ──────────────────────────────────────────
-        result.add(_moduleTile(groupIdx, i, mod, g, t));
-      } else {
-        // ── clave compuesta: mismo betGroupId Y mismo tipo ─────────────
-        final familyKey = '$fid|${mod.type.name}';
-        if (!seen.contains(familyKey)) {
-          seen.add(familyKey);
-          final family = modules
-              .asMap()
-              .entries
-              .where((e) =>
-                  e.value.betGroupId == fid &&
-                  e.value.type       == mod.type)
-              .toList(); // List<MapEntry<int, BetModuleInstance>>
-          result.add(_groupModuleTile(groupIdx, family, g, t));
-        }
-        // Si ya vimos la clave compuesta, lo saltamos (ya se renderizó la card)
-      }
+      final family = modules
+          .asMap()
+          .entries
+          .where((e) => e.value.configSignature == familyKey)
+          .toList(); // List<MapEntry<int, BetModuleInstance>>
+
+      // Un único módulo → tarjeta simple de siempre. Varios → tarjeta de familia.
+      result.add(family.length == 1
+          ? _moduleTile(groupIdx, i, mod, g, t)
+          : _groupModuleTile(groupIdx, family, g, t));
     }
 
     return result;
   }
 
   // ── Card de familia (varios módulos con mismo betGroupId) ────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  // ALTA DE JUGADOR EN UNA APUESTA EXISTENTE
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Jugadores ya cubiertos por esta familia de apuestas.
+  Set<String> _familyCoverage(List<MapEntry<int, BetModuleInstance>> family) =>
+      {for (final e in family) ...e.value.participantIds};
+
+  /// Jugadores de la partida que aún NO juegan esta apuesta.
+  List<Player> _playersMissingFrom(
+      List<MapEntry<int, BetModuleInstance>> family, BetGroup g) {
+    final cubiertos = _familyCoverage(family);
+    return _players
+        .where((p) => g.playerIds.contains(p.id))
+        .where((p) => !cubiertos.contains(p.id))
+        .toList();
+  }
+
+  /// Mete a [newPid] en la apuesta que representa [family], clonando su config.
+  ///
+  /// • Familia de duelos 1v1 → crea un duelo nuevo contra CADA jugador ya
+  ///   cubierto, con la misma configuración.
+  /// • Módulo de grupo (3+ o sin participantes) → lo añade a participantIds.
+  ///
+  /// Los duelos por equipos no pasan por aquí: el botón no se ofrece, porque
+  /// meter a alguien exige decidir en qué lado va.
+  void _addPlayerToFamily(
+    int groupIdx,
+    List<MapEntry<int, BetModuleInstance>> family,
+    String newPid,
+    GolfTheme t,
+  ) {
+    final g       = _groups[groupIdx];
+    final plantilla = family.first.value;
+    final mods    = List<BetModuleInstance>.from(g.modules);
+
+    final esDuelos = family.every((e) => e.value.participantIds.length == 2);
+
+    if (esDuelos) {
+      final rivales = _familyCoverage(family).where((id) => id != newPid).toList();
+      for (final rival in rivales) {
+        mods.add(plantilla.copyForPair(_uuid.v4(), rival, newPid));
+      }
+    } else {
+      // Módulo de grupo: basta con sumarlo a los participantes
+      for (final e in family) {
+        final actual = e.value.participantIds;
+        if (actual.contains(newPid)) continue;
+        final nuevos = [...actual, newPid];
+        mods[e.key] = e.value.copyWith(
+          participantIds: nuevos,
+          scope: BetScope.subset(nuevos),
+        );
+      }
+    }
+
+    setState(() => _groups[groupIdx] = g.copyWith(modules: mods));
+
+    final nombre = _players
+        .firstWhere((p) => p.id == newPid, orElse: () => Player(id: newPid, name: newPid))
+        .name;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: t.primary,
+      content: Text('$nombre entra en ${plantilla.type.label}'),
+    ));
+  }
+
+  /// Hoja para elegir a quién meter en la apuesta.
+  void _pickPlayerForFamily(
+    int groupIdx,
+    List<MapEntry<int, BetModuleInstance>> family,
+    BetGroup g,
+    GolfTheme t,
+  ) {
+    final faltantes = _playersMissingFrom(family, g);
+    if (faltantes.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
+            child: Row(children: [
+              Text(family.first.value.type.icon,
+                  style: const TextStyle(fontSize: 18)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('¿Quién entra en ${family.first.value.type.label}?',
+                    style: TextStyle(
+                        color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
+              ),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            child: Text(
+              family.every((e) => e.value.participantIds.length == 2)
+                  ? 'Se le creará un duelo contra cada jugador que ya la juega.'
+                  : 'Se sumará a los participantes de esta apuesta.',
+              style: TextStyle(color: t.sub, fontSize: 12),
+            ),
+          ),
+          ...faltantes.map((p) => ListTile(
+                leading: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: t.primary.withValues(alpha: 0.15),
+                  child: Text(p.name.isNotEmpty ? p.name[0].toUpperCase() : '?',
+                      style: TextStyle(
+                          color: t.primary,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13)),
+                ),
+                title: Text(p.name, style: TextStyle(color: t.text)),
+                subtitle: Text('HCP ${p.handicapBase.toStringAsFixed(0)}',
+                    style: TextStyle(color: t.sub, fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _addPlayerToFamily(groupIdx, family, p.id, t);
+                },
+              )),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+  }
+
   Widget _groupModuleTile(
     int groupIdx,
     List<MapEntry<int, BetModuleInstance>> family,
@@ -1663,6 +1881,9 @@ class _SetupScreenState extends State<SetupScreen> {
       if (pids.length == 2) return '${nameOf(pids[0])} vs ${nameOf(pids[1])}';
       return pids.map(nameOf).join(', ');
     }).toList();
+
+    // Jugadores de la partida que aún no juegan esta apuesta
+    final faltantes = _playersMissingFrom(family, g);
 
     // Color del acento según tipo
     final isMatch  = template.type == BetModuleType.nassau ||
@@ -1704,6 +1925,7 @@ class _SetupScreenState extends State<SetupScreen> {
               ),
             ])),
             // ── Botón Editar grupo ───────────────────────────────────────
+            // (el alta de jugadores va en una fila propia al pie de la tarjeta)
             GestureDetector(
               onTap: () => _editGroupModules(groupIdx, family, g, t),
               child: Container(
@@ -1712,7 +1934,7 @@ class _SetupScreenState extends State<SetupScreen> {
                   color: accent.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text('Editar grupo',
+                child: Text('Editar',
                     style: TextStyle(color: accent, fontWeight: FontWeight.w700, fontSize: 12)),
               ),
             ),
@@ -1721,13 +1943,12 @@ class _SetupScreenState extends State<SetupScreen> {
             GestureDetector(
               onTap: () {
                 setState(() {
-                  final gid   = template.betGroupId!;
-                  final gtype = template.type;
-                  // Eliminar solo los módulos que coincidan en betGroupId Y tipo.
-                  // Así Nassau, Skins, Units y Oyeses con el mismo betGroupId
-                  // tienen botones de borrado independientes.
+                  // Eliminar exactamente los módulos de ESTA familia, por firma
+                  // de configuración. Antes se filtraba por betGroupId, que
+                  // puede ser null en módulos añadidos a mano.
+                  final firma = template.configSignature;
                   final mods = _groups[groupIdx].modules
-                      .where((m) => !(m.betGroupId == gid && m.type == gtype))
+                      .where((m) => m.configSignature != firma)
                       .toList();
                   _groups[groupIdx] = _groups[groupIdx].copyWith(modules: mods);
                 });
@@ -1763,6 +1984,59 @@ class _SetupScreenState extends State<SetupScreen> {
             if (template.type == BetModuleType.nassau && template.nassau.pressEnabled)
               _infoChip('Press ON', t.accent, t),
           ]),
+
+          // ── Alta de jugadores ────────────────────────────────────────────
+          // Fila explícita con los nombres. Un icono suelto pasaba
+          // desapercibido y esta es la acción que más falta hacía.
+          if (!template.hasTeamSides && faltantes.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _addPlayersRow(groupIdx, family, g, faltantes, t),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  /// Fila de acción para meter a los jugadores que faltan en una apuesta.
+  /// Nombra a quién falta en vez de mostrar solo un contador.
+  Widget _addPlayersRow(
+    int groupIdx,
+    List<MapEntry<int, BetModuleInstance>> family,
+    BetGroup g,
+    List<Player> faltantes,
+    GolfTheme t,
+  ) {
+    final nombres = faltantes.map((p) => p.name.split(' ').first).join(', ');
+    final uno = faltantes.length == 1;
+    return GestureDetector(
+      onTap: () => _pickPlayerForFamily(groupIdx, family, g, t),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: t.primary.withValues(alpha: 0.09),
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+        ),
+        child: Row(children: [
+          Icon(Icons.person_add_alt_1, color: t.primary, size: 15),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                uno
+                    ? 'Añadir a $nombres a esta apuesta'
+                    : 'Añadir jugadores a esta apuesta',
+                style: TextStyle(
+                    color: t.primary, fontWeight: FontWeight.w700, fontSize: 12),
+              ),
+              if (!uno)
+                Text('$nombres no la juegan todavía',
+                    style: TextStyle(color: t.sub, fontSize: 10.5)),
+            ]),
+          ),
+          Icon(Icons.chevron_right, color: t.primary, size: 16),
         ]),
       ),
     );
@@ -1821,7 +2095,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
           // ── Construir pairConfigOverrides desde el estado UI ───────────────
           // Solo incluye pares con valor explícito (distinto del default o vacío).
-          Map<String, Map<String, dynamic>> _buildPairOverridesMap() {
+          Map<String, Map<String, dynamic>> buildPairOverridesMap() {
             final result  = <String, Map<String, dynamic>>{};
             final ovKey   = cfg.type == BetModuleType.units ? 'allEvents' : 'value';
             final defVal  = cfg.baseValue;
@@ -1839,7 +2113,7 @@ class _SetupScreenState extends State<SetupScreen> {
           }
 
           // ── Valor a mostrar para un par (override o default) ───────────────
-          double _displayValueFor(String pk) {
+          double displayValueFor(String pk) {
             final text = pairCtrl[pk]?.text.trim() ?? '';
             return double.tryParse(text) ?? cfg.baseValue;
           }
@@ -2063,7 +2337,7 @@ class _SetupScreenState extends State<SetupScreen> {
                             'Aplicar a los ${family.length} enfrentamientos',
                         onTap: () {
                           final pairOvsMap = supportsOverride
-                              ? _buildPairOverridesMap()
+                              ? buildPairOverridesMap()
                               : <String, Map<String, dynamic>>{};
 
                           setState(() {
@@ -3043,7 +3317,11 @@ class _SetupScreenState extends State<SetupScreen> {
           Wrap(spacing: 8, runSpacing: 8, children: _players.map((p) {
             final sel = selectedPids.contains(p.id);
             return GestureDetector(
-              onTap: () => setSt(() { if (sel) selectedPids.remove(p.id); else selectedPids.add(p.id); }),
+              onTap: () => setSt(() { if (sel) {
+                selectedPids.remove(p.id);
+              } else {
+                selectedPids.add(p.id);
+              } }),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
@@ -3077,7 +3355,7 @@ class _SetupScreenState extends State<SetupScreen> {
     String?           anchorPlayerId;
 
     // ── Helpers de validación ────────────────────────────────────────────────
-    String? _validateStructure(BetStructure s, List<String> pids, String? anchor) {
+    String? validateStructure(BetStructure s, List<String> pids, String? anchor) {
       switch (s) {
         case BetStructure.group:
         case BetStructure.manual:
@@ -3094,7 +3372,7 @@ class _SetupScreenState extends State<SetupScreen> {
     }
 
     // ── Resumen del número de módulos que se crearán ─────────────────────────
-    String _previewCount(BetStructure s, List<String> pids, String? anchor, Set<BetModuleType> sel) {
+    String previewCount(BetStructure s, List<String> pids, String? anchor, Set<BetModuleType> sel) {
       if (sel.isEmpty) return '';
       int modsPerType;
       switch (s) {
@@ -3116,7 +3394,7 @@ class _SetupScreenState extends State<SetupScreen> {
     }
 
     // ── Resumen detallado para anchorVsMany / roundRobin ─────────────────────
-    String _detailPreview(BetStructure s, List<String> pids, String? anchor,
+    String detailPreview(BetStructure s, List<String> pids, String? anchor,
         Set<BetModuleType> sel, List<Player> players) {
       if (sel.isEmpty) return '';
       String nameOf(String id) =>
@@ -3149,10 +3427,10 @@ class _SetupScreenState extends State<SetupScreen> {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(builder: (ctx2, setSt) {
         final pids       = g.playerIds;
-        final validErr   = _validateStructure(structure, pids, anchorPlayerId);
+        final validErr   = validateStructure(structure, pids, anchorPlayerId);
         final canConfirm = selected.isNotEmpty && validErr == null;
-        final preview    = _previewCount(structure, pids, anchorPlayerId, selected);
-        final detail     = _detailPreview(structure, pids, anchorPlayerId, selected, _players);
+        final preview    = previewCount(structure, pids, anchorPlayerId, selected);
+        final detail     = detailPreview(structure, pids, anchorPlayerId, selected, _players);
 
         return Padding(
           padding: EdgeInsets.only(bottom: MediaQuery.of(ctx2).viewInsets.bottom + 24, left: 20, right: 20, top: 24),
@@ -3362,7 +3640,11 @@ class _SetupScreenState extends State<SetupScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
-        onTap: () => setSt(() { if (isSel) selected.remove(bt); else selected.add(bt); }),
+        onTap: () => setSt(() { if (isSel) {
+          selected.remove(bt);
+        } else {
+          selected.add(bt);
+        } }),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -3642,35 +3924,63 @@ class _SetupScreenState extends State<SetupScreen> {
           child: GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(g.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
-            Wrap(spacing: 8, runSpacing: 6, children: g.modules.map((m) {
-              final isNassau = m.type == BetModuleType.nassau;
-              final fv = (m.extra['frontValue'] as num?)?.toDouble() ?? m.value;
-              final bv = (m.extra['backValue']  as num?)?.toDouble() ?? m.value;
-              final tv = (m.extra['totalValue'] as num?)?.toDouble() ?? m.value;
-              return GestureDetector(
-                onTap: () => _openModuleEdit(context, g, m, t),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: t.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: t.primary.withValues(alpha: 0.35)),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text(m.type.icon, style: const TextStyle(fontSize: 12)),
-                    const SizedBox(width: 4),
-                    Text(
-                      isNassau
-                          ? 'Nassau  F\$${fv.toStringAsFixed(0)}·B\$${bv.toStringAsFixed(0)}·T\$${tv.toStringAsFixed(0)}'
-                          : '${m.type.label} \$${m.value.toStringAsFixed(0)}',
-                      style: TextStyle(color: t.primary, fontWeight: FontWeight.w600, fontSize: 12),
+            // Un chip por APUESTA, no por módulo: se agrupa por la misma firma
+            // de configuración que la lista del paso de Apuestas. Antes salía
+            // un chip por cada (duelo × tipo) — 30 chips con 4 jugadores.
+            Wrap(spacing: 8, runSpacing: 6, children: () {
+              final vistas = <String>{};
+              final chips  = <Widget>[];
+              for (final m in g.modules) {
+                final firma = m.configSignature;
+                if (!vistas.add(firma)) continue;
+                final cuantos =
+                    g.modules.where((x) => x.configSignature == firma).length;
+                final isNassau = m.type == BetModuleType.nassau;
+                final fv = (m.extra['frontValue'] as num?)?.toDouble() ?? m.value;
+                final bv = (m.extra['backValue']  as num?)?.toDouble() ?? m.value;
+                final tv = (m.extra['totalValue'] as num?)?.toDouble() ?? m.value;
+                chips.add(GestureDetector(
+                  onTap: () => _openModuleEdit(context, g, m, t),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: t.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: t.primary.withValues(alpha: 0.35)),
                     ),
-                    const SizedBox(width: 4),
-                    Icon(Icons.edit_outlined, color: t.primary.withValues(alpha: 0.6), size: 11),
-                  ]),
-                ),
-              );
-            }).toList()),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(m.type.icon, style: const TextStyle(fontSize: 12)),
+                      const SizedBox(width: 4),
+                      Text(
+                        isNassau
+                            ? 'Nassau  F\$${fv.toStringAsFixed(0)}·B\$${bv.toStringAsFixed(0)}·T\$${tv.toStringAsFixed(0)}'
+                            : '${m.type.label} \$${m.value.toStringAsFixed(0)}',
+                        style: TextStyle(color: t.primary, fontWeight: FontWeight.w600, fontSize: 12),
+                      ),
+                      // Cuántos duelos cubre esta apuesta
+                      if (cuantos > 1) ...[
+                        const SizedBox(width: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: t.primary.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text('×$cuantos',
+                              style: TextStyle(
+                                  color: t.primary,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 10)),
+                        ),
+                      ],
+                      const SizedBox(width: 4),
+                      Icon(Icons.edit_outlined, color: t.primary.withValues(alpha: 0.6), size: 11),
+                    ]),
+                  ),
+                ));
+              }
+              return chips;
+            }()),
           ])),
         )),
       ]),
@@ -4069,7 +4379,14 @@ class _SetupScreenState extends State<SetupScreen> {
           final hcps      = members.map((p) => _teeOf(p.id).playingHandicap(p.handicapBase)).toList()..sort();
           final tees      = members.map((p) => _teeOf(p.id)).toList();
           final hardestTee = tees.reduce((a, b) => a.courseRating > b.courseRating ? a : b);
-          final teamHcp   = (hcps.first * 0.35 + hcps.last * 0.15).round().toDouble();
+
+          // Handicap combinado del equipo según el reparto configurado.
+          // NO se aplica aquí el allowance: lo hace el motor una sola vez en
+          // GameEngine.buildTeamHcpMap, para no multiplicarlo dos veces.
+          // El default de Scramble (50% × 70/30) reproduce el clásico 35/15.
+          final thCfg   = mod.teamHandicapConfig ??
+              TeamHandicapConfig.defaultFor(side.playMode);
+          final teamHcp = thCfg.combinedHandicap(hcps);
 
           if (side.playMode == TeamPlayMode.scramble) {
             if (sideIdToVirtualId.containsKey(side.id)) continue;
@@ -4148,19 +4465,72 @@ class _SetupScreenState extends State<SetupScreen> {
         if (!hasTeamSides) return mod;
 
         final newParticipantIds = <String>[];
+        // ── Los sides también hay que reescribirlos en Scramble ──────────────
+        //
+        // En Scramble los jugadores REALES quedan fuera de la ronda: no
+        // capturan score, lo hace el jugador virtual del equipo. Si el side
+        // conservara los IDs reales, el motor buscaría scores que no existen,
+        // daría todos los hoyos por no jugados y la apuesta NO PAGARÍA NADA.
+        //
+        // En Best Ball es al revés: los reales SÍ capturan y el best-ball se
+        // calcula sobre sus scores, así que el side conserva los IDs reales.
+        final newSides = <BetSide>[];
         for (final side in mod.sides!) {
-          if (sideIdToVirtualId.containsKey(side.id)) {
-            newParticipantIds.add(sideIdToVirtualId[side.id]!);
+          final scrambleVirtual = sideIdToVirtualId[side.id];
+          if (scrambleVirtual != null) {
+            newParticipantIds.add(scrambleVirtual);
+            newSides.add(BetSide(
+              id:        side.id,
+              name:      side.name,
+              playerIds: [scrambleVirtual],
+              playMode:  side.playMode,
+            ));
           } else if (sideIdToBBTeamId.containsKey(side.id)) {
             newParticipantIds.add(sideIdToBBTeamId[side.id]!);
+            newSides.add(side); // Best Ball: se juega con los scores reales
           } else {
             newParticipantIds.addAll(side.playerIds);
+            newSides.add(side);
           }
         }
-        return mod.copyWith(participantIds: newParticipantIds);
+        return mod.copyWith(participantIds: newParticipantIds, sides: newSides);
       }).toList();
 
-      return group.copyWith(modules: updatedModules, playerIds: updatedGroupPlayerIds);
+      // ── Declarar el alcance de cada módulo ──────────────────────────────────
+      // Un módulo cuyos participantes son EXACTAMENTE toda la partida se marca
+      // con alcance `everyone`, así sus participantes se resuelven en cada
+      // cálculo contra los jugadores presentes. Consecuencia: si más tarde se
+      // suma un jugador a la partida, entra solo en esas apuestas sin tener que
+      // reconfigurar nada.
+      //
+      // Los módulos de equipo y los de subconjunto/duelo conservan su alcance
+      // fijo — ahí la lista de jugadores sí es parte del acuerdo.
+      final groupIdSet = updatedGroupPlayerIds.toSet();
+      final scopedModules = updatedModules.map((mod) {
+        if (mod.scope != null) return mod;          // ya declarado
+        if (mod.hasTeamSides) {
+          // Además del alcance, dejar declarado el allowance por defecto del
+          // formato (Four-Ball 90% / Scramble 50%×70-30). Las rondas ya
+          // guardadas se quedan sin la clave → legacy 100%.
+          return mod.copyWith(
+            scope: const BetScope.teams(),
+            teamHandicapConfig: mod.teamHandicapConfig ??
+                TeamHandicapConfig.defaultFor(mod.sideA.playMode),
+          );
+        }
+        final pids = mod.participantIds;
+        final coversWholeGroup = pids.isEmpty ||
+            (pids.length == groupIdSet.length && pids.toSet().containsAll(groupIdSet));
+        return mod.copyWith(
+          scope: coversWholeGroup
+              ? const BetScope.everyone()
+              : (pids.length == 2
+                  ? BetScope.pair(pids[0], pids[1])
+                  : BetScope.subset(pids)),
+        );
+      }).toList();
+
+      return group.copyWith(modules: scopedModules, playerIds: updatedGroupPlayerIds);
     }).toList();
 
     final roundPlayers = allPlayersForRound.map((p) {
@@ -4607,7 +4977,7 @@ class _LaunchSheet extends StatefulWidget {
 }
 
 class _LaunchSheetState extends State<_LaunchSheet> {
-  bool _saveTemplate  = false;
+  final bool _saveTemplate  = false;
   bool _startLive     = false;
   String _scoringMode = 'open'; // 'admin' | 'open'
   StartingNine? _selectedStartingNine;

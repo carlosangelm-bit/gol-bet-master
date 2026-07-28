@@ -114,7 +114,6 @@ BetModuleInstance _nassauMod(List<String> pids, {
 );
 
 BetModuleInstance _medalMod(List<String> pids, {
-  bool net = true,
   bool allVsAll = false,
 }) => BetModuleInstance.defaultFor(BetModuleType.medal, pids).copyWith(
   medalConfig: const MedalConfig(value: 100, mode: GrossNetMode.net),
@@ -162,7 +161,9 @@ void main() {
 
       final entries = BetEngine.computeAll(round);
       print('TEST A entries:');
-      for (final e in entries) print('  ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [${e.reason}]');
+      for (final e in entries) {
+        print('  ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [${e.reason}]');
+      }
 
       // El primer segmento (hoyos 10-18) es "Front 9" lógico.
       // p1 gana 5 hoyos, p2 gana 4 → p1 gana Front (+1), p2 gana Back (era p2 los 4 últimos... pero son el segmento único)
@@ -195,7 +196,9 @@ void main() {
 
       final entries = BetEngine.computeAll(round);
       print('TEST A (18H back-start) entries:');
-      for (final e in entries) print('  ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [${e.reason}]');
+      for (final e in entries) {
+        print('  ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [${e.reason}]');
+      }
 
       final front = entries.where((e) =>
           e.betType == BetModuleType.nassau && e.reason.contains('Front')).toList();
@@ -244,7 +247,9 @@ void main() {
 
       final entries = BetEngine.computeAll(round);
       print('TEST B entries:');
-      for (final e in entries) print('  ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [${e.reason}]');
+      for (final e in entries) {
+        print('  ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [${e.reason}]');
+      }
 
       final front = entries.where((e) =>
           e.betType == BetModuleType.nassau && e.reason.contains('Front')).toList();
@@ -290,7 +295,9 @@ void main() {
 
       final entries = BetEngine.computeAll(roundExact);
       print('TEST C entries:');
-      for (final e in entries) print('  ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [${e.reason}]');
+      for (final e in entries) {
+        print('  ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [${e.reason}]');
+      }
 
       final medalEntries = entries.where((e) => e.betType == BetModuleType.medal).toList();
       // pA net=45 < pB net=47 → pA GANA
@@ -514,7 +521,9 @@ void main() {
 
       final entries = BetEngine.computeAll(round);
       print('TEST H entries:');
-      for (final e in entries) print('  ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [${e.reason}]');
+      for (final e in entries) {
+        print('  ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [${e.reason}]');
+      }
 
       final pressEntries = entries.where((e) =>
           e.betType == BetModuleType.nassau && e.reason.startsWith('Press')).toList();

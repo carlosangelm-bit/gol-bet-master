@@ -146,7 +146,9 @@ void main() {
 
     final entries = BetEngine.computeGroup(round, group);
     print('\nS1: Skins gross sin HCP, A gana todos');
-    for (final e in entries) print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    for (final e in entries) {
+      print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    }
     
     final toA = entries.where((e) => e.toPlayerId == 'A').toList();
     expect(toA.length, 18, reason: 'A debe ganar los 18 skins');
@@ -179,7 +181,9 @@ void main() {
 
     final entries = BetEngine.computeGroup(round, group);
     print('\nS2: Carry-over — H1-3 empatan, H4 A gana');
-    for (final e in entries) print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    for (final e in entries) {
+      print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    }
     
     final toA = entries.where((e) => e.toPlayerId == 'A').toList();
     expect(toA.length, 1, reason: 'Solo un skin ganado (H4)');
@@ -219,7 +223,9 @@ void main() {
 
     final entries = BetEngine.computeGroup(round, group);
     print('\nS3: B9, diff18=10, B recibe 5 strokes (A da)');
-    for (final e in entries) print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [${e.reason}]');
+    for (final e in entries) {
+      print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} [${e.reason}]');
+    }
     
     final toA = entries.where((e) => e.toPlayerId == 'A').toList();
     final toB = entries.where((e) => e.toPlayerId == 'B').toList();
@@ -299,7 +305,9 @@ void main() {
 
     final entries = BetEngine.computeGroup(round, group);
     print('\nS6: Skins alternados A/B');
-    for (final e in entries) print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    for (final e in entries) {
+      print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    }
     
     final toA = entries.where((e) => e.toPlayerId == 'A').toList();
     final toB = entries.where((e) => e.toPlayerId == 'B').toList();
@@ -332,7 +340,9 @@ void main() {
 
     final entries = BetEngine.computeGroup(round, group);
     print('\nS7: H1 empate → carry; H2 B gana pot = 20');
-    for (final e in entries) print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    for (final e in entries) {
+      print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    }
     
     final toB = entries.where((e) => e.toPlayerId == 'B').toList();
     expect(toB.length, 1, reason: 'Solo H2 con skin para B');
@@ -367,7 +377,9 @@ void main() {
 
     final entries = BetEngine.computeGroup(round, group);
     print('\nS8: OnePot 3 jugadores, A gana todo');
-    for (final e in entries.take(4)) print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    for (final e in entries.take(4)) {
+      print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    }
     
     // Por hoyo ganado: B→A y C→A (2 entries × 10)
     final toA = entries.where((e) => e.toPlayerId == 'A').toList();
@@ -404,7 +416,9 @@ void main() {
 
     final entries = BetEngine.computeGroup(round, group);
     print('\nS9: B9 campo 1-9, diff18=10, B recibe 5');
-    for (final e in entries) print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    for (final e in entries) {
+      print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount}');
+    }
     
     final toA = entries.where((e) => e.toPlayerId == 'A').toList();
     final toB = entries.where((e) => e.toPlayerId == 'B').toList();
@@ -472,7 +486,9 @@ void main() {
       print('    H${ch.hole} SI${ch.strokeIndex}: $s stroke(s)');
     }
     
-    for (final e in entries) print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} pot=${e.amount}');
+    for (final e in entries) {
+      print('  H${e.hole}: ${e.fromPlayerId}→${e.toPlayerId} \$${e.amount} pot=${e.amount}');
+    }
     
     final toA = entries.where((e) => e.toPlayerId == 'A').toList();
     final totalA = toA.fold<double>(0, (s, e) => s + e.amount);

@@ -197,9 +197,13 @@ void main() {
       final rWG = round.copyWith(betGroups: [group]);
       final entries = BetEngine.computeGroup(rWG, group);
       print('\nCR-3a: CAM=36, RAFA=45');
-      for (final e in entries) print('  ${e.fromPlayerId}→${e.toPlayerId}: ${e.amount}');
+      for (final e in entries) {
+        print('  ${e.fromPlayerId}→${e.toPlayerId}: ${e.amount}');
+      }
       final diag = BetEngine.diagnoseMedal(rWG);
-      for (final d in diag) print('  nets=${d["nets"]} reason=${d["reason"]}');
+      for (final d in diag) {
+        print('  nets=${d["nets"]} reason=${d["reason"]}');
+      }
       // CAM 36, RAFA net = 45-5 = 40 → CAM gana
       expect(entries.length, 1);
       expect(entries.first.toPlayerId, 'CAM');
@@ -247,9 +251,13 @@ void main() {
       final rWG = round2.copyWith(betGroups: [group]);
       final entries = BetEngine.computeGroup(rWG, group);
       final diag = BetEngine.diagnoseMedal(rWG);
-      print('\nCR-3b: CAM=45 (5/hoyo), RAFA bruto=${scoresMap["RAFA"]!.values.map((s)=>s.grossScore).fold(0,(a,b)=>a!+b!)}');
-      for (final d in diag) print('  nets=${d["nets"]} reason=${d["reason"]}');
-      for (final e in entries) print('  ${e.fromPlayerId}→${e.toPlayerId}: ${e.amount}');
+      print('\nCR-3b: CAM=45 (5/hoyo), RAFA bruto=${scoresMap["RAFA"]!.values.map((s)=>s.grossScore).fold(0,(a,b)=>a+b!)}');
+      for (final d in diag) {
+        print('  nets=${d["nets"]} reason=${d["reason"]}');
+      }
+      for (final e in entries) {
+        print('  ${e.fromPlayerId}→${e.toPlayerId}: ${e.amount}');
+      }
       // RAFA net = 50-5=45 = CAM 45 → EMPATE
       expect(entries, isEmpty, reason: 'RAFA net=50-5=45 = CAM 45 → empate');
     });
@@ -271,8 +279,12 @@ void main() {
       final entries = BetEngine.computeGroup(rWG, group);
       final diag = BetEngine.diagnoseMedal(rWG);
       print('\nCR-3c: CAM=45, RAFA=54');
-      for (final d in diag) print('  nets=${d["nets"]} reason=${d["reason"]}');
-      for (final e in entries) print('  ${e.fromPlayerId}→${e.toPlayerId}: ${e.amount}');
+      for (final d in diag) {
+        print('  nets=${d["nets"]} reason=${d["reason"]}');
+      }
+      for (final e in entries) {
+        print('  ${e.fromPlayerId}→${e.toPlayerId}: ${e.amount}');
+      }
       // Con 5 strokes: RAFA net=54-5=49 → CAM gana (49 > 45)... wait CAM=45 < RAFA_net=49 → CAM gana
       // Con 10 strokes: RAFA net=54-10=44 < CAM=45 → RAFA GANA (bug!)
       // Esperamos que CAM gane (el engine aplica correctamente 5 strokes)

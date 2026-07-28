@@ -455,13 +455,13 @@ void main() {
     //   RICH: 97 - 9  = 88
     //   ALEX: 86 - 9  = 77
     // Ganador: KAWA con net 74 (único)
-    final _sCam   = [4,4,5,4,5,4,4,4,4, 4,5,4,4,5,4,4,5,4]; // gross 77
-    final _sKawa  = [5,5,4,4,5,4,5,4,5, 5,5,4,4,5,4,5,4,4]; // gross 81
-    final _sFrank = [5,5,5,5,5,5,5,5,5, 5,5,5,5,5,5,5,5,6]; // gross 91
-    final _sRich  = [6,6,5,5,6,5,5,6,5, 6,6,5,5,6,5,5,6,6]; // gross 97
-    final _sAlex  = [5,5,5,4,5,5,5,5,5, 5,5,5,4,5,5,5,5,5]; // gross 86
+    final sCam   = [4,4,5,4,5,4,4,4,4, 4,5,4,4,5,4,4,5,4]; // gross 77
+    final sKawa  = [5,5,4,4,5,4,5,4,5, 5,5,4,4,5,4,5,4,4]; // gross 81
+    final sFrank = [5,5,5,5,5,5,5,5,5, 5,5,5,5,5,5,5,5,6]; // gross 91
+    final sRich  = [6,6,5,5,6,5,5,6,5, 6,6,5,5,6,5,5,6,6]; // gross 97
+    final sAlex  = [5,5,5,4,5,5,5,5,5, 5,5,5,4,5,5,5,5,5]; // gross 86
 
-    Round _make26Mar() {
+    Round make26Mar() {
       final rPlayers = [
         RoundPlayer(
           playerId: 'CAM',
@@ -500,8 +500,8 @@ void main() {
 
       final scoresMap = <String, Map<int, HoleScore>>{};
       final rawScores = {
-        'CAM': _sCam, 'KAWA': _sKawa, 'FRANK': _sFrank,
-        'RICH': _sRich, 'ALEX': _sAlex,
+        'CAM': sCam, 'KAWA': sKawa, 'FRANK': sFrank,
+        'RICH': sRich, 'ALEX': sAlex,
       };
       for (final entry in rawScores.entries) {
         final pid = entry.key;
@@ -545,7 +545,7 @@ void main() {
     }
 
     test('M8a: onePot 5 jugadores con manualHandicaps — debe generar entries', () {
-      final round = _make26Mar();
+      final round = make26Mar();
       final entries = BetEngine.computeAll(round);
       final m = entries.where((e) => e.betType == BetModuleType.medal).toList();
 
@@ -576,7 +576,7 @@ void main() {
     });
 
     test('M8b: diagnoseMedal muestra la base correcta', () {
-      final round = _make26Mar();
+      final round = make26Mar();
       final diag = BetEngine.diagnoseMedal(round);
 
       expect(diag, isNotEmpty);
@@ -594,7 +594,7 @@ void main() {
     });
 
     test('M8c: gross mode — ignora manualHandicaps, gana quien menor gross', () {
-      final round = _make26Mar();
+      final round = make26Mar();
       // Reemplazar módulo con gross mode
       final pids = ['CAM', 'KAWA', 'FRANK', 'RICH', 'ALEX'];
       final modGross = BetModuleInstance.defaultFor(BetModuleType.medal, pids).copyWith(

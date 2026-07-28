@@ -257,33 +257,6 @@ class BetEngine {
     StartingNine startingNine,
   ) => _courseHolesF9B9(allHoles, startingNine);
 
-  // LEGACY — mantener para no romper otros usos que necesiten hoyos jugados.
-  static (List<CourseHole>, List<CourseHole>) _splitHolesForPlayer(
-    Round round,
-    String playerId,
-    List<CourseHole> allHoles,
-  ) {
-    final courseHasOnlyF9nums = allHoles.isNotEmpty && allHoles.every((h) => h.hole <= 9);
-    final courseHasOnlyB9nums = allHoles.isNotEmpty && allHoles.every((h) => h.hole >  9);
-
-    if (courseHasOnlyF9nums && round.startingNine == StartingNine.back) {
-      return (
-        <CourseHole>[],
-        allHoles.where((ch) => round.getScore(playerId, ch.hole).hasScore).toList(),
-      );
-    } else if (courseHasOnlyB9nums && round.startingNine == StartingNine.front) {
-      return (
-        allHoles.where((ch) => round.getScore(playerId, ch.hole).hasScore).toList(),
-        <CourseHole>[],
-      );
-    } else {
-      return (
-        allHoles.where((ch) => ch.hole <= 9 && round.getScore(playerId, ch.hole).hasScore).toList(),
-        allHoles.where((ch) => ch.hole >  9 && round.getScore(playerId, ch.hole).hasScore).toList(),
-      );
-    }
-  }
-
   // Devuelve cuántos strokes recibe p1 de p2:
   //   > 0 → p1 recibe esa cantidad
   //   = 0 → acuerdo par a par: sin ventaja
@@ -352,36 +325,178 @@ class BetEngine {
     return false;
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // SEGMENTACIÓN LÓGICA DE LA RONDA
+  // ══════════════════════════════════════════════════════════════════════════
+  //
+  // El "primer segmento" es SIEMPRE la vuelta de inicio (startingNine), aunque
+  // sus hoyos se numeren 10-18. El "segundo segmento" es la otra vuelta.
+  //
+  // IMPORTANTE — por qué no basta con round.totalHoles:
+  //   La captura permite extender una ronda declarada de 9 hoyos a 18
+  //   ("⛳ Continuar Back 9"), y totalHoles NO se actualiza al hacerlo.
+  //   Si se segmentara por totalHoles, el segundo nine se descartaría en
+  //   silencio y Nassau pagaría solo la mitad. Por eso [singleNine] mira
+  //   también si hay scores capturados en el segundo segmento.
+
+  /// Segmentación lógica de una ronda para las apuestas por vuelta.
+  static RoundSegments segmentsOf(Round round) {
+    final (f9, b9) = _courseHolesF9B9(round.course.holes, round.startingNine);
+    final isBack   = round.startingNine == StartingNine.back;
+
+    final firstHoles  = (isBack ? b9 : f9).map((c) => c.hole).toList()..sort();
+    final secondHoles = (isBack ? f9 : b9).map((c) => c.hole).toList()..sort();
+
+    // ¿Se capturó algún score en el segundo segmento?
+    bool secondPlayed = false;
+    outer:
+    for (final h in secondHoles) {
+      for (final pid in round.scores.keys) {
+        if (round.getScore(pid, h).hasScore) {
+          secondPlayed = true;
+          break outer;
+        }
+      }
+    }
+
+    return RoundSegments(
+      firstNine:  firstHoles,
+      secondNine: secondHoles,
+      singleNine: round.totalHoles <= 9 && !secondPlayed,
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ESCALA COMÚN DE UN GRUPO (modos "1 Pot" con 3+ jugadores)
+  // ══════════════════════════════════════════════════════════════════════════
+  //
+  // Los acuerdos de pairSliding son BILATERALES. Para resolver un pot único con
+  // 3+ jugadores hace falta una escala común: se elige un "ancla" y cada jugador
+  // calcula su neto respecto a ella. Sin esto habría que comparar netos medidos
+  // contra rivales distintos, que no son comparables entre sí.
+
+  /// Ancla del grupo: el jugador que MÁS da y MENOS recibe según los acuerdos
+  /// bilaterales. Si hay empate de ventaja, gana el de HCP más bajo.
+  static String groupAnchor(Round round, List<String> pids) {
+    if (pids.isEmpty) return '';
+    String anchor  = pids.first;
+    double bestScore = double.negativeInfinity;
+    for (final pid in pids) {
+      double net = 0;
+      for (final other in pids) {
+        if (other == pid) continue;
+        net += _strokesP1ReceivesFromP2(round, pid, other); // + recibe, − da
+      }
+      // Queremos el net MÁS NEGATIVO (da más, recibe menos) → maximizar −net
+      final score = -net;
+      if (score > bestScore ||
+          (score == bestScore && round.getHandicap(pid) < round.getHandicap(anchor))) {
+        bestScore = score;
+        anchor    = pid;
+      }
+    }
+    return anchor;
+  }
+
+  /// Strokes que recibe [pid] en el hoyo [ch] respecto de [anchorId], usando el
+  /// pairSliding oficial de 18 hoyos con reparto F9/B9.
+  /// Devuelve 0 si [pid] es el ancla o si no recibe ventaja de ella.
+  static int strokesVsAnchorAtHole({
+    required Round round,
+    required String pid,
+    required String anchorId,
+    required CourseHole ch,
+    required List<CourseHole> courseF9,
+    required List<CourseHole> courseB9,
+  }) {
+    if (pid == anchorId) return 0;
+    final recv = _strokesP1ReceivesFromP2(round, pid, anchorId);
+    if (recv <= 0) return 0;
+    final inF9 = courseF9.any((hh) => hh.hole == ch.hole);
+    return GameEngine.strokesReceivedFromOfficial18Sliding(
+      diff18:                recv.round(),
+      ch:                    ch,
+      courseHolesInSameNine: inF9 ? courseF9 : courseB9,
+      startingNine:          round.startingNine,
+      isNineHolesStartingNine: isNineStartingNine(
+        ch: ch, courseF9: courseF9, courseB9: courseB9,
+        startingNine: round.startingNine,
+      ),
+    );
+  }
+
+  /// Ganador neto de un hoyo dentro de un grupo, respetando pairSliding a
+  /// través del ancla. Devuelve null si hay empate o si falta algún score.
+  ///
+  /// Sustituye a [GameEngine.holeWinner] en los modos de grupo: aquél usa el
+  /// handicap individual contra el par e ignora los acuerdos bilaterales.
+  static String? groupHoleWinner({
+    required Round round,
+    required List<String> pids,
+    required CourseHole ch,
+    required bool useHandicap,
+    required String anchorId,
+    required List<CourseHole> courseF9,
+    required List<CourseHole> courseB9,
+  }) {
+    int?    best;
+    String? winner;
+    bool    tie = false;
+
+    for (final pid in pids) {
+      final s = round.getScore(pid, ch.hole);
+      if (!s.hasScore) return null; // hoyo incompleto
+      final strokes = useHandicap
+          ? strokesVsAnchorAtHole(
+              round: round, pid: pid, anchorId: anchorId,
+              ch: ch, courseF9: courseF9, courseB9: courseB9)
+          : 0;
+      final net = s.grossScore! - strokes;
+      if (best == null || net < best) {
+        best   = net;
+        winner = pid;
+        tie    = false;
+      } else if (net == best) {
+        tie = true;
+      }
+    }
+    return tie ? null : winner;
+  }
+
   /// Genera todos los LedgerEntries para una BetGroup completa
   static List<LedgerEntry> computeGroup(Round round, BetGroup group) {
     final entries = <LedgerEntry>[];
     for (final mod in group.modules) {
-      // ── Modo equipo: sides definidos y válidos ────────────────────────────
-      if (mod.hasTeamSides) {
-        switch (mod.type) {
-          case BetModuleType.matchAutoPress:
-            entries.addAll(_matchAutoPressTeam(round, mod));
-            break;
-          case BetModuleType.nassau:
-            entries.addAll(_nassauTeam(round, mod));
-            break;
-          case BetModuleType.skins:
-            // Skins en modo equipo: cada hoyo best-ball entre lados
-            entries.addAll(_skinsTeam(round, mod));
-            break;
-          // nassauPress ya no existe como tipo separado; nassau unificado lo maneja
-          default:
-            // Medal, putts, oyeses, units: no tienen semántica de equipo aún.
-            // Fallback: usar todos los jugadores de ambos lados en modo individual.
-            entries.addAll(_computeModuleIndividual(round, group, mod));
-        }
-        continue;
-      }
-
-      // ── Modo individual clásico ───────────────────────────────────────────
-      entries.addAll(_computeModuleIndividual(round, group, mod));
+      entries.addAll(computeModule(round, group, mod));
     }
     return entries;
+  }
+
+  /// Genera los LedgerEntries de UN módulo (equipo o individual).
+  /// Aislar el cálculo por módulo permite que [safeComputeAll] descarte solo
+  /// el módulo con datos corruptos en vez de toda la ronda.
+  static List<LedgerEntry> computeModule(
+      Round round, BetGroup group, BetModuleInstance mod) {
+    // ── Modo equipo: sides definidos y válidos ──────────────────────────────
+    if (mod.hasTeamSides) {
+      switch (mod.type) {
+        case BetModuleType.matchAutoPress:
+          return _matchAutoPressTeam(round, mod);
+        case BetModuleType.nassau:
+          return _nassauTeam(round, mod);
+        case BetModuleType.skins:
+          // Skins en modo equipo: cada hoyo best-ball entre lados
+          return _skinsTeam(round, mod);
+        // nassauPress ya no existe como tipo separado; nassau unificado lo maneja
+        default:
+          // Medal, putts, oyeses, units: no tienen semántica de equipo aún.
+          // Fallback: usar todos los jugadores de ambos lados en modo individual.
+          return _computeModuleIndividual(round, group, mod);
+      }
+    }
+
+    // ── Modo individual clásico ─────────────────────────────────────────────
+    return _computeModuleIndividual(round, group, mod);
   }
 
   /// Resuelve un módulo en modo individual (comportamiento previo, sin cambios).
@@ -443,22 +558,30 @@ class BetEngine {
     double potPerLoser = cfg.valuePerSkin;
 
     // Iterar en el orden correcto de la ronda (respeta startingNine)
-    final allHoles = round.course.holes;
-    final holeMap  = { for (final ch in allHoles) ch.hole: ch };
-    final List<int> holeOrder;
-    if (round.startingNine == StartingNine.back) {
-      final b9 = allHoles.where((c) => c.hole >= 10).map((c) => c.hole).toList()..sort();
-      final f9 = allHoles.where((c) => c.hole <= 9 ).map((c) => c.hole).toList()..sort();
-      holeOrder = [...b9, ...f9];
-    } else {
-      holeOrder = allHoles.map((c) => c.hole).toList()..sort();
-    }
+    final allHoles  = round.course.holes;
+    final holeMap   = { for (final ch in allHoles) ch.hole: ch };
+    final holeOrder = segmentsOf(round).playOrder;
+
+    // Escala común del grupo: ancla + hoyos F9/B9 del curso.
+    // Antes se usaba GameEngine.holeWinner (handicap individual vs par), que
+    // ignoraba por completo pairSliding y las ventajas acordadas.
+    final anchorId = groupAnchor(round, pids);
+    final (courseF9skins, courseB9skins) =
+        _courseHolesF9B9(allHoles, round.startingNine);
 
     for (final h in holeOrder) {
       // Hoyo no jugado aún: se salta sin acumular carry
       if (!pids.every((pid) => round.getScore(pid, h).hasScore)) continue;
 
-      final winner = GameEngine.holeWinner(round, pids, h, mod.useHandicap);
+      final winner = groupHoleWinner(
+        round:       round,
+        pids:        pids,
+        ch:          holeMap[h]!,
+        useHandicap: mod.useHandicap,
+        anchorId:    anchorId,
+        courseF9:    courseF9skins,
+        courseB9:    courseB9skins,
+      );
       if (winner != null) {
         // Cada perdedor paga potPerLoser al ganador
         for (final pid in pids) {
@@ -485,7 +608,10 @@ class BetEngine {
   static List<LedgerEntry> _skins1v1(Round round, String p1Id, String p2Id, BetModuleInstance mod) {
     final entries = <LedgerEntry>[];
     final cfg = mod.skins;
-    double pot = cfg.valuePerSkin;
+    // Valor pactado para ESTE duelo: respeta la excepción por par si la hay
+    // (pairConfigOverrides), si no usa el valor base del módulo.
+    final skinValue = mod.effectiveValueForDuel(p1Id, p2Id).$1;
+    double pot = skinValue;
 
     final recv = _strokesP1ReceivesFromP2(round, p1Id, p2Id);
     // El receptor es quien recibe strokes positivos
@@ -542,8 +668,9 @@ class BetEngine {
       final netReceiver   = sReceiver.grossScore! - strokesHere;
 
       String? winner;
-      if      (grossBase < netReceiver) winner = baseId;
-      else if (grossBase > netReceiver) winner = receiverId;
+      if      (grossBase < netReceiver) {
+        winner = baseId;
+      } else if (grossBase > netReceiver) winner = receiverId;
       // else tie → pot lleva el carry
 
       if (winner != null) {
@@ -553,10 +680,10 @@ class BetEngine {
           amount: pot, betType: BetModuleType.skins,
           reason: 'Skins H$h', hole: h,
         ));
-        pot = cfg.valuePerSkin;
+        pot = skinValue;
       } else {
         // Empate en hoyo jugado → acumular carry
-        if (cfg.carryOver) pot += cfg.valuePerSkin;
+        if (cfg.carryOver) pot += skinValue;
       }
     }
     return entries;
@@ -599,23 +726,10 @@ class BetEngine {
     final (courseF9nassau, courseB9nassau) =
         _courseHolesF9B9(allHoles, round.startingNine);
 
-    // Orden lógico de hoyos: usa los hoyos reales del curso, no un rango fijo.
-    // Así funciona correctamente tanto para rondas de 9 hoyos (B9 o F9) como de 18.
-    final List<int> holeOrder;
-    if (round.startingNine == StartingNine.back) {
-      // Hoyos 10-18 primero (los que existan), luego 1-9 (los que existan)
-      final b9 = allHoles.where((c) => c.hole >= 10).map((c) => c.hole).toList()..sort();
-      final f9 = allHoles.where((c) => c.hole <= 9).map((c) => c.hole).toList()..sort();
-      holeOrder = [...b9, ...f9];
-    } else {
-      holeOrder = allHoles.map((c) => c.hole).toList()..sort();
-    }
-
-    // Segmentación lógica: seg1 = primer segmento jugado ("Front"), seg2 = segundo ("Back").
-    // Si arranca en el 10, los hoyos 10-18 son "Front" y 1-9 son "Back".
-    final bool _isBack = round.startingNine == StartingNine.back;
-    final int seg1From = _isBack ? 10 : 1;
-    final int seg1To   = _isBack ? 18 : 9;
+    // Segmentación lógica: el primer segmento jugado es siempre "Front",
+    // aunque sus hoyos se numeren 10-18. Ver BetEngine.segmentsOf.
+    final seg       = segmentsOf(round);
+    final holeOrder = seg.playOrder;
 
     for (final h in holeOrder) {
       final ch = holeMap[h]!;
@@ -639,18 +753,22 @@ class BetEngine {
       final netReceiver = sReceiver.grossScore! - strokesHere;
 
       final int delta;
-      if      (grossBase < netReceiver) delta = p1IsBase ? 1 : -1;
-      else if (grossBase > netReceiver) delta = p1IsBase ? -1 : 1;
+      if      (grossBase < netReceiver) {
+        delta = p1IsBase ? 1 : -1;
+      } else if (grossBase > netReceiver) delta = p1IsBase ? -1 : 1;
       else                              delta = 0;
 
       // Segmentación LÓGICA: el primer segmento jugado es siempre "front",
       // independientemente de si los números de hoyo son 1-9 ó 10-18.
-      if (h >= seg1From && h <= seg1To) front += delta;
-      else                               back  += delta;
+      if (seg.isFirst(h)) {
+        front += delta;
+      } else {
+        back  += delta;
+      }
     }
 
     final total = front + back;
-    if (round.totalHoles <= 9) {
+    if (seg.singleNine) {
       _addNassauSegment(entries, p1Id, p2Id, front, cfg.frontValue, 'Nassau 9 hoyos');
     } else {
       _addNassauSegment(entries, p1Id, p2Id, front, cfg.frontValue,          'Nassau Front 9');
@@ -692,12 +810,8 @@ class BetEngine {
     final (courseF9press, courseB9press) =
         _courseHolesF9B9(allHoles, round.startingNine);
 
-    // ── Determinar rango de hoyos según startingNine ─────────────────────────
-    final bool isBackStart = round.startingNine == StartingNine.back;
-    final int seg1From = isBackStart ? 10 : 1;
-    final int seg1To   = isBackStart ? 18 : 9;
-    final int seg2From = isBackStart ? 1  : 10;
-    final int seg2To   = isBackStart ? 9  : 18;
+    // ── Segmentos lógicos de la ronda (ver BetEngine.segmentsOf) ─────────────
+    final seg = segmentsOf(round);
 
     // ── Calcular deltas hoyo a hoyo ──────────────────────────────────────────
     final Map<int, int> deltaByHole = {};
@@ -719,28 +833,35 @@ class BetEngine {
           : 0;
       final grossBase    = sBase.grossScore!;
       final netReceiver  = sReceiver.grossScore! - strokes;
-      if      (grossBase < netReceiver) deltaByHole[h] = p1IsBase ?  1 : -1;
-      else if (grossBase > netReceiver) deltaByHole[h] = p1IsBase ? -1 :  1;
+      if      (grossBase < netReceiver) {
+        deltaByHole[h] = p1IsBase ?  1 : -1;
+      } else if (grossBase > netReceiver) deltaByHole[h] = p1IsBase ? -1 :  1;
       else                              deltaByHole[h] = 0;
     }
 
     // ── Detectar carry (primer segmento empatado) ────────────────────────────
     int front = 0;
-    for (int h = seg1From; h <= seg1To; h++) front += (deltaByHole[h] ?? 0);
+    for (final h in seg.firstNine) {
+      front += (deltaByHole[h] ?? 0);
+    }
     // carryEnabled ahora está en NassauConfig
     final carryActive = cfg.carryEnabled && cfg.carryApplied && front == 0;
 
     // ── Liquidar segmento con presiones ─────────────────────────────────────
+    // [holes] son los hoyos REALES del segmento en orden de juego (no un rango
+    // numérico), para que funcione con campos de 9 hoyos y numeración invertida.
     void liquidateSegment({
-      required int holeFrom,
-      required int holeTo,
+      required List<int> holes,
       required double segValue,
       required double pressValue,
       required String segLabel,
     }) {
+      if (holes.isEmpty) return;
+      final holeTo = holes.last;
+
       // Score acumulado hoyo a hoyo dentro del segmento
       final List<int> history = [];
-      for (int h = holeFrom; h <= holeTo; h++) {
+      for (final h in holes) {
         final prev = history.isEmpty ? 0 : history.last;
         history.add(prev + (deltaByHole[h] ?? 0));
       }
@@ -765,8 +886,9 @@ class BetEngine {
         // Marcador relativo desde el último punto de referencia
         final relDiff = history[i] - (refIdx == 0 ? 0 : history[refIdx - 1]);
         if (relDiff.abs() >= cfg.autoPressTrigger) {
-          final startH = holeFrom + i + 1;
-          if (startH <= holeTo) {
+          // La press empieza en el hoyo SIGUIENTE dentro del mismo segmento
+          if (i + 1 < holes.length) {
+            final startH = holes[i + 1];
             if (cfg.allowMultiplePresses || pressStarts.isEmpty) {
               pressStarts.add((startIdx: i + 1, startHole: startH));
               refIdx = i + 1; // mover referencia al hoyo que disparó la press
@@ -798,8 +920,8 @@ class BetEngine {
             ? pressStarts[k + 1].startIdx - 1
             : history.length - 1;
         final pressScore = history[endIdx] - history[ps.startIdx - 1];
-        // endHole real: holeFrom + endIdx (ya que history[i] corresponde a holeFrom+i)
-        final endHole = holeFrom + endIdx;
+        // endHole real: history[i] corresponde a holes[i]
+        final endHole = holes[endIdx];
         addEntry(pressScore, pressValue,
             'Press H${ps.startHole}–H$endHole ($segLabel)');
       }
@@ -807,10 +929,11 @@ class BetEngine {
       // Presiones manuales del módulo (no son match principal, en rango del segmento)
       for (final press in mod.presses) {
         if (press.isPrimaryMatch) continue; // solo presiones, no el match principal
-        if (press.startHole < holeFrom || press.startHole > holeTo) continue;
+        final startIdx = holes.indexOf(press.startHole);
+        if (startIdx < 0) continue; // la press no pertenece a este segmento
         int manualScore = 0;
-        for (int h = press.startHole; h <= holeTo; h++) {
-          manualScore += (deltaByHole[h] ?? 0);
+        for (int i = startIdx; i < holes.length; i++) {
+          manualScore += (deltaByHole[holes[i]] ?? 0);
         }
         addEntry(manualScore, press.value,
             'Press Manual H${press.startHole}–H$holeTo ($segLabel)');
@@ -818,10 +941,10 @@ class BetEngine {
     }
 
     // ── Aplicar segmentos ────────────────────────────────────────────────────
-    if (round.totalHoles <= 9) {
-      // Solo 9 hoyos: un único segmento usando el rango físico correcto
+    if (seg.singleNine) {
+      // Solo 9 hoyos: un único segmento con los hoyos reales de la vuelta
       liquidateSegment(
-        holeFrom: seg1From, holeTo: seg1To,
+        holes:      seg.firstNine,
         segValue:   cfg.frontValue,
         pressValue: cfg.frontPressValue,
         segLabel:   'Nassau 9H',
@@ -829,7 +952,7 @@ class BetEngine {
     } else {
       // Primer segmento (lógicamente "Front 9")
       liquidateSegment(
-        holeFrom: seg1From, holeTo: seg1To,
+        holes:      seg.firstNine,
         segValue:   cfg.frontValue,
         pressValue: cfg.frontPressValue,
         segLabel:   'Nassau Front 9',
@@ -838,14 +961,16 @@ class BetEngine {
       final effBack      = carryActive ? cfg.backValue      * cfg.carryFactor : cfg.backValue;
       final effBackPress = carryActive ? cfg.backPressValue * cfg.carryFactor : cfg.backPressValue;
       liquidateSegment(
-        holeFrom: seg2From, holeTo: seg2To,
+        holes:      seg.secondNine,
         segValue:   effBack,
         pressValue: effBackPress,
         segLabel:   'Nassau Back 9${carryActive ? ' (x${cfg.carryFactor.toStringAsFixed(0)})' : ''}',
       );
       // Total 18: suma todos los deltas disponibles
       int total = 0;
-      for (final delta in deltaByHole.values) total += delta;
+      for (final delta in deltaByHole.values) {
+        total += delta;
+      }
       final effTotal = carryActive ? cfg.totalValue * cfg.carryFactor : cfg.totalValue;
       void addTotal(int score, double val) {
         if (score > 0) {
@@ -962,22 +1087,7 @@ class BetEngine {
     } else {
       // Ancla = jugador que, en la suma de acuerdos bilaterales del grupo,
       // da más y recibe menos. Si hay empate de ventaja, usar HCP más bajo.
-      String ancla = pids.first;
-      double maxNet = double.negativeInfinity;
-      for (final pid in pids) {
-        double net = 0;
-        for (final other in pids) {
-          if (other == pid) continue;
-          net += _strokesP1ReceivesFromP2(round, pid, other); // positivo = recibe, negativo = da
-        }
-        // Queremos el que tiene net MÁS NEGATIVO (da más, recibe menos)
-        // Guardamos el inverso (−net) para comparar con maxNet
-        final score = -net;
-        if (score > maxNet || (score == maxNet && round.getHandicap(pid) < round.getHandicap(ancla))) {
-          maxNet = score;
-          ancla = pid;
-        }
-      }
+      final ancla = groupAnchor(round, pids);
       for (final pid in pids) {
         nets[pid] = netVs(pid, ancla);
       }
@@ -1082,9 +1192,11 @@ class BetEngine {
         for (int j = i + 1; j < orderedPids.length; j++) {
           final winner = orderedPids[i];
           final loser  = orderedPids[j];
+          // Valor pactado para este duelo (excepción por par si la hay)
+          final oyesValue = mod.effectiveValueForDuel(winner, loser).$1;
           entries.add(LedgerEntry(
             fromPlayerId: loser, toPlayerId: winner,
-            amount: cfg.value, betType: BetModuleType.oyeses,
+            amount: oyesValue, betType: BetModuleType.oyeses,
             reason: 'Oyés H${ch.hole} (${i + 1}° vs ${j + 1}°)', hole: ch.hole,
           ));
           // allVsAll: acumular victorias de winner sobre loser
@@ -1180,9 +1292,14 @@ class BetEngine {
           // Valor individual por evento — configurado en UnitsConfig
           final amount = cfg.valueFor(evt.type);
           for (final other in pids.where((p) => p != pid)) {
+            // Excepción por duelo: en Units el override ('allEvents') fija un
+            // valor único para todos los eventos de ese par.
+            final pairAmount = mod.effectiveValueForDuel(pid, other).$1;
+            final hasOverride = mod.overrideForPair(pid, other) != null;
             entries.add(LedgerEntry(
               fromPlayerId: other, toPlayerId: pid,
-              amount: amount, betType: BetModuleType.units,
+              amount: hasOverride ? pairAmount : amount,
+              betType: BetModuleType.units,
               reason: '${evt.type.label} H$h', hole: h,
             ));
           }
@@ -1197,6 +1314,24 @@ class BetEngine {
   // MODO EQUIPO — lado A vs lado B (best-ball)
   // ══════════════════════════════════════════════════════════════════════════
 
+  /// Importe de CADA entrada cruzada jugador↔jugador en un duelo por equipos.
+  ///
+  /// Un duelo por equipos vale lo configurado EN TOTAL: se comporta igual que
+  /// un jugador contra otro. Un Nassau F$50 entre dos parejas mueve $50 en el
+  /// Front, no $200.
+  ///
+  /// Como el ledger solo sabe mover dinero entre jugadores, el importe se
+  /// reparte en las |A|×|B| entradas cruzadas. Así:
+  ///   • cada miembro del lado ganador recibe  value / |ganadores|
+  ///   • cada miembro del lado perdedor paga   value / |perdedores|
+  ///   • el total movido es exactamente        value
+  /// y funciona también con lados de distinto tamaño (2 vs 3).
+  static double teamCrossAmount(double value, int sizeA, int sizeB) {
+    final pairs = sizeA * sizeB;
+    if (pairs <= 0) return 0;
+    return value / pairs;
+  }
+
   // ── Helper: deltas hoyo a hoyo entre dos lados (usa holeDeltaVs) ──────────
   // Devuelve (holeOrder, deltas[1..n]) igual que _buildHoleDeltas.
   // hcpMap: todos los jugadores de ambos lados, HCP de ronda directo.
@@ -1205,12 +1340,12 @@ class BetEngine {
       Round round, BetSide sideA, BetSide sideB, BetModuleInstance mod) {
     final allPlayerIds = [...sideA.playerIds, ...sideB.playerIds];
     final hcpMap = mod.useHandicap
-        ? GameEngine.buildTeamHcpMap(round, allPlayerIds)
+        ? GameEngine.buildTeamHcpMap(round, allPlayerIds, cfg: mod.teamHandicap)
         : <String, double>{};
 
-    final holeOrder = round.startingNine == StartingNine.back
-        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
-        : List.generate(round.totalHoles, (i) => i + 1);
+    // Hoyos reales del curso en orden de juego (no un rango derivado de
+    // totalHoles, que se queda en 9 si la ronda se extiende a 18).
+    final holeOrder = segmentsOf(round).playOrder;
 
     // deltas[0] no se usa; índice 1-based
     final List<int> deltas = List.filled(holeOrder.length + 1, 0);
@@ -1261,16 +1396,21 @@ class BetEngine {
       for (int pos = m.startPos; pos <= m.endPos && pos <= holeOrder.length; pos++) {
         score += deltas[pos];
         // Contar como jugado si el delta fue calculado (hoyo completo en ambos lados)
-        if (deltas[pos] != 0) played++;
-        else {
-          // También contar hoyos empatados (delta=0) que sí se jugaron
+        if (deltas[pos] != 0) {
+          played++;
+        } else {
+          // También contar hoyos empatados (delta=0) que sí se jugaron.
+          // Basta con que CADA lado tenga al menos una bola anotada (best ball).
           final h = holeOrder[pos - 1];
-          final allPlayed = [...sideA.playerIds, ...sideB.playerIds]
-              .every((pid) => round.getScore(pid, h).hasScore);
-          if (allPlayed) played++;
+          final aPlayed = sideA.playerIds.any((pid) => round.getScore(pid, h).hasScore);
+          final bPlayed = sideB.playerIds.any((pid) => round.getScore(pid, h).hasScore);
+          if (aPlayed && bPlayed) played++;
         }
       }
       if (played == 0) continue;
+      // El match por equipos vale lo configurado en total (ver teamCrossAmount)
+      final amount = teamCrossAmount(
+          m.value, sideA.playerIds.length, sideB.playerIds.length);
       final label = '${m.businessLabel} H${holeOrder[m.startPos - 1]}–H${holeOrder[m.endPos.clamp(1, holeOrder.length) - 1]} (${sideA.name} vs ${sideB.name})';
       if (score > 0) {
         // sideA gana: sideB paga a sideA (cada jugador de B paga a cada jugador de A)
@@ -1278,7 +1418,7 @@ class BetEngine {
           for (final pB in sideB.playerIds) {
             entries.add(LedgerEntry(
               fromPlayerId: pB, toPlayerId: pA,
-              amount: m.value, betType: BetModuleType.matchAutoPress, reason: label,
+              amount: amount, betType: BetModuleType.matchAutoPress, reason: label,
             ));
           }
         }
@@ -1288,7 +1428,7 @@ class BetEngine {
           for (final pB in sideB.playerIds) {
             entries.add(LedgerEntry(
               fromPlayerId: pA, toPlayerId: pB,
-              amount: m.value, betType: BetModuleType.matchAutoPress, reason: label,
+              amount: amount, betType: BetModuleType.matchAutoPress, reason: label,
             ));
           }
         }
@@ -1306,19 +1446,14 @@ class BetEngine {
 
     final allPlayerIds = [...sideA.playerIds, ...sideB.playerIds];
     final hcpMap = mod.useHandicap
-        ? GameEngine.buildTeamHcpMap(round, allPlayerIds)
+        ? GameEngine.buildTeamHcpMap(round, allPlayerIds, cfg: mod.teamHandicap)
         : <String, double>{};
 
-    final holeOrder = round.startingNine == StartingNine.back
-        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
-        : List.generate(round.totalHoles, (i) => i + 1);
+    // Segmentación lógica: primer segmento jugado = "Front" (ver segmentsOf).
+    final seg       = segmentsOf(round);
+    final holeOrder = seg.playOrder;
 
     int front = 0, back = 0;
-
-    // Segmentación lógica: seg1 = primer segmento jugado ("Front"), seg2 = segundo ("Back").
-    final bool _isBackTeam = round.startingNine == StartingNine.back;
-    final int tSeg1From = _isBackTeam ? 10 : 1;
-    final int tSeg1To   = _isBackTeam ? 18 : 9;
 
     for (final h in holeOrder) {
       final delta = GameEngine.holeDeltaVs(
@@ -1326,28 +1461,35 @@ class BetEngine {
         holeNum: h, useHandicap: mod.useHandicap, hcpMap: hcpMap,
       );
       if (delta == null) continue;
-      if (h >= tSeg1From && h <= tSeg1To) front += delta;
-      else                                 back  += delta;
+      if (seg.isFirst(h)) {
+        front += delta;
+      } else {
+        back += delta;
+      }
     }
     final total = front + back;
 
     void addSegment(int margin, double value, String label) {
       if (margin == 0) return;
-      // Si A gana (margin > 0): B paga a A — cruzado entre todos
+      // El duelo por equipos vale lo configurado EN TOTAL: el lado que gana se
+      // lleva `value` repartido entre sus miembros, igual que si fuera un
+      // jugador contra otro. Ver [teamCrossAmount].
+      final amount = teamCrossAmount(value, sideA.playerIds.length,
+          sideB.playerIds.length);
       for (final pA in sideA.playerIds) {
         for (final pB in sideB.playerIds) {
           if (margin > 0) {
             entries.add(LedgerEntry(fromPlayerId: pB, toPlayerId: pA,
-                amount: value, betType: BetModuleType.nassau, reason: label));
+                amount: amount, betType: BetModuleType.nassau, reason: label));
           } else {
             entries.add(LedgerEntry(fromPlayerId: pA, toPlayerId: pB,
-                amount: value, betType: BetModuleType.nassau, reason: label));
+                amount: amount, betType: BetModuleType.nassau, reason: label));
           }
         }
       }
     }
 
-    if (round.totalHoles <= 9) {
+    if (seg.singleNine) {
       addSegment(front, cfg.frontValue, 'Nassau 9 hoyos (${sideA.name} vs ${sideB.name})');
     } else {
       addSegment(front, cfg.frontValue,          'Nassau Front 9 (${sideA.name} vs ${sideB.name})');
@@ -1367,12 +1509,10 @@ class BetEngine {
 
     final allPlayerIds = [...sideA.playerIds, ...sideB.playerIds];
     final hcpMap = mod.useHandicap
-        ? GameEngine.buildTeamHcpMap(round, allPlayerIds)
+        ? GameEngine.buildTeamHcpMap(round, allPlayerIds, cfg: mod.teamHandicap)
         : <String, double>{};
 
-    final holeOrder = round.startingNine == StartingNine.back
-        ? [...List.generate(9, (i) => i + 10), ...List.generate(9, (i) => i + 1)]
-        : List.generate(round.totalHoles, (i) => i + 1);
+    final holeOrder = segmentsOf(round).playOrder;
 
     for (final h in holeOrder) {
       final delta = GameEngine.holeDeltaVs(
@@ -1384,7 +1524,10 @@ class BetEngine {
       if (delta != 0) {
         final winners = delta > 0 ? sideA.playerIds : sideB.playerIds;
         final losers  = delta > 0 ? sideB.playerIds : sideA.playerIds;
-        final share   = pot / losers.length;
+        // La skin del hoyo vale `pot` EN TOTAL para el lado ganador
+        // (ver teamCrossAmount). Antes solo se dividía entre perdedores, así
+        // que en 2v2 se movía el doble de lo configurado.
+        final share   = teamCrossAmount(pot, winners.length, losers.length);
         for (final w in winners) {
           for (final l in losers) {
             entries.add(LedgerEntry(
@@ -1476,31 +1619,27 @@ class BetEngine {
 
     final allPlayerIds = [...sideA.playerIds, ...sideB.playerIds];
     final hcpMap = mod.useHandicap
-        ? GameEngine.buildTeamHcpMap(round, allPlayerIds)
+        ? GameEngine.buildTeamHcpMap(round, allPlayerIds, cfg: mod.teamHandicap)
         : <String, double>{};
 
-    // Respetar startingNine igual que nassauLiveStatus individual
-    final bool isBack  = round.startingNine == StartingNine.back;
-    final int seg1From = isBack ? 10 : 1;
-    final int seg1To   = isBack ? 18 : 9;
-    final int seg2From = isBack ? 1  : 10;
-    final int seg2To   = isBack ? 9  : 18;
+    // Segmentación lógica (ver segmentsOf): respeta startingNine y campos de 9.
+    final seg = segmentsOf(round);
 
     int front = 0, back = 0;
     int frontPlayed = 0, backPlayed = 0;
     final List<int> frontHistory = [];
     final List<int> backHistory  = [];
 
-    for (int h = 1; h <= round.totalHoles; h++) {
+    for (final h in seg.playOrder) {
       final delta = GameEngine.holeDeltaVs(
         round: round, sideA: sideA, sideB: sideB,
         holeNum: h, useHandicap: mod.useHandicap, hcpMap: hcpMap,
       );
       if (delta == null) continue;
 
-      if (h >= seg1From && h <= seg1To) {
+      if (seg.isFirst(h)) {
         front += delta; frontPlayed++; frontHistory.add(front);
-      } else if (h >= seg2From && h <= seg2To) {
+      } else {
         back  += delta; backPlayed++;  backHistory.add(back);
       }
     }
@@ -1510,9 +1649,9 @@ class BetEngine {
 
     final List<NassauPress> presses = [];
     if (cfg.pressEnabled) {
-      _detectPresses(presses, frontHistory, seg1From, seg1To, frontPlayed,
+      _detectPressesInSegment(presses, frontHistory, seg.firstNine, frontPlayed,
           idA, idB, cfg.autoPressTrigger);
-      _detectPresses(presses, backHistory, seg2From, seg2To, backPlayed,
+      _detectPressesInSegment(presses, backHistory, seg.secondNine, backPlayed,
           idA, idB, cfg.autoPressTrigger);
     }
 
@@ -1701,8 +1840,9 @@ class BetEngine {
       final netReceiver = round.getScore(receiverId, h).grossScore! - strokesHere;
 
       final int delta;
-      if      (grossBase < netReceiver) delta = baseId == p1Id ?  1 : -1;
-      else if (grossBase > netReceiver) delta = baseId == p1Id ? -1 :  1;
+      if      (grossBase < netReceiver) {
+        delta = baseId == p1Id ?  1 : -1;
+      } else if (grossBase > netReceiver) delta = baseId == p1Id ? -1 :  1;
       else                              delta = 0;
 
       deltas[pos + 1] = delta;
@@ -1811,13 +1951,41 @@ class BetEngine {
   }
 
 
-  /// Genera TODOS los entries de todos los grupos de la ronda
+  /// Genera TODOS los entries de todos los grupos de la ronda.
+  ///
+  /// Lanza [StateError] si algún par tiene acuerdos legacy contradictorios.
+  /// Es deliberado: mejor fallar que liquidar dinero mal. Para llamarlo desde
+  /// la UI usa [safeComputeAll], que aísla el fallo por módulo.
   static List<LedgerEntry> computeAll(Round round) {
     final all = <LedgerEntry>[];
     for (final group in round.betGroups) {
       all.addAll(computeGroup(round, group));
     }
     return all;
+  }
+
+  /// Versión tolerante a fallos de [computeAll], pensada para la UI.
+  ///
+  /// La UI llama al ledger desde `build()`, donde una excepción tumba la
+  /// pantalla entera. Este wrapper captura los errores de integridad,
+  /// deja fuera SOLO el módulo afectado y devuelve los mensajes para que la
+  /// pantalla pueda avisar al usuario de qué ventaja debe corregir.
+  static LedgerComputation safeComputeAll(Round round) {
+    final entries = <LedgerEntry>[];
+    final errors  = <String>[];
+
+    for (final group in round.betGroups) {
+      for (final mod in group.modules) {
+        try {
+          entries.addAll(computeModule(round, group, mod));
+        } on StateError catch (e) {
+          errors.add('${group.name} · ${mod.type.label}: ${e.message}');
+        } catch (e) {
+          errors.add('${group.name} · ${mod.type.label}: error inesperado ($e)');
+        }
+      }
+    }
+    return LedgerComputation(entries: entries, errors: errors);
   }
 
   // ── DIAGNÓSTICO DE MEDAL ──────────────────────────────────────────────────
@@ -1961,15 +2129,16 @@ class BetEngine {
           final empates = pairDetails.where((p) => p['winner'] == 'EMPATE').length;
           reason = '${pids.length} jugadores · ${pairDetails.length} pares · $wins con ganador · $empates empates';
         } else {
-          // onePot 3+: base = jugador con menor HCP
+          // onePot 3+: MISMA ancla que usa _medal (el que más da / menos recibe).
+          // Antes se usaba "menor HCP" aquí, así que el diagnóstico mostraba
+          // netos distintos de los que el motor liquidaba realmente.
+          final base = mod.useHandicap ? groupAnchor(round, pids) : pids.first;
           if (!mod.useHandicap) {
             for (final pid in pids) {
               nets[pid] = grosses[pid]!;
               strokesMap[pid] = 0;
             }
           } else {
-            final base = pids.reduce((a, b) =>
-                round.getHandicap(a) <= round.getHandicap(b) ? a : b);
             for (final pid in pids) {
               nets[pid] = netInPairDiag(pid, base);
               strokesMap[pid] = strokesInPlayedHoles(pid, base);
@@ -1979,12 +2148,9 @@ class BetEngine {
           if ((nets[sorted[0]] ?? 999) == (nets[sorted[1]] ?? 999)) {
             reason = 'EMPATE entre ${sorted[0]} y ${sorted[1]} (net=${nets[sorted[0]]}) → sin entry';
           } else {
-            final base = mod.useHandicap
-                ? pids.reduce((a, b) => round.getHandicap(a) <= round.getHandicap(b) ? a : b)
-                : pids.first;
             final winNetStr = pids.map((pid) =>
                 '$pid gross${grosses[pid]}-${strokesMap[pid]}=net${nets[pid]}').join(', ');
-            reason = 'Base: $base | ${sorted[0]} gana (net=${nets[sorted[0]]}) | $winNetStr';
+            reason = 'Ancla: $base | ${sorted[0]} gana (net=${nets[sorted[0]]}) | $winNetStr';
           }
         }
 
@@ -2023,14 +2189,20 @@ class BetEngine {
     List<String>? groupPids,  // todos los participantes del módulo (opcional)
   }) {
     final cfg = mod.skins;
-    double pot = cfg.valuePerSkin;
-    int cumP1 = 0, cumP2 = 0;
-
-    final allHoles = round.course.holes;
 
     // Determinar si el módulo es de grupo (3+) o 1v1 puro
     final pids = groupPids ?? [p1Id, p2Id];
     final isGroup = pids.length > 2;
+
+    // En 1v1 se respeta la excepción por duelo, igual que en _skins1v1.
+    // En grupo (pozo común) no hay "valor del duelo": se usa el base.
+    final skinValue =
+        isGroup ? cfg.valuePerSkin : mod.effectiveValueForDuel(p1Id, p2Id).$1;
+
+    double pot = skinValue;
+    int cumP1 = 0, cumP2 = 0;
+
+    final allHoles = round.course.holes;
 
     // Iterar en el ORDEN de la ronda (respetando startingNine).
     // Usar hoyos reales del curso para evitar null en cursos de 9 hoyos.
@@ -2056,6 +2228,9 @@ class BetEngine {
     final (courseF9scorecard, courseB9scorecard) =
         _courseHolesF9B9(allHoles, round.startingNine);
 
+    // Grupo (3+): misma escala común que usa _skins en el ledger.
+    final anchorId = isGroup ? groupAnchor(round, pids) : '';
+
     // Construir resultados en orden de la ronda
     final orderedResults = <SkinHoleResult>[];
 
@@ -2073,9 +2248,18 @@ class BetEngine {
           continue;
         }
 
-        // Ganador del hoyo en el grupo (neto individual vs par)
-        final winner = GameEngine.holeWinner(round, pids, h, mod.useHandicap);
-        final skinsInPot = (pot / cfg.valuePerSkin).round();
+        // Ganador del hoyo en el grupo — misma escala (ancla + pairSliding)
+        // que usa _skins al generar los LedgerEntries.
+        final winner = groupHoleWinner(
+          round:       round,
+          pids:        pids,
+          ch:          ch,
+          useHandicap: mod.useHandicap,
+          anchorId:    anchorId,
+          courseF9:    courseF9scorecard,
+          courseB9:    courseB9scorecard,
+        );
+        final skinsInPot = (pot / skinValue).round();
 
         if (winner == null) {
           // Empate en el grupo
@@ -2083,16 +2267,17 @@ class BetEngine {
             hole: h, winner: null, isPending: false, isTie: true,
             pot: pot, cumP1: cumP1, cumP2: cumP2,
           ));
-          if (cfg.carryOver) pot += cfg.valuePerSkin;
+          if (cfg.carryOver) pot += skinValue;
         } else {
           // Solo registrar como ganador de p1/p2 si el ganador es uno de los dos
-          if (winner == p1Id) cumP1 += skinsInPot;
-          else if (winner == p2Id) cumP2 += skinsInPot;
+          if (winner == p1Id) {
+            cumP1 += skinsInPot;
+          } else if (winner == p2Id) cumP2 += skinsInPot;
           orderedResults.add(SkinHoleResult(
             hole: h, winner: winner, isPending: false,
             pot: pot, cumP1: cumP1, cumP2: cumP2,
           ));
-          pot = cfg.valuePerSkin;
+          pot = skinValue;
         }
       } else {
         // ── CAMINO 1v1: usa strokesReceivedInPlayedHoles ─────────────────
@@ -2132,21 +2317,24 @@ class BetEngine {
         else if (grossBase > netReceiver) { winner = receiverId; }
         else                              { isTie  = true;       }
 
-        final skinsInPot = (pot / cfg.valuePerSkin).round();
+        final skinsInPot = (pot / skinValue).round();
         if (!isTie) {
-          if (winner == p1Id) cumP1 += skinsInPot;
-          else                cumP2 += skinsInPot;
+          if (winner == p1Id) {
+            cumP1 += skinsInPot;
+          } else {
+            cumP2 += skinsInPot;
+          }
           orderedResults.add(SkinHoleResult(
             hole: h, winner: winner, isPending: false,
             pot: pot, cumP1: cumP1, cumP2: cumP2,
           ));
-          pot = cfg.valuePerSkin;
+          pot = skinValue;
         } else {
           orderedResults.add(SkinHoleResult(
             hole: h, winner: null, isPending: false, isTie: true,
             pot: pot, cumP1: cumP1, cumP2: cumP2,
           ));
-          if (cfg.carryOver) pot += cfg.valuePerSkin;
+          if (cfg.carryOver) pot += skinValue;
         }
       }
     }
@@ -2170,12 +2358,8 @@ class BetEngine {
     final (courseF9live, courseB9live) =
         _courseHolesF9B9(allHoles, round.startingNine);
 
-    // Respetar startingNine: primer segmento = hoyos que se juegan primero
-    final bool isBack   = round.startingNine == StartingNine.back;
-    final int seg1From  = isBack ? 10 : 1;
-    final int seg1To    = isBack ? 18 : 9;
-    final int seg2From  = isBack ? 1  : 10;
-    final int seg2To    = isBack ? 9  : 18;
+    // Segmentación lógica (ver segmentsOf): primer segmento = vuelta de inicio
+    final seg = segmentsOf(round);
 
     int front = 0, back = 0;
     int frontPlayed = 0, backPlayed = 0;
@@ -2183,8 +2367,10 @@ class BetEngine {
     final List<int> frontHistory = [];
     final List<int> backHistory  = [];
 
-    for (final ch in allHoles) {
-      final h         = ch.hole;
+    // Iterar en orden de juego para que los históricos de press sean correctos
+    final holeMapLive = { for (final ch in allHoles) ch.hole: ch };
+    for (final h in seg.playOrder) {
+      final ch = holeMapLive[h]!;
       final sBase     = round.getScore(baseId,     h);
       final sReceiver = round.getScore(receiverId, h);
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
@@ -2203,17 +2389,19 @@ class BetEngine {
       final grossBase   = sBase.grossScore!;
       final netReceiver = sReceiver.grossScore! - strokesHere;
       final int delta;
-      if      (grossBase < netReceiver) delta = p1IsBase ?  1 : -1;
-      else if (grossBase > netReceiver) delta = p1IsBase ? -1 :  1;
+      if      (grossBase < netReceiver) {
+        delta = p1IsBase ?  1 : -1;
+      } else if (grossBase > netReceiver) delta = p1IsBase ? -1 :  1;
       else                              delta = 0;
 
       // Conteo individual de hoyos ganados (para el badge visual)
-      if (delta > 0) holesWonP1++;
-      else if (delta < 0) holesWonP2++;
+      if (delta > 0) {
+        holesWonP1++;
+      } else if (delta < 0) holesWonP2++;
 
-      if (h >= seg1From && h <= seg1To) {
+      if (seg.isFirst(h)) {
         front += delta; frontPlayed++; frontHistory.add(front);
-      } else if (h >= seg2From && h <= seg2To) {
+      } else {
         back  += delta; backPlayed++;  backHistory.add(back);
       }
     }
@@ -2224,9 +2412,9 @@ class BetEngine {
     // Por tanto NO se normaliza: pasar frontHistory/backHistory directamente.
     final List<NassauPress> presses = [];
     if (cfg.pressEnabled) {
-      _detectPresses(presses, frontHistory, seg1From, seg1To, frontPlayed,
+      _detectPressesInSegment(presses, frontHistory, seg.firstNine, frontPlayed,
           p1Id, p2Id, cfg.autoPressTrigger);
-      _detectPresses(presses, backHistory, seg2From, seg2To, backPlayed,
+      _detectPressesInSegment(presses, backHistory, seg.secondNine, backPlayed,
           p1Id, p2Id, cfg.autoPressTrigger);
     }
 
@@ -2260,21 +2448,18 @@ class BetEngine {
     final (courseF9press2, courseB9press2) =
         _courseHolesF9B9(allHoles, round.startingNine);
 
-    // Respetar startingNine: si la ronda es back, el "primer segmento" es hoyos 10-18
-    final bool liveIsBack  = round.startingNine == StartingNine.back;
-    final int liveSeg1From = liveIsBack ? 10 : 1;
-    final int liveSeg1To   = liveIsBack ? 18 : 9;
-    final int liveSeg2From = liveIsBack ? 1  : 10;
-    final int liveSeg2To   = liveIsBack ? 9  : 18;
+    // Segmentación lógica (ver segmentsOf): primer segmento = vuelta de inicio
+    final seg = segmentsOf(round);
 
     int front = 0, back = 0;
     int frontPlayed = 0, backPlayed = 0;
     final List<int> frontHistory = [];
     final List<int> backHistory  = [];
 
-    // Iterar sobre todos los hoyos del curso
-    for (final ch in allHoles) {
-      final h = ch.hole;
+    // Iterar en orden de juego para que los históricos de press sean correctos
+    final holeMapPress = { for (final ch in allHoles) ch.hole: ch };
+    for (final h in seg.playOrder) {
+      final ch = holeMapPress[h]!;
       final sBase     = round.getScore(baseId,     h);
       final sReceiver = round.getScore(receiverId, h);
       if (!sBase.hasScore || !sReceiver.hasScore) continue;
@@ -2292,20 +2477,21 @@ class BetEngine {
       final grossBase   = sBase.grossScore!;
       final netReceiver = sReceiver.grossScore! - strokes;
       final int delta;
-      if      (grossBase < netReceiver) delta = p1IsBase ?  1 : -1;
-      else if (grossBase > netReceiver) delta = p1IsBase ? -1 :  1;
+      if      (grossBase < netReceiver) {
+        delta = p1IsBase ?  1 : -1;
+      } else if (grossBase > netReceiver) delta = p1IsBase ? -1 :  1;
       else                              delta = 0;
 
-      // Asignar al segmento correcto según el rango físico de hoyos
-      if (h >= liveSeg1From && h <= liveSeg1To) {
+      // Asignar al segmento lógico correcto
+      if (seg.isFirst(h)) {
         front += delta; frontPlayed++; frontHistory.add(front);
-      } else if (h >= liveSeg2From && h <= liveSeg2To) {
+      } else {
         back  += delta; backPlayed++;  backHistory.add(back);
       }
     }
 
     // Carry: primer segmento completo y empatado
-    final f9Complete  = frontPlayed == 9;
+    final f9Complete  = seg.firstNine.isNotEmpty && frontPlayed == seg.firstNine.length;
     final carryActive = cfg.carryEnabled && cfg.carryApplied && f9Complete && front == 0;
 
     // Valores efectivos
@@ -2318,13 +2504,13 @@ class BetEngine {
     //   p1IsBase=false: delta=-1 si base(p2) gana, +1 si pierde  →  +1 = p1 arriba
     // Por tanto NO se normaliza: pasar frontHistory/backHistory directamente.
 
-    // Presiones primer segmento (físicamente liveSeg1From..liveSeg1To)
+    // Presiones del primer segmento (vuelta de inicio)
     final List<NassauPress> frontPresses = [];
-    _detectPresses(frontPresses, frontHistory, liveSeg1From, liveSeg1To, frontPlayed,
+    _detectPressesInSegment(frontPresses, frontHistory, seg.firstNine, frontPlayed,
         p1Id, p2Id, cfg.autoPressTrigger);
-    // Presiones segundo segmento (físicamente liveSeg2From..liveSeg2To)
+    // Presiones del segundo segmento
     final List<NassauPress> backPresses  = [];
-    _detectPresses(backPresses, backHistory, liveSeg2From, liveSeg2To, backPlayed,
+    _detectPressesInSegment(backPresses, backHistory, seg.secondNine, backPlayed,
         p1Id, p2Id, cfg.autoPressTrigger);
 
     return NassauPressLiveStatus(
@@ -2342,14 +2528,21 @@ class BetEngine {
     );
   }
 
-  static void _detectPresses(
+  /// Detecta presiones dentro de un segmento.
+  ///
+  /// [holes] son los hoyos REALES del segmento en orden de juego. Se usa en
+  /// lugar de un rango numérico para soportar campos de 9 hoyos y numeración
+  /// invertida (ej: campo 1-9 jugado como vuelta de inicio con back-start).
+  static void _detectPressesInSegment(
     List<NassauPress> out,
     List<int> history,
-    int holeStart, int holeEnd,
+    List<int> holes,
     int played,
     String p1Id, String p2Id,
     int trigger,
   ) {
+    if (holes.isEmpty) return;
+    final holeEnd = holes.last;
     // Misma lógica de marcador relativo que liquidateSegment:
     // el trigger se mide desde el inicio del segmento o desde el último press,
     // no desde el acumulado absoluto. Así se evitan presiones duplicadas
@@ -2366,8 +2559,9 @@ class BetEngine {
     for (int i = 0; i < history.length; i++) {
       final relDiff = history[i] - (refIdx == 0 ? 0 : history[refIdx - 1]);
       if (relDiff.abs() >= trigger) {
-        final startHole = holeStart + i + 1;
-        if (startHole <= holeEnd) {
+        // La press empieza en el hoyo siguiente, si existe dentro del segmento
+        if (i + 1 < holes.length) {
+          final startHole = holes[i + 1];
           final loser = relDiff < 0 ? p1Id : p2Id;
           triggers.add((trigIdx: i, loser: loser, startHole: startHole));
           refIdx = i + 1;
@@ -2375,7 +2569,7 @@ class BetEngine {
       }
     }
 
-    final segmentHoles = holeEnd - holeStart + 1;
+    final segmentHoles = holes.length;
     for (int k = 0; k < triggers.length; k++) {
       final t = triggers[k];
       // La press cierra justo antes de que empiece la siguiente; si es la última,
@@ -2399,6 +2593,45 @@ class BetEngine {
       ));
     }
   }
+}
+
+// ── LedgerComputation: resultado tolerante a fallos de computeAll ────────────
+class LedgerComputation {
+  final List<LedgerEntry> entries;
+
+  /// Mensajes de integridad de los módulos que no se pudieron calcular.
+  /// Vacío si todo está correcto.
+  final List<String> errors;
+
+  const LedgerComputation({required this.entries, required this.errors});
+
+  bool get hasErrors => errors.isNotEmpty;
+}
+
+// ── RoundSegments: segmentación lógica de la ronda ───────────────────────────
+//
+// [firstNine]  hoyos de la vuelta de inicio, en orden numérico.
+// [secondNine] hoyos de la otra vuelta, en orden numérico (vacío en campos de 9).
+// [singleNine] true → la ronda se liquida con UN solo segmento (9 hoyos).
+//
+// Ojo: "first"/"second" son lógicos, no numéricos. Con startingNine=back,
+// firstNine son los hoyos 10-18 y secondNine los 1-9.
+class RoundSegments {
+  final List<int> firstNine;
+  final List<int> secondNine;
+  final bool      singleNine;
+
+  const RoundSegments({
+    required this.firstNine,
+    required this.secondNine,
+    required this.singleNine,
+  });
+
+  /// Todos los hoyos del curso en orden real de juego.
+  List<int> get playOrder => [...firstNine, ...secondNine];
+
+  /// true si [hole] pertenece al primer segmento jugado.
+  bool isFirst(int hole) => firstNine.contains(hole);
 }
 
 // ── _MatchNode: nodo interno para el árbol de matches activos ────────────────

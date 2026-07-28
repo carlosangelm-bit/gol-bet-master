@@ -966,7 +966,9 @@ class _ProfileFormSheetState extends State<_ProfileFormSheet> {
 
   @override
   void dispose() {
-    for (final c in [_nameCtrl, _nicknameCtrl, _hcpCtrl, _unitCtrl]) c.dispose();
+    for (final c in [_nameCtrl, _nicknameCtrl, _hcpCtrl, _unitCtrl]) {
+      c.dispose();
+    }
     super.dispose();
   }
 

@@ -19,6 +19,7 @@ import '../../core/app_theme.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
 import '../../engines/bet_engine.dart';
+import '../../engines/ledger_engine.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/bet_module_edit_sheet.dart';
 import '../../services/auth_service.dart';
@@ -97,6 +98,139 @@ class BetsScreen extends StatelessWidget {
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// PROYECCIÓN «REGLAS + EXCEPCIONES»
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// La configuración real vive en BetGroup.modules. Esta vista no introduce
+// modelo nuevo: reinterpreta lo que ya hay en dos listas cortas.
+//
+//   REGLA      → módulo que aplica a toda la partida (alcance everyone/subset)
+//                o a un equipo. Son 2-4 filas en vez de 28.
+//   EXCEPCIÓN  → algo que se sale de la regla:
+//                  a) un módulo de alcance `pair` (apuesta solo de ese duelo)
+//                  b) una entrada de pairConfigOverrides (mismo tipo de apuesta,
+//                     importe distinto para ese duelo)
+
+class _BetRule {
+  final BetGroup group;
+  final BetModuleInstance module;
+  const _BetRule({required this.group, required this.module});
+
+  BetScope get scope => module.effectiveScope;
+
+  /// Cuántos jugadores cubre ahora mismo.
+  int get playerCount => module.resolveParticipants(group.playerIds).length;
+
+  String get scopeLabel => switch (scope.kind) {
+        BetScopeKind.everyone => 'Toda la partida ($playerCount)',
+        BetScopeKind.subset   => '$playerCount jugadores',
+        BetScopeKind.teams    => '${module.sideA.name} vs ${module.sideB.name}',
+        BetScopeKind.pair     => 'Duelo',
+      };
+
+  String get formatLabel =>
+      module.isAllVsAll ? 'Todos vs todos' : '1 Pot';
+}
+
+enum _ExceptionKind {
+  /// Apuesta que solo existe para ese duelo.
+  extraBet,
+  /// Mismo tipo de apuesta que la regla, pero con otro importe para el duelo.
+  differentValue,
+}
+
+class _BetException {
+  final _ExceptionKind kind;
+  final BetGroup group;
+  final BetModuleInstance module;
+  final String p1Id;
+  final String p2Id;
+  /// Importe pactado (solo en [differentValue]).
+  final double? pairValue;
+  /// Importe base del módulo (solo en [differentValue]).
+  final double? baseValue;
+
+  const _BetException({
+    required this.kind,
+    required this.group,
+    required this.module,
+    required this.p1Id,
+    required this.p2Id,
+    this.pairValue,
+    this.baseValue,
+  });
+}
+
+/// Resumen textual de la proyección, para tests.
+///
+/// Se devuelven descripciones en vez de los tipos internos: lo que importa
+/// verificar es QUÉ acaba en cada lista, no la forma de las clases privadas.
+@visibleForTesting
+({List<String> rules, List<String> exceptions}) describeBetProjection(
+    Round round) {
+  final p = _projectRules(round);
+  return (
+    rules: p.rules
+        .map((r) => '${r.module.type.name}:${r.scope.kind.name}')
+        .toList(),
+    exceptions: p.exceptions
+        .map((e) => '${e.module.type.name}:${e.kind.name}:'
+            '${([e.p1Id, e.p2Id]..sort()).join("-")}')
+        .toList(),
+  );
+}
+
+({List<_BetRule> rules, List<_BetException> exceptions}) _projectRules(
+    Round round) {
+  final rules      = <_BetRule>[];
+  final exceptions = <_BetException>[];
+
+  for (final g in round.betGroups) {
+    for (final m in g.modules) {
+      final scope = m.effectiveScope;
+
+      // a) Módulo de duelo suelto → excepción "apuesta extra"
+      if (scope.kind == BetScopeKind.pair && m.participantIds.length == 2) {
+        exceptions.add(_BetException(
+          kind:   _ExceptionKind.extraBet,
+          group:  g,
+          module: m,
+          p1Id:   m.participantIds[0],
+          p2Id:   m.participantIds[1],
+        ));
+        continue;
+      }
+
+      // b) Módulo de partida → es una regla
+      rules.add(_BetRule(group: g, module: m));
+
+      // …y cada override por par cuelga de ella como excepción de importe
+      final ovs = m.pairConfigOverrides;
+      if (ovs == null || ovs.isEmpty) continue;
+      final participants = m.resolveParticipants(g.playerIds);
+      for (int i = 0; i < participants.length; i++) {
+        for (int j = i + 1; j < participants.length; j++) {
+          final a = participants[i], b = participants[j];
+          if (!ovs.containsKey(BetModuleInstance.pairKey(a, b))) continue;
+          final pv = m.overrideForPair(a, b);
+          if (pv == null) continue;
+          exceptions.add(_BetException(
+            kind:      _ExceptionKind.differentValue,
+            group:     g,
+            module:    m,
+            p1Id:      a,
+            p2Id:      b,
+            pairValue: pv,
+            baseValue: m.baseValue,
+          ));
+        }
+      }
+    }
+  }
+  return (rules: rules, exceptions: exceptions);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Modelo interno: un duelo entre dos jugadores con sus apuestas
 // ─────────────────────────────────────────────────────────────────────────────
@@ -147,25 +281,27 @@ List<_DuelInfo> _buildDuels(Round round) {
       final pB = activePlayers[j];
       final key = BetModuleInstance.pairKey(pA.id, pB.id);
 
-      final rpA = round.roundPlayers.firstWhere(
-        (r) => r.playerId == pA.id,
-        orElse: () => RoundPlayer(playerId: pA.id, handicapEnRonda: 0),
-      );
-      final rpB = round.roundPlayers.firstWhere(
-        (r) => r.playerId == pB.id,
-        orElse: () => RoundPlayer(playerId: pB.id, handicapEnRonda: 0),
-      );
+      // MISMA prioridad que BetEngine._strokesP1ReceivesFromP2:
+      //   1. pairSliding (fuente canónica)
+      //   2. manualHandicaps legacy (directo, luego invertido)
+      // Si se leyera el legacy primero, la UI mostraría un número distinto del
+      // que el ledger cobra en cuanto ambos existan y difieran.
+      double? manual = BetEngine.canonicalSlidingBetween(round, pA.id, pB.id);
 
-      double? manual;
-      if (rpA.manualHandicaps.containsKey(pB.id)) {
-        manual = rpA.manualHandicaps[pB.id];
-      } else if (rpB.manualHandicaps.containsKey(pA.id)) {
-        manual = -(rpB.manualHandicaps[pA.id]!);
-      }
-
-      final canonical = BetEngine.canonicalSlidingBetween(round, pA.id, pB.id);
-      if (manual == null && canonical != null) {
-        manual = canonical;
+      if (manual == null) {
+        final rpA = round.roundPlayers.firstWhere(
+          (r) => r.playerId == pA.id,
+          orElse: () => RoundPlayer(playerId: pA.id, handicapEnRonda: 0),
+        );
+        final rpB = round.roundPlayers.firstWhere(
+          (r) => r.playerId == pB.id,
+          orElse: () => RoundPlayer(playerId: pB.id, handicapEnRonda: 0),
+        );
+        if (rpA.manualHandicaps.containsKey(pB.id)) {
+          manual = rpA.manualHandicaps[pB.id];
+        } else if (rpB.manualHandicaps.containsKey(pA.id)) {
+          manual = -(rpB.manualHandicaps[pA.id]!);
+        }
       }
 
       final hcpA = round.getHandicap(pA.id);
@@ -211,19 +347,88 @@ List<_DuelInfo> _buildDuels(Round round) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Body principal
 // ─────────────────────────────────────────────────────────────────────────────
-class _BetsBody extends StatelessWidget {
+class _BetsBody extends StatefulWidget {
   final RoundProvider prov;
   final GolfTheme t;
   const _BetsBody({required this.prov, required this.t});
 
   @override
+  State<_BetsBody> createState() => _BetsBodyState();
+}
+
+/// Dos lecturas de la MISMA configuración:
+///   Reglas → qué se juega y para quién (pocas filas, es donde se configura)
+///   Duelos → cuánto va cada quien con cada quien (consulta, decenas de filas)
+enum _BetsView { reglas, duelos }
+
+class _BetsBodyState extends State<_BetsBody> {
+  _BetsView _view = _BetsView.reglas;
+
+  RoundProvider get prov => widget.prov;
+  GolfTheme get t => widget.t;
+
+  @override
   Widget build(BuildContext context) {
     final round = prov.round!;
-    final duels = _buildDuels(round);
+    // Módulos que no se pudieron liquidar por ventajas contradictorias.
+    final integrityErrors = LedgerEngine.integrityErrors(round);
+    // Jugadores de la ronda que no pertenecen a ninguna partida de apuestas.
+    final orphans = _playersOutsideBets(round);
 
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(child: _BetsHeader(round: round, prov: prov, t: t)),
+        if (integrityErrors.isNotEmpty)
+          SliverToBoxAdapter(
+            child: _IntegrityBanner(errors: integrityErrors, t: t),
+          ),
+        if (orphans.isNotEmpty && prov.canEditBets)
+          SliverToBoxAdapter(
+            child: _OrphanPlayersCard(
+                players: orphans, round: round, prov: prov, t: t),
+          ),
+        if (prov.canEditBets && prov.openableBetsCount > 0)
+          SliverToBoxAdapter(child: _OpenScopeCard(prov: prov, t: t)),
+
+        // ── Selector de vista ────────────────────────────────────────────────
+        SliverToBoxAdapter(
+          child: _ViewSwitcher(
+            value: _view,
+            t: t,
+            onChanged: (v) => setState(() => _view = v),
+          ),
+        ),
+
+        if (_view == _BetsView.reglas)
+          ..._rulesSlivers(round)
+        else
+          ..._duelSlivers(round),
+      ],
+    );
+  }
+
+  // ── Vista REGLAS ──────────────────────────────────────────────────────────
+  List<Widget> _rulesSlivers(Round round) {
+    final p = _projectRules(round);
+    return [
+      SliverToBoxAdapter(
+        child: _RulesSection(
+          rules: p.rules, round: round, prov: prov, t: t,
+        ),
+      ),
+      SliverToBoxAdapter(
+        child: _ExceptionsSection(
+          exceptions: p.exceptions, round: round, prov: prov, t: t,
+        ),
+      ),
+      const SliverToBoxAdapter(child: SizedBox(height: 24)),
+    ];
+  }
+
+  // ── Vista DUELOS (la de siempre) ──────────────────────────────────────────
+  List<Widget> _duelSlivers(Round round) {
+    final duels = _buildDuels(round);
+    return [
         if (duels.isEmpty)
           SliverFillRemaining(
             child: Center(
@@ -256,7 +461,609 @@ class _BetsBody extends StatelessWidget {
               ),
             ),
           ),
-      ],
+    ];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sección REGLAS — qué se juega y para quién
+// ─────────────────────────────────────────────────────────────────────────────
+class _RulesSection extends StatelessWidget {
+  final List<_BetRule> rules;
+  final Round round;
+  final RoundProvider prov;
+  final GolfTheme t;
+  const _RulesSection({
+    required this.rules, required this.round,
+    required this.prov, required this.t,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text('APUESTAS DE LA RONDA',
+              style: TextStyle(
+                  color: t.sub, fontSize: 11,
+                  fontWeight: FontWeight.w800, letterSpacing: 0.6)),
+          const Spacer(),
+          Text('${rules.length}',
+              style: TextStyle(
+                  color: t.sub, fontSize: 11, fontWeight: FontWeight.w700)),
+        ]),
+        const SizedBox(height: 8),
+
+        if (rules.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: t.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.divider),
+            ),
+            child: Text('Sin apuestas de partida',
+                style: TextStyle(color: t.sub, fontSize: 13)),
+          )
+        else
+          ...rules.map((r) => _RuleCard(rule: r, prov: prov, t: t)),
+      ]),
+    );
+  }
+}
+
+class _RuleCard extends StatelessWidget {
+  final _BetRule rule;
+  final RoundProvider prov;
+  final GolfTheme t;
+  const _RuleCard({required this.rule, required this.prov, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = rule.module;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 11, 8, 11),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.divider),
+      ),
+      child: Row(children: [
+        Text(m.type.icon, style: const TextStyle(fontSize: 20)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Text(m.type.label,
+                  style: TextStyle(
+                      color: t.text, fontWeight: FontWeight.w800, fontSize: 14)),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(m.summaryLabel,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: t.primary, fontSize: 12,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ]),
+            const SizedBox(height: 3),
+            Row(children: [
+              _ScopeChip(
+                icon: rule.scope.isEveryone
+                    ? Icons.lock_open_outlined
+                    : Icons.lock_outline,
+                label: rule.scopeLabel,
+                t: t,
+              ),
+              const SizedBox(width: 6),
+              _ScopeChip(icon: Icons.swap_horiz, label: rule.formatLabel, t: t),
+            ]),
+          ]),
+        ),
+        if (prov.canEditBets)
+          IconButton(
+            icon: Icon(Icons.edit_outlined, color: t.sub, size: 18),
+            tooltip: 'Editar',
+            onPressed: () => _openEdit(context),
+          ),
+      ]),
+    );
+  }
+
+  void _openEdit(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: t.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => BetModuleEditSheet(
+        group: rule.group,
+        mod: rule.module,
+        t: t,
+        courseInfo: prov.round?.course,
+        players: prov.round?.players,
+        roundHandicaps: {
+          for (final rp in (prov.round?.roundPlayers ?? const <RoundPlayer>[]))
+            rp.playerId: rp.handicapEnRonda,
+        },
+        onSave: (updated) => prov.updateBetModule(rule.group.id, updated),
+      ),
+    );
+  }
+}
+
+class _ScopeChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final GolfTheme t;
+  const _ScopeChip({required this.icon, required this.label, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: t.divider),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 11, color: t.sub),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(color: t.sub, fontSize: 10.5)),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sección EXCEPCIONES — lo que se sale de la regla
+// ─────────────────────────────────────────────────────────────────────────────
+class _ExceptionsSection extends StatelessWidget {
+  final List<_BetException> exceptions;
+  final Round round;
+  final RoundProvider prov;
+  final GolfTheme t;
+  const _ExceptionsSection({
+    required this.exceptions, required this.round,
+    required this.prov, required this.t,
+  });
+
+  String _name(String id) => round.players
+      .firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id))
+      .name
+      .split(' ')
+      .first;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text('EXCEPCIONES',
+              style: TextStyle(
+                  color: t.sub, fontSize: 11,
+                  fontWeight: FontWeight.w800, letterSpacing: 0.6)),
+          const Spacer(),
+          Text('${exceptions.length}',
+              style: TextStyle(
+                  color: t.sub, fontSize: 11, fontWeight: FontWeight.w700)),
+        ]),
+        const SizedBox(height: 8),
+
+        if (exceptions.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: t.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.divider),
+            ),
+            child: Text(
+              'Todos juegan lo mismo. Para pactar algo distinto con alguien, '
+              'abre su duelo en la pestaña Duelos.',
+              style: TextStyle(color: t.sub, fontSize: 12, height: 1.35),
+            ),
+          )
+        else
+          ...exceptions.map((e) => _ExceptionRow(
+                exception: e, p1Name: _name(e.p1Id), p2Name: _name(e.p2Id),
+                t: t,
+              )),
+      ]),
+    );
+  }
+}
+
+class _ExceptionRow extends StatelessWidget {
+  final _BetException exception;
+  final String p1Name;
+  final String p2Name;
+  final GolfTheme t;
+  const _ExceptionRow({
+    required this.exception, required this.p1Name,
+    required this.p2Name, required this.t,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final e = exception;
+    final isExtra = e.kind == _ExceptionKind.extraBet;
+
+    final detail = isExtra
+        ? 'Apuesta solo de este duelo · ${e.module.summaryLabel}'
+        : '${e.module.type.label}: ${e.pairValue?.toStringAsFixed(0)} '
+          'en vez de ${e.baseValue?.toStringAsFixed(0)}';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: t.accent.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.accent.withValues(alpha: 0.28)),
+      ),
+      child: Row(children: [
+        Icon(isExtra ? Icons.add_circle_outline : Icons.tune,
+            color: t.accent, size: 17),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('$p1Name vs $p2Name',
+                style: TextStyle(
+                    color: t.text, fontWeight: FontWeight.w800, fontSize: 13)),
+            const SizedBox(height: 2),
+            Text(detail,
+                style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.25)),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Selector Reglas / Duelos
+// ─────────────────────────────────────────────────────────────────────────────
+class _ViewSwitcher extends StatelessWidget {
+  final _BetsView value;
+  final GolfTheme t;
+  final ValueChanged<_BetsView> onChanged;
+  const _ViewSwitcher(
+      {required this.value, required this.t, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget seg(_BetsView v, IconData icon, String label) {
+      final sel = v == value;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => onChanged(v),
+          behavior: HitTestBehavior.opaque,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            decoration: BoxDecoration(
+              color: sel ? t.primary : Colors.transparent,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(icon, size: 15, color: sel ? t.onPrimary : t.sub),
+              const SizedBox(width: 6),
+              Text(label,
+                  style: TextStyle(
+                    color: sel ? t.onPrimary : t.sub,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  )),
+            ]),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.divider),
+      ),
+      child: Row(children: [
+        seg(_BetsView.reglas, Icons.rule_outlined, 'Reglas'),
+        seg(_BetsView.duelos, Icons.compare_arrows, 'Duelos'),
+      ]),
+    );
+  }
+}
+
+/// Jugadores activos de la ronda que NO pertenecen a ninguna partida de
+/// apuestas. Son los que, hoy, quedan fuera de todo sin ninguna señal visible.
+///
+/// NO cuentan como "fuera":
+///   • Los jugadores virtuales de equipo — ellos SON la entrada en la partida.
+///   • Los miembros de un equipo (Best Ball / Scramble). Apuestan a través de
+///     su lado, por eso no están en group.playerIds. Ofrecer añadirlos crearía
+///     apuestas individuales encima de la de equipo, que es justo lo que no
+///     se quiere.
+@visibleForTesting
+List<String> playersOutsideBetsForTest(Round round) =>
+    _playersOutsideBets(round).map((p) => p.id).toList();
+
+List<Player> _playersOutsideBets(Round round) {
+  final inSomeGroup = <String>{
+    for (final g in round.betGroups) ...g.playerIds,
+  };
+
+  // Jugadores que ya compiten como parte de un lado de equipo
+  final inSomeSide = <String>{
+    for (final g in round.betGroups)
+      for (final m in g.modules)
+        if (m.sides != null)
+          for (final s in m.sides!) ...s.playerIds,
+  };
+
+  // Miembros representados por un jugador virtual (bb_team_* / team_*)
+  final teamMembers = <String>{
+    for (final p in round.players)
+      if (p.isVirtual) ...p.teamMemberIds,
+  };
+
+  return round.players
+      .where((p) => round.scores.containsKey(p.id))
+      .where((p) => !p.isVirtual)
+      .where((p) => !inSomeGroup.contains(p.id))
+      .where((p) => !inSomeSide.contains(p.id))
+      .where((p) => !teamMembers.contains(p.id))
+      .toList();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Abrir el alcance de apuestas creadas antes de que existieran los alcances
+// ─────────────────────────────────────────────────────────────────────────────
+// Solo aparece para apuestas cuyos participantes YA son toda la partida, así
+// que abrirlas no cambia quién juega hoy: únicamente hace que quien se sume
+// después entre solo, en vez de quedar fuera en silencio.
+class _OpenScopeCard extends StatelessWidget {
+  final RoundProvider prov;
+  final GolfTheme t;
+  const _OpenScopeCard({required this.prov, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final n = prov.openableBetsCount;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.primary.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.primary.withValues(alpha: 0.30)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.lock_open_outlined, color: t.primary, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              n == 1
+                  ? '1 apuesta está fijada a los jugadores actuales'
+                  : '$n apuestas están fijadas a los jugadores actuales',
+              style: TextStyle(
+                  color: t.primary, fontWeight: FontWeight.w800, fontSize: 14),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 4),
+        Text(
+          'Ábrelas a toda la partida y quien se sume más tarde entrará solo. '
+          'No cambia quién juega ahora mismo.',
+          style: TextStyle(color: t.sub, fontSize: 12, height: 1.3),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () {
+              final changed = prov.openAllWholeGroupBets();
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                backgroundColor: t.primary,
+                content: Text(changed == 1
+                    ? '1 apuesta abierta a toda la partida'
+                    : '$changed apuestas abiertas a toda la partida'),
+              ));
+            },
+            icon: const Icon(Icons.lock_open, size: 16),
+            label: Text(n == 1 ? 'Abrir la apuesta' : 'Abrir las $n apuestas',
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 13)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: t.primary,
+              foregroundColor: t.onPrimary,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(vertical: 11),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Jugadores fuera de las apuestas — alta en una partida
+// ─────────────────────────────────────────────────────────────────────────────
+class _OrphanPlayersCard extends StatelessWidget {
+  final List<Player> players;
+  final Round round;
+  final RoundProvider prov;
+  final GolfTheme t;
+  const _OrphanPlayersCard({
+    required this.players, required this.round,
+    required this.prov, required this.t,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final names = players.map((p) => p.name.split(' ').first).join(', ');
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.accent.withValues(alpha: 0.35)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.person_add_alt_1_outlined, color: t.accent, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              players.length == 1
+                  ? '$names está fuera de las apuestas'
+                  : '${players.length} jugadores fuera de las apuestas',
+              style: TextStyle(
+                  color: t.accent, fontWeight: FontWeight.w800, fontSize: 14),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 4),
+        Text(
+          players.length == 1 ? '' : names,
+          style: TextStyle(color: t.sub, fontSize: 12),
+        ),
+        const SizedBox(height: 10),
+        ...players.map((p) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _addToPartida(context, p),
+                  icon: Icon(Icons.add, size: 16, color: t.accent),
+                  label: Text('Añadir a ${p.name.split(' ').first} a una partida',
+                      style: TextStyle(
+                          color: t.accent,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12)),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: t.accent.withValues(alpha: 0.4)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
+              ),
+            )),
+      ]),
+    );
+  }
+
+  /// Si solo hay una partida se añade directo; si hay varias, se pregunta.
+  Future<void> _addToPartida(BuildContext context, Player player) async {
+    final groups = round.betGroups;
+    if (groups.isEmpty) return;
+
+    String? groupId = groups.length == 1 ? groups.first.id : null;
+
+    groupId ??= await showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: t.card,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              child: Text('¿A qué partida añades a ${player.name}?',
+                  style: TextStyle(
+                      color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
+            ),
+            ...groups.map((g) => ListTile(
+                  leading: Icon(Icons.groups_outlined, color: t.primary),
+                  title: Text(g.name, style: TextStyle(color: t.text)),
+                  subtitle: Text(
+                      '${g.playerIds.length} jugadores · ${g.modules.length} apuestas',
+                      style: TextStyle(color: t.sub, fontSize: 12)),
+                  onTap: () => Navigator.pop(ctx, g.id),
+                )),
+            const SizedBox(height: 8),
+          ]),
+        ),
+    );
+    if (groupId == null) return;
+
+    final openBets = prov.addPlayerToGroupBets(player.id, groupId);
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: openBets > 0 ? t.primary : t.accent,
+      content: Text(openBets > 0
+          ? '${player.name} entra en $openBets apuesta${openBets == 1 ? "" : "s"} de la partida'
+          : '${player.name} se añadió, pero ninguna apuesta tiene alcance '
+            '"Todos". Ábrelas o créale duelos propios.'),
+      duration: const Duration(seconds: 4),
+    ));
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Aviso de integridad: módulos que no se pudieron liquidar
+// ─────────────────────────────────────────────────────────────────────────────
+// Ocurre cuando un par tiene ventajas contradictorias guardadas (típico de
+// rondas antiguas migradas). El motor prefiere no liquidar antes que cobrar
+// mal, así que hay que avisar en vez de mostrar un cero silencioso.
+class _IntegrityBanner extends StatelessWidget {
+  final List<String> errors;
+  final GolfTheme t;
+  const _IntegrityBanner({required this.errors, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.loss.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.loss.withValues(alpha: 0.40)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.warning_amber_rounded, color: t.loss, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              errors.length == 1
+                  ? '1 apuesta sin liquidar'
+                  : '${errors.length} apuestas sin liquidar',
+              style: TextStyle(
+                  color: t.loss, fontWeight: FontWeight.w800, fontSize: 14),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        Text(
+          'Hay ventajas contradictorias entre jugadores. Corrige la ventaja '
+          'del duelo afectado para que vuelva a calcularse.',
+          style: TextStyle(color: t.sub, fontSize: 12),
+        ),
+        const SizedBox(height: 8),
+        ...errors.map((e) => Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('• $e',
+                  style: TextStyle(color: t.sub, fontSize: 11, height: 1.3)),
+            )),
+      ]),
     );
   }
 }
@@ -744,8 +1551,18 @@ class _DuelBetsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final modules = duel.modules;
-    // Tipos ya configurados para este par — se usan para filtrar el picker
-    final existingTypes = modules.map((r) => r.module.type).toSet();
+
+    // Tipos que YA existen como apuesta EXCLUSIVA de este par.
+    //
+    // Solo cuentan los módulos 1v1 (participantIds == exactamente estos dos).
+    // Los módulos grupales (Nassau de la partida, 1 Pot, equipos…) también
+    // aparecen en duel.modules porque afectan al par, pero NO deben bloquear
+    // el picker: tener un Nassau grupal de 100 no impide acordar un Nassau
+    // 1v1 aparte con otro importe.
+    final existingTypes = modules
+        .where((r) => r.module.participantIds.length == 2)
+        .map((r) => r.module.type)
+        .toSet();
     final hasAllTypes =
         existingTypes.containsAll(BetModuleType.values.toSet());
 
@@ -1042,6 +1859,9 @@ class _BetRow extends StatelessWidget {
       builder: (ctx) => BetModuleEditSheet(
         group: group, mod: mod, t: t,
         courseInfo: round.course, players: round.players,
+        roundHandicaps: {
+          for (final rp in round.roundPlayers) rp.playerId: rp.handicapEnRonda,
+        },
         onSave: (saved) {
           Navigator.pop(ctx);
           prov.updateBetModule(group.id, saved);
@@ -1621,10 +2441,9 @@ class _HandicapEditSheetState extends State<_HandicapEditSheet> {
                     child: OutlinedButton(
                       onPressed: () {
                         Navigator.pop(context);
+                        // Una sola llamada: setPairSliding limpia ambos lados.
                         widget.prov
-                            .updateManualHandicap(duel.p1.id, duel.p2.id, null);
-                        widget.prov
-                            .updateManualHandicap(duel.p2.id, duel.p1.id, null);
+                            .setPairSliding(duel.p1.id, duel.p2.id, null);
                       },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: t.sub,
@@ -1702,8 +2521,9 @@ class _HandicapEditSheetState extends State<_HandicapEditSheet> {
     Navigator.pop(context);
     final strokes = (double.tryParse(_ctrl.text) ?? 0).abs();
     final val = _p1Receives ? strokes : -strokes;
-    widget.prov.updateManualHandicap(duel.p1.id, duel.p2.id, val);
-    widget.prov.updateManualHandicap(duel.p2.id, duel.p1.id, null);
+    // Una sola llamada: setPairSliding escribe pairSliding y espeja el legacy
+    // en ambos jugadores. Dos llamadas invertidas se pisarían entre sí.
+    widget.prov.setPairSliding(duel.p1.id, duel.p2.id, val);
   }
 
   void _proposeHandicap() {
@@ -2111,10 +2931,13 @@ class _PickerViewState extends State<_PickerView> {
 
   GolfTheme get t => widget.t;
 
-  /// Tipos disponibles = todos menos los que el par ya tiene configurados
-  List<BetModuleType> get _availableTypes => BetModuleType.values
-      .where((t) => !widget.existingTypes.contains(t))
-      .toList();
+  /// Se muestran TODOS los tipos. Los que el par ya tiene como apuesta 1v1
+  /// salen atenuados y no seleccionables (ver [_BetTypeCard.alreadyConfigured]),
+  /// en vez de desaparecer: ocultarlos hacía parecer que la app no permitía
+  /// añadir esos tipos.
+  List<BetModuleType> get _availableTypes => BetModuleType.values.toList();
+
+  bool _isTaken(BetModuleType type) => widget.existingTypes.contains(type);
 
   @override
   Widget build(BuildContext context) {
@@ -2195,13 +3018,16 @@ class _PickerViewState extends State<_PickerView> {
                 itemCount: _availableTypes.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (_, i) {
-                  final type = _availableTypes[i];
-                  final isSelected = _selected == type;
+                  final type  = _availableTypes[i];
+                  final taken = _isTaken(type);
                   return _BetTypeCard(
                     type: type,
-                    selected: isSelected,
+                    selected: _selected == type,
+                    alreadyConfigured: taken,
                     t: t,
-                    onTap: () => setState(() => _selected = type),
+                    onTap: taken
+                        ? () {}
+                        : () => setState(() => _selected = type),
                   );
                 },
               ),
@@ -2333,6 +3159,10 @@ class _EditorView extends StatelessWidget {
               t: t,
               courseInfo: round.course,
               players: round.players,
+              roundHandicaps: {
+                for (final rp in round.roundPlayers)
+                  rp.playerId: rp.handicapEnRonda,
+              },
               onSave: onSave,
             ),
           ),
@@ -2346,12 +3176,17 @@ class _EditorView extends StatelessWidget {
 class _BetTypeCard extends StatelessWidget {
   final BetModuleType type;
   final bool selected;
+  /// true si el par ya tiene una apuesta 1v1 de este tipo. Se muestra atenuada
+  /// y no seleccionable, en vez de desaparecer de la lista: así queda claro
+  /// POR QUÉ no se puede añadir (hay que editar la existente).
+  final bool alreadyConfigured;
   final GolfTheme t;
   final VoidCallback onTap;
 
   const _BetTypeCard({
     required this.type, required this.selected,
     required this.t, required this.onTap,
+    this.alreadyConfigured = false,
   });
 
   @override
@@ -2360,6 +3195,51 @@ class _BetTypeCard extends StatelessWidget {
     final bgColor     = selected
         ? t.primary.withValues(alpha: 0.08)
         : t.surface;
+
+    if (alreadyConfigured) {
+      return Opacity(
+        opacity: 0.45,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          decoration: BoxDecoration(
+            color: t.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: t.divider),
+          ),
+          child: Row(children: [
+            Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(
+                color: t.card,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: t.divider),
+              ),
+              child: Center(
+                child: Text(type.icon, style: const TextStyle(fontSize: 22)),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(type.label,
+                      style: TextStyle(
+                          color: t.text,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15)),
+                  const SizedBox(height: 3),
+                  Text('Ya configurada en este duelo · edítala desde la lista',
+                      style: TextStyle(color: t.sub, fontSize: 11, height: 1.3)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Icon(Icons.check_circle_outline, color: t.sub, size: 22),
+          ]),
+        ),
+      );
+    }
 
     return GestureDetector(
       onTap: onTap,

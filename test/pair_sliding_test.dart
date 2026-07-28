@@ -115,7 +115,7 @@ Round _roundThroughJson(Round r) {
   // Deserializar (replica roundFromJson)
   List<dynamic> asList(dynamic v) => v is List ? v : [];
   Map<String, dynamic> asMap(dynamic v) =>
-      v is Map ? Map<String, dynamic>.from(v as Map) : <String, dynamic>{};
+      v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
 
   final players = asList(decoded['players'])
       .map((p) => Player.fromJson(asMap(p))).toList();
@@ -139,7 +139,7 @@ Round _roundThroughJson(Round r) {
   final rawPs = decoded['pairSliding'];
   final pairSliding = <String, double>{};
   if (rawPs != null && rawPs is Map) {
-    (rawPs as Map).forEach((k, v) {
+    (rawPs).forEach((k, v) {
       pairSliding[k.toString()] = (v as num?)?.toDouble() ?? 0.0;
     });
   }
@@ -395,7 +395,9 @@ void main() {
 
       final errors = BetEngine.validatePairSliding(r);
       print('  Errores detectados: ${errors.length}');
-      for (final e in errors) print('  → $e');
+      for (final e in errors) {
+        print('  → $e');
+      }
 
       expect(errors, isNotEmpty,
           reason: 'validatePairSliding debe detectar conflicto entre pairSliding y manualHandicaps');
@@ -454,7 +456,9 @@ void main() {
 
       final entries = BetEngine.computeGroup(round, round.betGroups.first);
       print('  Entradas: ${entries.length}');
-      for (final e in entries) print('  → ${e.fromPlayerId} → ${e.toPlayerId}: \$${e.amount}');
+      for (final e in entries) {
+        print('  → ${e.fromPlayerId} → ${e.toPlayerId}: \$${e.amount}');
+      }
 
       expect(entries, hasLength(1));
       expect(entries.first.toPlayerId, equals('A'));
@@ -588,7 +592,7 @@ void main() {
         final rawPs = decoded['pairSliding'];
         final pairSliding = <String, double>{};
         if (rawPs != null && rawPs is Map) {
-          (rawPs as Map).forEach((k, v) {
+          (rawPs).forEach((k, v) {
             pairSliding[k.toString()] = (v as num?)?.toDouble() ?? 0.0;
           });
         }
