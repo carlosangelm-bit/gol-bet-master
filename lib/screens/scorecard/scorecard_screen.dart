@@ -2861,7 +2861,7 @@ class _AvatarScoreRow extends StatelessWidget {
     required this.label1, required this.label2,
     required this.highlightP1, required this.highlightP2,
     required this.stateColor, required this.t,
-  }) : score1 = null : score2 = null;
+  }) : score1 = null, score2 = null;
   @override
   Widget build(BuildContext context) {
     return Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [

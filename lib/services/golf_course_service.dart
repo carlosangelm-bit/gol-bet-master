@@ -233,7 +233,7 @@ class ApiTeeBox {
 }
 
 class ApiCourse {
-  final int id;
+  final String id;
   final String clubName;
   final String courseName;
   final String city;
@@ -253,6 +253,9 @@ class ApiCourse {
     required this.femaleTees,
   });
 
+  /// Devuelve true si el id es el formato antiguo numérico (migración legacy).
+  bool get isLegacyIntId => int.tryParse(id) != null;
+
   String get displayName {
     final loc = [city, state, country]
         .where((s) => s.isNotEmpty)
@@ -268,7 +271,7 @@ class ApiCourse {
     final femaleList = (tees['female'] as List?) ?? [];
 
     return ApiCourse(
-      id:         (j['id'] as num?)?.toInt() ?? 0,
+      id:         j['id']?.toString() ?? '',
       clubName:   j['club_name']   as String? ?? 'Campo sin nombre',
       courseName: j['course_name'] as String? ?? '',
       city:       loc['city']    as String? ?? '',
@@ -284,7 +287,7 @@ class ApiCourse {
 
   /// Serializar para cache en Firestore (tees ya con strokeIndex calculado)
   Map<String, dynamic> toJson() => {
-    'id':          id,
+    'id':          id,   // persiste como String
     'club_name':   clubName,
     'course_name': courseName,
     'city':        city,
@@ -327,7 +330,7 @@ class ApiCourse {
     final maleList   = toTeeList(clean['maleTees']);
     final femaleList = toTeeList(clean['femaleTees']);
     return ApiCourse(
-      id:         (clean['id'] is num ? (clean['id'] as num).toInt() : int.tryParse(clean['id']?.toString() ?? '') ?? 0),
+      id:         clean['id']?.toString() ?? '',
       clubName:   clean['club_name']?.toString()   ?? '',
       courseName: clean['course_name']?.toString() ?? '',
       city:       clean['city']?.toString()        ?? '',
@@ -346,7 +349,7 @@ class GolfCourseService {
   static const _apiKey  = 'DLZRFGWXFTHO6QNK3ZIOVL5I2Q';
 
   // ── Caché en memoria por sesión (evita llamadas repetidas al mismo campo) ──
-  static final Map<int, ApiCourse> _detailCache = {};
+  static final Map<String, ApiCourse> _detailCache = {};
   static final Map<String, List<ApiCourse>> _searchCache = {};
 
   static Map<String, String> get _headers => {
@@ -387,7 +390,9 @@ class GolfCourseService {
 
   // ── Obtener campo completo (con hoyos) por ID ─────────────────────────────
   // Respuesta: { "course": { ... } }   ← wrapper singular "course"
-  static Future<ApiCourse> getById(int id) async {
+  // Acepta tanto IDs numéricos legacy ("12345") como alfanuméricos nuevos ("2cep969t")
+  static Future<ApiCourse> getById(String id) async {
+    if (id.isEmpty) throw Exception('courseId vacío');
     // Devolver caché si existe (evita llamada a la API en visitas repetidas)
     if (_detailCache.containsKey(id)) {
       return _detailCache[id]!;
@@ -413,8 +418,8 @@ class GolfCourseService {
 
   /// Pre-carga en paralelo los detalles de varios campos (para favoritos).
   /// No lanza excepciones — fallos silenciosos.
-  static Future<void> prefetchByIds(List<int> ids) async {
-    final missing = ids.where((id) => !_detailCache.containsKey(id)).toList();
+  static Future<void> prefetchByIds(List<String> ids) async {
+    final missing = ids.where((id) => id.isNotEmpty && !_detailCache.containsKey(id)).toList();
     if (missing.isEmpty) return;
     await Future.wait(
       missing.map((id) => getById(id).then((_) {}).catchError((_) {})),

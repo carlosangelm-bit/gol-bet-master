@@ -58,8 +58,7 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
       final profProv = context.read<UserProfileProvider>();
       final favIds = profProv.favCourses
           .where((f) => f.courseId.isNotEmpty)
-          .map((f) => int.tryParse(f.courseId))
-          .whereType<int>()
+          .map((f) => f.courseId)
           .toList();
       if (favIds.isNotEmpty) {
         // Pre-carga silenciosa en background — no bloquea la UI
@@ -116,7 +115,7 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
       // - API:       datos completos del campo (hoyos + tees)
       // Ambas tienen caché en memoria → segunda visita al mismo campo es instantánea.
       final results = await Future.wait([
-        CourseCorrectionsService.getForCourse(course.id.toString()),
+        CourseCorrectionsService.getForCourse(course.id),
         GolfCourseService.getById(course.id),
       ]);
 
@@ -151,7 +150,7 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
       _hasCorrectedData = false;
     });
     // PRIMERO: corrección oficial
-    final correction = await CourseCorrectionsService.getForCourse(course.id.toString());
+    final correction = await CourseCorrectionsService.getForCourse(course.id);
     final hasCorrected = correction != null;
     final result = hasCorrected ? correction.correctedCourse : course;
     if (mounted) {
@@ -472,7 +471,7 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
         // Info del campo + botón favorito
         Consumer<UserProfileProvider>(
           builder: (ctx, profProv, _) {
-            final courseId = course.id.toString();
+            final courseId = course.id;
             final isFav = profProv.isFavCourse(courseId);
             return Container(
               padding: const EdgeInsets.all(14),
@@ -576,7 +575,7 @@ class _CourseResultTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<UserProfileProvider>(
       builder: (ctx, profProv, _) {
-        final courseId = course.id.toString();
+        final courseId = course.id;
         final isFav = profProv.isFavCourse(courseId);
         return GestureDetector(
           onTap: onTap,

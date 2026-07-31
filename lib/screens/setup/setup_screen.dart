@@ -321,7 +321,7 @@ class _SetupScreenState extends State<SetupScreen> {
         if (favCourses.isNotEmpty) ...[
           GSectionHeader(title: 'MIS CAMPOS FAVORITOS'),
           ...favCourses.map((fav) {
-            final isSelected = _selectedApiCourse?.id.toString() == fav.courseId ||
+            final isSelected = _selectedApiCourse?.id == fav.courseId ||
                 (_selectedCourse?.name == fav.fullName && _selectedApiCourse == null);
             final isLoading = _loadingFavId == fav.courseId;
             final teeName = fav.preferredTeeName;
@@ -429,7 +429,7 @@ class _SetupScreenState extends State<SetupScreen> {
         // ── Campo seleccionado manualmente (no favorito) ──────────────────
         if (_selectedCourse != null &&
             !favCourses.any((f) =>
-                f.courseId == _selectedApiCourse?.id.toString() ||
+                f.courseId == _selectedApiCourse?.id ||
                 (_selectedApiCourse == null && f.fullName == _selectedCourse!.name))) ...[
           GSectionHeader(title: 'CAMPO SELECCIONADO'),
           GCard(child: Row(children: [
@@ -4082,7 +4082,7 @@ class _SetupScreenState extends State<SetupScreen> {
   /// ese campo ya está seleccionado en la ronda actual.
   void _showFavTeeSelector(BuildContext context, FavoriteCourse fav, GolfTheme t) {
     // Usar los tees del campo actualmente seleccionado (corrección global o API)
-    final course = _selectedApiCourse?.id.toString() == fav.courseId
+    final course = _selectedApiCourse?.id == fav.courseId
         ? _selectedApiCourse!
         : null;
     // Si el campo no está seleccionado aún, no hay tees disponibles
@@ -4103,7 +4103,7 @@ class _SetupScreenState extends State<SetupScreen> {
           context.read<UserProfileProvider>().updateFavCourseTee(fav.courseId, name);
           // Si el campo ya está seleccionado, reasignar tees con la nueva preferencia
           final isCurrentCourse =
-              _selectedApiCourse?.id.toString() == fav.courseId;
+              _selectedApiCourse?.id == fav.courseId;
           if (isCurrentCourse) {
             setState(() {
               for (final p in _players) {
@@ -4218,8 +4218,6 @@ class _SetupScreenState extends State<SetupScreen> {
   Future<void> _selectFavCourseWithFresh(FavoriteCourse fav) async {
     if (_loadingFavId != null) return; // evitar doble tap
 
-    final courseIdInt = int.tryParse(fav.courseId);
-
     // Mostrar loading + placeholder inmediato
     setState(() {
       _pendingCorrection = null;
@@ -4229,7 +4227,7 @@ class _SetupScreenState extends State<SetupScreen> {
       _playerTees.clear();
     });
 
-    if (courseIdInt == null) {
+    if (fav.courseId.isEmpty) {
       setState(() => _loadingFavId = null);
       return;
     }
@@ -4282,7 +4280,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
       // ── PASO 3: API fresca (último recurso) ──────────────────────────────────
       debugPrint('[Setup] Sin corrección ni caché para ${fav.courseId}, usando API externa');
-      final fresh = await GolfCourseService.getById(courseIdInt);
+      final fresh = await GolfCourseService.getById(fav.courseId);
       if (!mounted) return;
       setState(() {
         _loadingFavId = null;

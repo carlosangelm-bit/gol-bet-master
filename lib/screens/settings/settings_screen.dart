@@ -1607,7 +1607,7 @@ class _FavCoursePickerSheetState extends State<_FavCoursePickerSheet> {
       itemCount: _results.length,
       itemBuilder: (_, i) {
         final course = _results[i];
-        final courseId = course.id.toString();
+        final courseId = course.id;
         final isFav = profProv.isFavCourse(courseId);
         final name = course.courseName.isNotEmpty && course.courseName != course.clubName
             ? '${course.clubName} — ${course.courseName}'
