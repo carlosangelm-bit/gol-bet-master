@@ -1,0 +1,78 @@
+name: CI
+
+# Verifica en cada push y PR a main; despliega solo cuando el push aterriza en
+# main y la verificación pasó.
+#
+# El build web es el guardián que importa: `flutter test` solo compila lo
+# alcanzable desde los tests, y ninguna suite importa las pantallas. Un error
+# de sintaxis en lib/screens/ pasa los 433 tests y revienta dart2js.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: 3.44.6
+
+jobs:
+  verify:
+    name: Analiza, testea y compila
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # Solo los errores rompen el build. El proyecto arrastra ~138 warnings e
+      # infos preexistentes (unused_element, código muerto) y `flutter analyze`
+      # a secas sale con código 1 por ellos, lo que dejaría el CI rojo de forma
+      # permanente. Cuando esas warnings se limpien, quitar los dos flags.
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Test
+        run: flutter test
+
+      - name: Build web
+        run: flutter build web --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: build/web
+          retention-days: 7
+
+  deploy:
+    name: Despliega a Firebase Hosting
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      # firebase.json y .firebaserc definen el sitio y el directorio público.
+      - uses: actions/checkout@v4
+
+      # Se reutiliza el artefacto de `verify` en vez de recompilar: garantiza
+      # que lo desplegado es exactamente lo que pasó las pruebas.
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: build/web
+
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GOLF_BET_MASTER }}
+          projectId: golf-bet-master
+          channelId: live
