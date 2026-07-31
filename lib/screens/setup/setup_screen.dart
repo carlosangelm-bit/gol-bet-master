@@ -4262,9 +4262,12 @@ class _SetupScreenState extends State<SetupScreen> {
       }
 
       // ── PASO 2: cachedCourse del favorito (fallback antes de API) ────────────
-      // Si el parsing de courseCorrections falló en Web, usamos el cachedCourse
-      // que fue actualizado con datos corregidos desde Ajustes o automáticamente.
-      if (fav.hasCachedData && mounted) {
+      // Solo se usa si el ID en caché ya es alfanumérico (formato nuevo).
+      // Si el ID es numérico legacy, saltamos al PASO 3 para migrar el favorito.
+      final cachedIsValid = fav.hasCachedData &&
+          fav.cachedCourse!.id.isNotEmpty &&
+          int.tryParse(fav.cachedCourse!.id) == null; // null → no es numérico → válido
+      if (cachedIsValid && mounted) {
         debugPrint('[Setup] Usando cachedCourse del favorito para ${fav.courseId}');
         final cached = fav.cachedCourse!;
         setState(() {

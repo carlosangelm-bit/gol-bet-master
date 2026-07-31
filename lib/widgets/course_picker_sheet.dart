@@ -116,7 +116,7 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
       // Ambas tienen caché en memoria → segunda visita al mismo campo es instantánea.
       final results = await Future.wait([
         CourseCorrectionsService.getForCourse(course.id),
-        GolfCourseService.getById(course.id),
+        GolfCourseService.getById(course.id, fallbackName: course.clubName),
       ]);
 
       if (!mounted) return;
@@ -366,12 +366,26 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: GestureDetector(
                   onTap: () {
-                    if (fav.hasCachedData) {
+                    // Solo usar caché si el ID ya es alfanumérico (formato nuevo).
+                    // Si es numérico legacy, ir a la API para migrar el favorito.
+                    final cacheOk = fav.hasCachedData &&
+                        fav.cachedCourse!.id.isNotEmpty &&
+                        int.tryParse(fav.cachedCourse!.id) == null;
+                    if (cacheOk) {
                       // Directo a selección de tee, aplicando corrección si hay
                       _loadFromCache(fav.cachedCourse!);
                     } else {
-                      // Sin caché: buscar por nombre (pasará por _loadDetail)
-                      _doSearch(fav.clubName);
+                      // Sin caché válido: ir a la API con el ID guardado (+ fallback por nombre)
+                      _loadDetail(ApiCourse(
+                        id:          fav.courseId,
+                        clubName:    fav.clubName,
+                        courseName:  fav.courseName,
+                        city:        fav.city    ?? '',
+                        state:       '',
+                        country:     fav.country ?? '',
+                        maleTees:    const [],
+                        femaleTees:  const [],
+                      ));
                     }
                   },
                   child: Container(
