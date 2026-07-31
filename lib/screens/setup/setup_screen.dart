@@ -4280,8 +4280,29 @@ class _SetupScreenState extends State<SetupScreen> {
 
       // ── PASO 3: API fresca (último recurso) ──────────────────────────────────
       debugPrint('[Setup] Sin corrección ni caché para ${fav.courseId}, usando API externa');
-      final fresh = await GolfCourseService.getById(fav.courseId);
+      // Pasar fallbackName: si el ID numérico legacy devuelve 404, la API buscará
+      // por nombre del club y retornará el campo con el nuevo ID alfanumérico.
+      final fresh = await GolfCourseService.getById(
+        fav.courseId,
+        fallbackName: fav.clubName,
+      );
       if (!mounted) return;
+
+      // ── Migración automática de ID legacy ────────────────────────────────────
+      // Si el campo volvió con un ID diferente al guardado, el favorito en Firestore
+      // tiene un ID numérico obsoleto. Migrar silenciosamente al nuevo ID.
+      if (fresh.id != fav.courseId) {
+        debugPrint('[Setup] Migrando favorito ${fav.courseId} → ${fresh.id}');
+        UserProfileService.migrateFavCourseId(
+          oldId:       fav.courseId,
+          newId:       fresh.id,
+          freshCourse: fresh,
+        ); // fire-and-forget: no await para no bloquear la UI
+      } else {
+        // Misma ID → solo actualizar el cachedCourse
+        UserProfileService.updateFavCourseCache(fav.courseId, fresh);
+      }
+
       setState(() {
         _loadingFavId = null;
         _playerTees.clear();

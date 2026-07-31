@@ -10,6 +10,7 @@
 //       Solo en los resultados de búsqueda (sin hoyos) no está disponible.
 // ─────────────────────────────────────────────────────────────────────────────
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/models.dart';
 
@@ -390,8 +391,12 @@ class GolfCourseService {
 
   // ── Obtener campo completo (con hoyos) por ID ─────────────────────────────
   // Respuesta: { "course": { ... } }   ← wrapper singular "course"
-  // Acepta tanto IDs numéricos legacy ("12345") como alfanuméricos nuevos ("2cep969t")
-  static Future<ApiCourse> getById(String id) async {
+  // Acepta tanto IDs numéricos legacy ("12345") como alfanuméricos nuevos ("2cep969t").
+  //
+  // [fallbackName]: si se provee y el ID devuelve 404, se hace una búsqueda
+  // por nombre y se devuelve el primer resultado que coincida.
+  // Útil para favoritos guardados con IDs numéricos que la API ya no soporta.
+  static Future<ApiCourse> getById(String id, {String? fallbackName}) async {
     if (id.isEmpty) throw Exception('courseId vacío');
     // Devolver caché si existe (evita llamada a la API en visitas repetidas)
     if (_detailCache.containsKey(id)) {
@@ -402,6 +407,12 @@ class GolfCourseService {
 
     final resp = await http.get(uri, headers: _headers)
         .timeout(const Duration(seconds: 12));
+
+    if (resp.statusCode == 404 && fallbackName != null && fallbackName.isNotEmpty) {
+      // ID legacy numérico — la API migró a IDs alfanuméricos.
+      // Intentar recuperar el campo buscando por nombre.
+      return _getByNameFallback(id, fallbackName);
+    }
 
     if (resp.statusCode != 200) {
       throw Exception('Error ${resp.statusCode}');
@@ -414,6 +425,24 @@ class GolfCourseService {
     final course = ApiCourse.fromJson(courseJson);
     _detailCache[id] = course;
     return course;
+  }
+
+  /// Fallback: busca el campo por nombre y hace getById con el nuevo ID alfanumérico.
+  /// Lanza excepción si no encuentra ningún resultado.
+  static Future<ApiCourse> _getByNameFallback(String legacyId, String name) async {
+    debugPrint('[GolfCourseService] ID legacy $legacyId → 404. Fallback búsqueda: "$name"');
+    final results = await search(name);
+    if (results.isEmpty) {
+      throw Exception('Campo no encontrado (ID $legacyId obsoleto, sin resultados para "$name")');
+    }
+    // Tomar el primer resultado y obtener sus datos completos
+    final match = results.first;
+    debugPrint('[GolfCourseService] Fallback: encontrado "${match.clubName}" con nuevo ID ${match.id}');
+    final full = await getById(match.id);
+    // Cachear también bajo el ID legacy para que futuras llamadas con el mismo
+    // ID no vuelvan a la red (hasta que se migre el doc en Firestore)
+    _detailCache[legacyId] = full;
+    return full;
   }
 
   /// Pre-carga en paralelo los detalles de varios campos (para favoritos).

@@ -397,6 +397,34 @@ class UserProfileService {
     }
   }
 
+  /// Migra un favorito de un doc ID (legacy numérico) a un nuevo ID (alfanumérico).
+  /// Copia todos los campos del documento viejo al nuevo, luego borra el viejo.
+  /// Operación silenciosa — no lanza excepciones.
+  static Future<void> migrateFavCourseId({
+    required String oldId,
+    required String newId,
+    required ApiCourse freshCourse,
+  }) async {
+    if (AuthService.uid == null) return;
+    if (oldId == newId) return;
+    try {
+      final oldDoc = await _favCourses().doc(oldId).get();
+      if (!oldDoc.exists) return;
+      final data = Map<String, dynamic>.from(oldDoc.data()!);
+      // Actualizar campos clave al nuevo ID
+      data['courseId']    = newId;
+      data['cachedCourse'] = freshCourse.toJson();
+      // Escribir doc nuevo y borrar el viejo en paralelo
+      await Future.wait([
+        _favCourses().doc(newId).set(data),
+        _favCourses().doc(oldId).delete(),
+      ]);
+      debugPrint('[UserProfile] Favorito migrado: $oldId → $newId');
+    } catch (e) {
+      debugPrint('[UserProfile] ERROR migrateFavCourseId: $e');
+    }
+  }
+
   /// Restaura los datos del campo desde la API, quitando el flag manuallyEdited.
   static Future<void> restoreApiData(
     String courseId,
