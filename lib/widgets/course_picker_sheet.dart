@@ -56,13 +56,15 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
     if (!mounted) return;
     try {
       final profProv = context.read<UserProfileProvider>();
-      final favIds = profProv.favCourses
-          .where((f) => f.courseId.isNotEmpty)
-          .map((f) => f.courseId)
-          .toList();
-      if (favIds.isNotEmpty) {
+      // id → clubName: el nombre permite que los favoritos con ID numérico
+      // legacy se resuelvan por búsqueda en vez de morir en un 404.
+      final favs = {
+        for (final f in profProv.favCourses)
+          if (f.courseId.isNotEmpty) f.courseId: f.clubName,
+      };
+      if (favs.isNotEmpty) {
         // Pre-carga silenciosa en background — no bloquea la UI
-        GolfCourseService.prefetchByIds(favIds).catchError((_) {});
+        GolfCourseService.prefetchByIds(favs).catchError((_) {});
       }
     } catch (_) {}
   }

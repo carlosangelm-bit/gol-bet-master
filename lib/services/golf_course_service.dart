@@ -427,16 +427,51 @@ class GolfCourseService {
     return course;
   }
 
-  /// Fallback: busca el campo por nombre y hace getById con el nuevo ID alfanumérico.
-  /// Lanza excepción si no encuentra ningún resultado.
+  /// Normaliza un nombre de club para compararlo: minúsculas, sin acentos, sin
+  /// puntuación y con los espacios colapsados. Así "Club de Golf México" y
+  /// "CLUB DE GOLF MEXICO" se consideran el mismo club.
+  ///
+  /// Pública para poder testear la comparación del fallback sin tocar la red.
+  static String normalizeClubName(String s) {
+    const from = 'áàäâãéèëêíìïîóòöôõúùüûñç';
+    const to   = 'aaaaaeeeeiiiiooooouuuunc';
+    var out = s.toLowerCase();
+    for (var i = 0; i < from.length; i++) {
+      out = out.replaceAll(from[i], to[i]);
+    }
+    return out.replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+  }
+
+  /// Fallback: busca el campo por nombre y hace getById con el nuevo ID
+  /// alfanumérico. Lanza si no hay resultados o si ninguno coincide.
   static Future<ApiCourse> _getByNameFallback(String legacyId, String name) async {
     debugPrint('[GolfCourseService] ID legacy $legacyId → 404. Fallback búsqueda: "$name"');
     final results = await search(name);
     if (results.isEmpty) {
       throw Exception('Campo no encontrado (ID $legacyId obsoleto, sin resultados para "$name")');
     }
-    // Tomar el primer resultado y obtener sus datos completos
-    final match = results.first;
+
+    // Se EXIGE que el nombre del club coincida. Antes se tomaba results.first
+    // sin comparar nada, y la búsqueda de la API es muy laxa: "Club de Golf"
+    // devuelve 25 resultados encabezados por "Tajin Club De Golf". Cargar el
+    // campo equivocado corrompería el par y el stroke index de la ronda entera
+    // sin ninguna señal visible, así que ante la duda se lanza.
+    final target = normalizeClubName(name);
+    ApiCourse? match;
+    for (final c in results) {
+      if (normalizeClubName(c.clubName) == target) {
+        match = c;
+        break;
+      }
+    }
+    if (match == null) {
+      throw Exception(
+        'Campo no encontrado: ningún resultado coincide con "$name" '
+        '(ID $legacyId obsoleto). Encontrados: '
+        '${results.take(3).map((c) => c.clubName).join(", ")}',
+      );
+    }
+
     debugPrint('[GolfCourseService] Fallback: encontrado "${match.clubName}" con nuevo ID ${match.id}');
     final full = await getById(match.id);
     // Cachear también bajo el ID legacy para que futuras llamadas con el mismo
@@ -447,11 +482,20 @@ class GolfCourseService {
 
   /// Pre-carga en paralelo los detalles de varios campos (para favoritos).
   /// No lanza excepciones — fallos silenciosos.
-  static Future<void> prefetchByIds(List<String> ids) async {
-    final missing = ids.where((id) => id.isNotEmpty && !_detailCache.containsKey(id)).toList();
+  ///
+  /// [courses] mapea id → nombre del club. El nombre se pasa como
+  /// [getById.fallbackName], sin el cual los favoritos guardados con ID
+  /// numérico legacy devolvían 404 y se descartaban en silencio: la migración
+  /// al ID nuevo solo ocurría cuando el usuario tocaba el favorito a mano.
+  static Future<void> prefetchByIds(Map<String, String> courses) async {
+    final missing = courses.keys
+        .where((id) => id.isNotEmpty && !_detailCache.containsKey(id))
+        .toList();
     if (missing.isEmpty) return;
     await Future.wait(
-      missing.map((id) => getById(id).then((_) {}).catchError((_) {})),
+      missing.map((id) => getById(id, fallbackName: courses[id])
+          .then((_) {})
+          .catchError((_) {})),
     );
   }
 }
