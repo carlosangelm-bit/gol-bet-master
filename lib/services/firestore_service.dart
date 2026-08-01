@@ -572,6 +572,15 @@ class GamePreset {
   /// y con los ids dentro de cada entrada no hay ninguna clave que parsear.
   final List<Map<String, dynamic>> pairAgreementsJson;
 
+  /// Nómina habitual del juego: quién suele jugar "el de los martes".
+  ///
+  /// Es una SUGERENCIA, no una restricción — el juego se puede jugar con un
+  /// suplente. Se guarda porque los acuerdos por pareja ya referencian
+  /// playerIds, así que el juego conoce a sus jugadores de todos modos; tenerlos
+  /// listados convierte cargar el juego en un solo toque en vez de re-elegir a
+  /// las mismas cuatro personas cada semana.
+  final List<String> playerIds;
+
   final DateTime updatedAt;
   final int useCount;
 
@@ -582,14 +591,39 @@ class GamePreset {
     required this.description,
     required this.modulesJson,
     this.pairAgreementsJson = const [],
+    this.playerIds = const [],
     required this.updatedAt,
     this.useCount = 0,
   });
+
+  /// Construye un juego a partir de una configuración ya hecha.
+  /// El inverso de [apply]; ver [PairAgreementEngine.capture].
+  factory GamePreset.fromCapture({
+    required String id,
+    required String name,
+    required String emoji,
+    String description = '',
+    required PresetCapture capture,
+    required List<String> playerIds,
+    int useCount = 0,
+  }) =>
+      GamePreset(
+        id: id,
+        name: name,
+        emoji: emoji,
+        description: description,
+        modulesJson: capture.groupRulesJson,
+        pairAgreementsJson: capture.pairAgreementsJson,
+        playerIds: playerIds,
+        updatedAt: DateTime.now(),
+        useCount: useCount,
+      );
 
   GamePreset copyWith({
     String? id, String? name, String? emoji, String? description,
     List<Map<String, dynamic>>? modulesJson,
     List<Map<String, dynamic>>? pairAgreementsJson,
+    List<String>? playerIds,
     DateTime? updatedAt, int? useCount,
   }) => GamePreset(
     id:          id ?? this.id,
@@ -598,6 +632,7 @@ class GamePreset {
     description: description ?? this.description,
     modulesJson: modulesJson ?? this.modulesJson,
     pairAgreementsJson: pairAgreementsJson ?? this.pairAgreementsJson,
+    playerIds:   playerIds ?? this.playerIds,
     updatedAt:   updatedAt ?? this.updatedAt,
     useCount:    useCount ?? this.useCount,
   );
@@ -656,6 +691,7 @@ class GamePreset {
     'description': description,
     'modulesJson': modulesJson,
     'pairAgreementsJson': pairAgreementsJson,
+    'playerIds':   playerIds,
     'updatedAt':   FieldValue.serverTimestamp(),
     'useCount':    useCount,
   };
@@ -675,6 +711,10 @@ class GamePreset {
       pairAgreementsJson: (d['pairAgreementsJson'] as List? ?? [])
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
+          .toList(),
+      playerIds: (d['playerIds'] as List? ?? [])
+          .whereType<String>()
+          .where((s) => s.isNotEmpty)
           .toList(),
       updatedAt:   (d['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       useCount:    (d['useCount'] as int?) ?? 0,

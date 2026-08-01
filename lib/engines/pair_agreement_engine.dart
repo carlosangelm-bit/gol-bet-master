@@ -98,6 +98,39 @@ class PresetApplication {
   bool get hasConflicts => conflicts.isNotEmpty;
 }
 
+/// Una configuración ya hecha, convertida en juego guardable.
+class PresetCapture {
+  /// REGLAS: lo que juega todo el grupo, ya normalizado a plantilla.
+  final List<BetModuleInstance> groupRules;
+
+  /// EXCEPCIONES: lo que cada pareja juega distinto.
+  final List<PairAgreement> pairAgreements;
+
+  /// Módulos que no se pudieron capturar: apuestas por equipos y subconjuntos
+  /// intermedios (3 jugadores de un grupo de 5). No son expresables como regla
+  /// ni como acuerdo de pareja.
+  ///
+  /// La UI debe decirlo al guardar: "el juego se recordará sin estas dos
+  /// apuestas". Guardarlas mal sería peor que no guardarlas.
+  final List<BetModuleInstance> notCaptured;
+
+  const PresetCapture({
+    required this.groupRules,
+    required this.pairAgreements,
+    required this.notCaptured,
+  });
+
+  bool get isComplete => notCaptured.isEmpty;
+
+  /// Serializa los acuerdos con la forma que espera GamePreset.
+  List<Map<String, dynamic>> get pairAgreementsJson =>
+      pairAgreements.map((a) => a.toFirestore()).toList();
+
+  /// Serializa las reglas con la forma que espera GamePreset.
+  List<Map<String, dynamic>> get groupRulesJson =>
+      groupRules.map((r) => r.toJson()).toList();
+}
+
 class PairAgreementEngine {
   // ══════════════════════════════════════════════════════════════════════════
   // LECTURA — de acuerdos a módulos
@@ -255,6 +288,141 @@ class PairAgreementEngine {
       pairKeysAmong(playerIds)
           .where((k) => agreements[k]?.isEmpty ?? true)
           .toList();
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // CAPTURA — de una ronda configurada a un juego reutilizable
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Convierte una configuración ya hecha en un juego guardable.
+  ///
+  /// Es el inverso de [resolve], y es lo que permite que el sistema aprenda sin
+  /// pedir nada: el usuario configura la ronda como siempre, y al terminar se le
+  /// ofrece recordarla.
+  ///
+  /// Reparto:
+  ///  • Un módulo que cubre a TODOS los presentes → regla de grupo. Sus
+  ///    [BetModuleInstance.pairConfigOverrides] se extraen como acuerdos de las
+  ///    parejas correspondientes, para que quede una sola fuente de verdad.
+  ///  • Un módulo de exactamente dos jugadores → acuerdo de esa pareja.
+  ///  • Todo lo demás (equipos, subconjuntos de 3 en un grupo de 5) va a
+  ///    [PresetCapture.notCaptured]: no es expresable como regla ni como
+  ///    acuerdo de pareja, y guardarlo mal es peor que no guardarlo.
+  static PresetCapture capture({
+    required List<BetModuleInstance> modules,
+    required List<String> playerIds,
+  }) {
+    final present = playerIds.where((id) => id.isNotEmpty).toSet();
+    final rules = <BetModuleInstance>[];
+    final notCaptured = <BetModuleInstance>[];
+    // pairKey → (ids, plantillas acumuladas)
+    final byPair = <String, (String, String, List<BetModuleInstance>)>{};
+
+    void addTemplate(String a, String b, BetModuleInstance template) {
+      final key = BetModuleInstance.pairKey(a, b);
+      final existing = byPair[key];
+      if (existing == null) {
+        final sorted = [a, b]..sort();
+        byPair[key] = (sorted[0], sorted[1], [template]);
+      } else {
+        existing.$3.add(template);
+      }
+    }
+
+    for (final m in modules) {
+      // Los módulos por equipos dependen de sus lados concretos; reaplicarlos
+      // con otra gente no tiene un significado claro, así que no se capturan.
+      if (m.hasTeamSides) {
+        notCaptured.add(m);
+        continue;
+      }
+
+      final pids = m.effectivePids(playerIds).where(present.contains).toSet();
+
+      // ── Acuerdo de pareja, por alcance explícito ────────────────────────
+      //
+      // Se comprueba ANTES de "cubre a todos" porque en una partida de dos
+      // jugadores las dos cosas coinciden, y quedarse con la de pareja es más
+      // seguro: si mañana entra un tercero, una regla de grupo lo metería en
+      // silencio a una apuesta que era de esos dos.
+      if (m.effectiveScope.isPair && pids.length == 2) {
+        final ids = pids.toList();
+        addTemplate(ids[0], ids[1], _asTemplate(m));
+        continue;
+      }
+
+      // ── Regla de grupo ──────────────────────────────────────────────────
+      if (pids.length == present.length && present.isNotEmpty) {
+        // Los overrides se guardan como acuerdos de pareja, no dentro de la
+        // regla: si vivieran en los dos sitios habría dos fuentes de verdad.
+        final overrides = m.pairConfigOverrides;
+        if (overrides != null) {
+          for (final key in overrides.keys) {
+            final pair = _pairFromModule(m, key, playerIds);
+            if (pair == null) continue;
+            final value = m.overrideForPair(pair.$1, pair.$2);
+            if (value == null) continue;
+            final template = m.withBaseValue(value);
+            if (template == null) continue;
+            addTemplate(pair.$1, pair.$2, _asTemplate(template));
+          }
+        }
+        rules.add(_asTemplate(m));
+        continue;
+      }
+
+      // ── Acuerdo de pareja ───────────────────────────────────────────────
+      if (pids.length == 2) {
+        final ids = pids.toList();
+        addTemplate(ids[0], ids[1], _asTemplate(m));
+        continue;
+      }
+
+      // Subconjunto intermedio: ni regla ni pareja.
+      notCaptured.add(m);
+    }
+
+    final agreements = byPair.values
+        .map((e) => PairAgreement.forPair(
+              playerAId: e.$1,
+              playerBId: e.$2,
+              templates: e.$3,
+            ))
+        .toList();
+
+    return PresetCapture(
+      groupRules: rules,
+      pairAgreements: agreements,
+      notCaptured: notCaptured,
+    );
+  }
+
+  /// Normaliza un módulo a plantilla: fuera identidad, participantes, alcance y
+  /// overrides. Solo queda QUÉ se juega, que es lo único reutilizable.
+  static BetModuleInstance _asTemplate(BetModuleInstance m) => m.copyWith(
+        participantIds: const [],
+        clearScope: true,
+        clearPairOverrides: true,
+        clearPlayerOverrides: true,
+      );
+
+  /// Recupera los dos jugadores de una entrada de [pairConfigOverrides].
+  ///
+  /// La clave la generó [BetModuleInstance.pairKey], pero no se parsea: se
+  /// busca la pareja de jugadores presentes cuya clave coincida. Así el
+  /// separador que use esa función deja de importar — el mismo motivo por el que
+  /// [PairAgreement] guarda los ids explícitos.
+  static (String, String)? _pairFromModule(
+      BetModuleInstance m, String key, List<String> playerIds) {
+    final pids = m.effectivePids(playerIds);
+    for (var i = 0; i < pids.length; i++) {
+      for (var k = i + 1; k < pids.length; k++) {
+        if (BetModuleInstance.pairKey(pids[i], pids[k]) == key) {
+          return (pids[i], pids[k]);
+        }
+      }
+    }
+    return null;
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   // ESCRITURA — de módulos a acuerdos

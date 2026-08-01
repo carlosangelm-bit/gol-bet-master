@@ -633,6 +633,257 @@ void main() {
     });
   });
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // Captura: de una ronda configurada a un juego reutilizable.
+  // ══════════════════════════════════════════════════════════════════════════
+  group('capture', () {
+    test('un módulo que cubre a todos es regla de grupo', () {
+      final cap = PairAgreementEngine.capture(
+        modules: [
+          _skins(20).copyWith(participantIds: [yo, rafa, oscar]),
+        ],
+        playerIds: [yo, rafa, oscar],
+      );
+      expect(cap.groupRules.length, 1);
+      expect(cap.pairAgreements, isEmpty);
+      expect(cap.isComplete, isTrue);
+      // Normalizado a plantilla: sin participantes ni alcance.
+      expect(cap.groupRules.single.participantIds, isEmpty);
+    });
+
+    test('un duelo es acuerdo de esa pareja', () {
+      final cap = PairAgreementEngine.capture(
+        modules: [_medal(200).copyForPair('x', yo, oscar)],
+        playerIds: [yo, rafa, oscar],
+      );
+      expect(cap.groupRules, isEmpty);
+      expect(cap.pairAgreements.length, 1);
+      expect(cap.pairAgreements.single.isBetween(yo, oscar), isTrue);
+      expect(cap.pairAgreements.single.templates.single.medal.value, 200);
+    });
+
+    test('los overrides de una regla salen como acuerdos de pareja', () {
+      // Todos skins $20 pero yo↔Oscar a $50: al capturar, el $50 debe quedar
+      // como acuerdo de la pareja y NO dentro de la regla, para que haya una
+      // sola fuente de verdad.
+      final regla = _skins(20).copyWith(
+        participantIds: [yo, rafa, oscar],
+        pairConfigOverrides: {
+          BetModuleInstance.pairKey(yo, oscar): {'value': 50}
+        },
+      );
+      final cap = PairAgreementEngine.capture(
+        modules: [regla],
+        playerIds: [yo, rafa, oscar],
+      );
+
+      expect(cap.groupRules.single.pairConfigOverrides, isNull);
+      expect(cap.pairAgreements.length, 1);
+      final a = cap.pairAgreements.single;
+      expect(a.isBetween(yo, oscar), isTrue);
+      expect(a.templates.single.skins.valuePerSkin, 50);
+    });
+
+    test('apuestas por equipos no se capturan', () {
+      final equipos = _skins(20).copyWith(
+        participantIds: [yo, rafa, oscar],
+        sides: const [
+          BetSide(id: 'a', name: 'A', playerIds: [yo, rafa]),
+          BetSide(id: 'b', name: 'B', playerIds: [oscar, 'ww-willy']),
+        ],
+      );
+      final cap = PairAgreementEngine.capture(
+        modules: [equipos],
+        playerIds: [yo, rafa, oscar, 'willy'],
+      );
+      expect(cap.groupRules, isEmpty);
+      expect(cap.pairAgreements, isEmpty);
+      expect(cap.notCaptured.length, 1);
+      expect(cap.isComplete, isFalse);
+    });
+
+    test('un subconjunto intermedio no se captura', () {
+      // 3 de 4: ni regla de grupo ni pareja.
+      final cap = PairAgreementEngine.capture(
+        modules: [_skins(20).copyWith(participantIds: [yo, rafa, oscar])],
+        playerIds: [yo, rafa, oscar, 'willy'],
+      );
+      expect(cap.groupRules, isEmpty);
+      expect(cap.notCaptured.length, 1);
+    });
+
+    test('varios duelos de la misma pareja se agrupan en un acuerdo', () {
+      final cap = PairAgreementEngine.capture(
+        modules: [
+          _medal(200).copyForPair('x', yo, oscar),
+          _skins(30).copyForPair('y', oscar, yo), // orden invertido a propósito
+        ],
+        playerIds: [yo, oscar],
+      );
+      expect(cap.pairAgreements.length, 1);
+      expect(cap.pairAgreements.single.templates.length, 2);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // La propiedad que de verdad importa: capturar y volver a aplicar reproduce
+  // la misma configuración. Si esto falla, guardar un juego lo corrompe.
+  // ══════════════════════════════════════════════════════════════════════════
+  group('viaje redondo capture → resolve', () {
+    /// Firma comparable de una configuración: qué se juega y quién lo juega,
+    /// ignorando ids generados.
+    ///
+    /// Los números se normalizan a double: el JSON de origen puede traer un int
+    /// (50) donde el motor escribe un double (50.0), y overrideForPair los lee
+    /// con .toDouble(), así que son el mismo valor.
+    Set<String> shape(List<BetModuleInstance> mods, List<String> players) =>
+        mods.map((m) {
+          final pids = m.effectivePids(players).toList()..sort();
+          final ovs = (m.pairConfigOverrides ?? {}).entries.map((e) {
+            final sorted = e.value.keys.toList()..sort();
+            final vals = sorted.map((k) {
+              final v = e.value[k];
+              return '$k:${v is num ? v.toDouble() : v}';
+            });
+            return '${e.key}=${vals.join(",")}';
+          }).toList()
+            ..sort();
+          return '${m.configSignature}|pids:${pids.join(",")}|ov:${ovs.join(";")}';
+        }).toSet();
+
+    test('regla sola', () {
+      const players = [yo, rafa, oscar];
+      final original = [_skins(20).copyWith(participantIds: players)];
+
+      final cap =
+          PairAgreementEngine.capture(modules: original, playerIds: players);
+      final back = PairAgreementEngine.resolve(
+        groupRules: cap.groupRules,
+        agreements: {for (final a in cap.pairAgreements) a.pairKey: a},
+        playerIds: players,
+        newId: _ids(),
+      );
+
+      expect(back.hasConflicts, isFalse);
+      expect(shape(back.modules, players), shape(original, players));
+    });
+
+    test('regla con override por pareja', () {
+      const players = [yo, rafa, oscar];
+      final original = [
+        _skins(20).copyWith(
+          participantIds: players,
+          pairConfigOverrides: {
+            BetModuleInstance.pairKey(yo, oscar): {'value': 50}
+          },
+        )
+      ];
+
+      final cap =
+          PairAgreementEngine.capture(modules: original, playerIds: players);
+      final back = PairAgreementEngine.resolve(
+        groupRules: cap.groupRules,
+        agreements: {for (final a in cap.pairAgreements) a.pairKey: a},
+        playerIds: players,
+        newId: _ids(),
+      );
+
+      expect(back.hasConflicts, isFalse);
+      expect(shape(back.modules, players), shape(original, players));
+      // El override sobrevivió el viaje completo.
+      expect(back.modules.single.effectiveValueForDuel(yo, oscar).$1, 50);
+      expect(back.modules.single.effectiveValueForDuel(yo, rafa).$1, 20);
+    });
+
+    test('regla de grupo más duelo suelto de otro tipo', () {
+      const players = [yo, rafa, oscar];
+      final original = [
+        _skins(20).copyWith(participantIds: players),
+        _medal(200).copyForPair('m', yo, oscar),
+      ];
+
+      final cap =
+          PairAgreementEngine.capture(modules: original, playerIds: players);
+      final back = PairAgreementEngine.resolve(
+        groupRules: cap.groupRules,
+        agreements: {for (final a in cap.pairAgreements) a.pairKey: a},
+        playerIds: players,
+        newId: _ids(),
+      );
+
+      expect(back.hasConflicts, isFalse);
+      expect(shape(back.modules, players), shape(original, players));
+    });
+
+    test('el caso completo del usuario', () {
+      // Todos skins $20; yo↔Oscar además medal $200; yo↔Willy unidades a otro
+      // valor mientras el grupo las juega a $20.
+      const willy = 'ww-willy';
+      const players = [yo, rafa, oscar, willy];
+      final units = BetModuleInstance(
+        id: 'u',
+        type: BetModuleType.units,
+        name: 'Unidades',
+        participantIds: players,
+        unitsConfig: const UnitsConfig().withAllEventsValue(20),
+      ).copyWith(pairConfigOverrides: {
+        BetModuleInstance.pairKey(yo, willy): {'allEvents': 30}
+      });
+
+      final original = [
+        _skins(20).copyWith(participantIds: players),
+        units,
+        _medal(200).copyForPair('m', yo, oscar),
+      ];
+
+      final cap =
+          PairAgreementEngine.capture(modules: original, playerIds: players);
+      expect(cap.isComplete, isTrue);
+
+      final back = PairAgreementEngine.resolve(
+        groupRules: cap.groupRules,
+        agreements: {for (final a in cap.pairAgreements) a.pairKey: a},
+        playerIds: players,
+        newId: _ids(),
+      );
+
+      expect(back.hasConflicts, isFalse);
+      expect(shape(back.modules, players), shape(original, players));
+
+      final u = back.modules.firstWhere((m) => m.type == BetModuleType.units);
+      expect(u.effectiveValueForDuel(yo, willy).$1, 30);
+      expect(u.effectiveValueForDuel(rafa, oscar).$1, 20);
+    });
+
+    test('vía GamePreset.fromCapture y apply', () {
+      const players = [yo, rafa, oscar];
+      final original = [
+        _skins(20).copyWith(
+          participantIds: players,
+          pairConfigOverrides: {
+            BetModuleInstance.pairKey(yo, oscar): {'value': 50}
+          },
+        ),
+        _medal(200).copyForPair('m', rafa, oscar),
+      ];
+
+      final juego = GamePreset.fromCapture(
+        id: 'martes',
+        name: 'Martes',
+        emoji: '🌮',
+        capture: PairAgreementEngine.capture(
+            modules: original, playerIds: players),
+        playerIds: players,
+      );
+
+      expect(juego.playerIds, players);
+
+      final back = juego.apply(players, _ids());
+      expect(back.hasConflicts, isFalse);
+      expect(shape(back.modules, players), shape(original, players));
+    });
+  });
+
   group('withBaseValue', () {
     test('fija el importe de los tipos que admiten override', () {
       expect(_skins(20).withBaseValue(50)!.skins.valuePerSkin, 50);
