@@ -2257,6 +2257,133 @@ class PlayerLink {
       : fallback;
 }
 
+// ── PairAgreement ─────────────────────────────────────────────────────────────
+//
+// Lo que dos jugadores apuestan habitualmente entre ellos. Existe para que
+// configurar una ronda deje de ser construir desde cero y pase a ser revisar:
+// al entrar los jugadores, sus acuerdos se instancian solos.
+//
+// Se indexa por [BetModuleInstance.pairKey], que ordena los dos ids, de modo
+// que Oscar↔Rafa y Rafa↔Oscar son el mismo acuerdo y no puede haber dos
+// versiones divergentes del mismo trato.
+//
+// Vive bajo users/{uid} y no en un documento compartido: no hay autoridad
+// común sobre lo que dos terceros acordaron entre sí, así que cada usuario
+// lleva su propio registro de lo que ha visto jugar. Tampoco cabía en
+// [PlayerLink], que está indexado por UN jugador y solo puede expresar
+// "yo ↔ esa persona": no tiene dónde poner el acuerdo entre Oscar y Rafa.
+//
+// La ventaja (sliding) queda deliberadamente FUERA. Ya tiene su propio camino
+// —PlayerLink.defaultSlidingAdjustment y SlidingAdjustmentEngine— y meter una
+// segunda fuente de verdad para lo mismo solo generaría discrepancias.
+class PairAgreement {
+  /// Los dos jugadores, siempre en orden lexicográfico ([p1Id] < [p2Id]).
+  ///
+  /// Se guardan explícitos en vez de derivarlos de la clave a propósito. En el
+  /// modelo conviven TRES convenciones de clave de par con separadores
+  /// distintos —'|' en carryByPair y pairSliding, '__' en pairConfigOverrides—
+  /// así que descomponer una clave compuesta obliga a acertar el separador y
+  /// falla en silencio si cambia. Con los ids guardados no hay nada que parsear.
+  final String p1Id;
+  final String p2Id;
+
+  /// Apuestas del par, como plantillas: cuenta el tipo y la config tipada.
+  /// `participantIds` y `scope` son irrelevantes aquí porque [instantiateFor]
+  /// los sobrescribe vía [BetModuleInstance.copyForPair].
+  final List<BetModuleInstance> templates;
+
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  const PairAgreement._({
+    required this.p1Id,
+    required this.p2Id,
+    required this.templates,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  /// Crea el acuerdo ordenando los ids, de modo que (a,b) y (b,a) produzcan
+  /// exactamente el mismo objeto y la misma [pairKey].
+  factory PairAgreement.forPair({
+    required String playerAId,
+    required String playerBId,
+    required List<BetModuleInstance> templates,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    final sorted = [playerAId, playerBId]..sort();
+    final now = updatedAt ?? createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+    return PairAgreement._(
+      p1Id: sorted[0],
+      p2Id: sorted[1],
+      templates: templates,
+      createdAt: createdAt ?? now,
+      updatedAt: now,
+    );
+  }
+
+  /// Clave canónica, y también el id del documento en Firestore.
+  String get pairKey => BetModuleInstance.pairKey(p1Id, p2Id);
+
+  bool get isEmpty => templates.isEmpty;
+
+  /// true si el acuerdo es entre estos dos jugadores, en cualquier orden.
+  bool isBetween(String a, String b) =>
+      (p1Id == a && p2Id == b) || (p1Id == b && p2Id == a);
+
+  /// Instancia las plantillas como duelos reales entre los dos jugadores.
+  /// [newId] genera un id distinto por módulo (normalmente Uuid().v4).
+  List<BetModuleInstance> instantiate(String Function() newId) =>
+      templates.map((t) => t.copyForPair(newId(), p1Id, p2Id)).toList();
+
+  PairAgreement copyWith({List<BetModuleInstance>? templates}) =>
+      PairAgreement._(
+        p1Id: p1Id,
+        p2Id: p2Id,
+        templates: templates ?? this.templates,
+        createdAt: createdAt,
+        updatedAt: DateTime.now(),
+      );
+
+  Map<String, dynamic> toFirestore() => {
+        'p1Id': p1Id,
+        'p2Id': p2Id,
+        'templates': templates.map((t) => t.toJson()).toList(),
+        'createdAt': createdAt.toIso8601String(),
+        'updatedAt': updatedAt.toIso8601String(),
+      };
+
+  /// Devuelve null si el documento no identifica a dos jugadores distintos:
+  /// un acuerdo sin par no se puede aplicar a nada.
+  static PairAgreement? fromFirestore(Map<String, dynamic> d, String id) {
+    final a = (d['p1Id'] as String?) ?? '';
+    final b = (d['p2Id'] as String?) ?? '';
+    if (a.isEmpty || b.isEmpty || a == b) return null;
+
+    // Una plantilla ilegible se descarta sin tumbar el acuerdo completo: un
+    // acuerdo a medias sigue siendo útil, perderlo entero no.
+    final raw = (d['templates'] as List?) ?? const [];
+    final parsed = <BetModuleInstance>[];
+    for (final t in raw) {
+      if (t is! Map) continue;
+      try {
+        parsed.add(BetModuleInstance.fromJson(Map<String, dynamic>.from(t)));
+      } catch (_) {
+        continue;
+      }
+    }
+
+    return PairAgreement.forPair(
+      playerAId: a,
+      playerBId: b,
+      templates: parsed,
+      createdAt: _parseDate(d['createdAt']),
+      updatedAt: _parseDate(d['updatedAt']),
+    );
+  }
+}
+
 // ── SlidingRelation ───────────────────────────────────────────────────────────
 class SlidingRelation {
   final String playerAId;
