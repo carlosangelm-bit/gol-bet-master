@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/app_theme.dart';
 import '../../engines/bet_engine.dart';
+import '../../engines/pair_agreement_engine.dart';
 import '../../providers/user_profile_provider.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
@@ -54,6 +55,14 @@ class _SetupScreenState extends State<SetupScreen> {
   // Clave = identificador estable del campo ('skins.value', 'nassau.front'…).
   // Solo hay un sheet abierto a la vez, así que no hacen falta claves por módulo.
   final Map<String, TextEditingController> _cfgCtrls = {};
+
+  /// Nombre de pila de un jugador de la ronda. Cae al id si no se encuentra,
+  /// para que un dato huérfano no deje la UI en blanco.
+  String _playerName(String id) => _players
+      .firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id))
+      .name
+      .split(' ')
+      .first;
 
   /// Devuelve el controller de [key], creándolo con [initial] la primera vez.
   /// En rebuilds posteriores devuelve el mismo, preservando texto y cursor.
@@ -1486,17 +1495,315 @@ class _SetupScreenState extends State<SetupScreen> {
       ));
       return;
     }
-    final modules = preset.toModules(allPids);
+    // apply() y no toModules(): además de las reglas del grupo instancia los
+    // acuerdos por pareja y los reconcilia entre sí, de modo que una pareja con
+    // importe propio no acabe con dos apuestas del mismo tipo.
+    final application = preset.apply(allPids, () => _uuid.v4());
+
     final group = BetGroup(
       id: _uuid.v4(),
       name: preset.name,
       format: PartidaFormat.allInOnePot,
       playerIds: allPids,
-      modules: modules,
+      modules: application.modules,
     );
     setState(() => _groups.add(group));
     // Incrementar contador de uso del preset
     FirestoreService.saveGamePreset(preset.copyWith(useCount: preset.useCount + 1));
+
+    // Lo que no se pudo aplicar NO está en la partida, así que hay que decirlo:
+    // callar dejaría al usuario creyendo que juega algo que no está configurado.
+    if (application.hasConflicts) {
+      _showConflicts(application.conflicts, t);
+    }
+  }
+
+  /// Guarda la partida ya configurada como juego reutilizable.
+  ///
+  /// Es la otra mitad de [_applyPresetDirect]: aquí se aprende lo que allí se
+  /// aplica. El usuario configura como siempre y decide recordarlo al final,
+  /// sin declarar nada por adelantado.
+  ///
+  /// Lo que se guarda no son los módulos tal cual, sino su reparto en reglas de
+  /// grupo y acuerdos por pareja — ver [PairAgreementEngine.capture]. Eso es lo
+  /// que permite que el martes y el viernes tengan apuestas distintas entre las
+  /// mismas personas.
+  void _saveGroupAsGame(BetGroup g, GolfTheme t) {
+    final capture = PairAgreementEngine.capture(
+      modules: g.modules,
+      playerIds: g.playerIds,
+    );
+
+    if (capture.groupRules.isEmpty && capture.pairAgreements.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: t.loss,
+        content: const Text('No hay apuestas que se puedan guardar'),
+      ));
+      return;
+    }
+
+    final nameCtrl = TextEditingController(text: g.name);
+    var emoji = '⛳️';
+    const emojis = ['⛳️', '🌮', '🍻', '🔥', '🏆', '💰', '🌅', '🎯'];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setSt) => Padding(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx2).viewInsets.bottom + 24,
+              left: 20,
+              right: 20,
+              top: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Guardar como juego',
+                  style: TextStyle(
+                      color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Text(
+                'La próxima vez lo cargas de un toque, con estos jugadores y '
+                'lo que cada pareja acordó.',
+                style: TextStyle(color: t.sub, fontSize: 12, height: 1.35),
+              ),
+              const SizedBox(height: 18),
+
+              // ── Nombre ────────────────────────────────────────────────────
+              TextField(
+                controller: nameCtrl,
+                style: TextStyle(color: t.text),
+                decoration: InputDecoration(
+                  labelText: 'Nombre del juego',
+                  hintText: 'Martes, Viernes, Torneo…',
+                  labelStyle: TextStyle(color: t.sub),
+                  hintStyle: TextStyle(color: t.sub.withValues(alpha: 0.5)),
+                  fillColor: t.surface,
+                  filled: true,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: t.divider)),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: t.divider)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: t.primary, width: 2)),
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              // ── Emoji ─────────────────────────────────────────────────────
+              Text('ICONO',
+                  style: TextStyle(
+                      color: t.sub, fontSize: 11, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: emojis.map((e) {
+                  final sel = e == emoji;
+                  return GestureDetector(
+                    onTap: () => setSt(() => emoji = e),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: sel ? t.primary.withValues(alpha: 0.14) : t.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: sel ? t.primary : t.divider,
+                            width: sel ? 1.5 : 1),
+                      ),
+                      child: Text(e, style: const TextStyle(fontSize: 18)),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 18),
+
+              // ── Qué se va a guardar ───────────────────────────────────────
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: t.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: t.divider),
+                ),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _saveSummaryRow(
+                        Icons.groups_outlined,
+                        '${capture.groupRules.length} '
+                            'apuesta${capture.groupRules.length == 1 ? "" : "s"} '
+                            'de todo el grupo',
+                        t,
+                      ),
+                      if (capture.pairAgreements.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        _saveSummaryRow(
+                          Icons.compare_arrows,
+                          '${capture.pairAgreements.length} '
+                              'acuerdo${capture.pairAgreements.length == 1 ? "" : "s"} '
+                              'por pareja',
+                          t,
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      _saveSummaryRow(
+                        Icons.person_outline,
+                        '${g.playerIds.length} jugadores',
+                        t,
+                      ),
+                    ]),
+              ),
+
+              // Lo que NO se puede guardar se dice antes de guardar, no después.
+              if (!capture.isComplete) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: t.accent.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: t.accent.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.info_outline, color: t.accent, size: 14),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${capture.notCaptured.length} '
+                        'apuesta${capture.notCaptured.length == 1 ? "" : "s"} no '
+                        'se guardará${capture.notCaptured.length == 1 ? "" : "n"}: '
+                        'las de equipos y las de un subgrupo dependen de quién '
+                        'juega hoy, así que no se pueden reutilizar tal cual.',
+                        style: TextStyle(
+                            color: t.accent, fontSize: 11, height: 1.35),
+                      ),
+                    ),
+                  ]),
+                ),
+              ],
+
+              const SizedBox(height: 20),
+              GPrimaryButton(
+                label: 'Guardar juego',
+                onTap: () async {
+                  final name = nameCtrl.text.trim();
+                  if (name.isEmpty) return;
+                  Navigator.pop(ctx2);
+
+                  final preset = GamePreset.fromCapture(
+                    id: '',
+                    name: name,
+                    emoji: emoji,
+                    capture: capture,
+                    playerIds: List<String>.from(g.playerIds),
+                  );
+                  try {
+                    await FirestoreService.saveGamePreset(preset);
+                    if (!mounted) return;
+                    await _loadPresetsCache(); // que aparezca ya en la lista
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      backgroundColor: t.primary,
+                      content: Text('$emoji  $name guardado'),
+                    ));
+                  } catch (e) {
+                    if (kDebugMode) debugPrint('[_saveGroupAsGame] $e');
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      backgroundColor: t.loss,
+                      content: const Text('No se pudo guardar el juego'),
+                    ));
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).whenComplete(nameCtrl.dispose);
+  }
+
+  Widget _saveSummaryRow(IconData icon, String text, GolfTheme t) =>
+      Row(children: [
+        Icon(icon, color: t.sub, size: 14),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(text, style: TextStyle(color: t.text, fontSize: 12)),
+        ),
+      ]);
+
+  /// Avisa de los acuerdos que no se pudieron aplicar sobre las reglas del
+  /// juego. No es un error del usuario: es una combinación que el modelo no
+  /// puede representar sin cambiar el significado de la apuesta.
+  void _showConflicts(List<PresetConflict> conflicts, GolfTheme t) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: t.card,
+        title: Row(children: [
+          Icon(Icons.warning_amber_rounded, color: t.accent, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('Se aplicó parcialmente',
+                style: TextStyle(
+                    color: t.text, fontSize: 16, fontWeight: FontWeight.w800)),
+          ),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              conflicts.length == 1
+                  ? 'Un acuerdo quedó fuera de la partida:'
+                  : '${conflicts.length} acuerdos quedaron fuera de la partida:',
+              style: TextStyle(color: t.sub, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            ...conflicts.map((c) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${_playerName(c.p1Id)} vs ${_playerName(c.p2Id)} · ${c.type.label}',
+                          style: TextStyle(
+                              color: t.text,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(c.reason,
+                            style: TextStyle(
+                                color: t.sub, fontSize: 11, height: 1.35)),
+                      ]),
+                )),
+            Text(
+              'Puedes configurarlo a mano en la partida.',
+              style: TextStyle(
+                  color: t.sub, fontSize: 11, fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Entendido', style: TextStyle(color: t.primary)),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Leyenda que explica cómo leer la lista de apuestas.
@@ -1566,6 +1873,13 @@ class _SetupScreenState extends State<SetupScreen> {
         // ── Header ────────────────────────────────────────────────────────
         Row(children: [
           Expanded(child: Text(g.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16))),
+          if (g.modules.isNotEmpty) ...[
+            GestureDetector(
+              onTap: () => _saveGroupAsGame(g, t),
+              child: Icon(Icons.bookmark_add_outlined, color: t.sub, size: 18),
+            ),
+            const SizedBox(width: 14),
+          ],
           GestureDetector(onTap: () => setState(() => _groups.removeAt(idx)), child: Icon(Icons.close, color: t.sub, size: 18)),
         ]),
         const SizedBox(height: 4),
