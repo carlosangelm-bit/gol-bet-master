@@ -43,6 +43,32 @@ class _SetupScreenState extends State<SetupScreen> {
   final List<Player> _players = [];
   final List<BetGroup> _groups = [];
 
+  // ── Controllers de los sheets de configuración de apuesta ──────────────────
+  //
+  // Tienen que vivir FUERA del closure de build. _configWidgets se invoca desde
+  // el builder de un StatefulBuilder, así que crear los TextEditingController
+  // ahí dentro los destruía y recreaba en cada rebuild: el TextField perdía el
+  // controller mientras tenía el foco, el IME se desconectaba y el campo de
+  // monto resultaba imposible de enfocar. Al vivir aquí sobreviven al rebuild.
+  //
+  // Clave = identificador estable del campo ('skins.value', 'nassau.front'…).
+  // Solo hay un sheet abierto a la vez, así que no hacen falta claves por módulo.
+  final Map<String, TextEditingController> _cfgCtrls = {};
+
+  /// Devuelve el controller de [key], creándolo con [initial] la primera vez.
+  /// En rebuilds posteriores devuelve el mismo, preservando texto y cursor.
+  TextEditingController _cfgCtrl(String key, String initial) =>
+      _cfgCtrls.putIfAbsent(key, () => TextEditingController(text: initial));
+
+  /// Libera los controllers del sheet. Se llama al abrir uno (para partir de
+  /// los valores del módulo que se va a editar) y al cerrarlo.
+  void _clearCfgCtrls() {
+    for (final c in _cfgCtrls.values) {
+      c.dispose();
+    }
+    _cfgCtrls.clear();
+  }
+
   // ── Campo de golf ──────────────────────────────────────────────────────────
   CourseInfo? _selectedCourse;           // CourseInfo final (con hoyos)
   ApiCourse?  _selectedApiCourse;        // curso API completo (para elegir tees)
@@ -164,7 +190,7 @@ class _SetupScreenState extends State<SetupScreen> {
     }
   }
 
-  @override void dispose() { _nameCtrl.dispose(); super.dispose(); }
+  @override void dispose() { _nameCtrl.dispose(); _clearCfgCtrls(); super.dispose(); }
 
   @override
   void initState() {
@@ -2083,6 +2109,9 @@ class _SetupScreenState extends State<SetupScreen> {
       );
     }
 
+    // Partir de los valores del módulo que se abre, no de los del anterior.
+    _clearCfgCtrls();
+
     showModalBottomSheet(
       context: context,
       backgroundColor: t.card,
@@ -2431,7 +2460,14 @@ class _SetupScreenState extends State<SetupScreen> {
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      // pairCtrl se crea por apertura del sheet; sin esto se filtraba uno por
+      // duelo cada vez. Se libera tras el pop, cuando ya no hay TextField que
+      // lo referencie.
+      for (final c in pairCtrl.values) {
+        c.dispose();
+      }
+    });
   }
 
   // ── Editor de instancia (bottom sheet con config tipada) ─────────────────
@@ -2440,6 +2476,9 @@ class _SetupScreenState extends State<SetupScreen> {
     final allPids = g.playerIds;
     var localPids = List<String>.from(
         mod.participantIds.isEmpty ? allPids : mod.participantIds);
+
+    // Partir de los valores del módulo que se abre, no de los del anterior.
+    _clearCfgCtrls();
 
     showModalBottomSheet(
       context: context,
@@ -2613,12 +2652,14 @@ class _SetupScreenState extends State<SetupScreen> {
     switch (cfg.type) {
       case BetModuleType.skins:
         final s = cfg.skins;
-        final ctrl = TextEditingController(text: s.valuePerSkin.toStringAsFixed(0));
+        final ctrl = _cfgCtrl('skins.value', s.valuePerSkin.toStringAsFixed(0));
         return [
           ...formatSelector,
           _sectionLabel('VALOR POR SKIN', t),
           const SizedBox(height: 8),
-          _amountField('Valor por skin', ctrl, t),
+          _amountField('Valor por skin', ctrl, t, onChanged: (v) {
+            update(cfg.copyWith(skinsConfig: s.copyWith(valuePerSkin: v)));
+          }),
           const SizedBox(height: 16),
           _sectionLabel('JUEGO', t),
           const SizedBox(height: 8),
@@ -2631,7 +2672,6 @@ class _SetupScreenState extends State<SetupScreen> {
           // Toggle carry con diseño destacado
           GestureDetector(
             onTap: () {
-              ctrl.text = s.valuePerSkin.toStringAsFixed(0);
               setSt(() => update(cfg.copyWith(skinsConfig: s.copyWith(carryOver: !s.carryOver))));
             },
             child: AnimatedContainer(
@@ -2670,7 +2710,6 @@ class _SetupScreenState extends State<SetupScreen> {
                 Switch(
                   value: s.carryOver,
                   onChanged: (v) {
-                    ctrl.text = s.valuePerSkin.toStringAsFixed(0);
                     setSt(() => update(cfg.copyWith(skinsConfig: s.copyWith(carryOver: v))));
                   },
                   activeThumbColor: t.accent,
@@ -2680,24 +2719,15 @@ class _SetupScreenState extends State<SetupScreen> {
               ]),
             ),
           ),
-          const SizedBox(height: 8),
-          // Guardar valor al escribir
-          Builder(builder: (_) {
-            ctrl.addListener(() {
-              final v = double.tryParse(ctrl.text);
-              if (v != null) update(cfg.copyWith(skinsConfig: s.copyWith(valuePerSkin: v)));
-            });
-            return const SizedBox.shrink();
-          }),
         ];
 
       case BetModuleType.nassau:
         final n = cfg.nassau;
-        final cFront = TextEditingController(text: n.frontValue.toStringAsFixed(0));
-        final cBack  = TextEditingController(text: n.backValue.toStringAsFixed(0));
-        final cTotal = TextEditingController(text: n.totalValue.toStringAsFixed(0));
-        final cPF    = TextEditingController(text: n.frontPressValue.toStringAsFixed(0));
-        final cPB    = TextEditingController(text: n.backPressValue.toStringAsFixed(0));
+        final cFront = _cfgCtrl('nassau.front',      n.frontValue.toStringAsFixed(0));
+        final cBack  = _cfgCtrl('nassau.back',       n.backValue.toStringAsFixed(0));
+        final cTotal = _cfgCtrl('nassau.total',      n.totalValue.toStringAsFixed(0));
+        final cPF    = _cfgCtrl('nassau.pressFront', n.frontPressValue.toStringAsFixed(0));
+        final cPB    = _cfgCtrl('nassau.pressBack',  n.backPressValue.toStringAsFixed(0));
         void saveNassauValues() {
           final fv  = double.tryParse(cFront.text) ?? n.frontValue;
           final bv  = double.tryParse(cBack.text)  ?? n.backValue;
@@ -2709,20 +2739,15 @@ class _SetupScreenState extends State<SetupScreen> {
             frontPressValue: pfv, backPressValue: pbv,
           )));
         }
-        cFront.addListener(saveNassauValues);
-        cBack.addListener(saveNassauValues);
-        cTotal.addListener(saveNassauValues);
-        cPF.addListener(saveNassauValues);
-        cPB.addListener(saveNassauValues);
         return [
           ...formatSelector,
           _sectionLabel('VALORES', t),
           const SizedBox(height: 8),
-          _amountField('Front 9', cFront, t),
+          _amountField('Front 9', cFront, t, onChanged: (_) => saveNassauValues()),
           const SizedBox(height: 8),
-          _amountField('Back 9', cBack, t),
+          _amountField('Back 9', cBack, t, onChanged: (_) => saveNassauValues()),
           const SizedBox(height: 8),
-          _amountField('Total 18', cTotal, t),
+          _amountField('Total 18', cTotal, t, onChanged: (_) => saveNassauValues()),
           const SizedBox(height: 16),
           _sectionLabel('JUEGO', t),
           const SizedBox(height: 8),
@@ -2808,9 +2833,9 @@ class _SetupScreenState extends State<SetupScreen> {
             Text('Monto que vale cada presión dentro del segmento.',
                 style: TextStyle(color: t.sub, fontSize: 11)),
             const SizedBox(height: 8),
-            _amountField('Press Front 9', cPF, t),
+            _amountField('Press Front 9', cPF, t, onChanged: (_) => saveNassauValues()),
             const SizedBox(height: 8),
-            _amountField('Press Back 9', cPB, t),
+            _amountField('Press Back 9', cPB, t, onChanged: (_) => saveNassauValues()),
             const SizedBox(height: 16),
             _toggleRow(
               title: 'Presiones múltiples por segmento',
@@ -2841,13 +2866,14 @@ class _SetupScreenState extends State<SetupScreen> {
 
       case BetModuleType.medal:
         final m = cfg.medal;
-        final ctrl = TextEditingController(text: m.value.toStringAsFixed(0));
-        ctrl.addListener(() { final v = double.tryParse(ctrl.text); if (v != null) update(cfg.copyWith(medalConfig: m.copyWith(value: v))); });
+        final ctrl = _cfgCtrl('medal.value', m.value.toStringAsFixed(0));
         return [
           ...formatSelector,
           _sectionLabel('VALOR', t),
           const SizedBox(height: 8),
-          _amountField('Monto', ctrl, t),
+          _amountField('Monto', ctrl, t, onChanged: (v) {
+            update(cfg.copyWith(medalConfig: m.copyWith(value: v)));
+          }),
           const SizedBox(height: 16),
           _sectionLabel('HOYOS', t),
           const SizedBox(height: 8),
@@ -2864,13 +2890,14 @@ class _SetupScreenState extends State<SetupScreen> {
 
       case BetModuleType.putts:
         final p = cfg.putts;
-        final ctrl = TextEditingController(text: p.value.toStringAsFixed(0));
-        ctrl.addListener(() { final v = double.tryParse(ctrl.text); if (v != null) update(cfg.copyWith(puttsConfig: p.copyWith(value: v))); });
+        final ctrl = _cfgCtrl('putts.value', p.value.toStringAsFixed(0));
         return [
           ...formatSelector,
           _sectionLabel('VALOR', t),
           const SizedBox(height: 8),
-          _amountField('Monto por segmento', ctrl, t),
+          _amountField('Monto por segmento', ctrl, t, onChanged: (v) {
+            update(cfg.copyWith(puttsConfig: p.copyWith(value: v)));
+          }),
           const SizedBox(height: 16),
           _sectionLabel('MODO', t),
           const SizedBox(height: 8),
@@ -2889,16 +2916,10 @@ class _SetupScreenState extends State<SetupScreen> {
 
       case BetModuleType.oyeses:
         final o = cfg.oyeses;
-        final ctrl = TextEditingController(text: o.value.toStringAsFixed(0));
-        ctrl.addListener(() { final v = double.tryParse(ctrl.text); if (v != null) update(cfg.copyWith(oyesesConfig: o.copyWith(value: v))); });
+        final ctrl = _cfgCtrl('oyeses.value', o.value.toStringAsFixed(0));
         // Controller para valor fijo del zapato (0 = automático)
-        final zapatoCtrl = TextEditingController(
-          text: o.zapatoValue > 0 ? o.zapatoValue.toStringAsFixed(0) : '',
-        );
-        zapatoCtrl.addListener(() {
-          final v = double.tryParse(zapatoCtrl.text) ?? 0;
-          update(cfg.copyWith(oyesesConfig: o.copyWith(zapatoValue: v)));
-        });
+        final zapatoCtrl = _cfgCtrl('oyeses.zapato',
+            o.zapatoValue > 0 ? o.zapatoValue.toStringAsFixed(0) : '');
         // Par-3 reales del campo seleccionado (fallback: estándar)
         final realPar3Holes = (_selectedCourse?.holes ?? CourseInfo.standard.holes)
             .where((h) => h.isPar3)
@@ -2908,7 +2929,9 @@ class _SetupScreenState extends State<SetupScreen> {
         return [
           _sectionLabel('VALOR POR OYÉS', t),
           const SizedBox(height: 8),
-          _amountField('Monto por oyés', ctrl, t),
+          _amountField('Monto por oyés', ctrl, t, onChanged: (v) {
+            update(cfg.copyWith(oyesesConfig: o.copyWith(value: v)));
+          }),
           const SizedBox(height: 16),
           _sectionLabel('HOYOS ELEGIBLES', t),
           const SizedBox(height: 6),
@@ -2979,6 +3002,9 @@ class _SetupScreenState extends State<SetupScreen> {
                   controller: zapatoCtrl,
                   keyboardType: const TextInputType.numberWithOptions(decimal: false),
                   textAlign: TextAlign.right,
+                  // Vacío = 0 = automático, así que aquí no se filtra por parseo.
+                  onChanged: (txt) => update(cfg.copyWith(
+                      oyesesConfig: o.copyWith(zapatoValue: double.tryParse(txt) ?? 0))),
                   style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 14),
                   decoration: InputDecoration(
                     labelText: 'Monto fijo (dejar vacío = automático)',
@@ -3015,15 +3041,8 @@ class _SetupScreenState extends State<SetupScreen> {
 
         // ── Modo agrupado: campo único de valor base ──────────────────────
         if (groupMode) {
-          final ctrlBase = TextEditingController(
-              text: u.representativeValue.toStringAsFixed(0));
-          ctrlBase.addListener(() {
-            final v = double.tryParse(ctrlBase.text);
-            if (v != null && v > 0) {
-              update(cfg.copyWith(
-                  unitsConfig: u.withAllEventsValue(v)));
-            }
-          });
+          final ctrlBase = _cfgCtrl(
+              'units.base', u.representativeValue.toStringAsFixed(0));
           return [
             _sectionLabel('VALOR DE UNIDAD (BASE)', t),
             const SizedBox(height: 6),
@@ -3033,7 +3052,9 @@ class _SetupScreenState extends State<SetupScreen> {
               style: TextStyle(color: t.sub, fontSize: 11),
             ),
             const SizedBox(height: 10),
-            _amountField('Valor por unidad', ctrlBase, t),
+            _amountField('Valor por unidad', ctrlBase, t, onChanged: (v) {
+              if (v > 0) update(cfg.copyWith(unitsConfig: u.withAllEventsValue(v)));
+            }),
           ];
         }
 
@@ -3041,9 +3062,9 @@ class _SetupScreenState extends State<SetupScreen> {
         // Un controller por cada tipo de evento
         final ctrls = <UnitEventType, TextEditingController>{
           for (final e in UnitEventType.values)
-            e: TextEditingController(text: u.valueFor(e).toStringAsFixed(0)),
+            e: _cfgCtrl('units.event.${e.name}', u.valueFor(e).toStringAsFixed(0)),
         };
-        // Listeners: actualizar el mapa al editar cada campo
+        // Relee todos los campos y reconstruye el mapa de valores.
         void rebuildUnits() {
           final newMap = <UnitEventType, double>{};
           for (final e in UnitEventType.values) {
@@ -3051,9 +3072,6 @@ class _SetupScreenState extends State<SetupScreen> {
             if (v != null) newMap[e] = v;
           }
           update(cfg.copyWith(unitsConfig: UnitsConfig(eventValues: newMap)));
-        }
-        for (final e in UnitEventType.values) {
-          ctrls[e]!.addListener(rebuildUnits);
         }
         return [
           _sectionLabel('VALOR POR EVENTO', t),
@@ -3083,6 +3101,7 @@ class _SetupScreenState extends State<SetupScreen> {
                   controller: ctrls[e],
                   keyboardType: const TextInputType.numberWithOptions(decimal: false),
                   textAlign: TextAlign.right,
+                  onChanged: (_) => rebuildUnits(),
                   style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 14),
                   decoration: InputDecoration(
                     prefixText: '\$ ',
@@ -3117,18 +3136,20 @@ class _SetupScreenState extends State<SetupScreen> {
   // Se mantiene separado para mantener el switch limpio.
   List<Widget> _matchAutoPressConfig(BetModuleInstance cfg, GolfTheme t, StateSetter setSt, void Function(BetModuleInstance) update) {
     final m = cfg.matchAutoPress;
-    final cMatch = TextEditingController(text: m.matchValue.toStringAsFixed(0));
-    final cPress = TextEditingController(text: m.pressValue.toStringAsFixed(0));
-    cMatch.addListener(() { final v = double.tryParse(cMatch.text); if (v != null) update(cfg.copyWith(matchAutoPressConfig: m.copyWith(matchValue: v))); });
-    cPress.addListener(() { final v = double.tryParse(cPress.text); if (v != null) update(cfg.copyWith(matchAutoPressConfig: m.copyWith(pressValue: v))); });
+    final cMatch = _cfgCtrl('match.value', m.matchValue.toStringAsFixed(0));
+    final cPress = _cfgCtrl('match.press', m.pressValue.toStringAsFixed(0));
     return [
       _sectionLabel('MATCH PRINCIPAL', t),
       const SizedBox(height: 8),
-      _amountField('Valor del match', cMatch, t),
+      _amountField('Valor del match', cMatch, t, onChanged: (v) {
+        update(cfg.copyWith(matchAutoPressConfig: m.copyWith(matchValue: v)));
+      }),
       const SizedBox(height: 16),
       _sectionLabel('PRESIONES ADICIONALES', t),
       const SizedBox(height: 8),
-      _amountField('Valor por presión', cPress, t),
+      _amountField('Valor por presión', cPress, t, onChanged: (v) {
+        update(cfg.copyWith(matchAutoPressConfig: m.copyWith(pressValue: v)));
+      }),
       const SizedBox(height: 16),
       _sectionLabel('TRIGGER DE PRESIÓN', t),
       const SizedBox(height: 6),
@@ -3284,8 +3305,16 @@ class _SetupScreenState extends State<SetupScreen> {
       ]),
     );
 
-  Widget _amountField(String label, TextEditingController ctrl, GolfTheme t) => TextField(
+  // [onChanged] recibe el valor ya parseado. Se usa en vez de ctrl.addListener
+  // porque el listener se registraba dentro del build y se acumulaba uno nuevo
+  // por rebuild; onChanged lo invoca el framework y no necesita limpieza.
+  Widget _amountField(String label, TextEditingController ctrl, GolfTheme t,
+          {void Function(double)? onChanged}) => TextField(
     controller: ctrl, keyboardType: TextInputType.number, style: TextStyle(color: t.text),
+    onChanged: onChanged == null ? null : (txt) {
+      final v = double.tryParse(txt);
+      if (v != null) onChanged(v);
+    },
     decoration: InputDecoration(
       labelText: label, prefixText: '\$ ', fillColor: t.surface, filled: true,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.divider)),
