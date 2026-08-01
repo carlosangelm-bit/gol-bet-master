@@ -60,6 +60,44 @@ class PairDiff {
       status == PairStatus.unsaved || status == PairStatus.changed;
 }
 
+/// Una excepción de pareja que no se puede expresar sobre la regla del grupo.
+///
+/// No es un error del usuario: es una configuración que el modelo no puede
+/// representar sin cambiar el significado de la apuesta, así que hay que
+/// decidirlo explícitamente en vez de elegir por él.
+class PresetConflict {
+  final String pairKey;
+  final String p1Id;
+  final String p2Id;
+  final BetModuleType type;
+
+  /// Explicación en lenguaje llano, lista para mostrarse.
+  final String reason;
+
+  const PresetConflict({
+    required this.pairKey,
+    required this.p1Id,
+    required this.p2Id,
+    required this.type,
+    required this.reason,
+  });
+}
+
+/// Resultado de aplicar un juego a una lista de jugadores.
+class PresetApplication {
+  /// Módulos listos para la ronda: reglas de grupo (con sus overrides por
+  /// pareja ya incorporados) más los duelos propios de cada pareja.
+  final List<BetModuleInstance> modules;
+
+  /// Excepciones que quedaron sin aplicar. Si no está vacío, la UI debe
+  /// preguntar antes de continuar: los módulos devueltos NO las incluyen.
+  final List<PresetConflict> conflicts;
+
+  const PresetApplication({required this.modules, required this.conflicts});
+
+  bool get hasConflicts => conflicts.isNotEmpty;
+}
+
 class PairAgreementEngine {
   // ══════════════════════════════════════════════════════════════════════════
   // LECTURA — de acuerdos a módulos
@@ -96,6 +134,116 @@ class PairAgreementEngine {
       result.addAll(agreement.instantiate(newId));
     }
     return result;
+  }
+
+  /// Aplica un juego completo: reglas de grupo + excepciones por pareja.
+  ///
+  /// Es el punto delicado de toda la función. Una excepción del MISMO tipo que
+  /// una regla no puede añadirse como módulo aparte: quedarían dos apuestas del
+  /// mismo tipo cubriendo a esa pareja y se le cobraría dos veces. Según el
+  /// caso hay tres salidas:
+  ///
+  ///  1. **El acuerdo coincide con la regla** → no se hace nada; la regla ya lo
+  ///     cubre. Añadirlo duplicaría la apuesta.
+  ///  2. **Difiere SOLO en el importe** y el tipo admite override por pareja
+  ///     → se escribe en [BetModuleInstance.pairConfigOverrides] de la regla,
+  ///     que es el mecanismo que el modelo ya tiene para esto.
+  ///  3. **Difiere en algo más**, o el tipo no admite override (Nassau y Match
+  ///     tienen varios importes) → se reporta como [PresetConflict] y NO se
+  ///     aplica. Expandir la regla a duelos sueltos parecería equivalente pero
+  ///     no lo es: cosas como el carry de skins se calculan por módulo, así que
+  ///     partir uno en seis cambia los resultados. Mejor preguntar que adivinar.
+  ///
+  /// Una excepción de un tipo que NO tiene regla es simplemente una apuesta que
+  /// solo juega ese duelo, y se emite como módulo con [BetScope.pair].
+  static PresetApplication resolve({
+    required List<BetModuleInstance> groupRules,
+    required Map<String, PairAgreement> agreements,
+    required List<String> playerIds,
+    required String Function() newId,
+  }) {
+    // Las reglas cubren a todos los presentes.
+    final rules = groupRules
+        .map((r) => r.copyWith(participantIds: List<String>.from(playerIds)))
+        .toList();
+
+    // Primera regla de cada tipo. Dos reglas del mismo tipo en un mismo juego
+    // es raro; la segunda se deja intacta y las excepciones se miden contra la
+    // primera, que es la que la UI muestra como "la regla".
+    final ruleIdxByType = <BetModuleType, int>{};
+    for (var i = 0; i < rules.length; i++) {
+      ruleIdxByType.putIfAbsent(rules[i].type, () => i);
+    }
+
+    final present = pairKeysAmong(playerIds).toSet();
+    final extra = <BetModuleInstance>[];
+    final conflicts = <PresetConflict>[];
+    // índice de regla → pairKey → payload de override
+    final pendingOverrides = <int, Map<String, Map<String, dynamic>>>{};
+
+    for (final key in present) {
+      final agreement = agreements[key];
+      if (agreement == null || agreement.isEmpty) continue;
+
+      for (final template in agreement.templates) {
+        final idx = ruleIdxByType[template.type];
+
+        // Sin regla de ese tipo: apuesta exclusiva del duelo.
+        if (idx == null) {
+          extra.add(
+              template.copyForPair(newId(), agreement.p1Id, agreement.p2Id));
+          continue;
+        }
+
+        final rule = rules[idx];
+
+        // Caso 1: el acuerdo es la regla. Ya está cubierto.
+        if (template.configSignature == rule.configSignature) continue;
+
+        // Caso 2: ¿solo cambia el importe?
+        final ovKey = rule.pairOverrideKey;
+        if (ovKey != null) {
+          final ruleAtSameValue = rule.withBaseValue(template.baseValue);
+          if (ruleAtSameValue != null &&
+              ruleAtSameValue.configSignature == template.configSignature) {
+            (pendingOverrides[idx] ??= {})[key] = {ovKey: template.baseValue};
+            continue;
+          }
+        }
+
+        // Caso 3: no representable sobre la regla.
+        conflicts.add(PresetConflict(
+          pairKey: key,
+          p1Id: agreement.p1Id,
+          p2Id: agreement.p2Id,
+          type: template.type,
+          reason: ovKey == null
+              ? '${template.type.label} tiene varios importes, así que no admite '
+                  'un valor distinto por duelo. Para que esta pareja juegue algo '
+                  'diferente, ${template.type.label} no puede ser una apuesta de '
+                  'todo el grupo.'
+              : 'El acuerdo de esta pareja cambia algo más que el importe de '
+                  '${template.type.label}, y una excepción por duelo solo puede '
+                  'cambiar el monto.',
+        ));
+      }
+    }
+
+    // Incorporar los overrides a sus reglas, preservando los que ya tuvieran.
+    for (final entry in pendingOverrides.entries) {
+      final rule = rules[entry.key];
+      rules[entry.key] = rule.copyWith(
+        pairConfigOverrides: {
+          ...?rule.pairConfigOverrides,
+          ...entry.value,
+        },
+      );
+    }
+
+    return PresetApplication(
+      modules: [...rules, ...extra],
+      conflicts: conflicts,
+    );
   }
 
   /// Parejas presentes que no tienen acuerdo guardado. Son las únicas que

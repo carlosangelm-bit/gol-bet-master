@@ -614,8 +614,10 @@ class GamePreset {
     return result;
   }
 
-  /// REGLAS: los módulos que aplican a todo el grupo.
-  /// Se pasan los playerIds para asignarlos como participantes.
+  /// Solo las REGLAS de grupo, sin las excepciones por pareja.
+  ///
+  /// Se conserva para el camino que ya existía. Si el juego tiene acuerdos por
+  /// pareja, prefiere [apply]: esto los ignora en silencio.
   List<BetModuleInstance> toModules(List<String> playerIds) {
     return modulesJson.map((j) {
       final mod = BetModuleInstance.fromJson(j);
@@ -623,18 +625,27 @@ class GamePreset {
     }).toList();
   }
 
-  /// EXCEPCIONES: los duelos que salen de los acuerdos por pareja, solo para
-  /// las parejas formables entre [playerIds].
+  /// El juego completo aplicado a [playerIds]: reglas más excepciones, ya
+  /// reconciliadas entre sí.
   ///
-  /// [newId] debe devolver un id distinto en cada llamada: sin eso dos duelos
-  /// compartirían id y se pisarían dentro de la ronda.
-  List<BetModuleInstance> toPairModules(
+  /// Es la forma correcta de instanciar un juego. Deliberadamente NO existe un
+  /// método que devuelva solo las excepciones: sumarlo a [toModules] crearía dos
+  /// apuestas del mismo tipo sobre la misma pareja y se le cobraría dos veces.
+  /// Toda la reconciliación vive en [PairAgreementEngine.resolve].
+  ///
+  /// [newId] debe devolver un id distinto en cada llamada (Uuid().v4).
+  ///
+  /// Revisa [PresetApplication.conflicts] antes de usar el resultado: lo que
+  /// aparezca ahí quedó SIN aplicar y necesita decisión del usuario.
+  PresetApplication apply(
     List<String> playerIds,
     String Function() newId,
   ) =>
-      PairAgreementEngine.instantiate(
-        playerIds: playerIds,
+      PairAgreementEngine.resolve(
+        groupRules:
+            modulesJson.map((j) => BetModuleInstance.fromJson(j)).toList(),
         agreements: pairAgreements,
+        playerIds: playerIds,
         newId: newId,
       );
 

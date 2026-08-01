@@ -375,8 +375,8 @@ void main() {
       final martes = preset('Martes', [_agreement(yo, oscar, [_skins(20)])]);
       final viernes = preset('Viernes', [_agreement(yo, oscar, [_medal(200)])]);
 
-      final mMods = martes.toPairModules([yo, oscar], _ids());
-      final vMods = viernes.toPairModules([yo, oscar], _ids());
+      final mMods = martes.apply([yo, oscar], _ids()).modules;
+      final vMods = viernes.apply([yo, oscar], _ids()).modules;
 
       expect(mMods.single.type, BetModuleType.skins);
       expect(mMods.single.skins.valuePerSkin, 20);
@@ -393,33 +393,12 @@ void main() {
       ]);
       final viernes = preset('Viernes', [_agreement(yo, rafa, [_skins(100)])]);
 
-      final mMods = martes.toPairModules([yo, rafa, oscar], _ids());
-      final vMods = viernes.toPairModules([yo, rafa, oscar], _ids());
+      final mMods = martes.apply([yo, rafa, oscar], _ids()).modules;
+      final vMods = viernes.apply([yo, rafa, oscar], _ids()).modules;
 
       expect(mMods.length, 2);
       expect(vMods.length, 1);
       expect(vMods.single.containsPair(yo, rafa), isTrue);
-    });
-
-    test('reglas de grupo y excepciones por pareja conviven', () {
-      // modulesJson = lo que juega todo el grupo; los acuerdos son aparte.
-      final grupal = _skins(20);
-      final juego = GamePreset(
-        id: 'g',
-        name: 'Martes',
-        emoji: '⛳️',
-        description: '',
-        modulesJson: [grupal.toJson()],
-        pairAgreementsJson: [_agreement(yo, oscar, [_medal(200)]).toFirestore()],
-        updatedAt: DateTime(2026, 1, 1),
-      );
-
-      final reglas = juego.toModules([yo, rafa, oscar]);
-      final excepciones = juego.toPairModules([yo, rafa, oscar], _ids());
-
-      // La regla cubre a los tres; la excepción solo al duelo.
-      expect(reglas.single.participantIds.length, 3);
-      expect(excepciones.single.participantIds.toSet(), {yo, oscar});
     });
 
     test('un preset viejo sin acuerdos se comporta como antes', () {
@@ -435,8 +414,12 @@ void main() {
       );
       expect(viejo.pairAgreementsJson, isEmpty);
       expect(viejo.pairAgreements, isEmpty);
-      expect(viejo.toPairModules([yo, rafa], _ids()), isEmpty);
       expect(viejo.toModules([yo, rafa]).length, 1);
+
+      final app = viejo.apply([yo, rafa], _ids());
+      expect(app.modules.length, 1);
+      expect(app.modules.single.participantIds.length, 2);
+      expect(app.hasConflicts, isFalse);
     });
 
     test('pairAgreements indexa por clave canónica y descarta lo ilegible', () {
@@ -457,6 +440,226 @@ void main() {
       expect(
         juego.pairAgreements.keys.single,
         BetModuleInstance.pairKey(yo, oscar),
+      );
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Reconciliar regla + excepción. Aquí es donde un fallo cobra dinero de más.
+  // ══════════════════════════════════════════════════════════════════════════
+  group('resolve — reglas contra excepciones', () {
+    PresetApplication run({
+      required List<BetModuleInstance> reglas,
+      required List<PairAgreement> acuerdos,
+      List<String> players = const [yo, rafa, oscar],
+    }) =>
+        PairAgreementEngine.resolve(
+          groupRules: reglas,
+          agreements: {for (final a in acuerdos) a.pairKey: a},
+          playerIds: players,
+          newId: _ids(),
+        );
+
+    test('excepción de otro tipo se añade como duelo propio', () {
+      // Todos juegan skins; además yo↔Oscar juegan medal. Sin colisión.
+      final app = run(reglas: [_skins(20)], acuerdos: [
+        _agreement(yo, oscar, [_medal(200)])
+      ]);
+      expect(app.hasConflicts, isFalse);
+      expect(app.modules.length, 2);
+      final duelo = app.modules.firstWhere((m) => m.type == BetModuleType.medal);
+      expect(duelo.participantIds.toSet(), {yo, oscar});
+      expect(duelo.scope?.kind, BetScopeKind.pair);
+    });
+
+    test('CLAVE: excepción del mismo tipo NO duplica la apuesta', () {
+      // Todos skins $20, pero yo↔Oscar a $50. Si se emitieran los dos módulos,
+      // esa pareja tendría DOS skins y se le cobraría doble.
+      final app = run(reglas: [_skins(20)], acuerdos: [
+        _agreement(yo, oscar, [_skins(50)])
+      ]);
+
+      expect(app.hasConflicts, isFalse);
+      // Un solo módulo de skins, no dos.
+      expect(app.modules.where((m) => m.type == BetModuleType.skins).length, 1);
+
+      final regla = app.modules.single;
+      // El importe distinto viaja como override de esa pareja.
+      expect(regla.overrideForPair(yo, oscar), 50);
+      // Y las demás parejas siguen con el valor base.
+      expect(regla.overrideForPair(yo, rafa), isNull);
+      expect(regla.effectiveValueForDuel(yo, rafa).$1, 20);
+      expect(regla.effectiveValueForDuel(yo, oscar).$1, 50);
+    });
+
+    test('acuerdo idéntico a la regla no añade nada', () {
+      final app = run(reglas: [_skins(20)], acuerdos: [
+        _agreement(yo, oscar, [_skins(20)])
+      ]);
+      expect(app.modules.length, 1);
+      expect(app.modules.single.pairConfigOverrides ?? {}, isEmpty);
+      expect(app.hasConflicts, isFalse);
+    });
+
+    test('varias parejas con importes distintos, todas como override', () {
+      final app = run(reglas: [_skins(20)], acuerdos: [
+        _agreement(yo, oscar, [_skins(50)]),
+        _agreement(yo, rafa, [_skins(80)]),
+      ]);
+      expect(app.modules.length, 1);
+      expect(app.modules.single.overrideForPair(yo, oscar), 50);
+      expect(app.modules.single.overrideForPair(yo, rafa), 80);
+      expect(app.hasConflicts, isFalse);
+    });
+
+    test('CONFLICTO: Nassau no admite importe por duelo', () {
+      // Nassau tiene front/back/total: un override solo lleva un monto, así
+      // que no puede representar "este duelo juega Nassau distinto".
+      final nassau = BetModuleInstance(
+        id: 'n',
+        type: BetModuleType.nassau,
+        name: 'Nassau',
+        participantIds: const [],
+        nassauConfig: const NassauConfig(
+            frontValue: 50, backValue: 50, totalValue: 100),
+      );
+      final otro = BetModuleInstance(
+        id: 'n2',
+        type: BetModuleType.nassau,
+        name: 'Nassau',
+        participantIds: const [],
+        nassauConfig: const NassauConfig(
+            frontValue: 100, backValue: 100, totalValue: 200),
+      );
+
+      final app = run(reglas: [nassau], acuerdos: [_agreement(yo, oscar, [otro])]);
+
+      expect(app.conflicts.length, 1);
+      expect(app.conflicts.single.type, BetModuleType.nassau);
+      expect(app.conflicts.single.pairKey, BetModuleInstance.pairKey(yo, oscar));
+      // La regla se aplica sin la excepción: nunca se cobra de más en silencio.
+      expect(app.modules.length, 1);
+      expect(app.modules.single.pairConfigOverrides ?? {}, isEmpty);
+    });
+
+    test('CONFLICTO: difiere en algo más que el importe', () {
+      // Mismo tipo y mismo monto, pero gross contra net. Un override solo puede
+      // cambiar el monto, así que esto no es representable.
+      // mode viene en net por defecto, así que el gross hay que ponerlo
+      // explícito para que las dos configuraciones difieran de verdad.
+      final reglaGross = BetModuleInstance(
+        id: 'a',
+        type: BetModuleType.skins,
+        name: 'Skins',
+        participantIds: const [],
+        skinsConfig:
+            const SkinsConfig(valuePerSkin: 20, mode: GrossNetMode.gross),
+      );
+      final acuerdoNet = BetModuleInstance(
+        id: 'b',
+        type: BetModuleType.skins,
+        name: 'Skins',
+        participantIds: const [],
+        skinsConfig:
+            const SkinsConfig(valuePerSkin: 20, mode: GrossNetMode.net),
+      );
+
+      final app = run(
+          reglas: [reglaGross], acuerdos: [_agreement(yo, oscar, [acuerdoNet])]);
+
+      expect(app.conflicts.length, 1);
+      expect(app.conflicts.single.reason, contains('más que el importe'));
+      expect(app.modules.single.pairConfigOverrides ?? {}, isEmpty);
+    });
+
+    test('las reglas cubren a todos los jugadores presentes', () {
+      final app = run(reglas: [_skins(20)], acuerdos: const []);
+      expect(app.modules.single.participantIds.toSet(), {yo, rafa, oscar});
+    });
+
+    test('acuerdos de parejas ausentes se ignoran', () {
+      final app = run(
+        reglas: [_skins(20)],
+        acuerdos: [_agreement(oscar, 'willy', [_medal(30)])],
+        players: [yo, rafa],
+      );
+      expect(app.modules.length, 1);
+      expect(app.hasConflicts, isFalse);
+    });
+
+    test('override no pisa los que la regla ya traía', () {
+      final conOverride = _skins(20).copyWith(pairConfigOverrides: {
+        BetModuleInstance.pairKey(yo, rafa): {'value': 99}
+      });
+      final app = run(reglas: [conOverride], acuerdos: [
+        _agreement(yo, oscar, [_skins(50)])
+      ]);
+      expect(app.modules.single.overrideForPair(yo, rafa), 99);
+      expect(app.modules.single.overrideForPair(yo, oscar), 50);
+    });
+
+    test('units usa allEvents como clave de override', () {
+      final base = BetModuleInstance(
+        id: 'u',
+        type: BetModuleType.units,
+        name: 'Unidades',
+        participantIds: const [],
+        unitsConfig: const UnitsConfig().withAllEventsValue(20),
+      );
+      final caro = BetModuleInstance(
+        id: 'u2',
+        type: BetModuleType.units,
+        name: 'Unidades',
+        participantIds: const [],
+        unitsConfig: const UnitsConfig().withAllEventsValue(30),
+      );
+
+      final app = run(reglas: [base], acuerdos: [_agreement(yo, oscar, [caro])]);
+      expect(app.hasConflicts, isFalse);
+      expect(app.modules.single.overrideForPair(yo, oscar), 30);
+      expect(
+        app.modules.single.pairConfigOverrides![
+            BetModuleInstance.pairKey(yo, oscar)]!['allEvents'],
+        30,
+      );
+    });
+
+    test('ids únicos entre reglas y duelos añadidos', () {
+      final app = run(reglas: [_skins(20)], acuerdos: [
+        _agreement(yo, oscar, [_medal(200)]),
+        _agreement(yo, rafa, [_medal(100)]),
+      ]);
+      expect(app.modules.map((m) => m.id).toSet().length, app.modules.length);
+    });
+  });
+
+  group('withBaseValue', () {
+    test('fija el importe de los tipos que admiten override', () {
+      expect(_skins(20).withBaseValue(50)!.skins.valuePerSkin, 50);
+      expect(_medal(20).withBaseValue(50)!.medal.value, 50);
+    });
+
+    test('devuelve null para Nassau — tiene varios importes', () {
+      final nassau = BetModuleInstance(
+        id: 'n',
+        type: BetModuleType.nassau,
+        name: 'Nassau',
+        participantIds: const [],
+        nassauConfig: const NassauConfig(
+            frontValue: 50, backValue: 50, totalValue: 100),
+      );
+      expect(nassau.withBaseValue(80), isNull);
+      expect(nassau.pairOverrideKey, isNull);
+    });
+
+    test('no altera nada más que el importe', () {
+      final original = _skins(20);
+      final cambiado = original.withBaseValue(50)!;
+      // Con el importe igualado otra vez, las firmas coinciden: la única
+      // diferencia era el monto. Es la comprobación que usa resolve().
+      expect(
+        cambiado.withBaseValue(20)!.configSignature,
+        original.configSignature,
       );
     });
   });

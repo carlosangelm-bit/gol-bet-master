@@ -1845,6 +1845,43 @@ class BetModuleInstance {
   // Alias privado para uso interno (retrocompat de llamadas internas).
   double get _baseValue => baseValue;
 
+  /// Contrario de [baseValue]: copia con el importe base fijado en [v].
+  ///
+  /// Solo está definido para los tipos con [supportsPlayerOverride]. Nassau y
+  /// Match tienen VARIOS importes (front/back/total, match/press), así que "el
+  /// importe base" no los describe: devuelve null en vez de mentir escribiendo
+  /// uno solo y dejando los otros sin tocar.
+  ///
+  /// Sirve para saber si dos configuraciones difieren SOLO en el importe:
+  /// si `a.withBaseValue(b.baseValue)` tiene la misma [configSignature] que
+  /// `b`, entonces el importe era la única diferencia. Eso decide si el caso
+  /// se puede expresar con [pairConfigOverrides], que solo lleva el monto.
+  BetModuleInstance? withBaseValue(double v) => switch (type) {
+        BetModuleType.skins =>
+          copyWith(skinsConfig: skins.copyWith(valuePerSkin: v)),
+        BetModuleType.oyeses =>
+          copyWith(oyesesConfig: oyeses.copyWith(value: v)),
+        BetModuleType.putts =>
+          copyWith(puttsConfig: putts.copyWith(value: v)),
+        BetModuleType.medal =>
+          copyWith(medalConfig: medal.copyWith(value: v)),
+        BetModuleType.units =>
+          copyWith(unitsConfig: units.withAllEventsValue(v)),
+        _ => null,
+      };
+
+  /// Clave con la que [pairConfigOverrides] guarda el importe de este tipo.
+  /// null si el tipo no admite override por pareja.
+  String? get pairOverrideKey => switch (type) {
+        BetModuleType.units => 'allEvents',
+        BetModuleType.skins ||
+        BetModuleType.oyeses ||
+        BetModuleType.putts ||
+        BetModuleType.medal =>
+          'value',
+        _ => null,
+      };
+
   /// true si este tipo de módulo soporta override de valor por duelo.
   bool get supportsPlayerOverride =>
       type == BetModuleType.skins   ||
