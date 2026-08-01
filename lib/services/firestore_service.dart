@@ -5,6 +5,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+import '../engines/pair_agreement_engine.dart';
 import '../models/models.dart';
 import '../providers/round_provider.dart' show roundToJson, roundFromJson;
 import 'auth_service.dart';
@@ -545,12 +546,32 @@ class RoundTemplate {
 // ── GamePreset — configuración de partida guardada ────────────────────────────
 // Una configuración de partida guarda los módulos de apuesta SIN jugadores.
 // Al usarla en una nueva ronda, se asignan los jugadores en ese momento.
+/// Un juego recurrente: "el de los martes", "el de los viernes".
+///
+/// Es el CONTEXTO de las apuestas, y por eso los acuerdos por pareja viven
+/// aquí dentro y no en una colección global del usuario: los mismos jugadores
+/// pueden apostar distinto el martes que el viernes, así que un acuerdo
+/// "Yo↔Oscar" sin juego que lo enmarque es ambiguo.
+///
+/// Reproduce la estructura de reglas + excepciones que ya usa la pantalla de
+/// Apuestas para mostrar la configuración:
+///   • [modulesJson]        → REGLAS: lo que juega todo el grupo
+///   • [pairAgreementsJson] → EXCEPCIONES: lo que una pareja juega distinto
 class GamePreset {
   final String id;
   final String name;           // "Nassau con los amigos"
   final String emoji;          // "⛳️"
   final String description;    // Descripción breve opcional
   final List<Map<String, dynamic>> modulesJson; // BetModuleInstances serializados (sin participantIds)
+
+  /// Acuerdos por pareja de ESTE juego, cada uno con sus dos playerIds
+  /// explícitos ([PairAgreement.toFirestore]).
+  ///
+  /// Se guarda como lista y no como mapa indexado por pairKey a propósito: el
+  /// modelo tiene tres convenciones de clave de par con separadores distintos,
+  /// y con los ids dentro de cada entrada no hay ninguna clave que parsear.
+  final List<Map<String, dynamic>> pairAgreementsJson;
+
   final DateTime updatedAt;
   final int useCount;
 
@@ -560,6 +581,7 @@ class GamePreset {
     required this.emoji,
     required this.description,
     required this.modulesJson,
+    this.pairAgreementsJson = const [],
     required this.updatedAt,
     this.useCount = 0,
   });
@@ -567,6 +589,7 @@ class GamePreset {
   GamePreset copyWith({
     String? id, String? name, String? emoji, String? description,
     List<Map<String, dynamic>>? modulesJson,
+    List<Map<String, dynamic>>? pairAgreementsJson,
     DateTime? updatedAt, int? useCount,
   }) => GamePreset(
     id:          id ?? this.id,
@@ -574,12 +597,25 @@ class GamePreset {
     emoji:       emoji ?? this.emoji,
     description: description ?? this.description,
     modulesJson: modulesJson ?? this.modulesJson,
+    pairAgreementsJson: pairAgreementsJson ?? this.pairAgreementsJson,
     updatedAt:   updatedAt ?? this.updatedAt,
     useCount:    useCount ?? this.useCount,
   );
 
-  /// Reconstruir instancias de módulo desde el preset
-  /// Se pasan los playerIds para asignarlos como participantes
+  /// Acuerdos por pareja de este juego, indexados por su clave canónica.
+  /// Las entradas ilegibles se descartan: un juego con la mitad de sus
+  /// acuerdos sigue sirviendo, perderlo entero no.
+  Map<String, PairAgreement> get pairAgreements {
+    final result = <String, PairAgreement>{};
+    for (final j in pairAgreementsJson) {
+      final a = PairAgreement.fromFirestore(j, '');
+      if (a != null && !a.isEmpty) result[a.pairKey] = a;
+    }
+    return result;
+  }
+
+  /// REGLAS: los módulos que aplican a todo el grupo.
+  /// Se pasan los playerIds para asignarlos como participantes.
   List<BetModuleInstance> toModules(List<String> playerIds) {
     return modulesJson.map((j) {
       final mod = BetModuleInstance.fromJson(j);
@@ -587,12 +623,28 @@ class GamePreset {
     }).toList();
   }
 
+  /// EXCEPCIONES: los duelos que salen de los acuerdos por pareja, solo para
+  /// las parejas formables entre [playerIds].
+  ///
+  /// [newId] debe devolver un id distinto en cada llamada: sin eso dos duelos
+  /// compartirían id y se pisarían dentro de la ronda.
+  List<BetModuleInstance> toPairModules(
+    List<String> playerIds,
+    String Function() newId,
+  ) =>
+      PairAgreementEngine.instantiate(
+        playerIds: playerIds,
+        agreements: pairAgreements,
+        newId: newId,
+      );
+
   Map<String, dynamic> toFirestore() => {
     'id':          id,
     'name':        name,
     'emoji':       emoji,
     'description': description,
     'modulesJson': modulesJson,
+    'pairAgreementsJson': pairAgreementsJson,
     'updatedAt':   FieldValue.serverTimestamp(),
     'useCount':    useCount,
   };
@@ -606,6 +658,12 @@ class GamePreset {
       description: d['description'] as String? ?? '',
       modulesJson: (d['modulesJson'] as List? ?? [])
           .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList(),
+      // Ausente en presets guardados antes de esta versión → lista vacía, que
+      // se comporta igual que antes: solo reglas de grupo.
+      pairAgreementsJson: (d['pairAgreementsJson'] as List? ?? [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
           .toList(),
       updatedAt:   (d['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       useCount:    (d['useCount'] as int?) ?? 0,

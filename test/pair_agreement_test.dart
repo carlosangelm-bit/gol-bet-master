@@ -4,12 +4,17 @@
 // Oscar juegue una apuesta diferente conmigo que con Rafa". O sea que el acuerdo
 // pertenece a la PAREJA, no a la persona — y eso es justo lo que se prueba aquí.
 //
-// Es lógica pura, sin Firestore: el engine no toca red. La persistencia
-// (PairAgreementService) queda fuera de estos tests.
+// Segundo requisito, que llegó después: los mismos jugadores pueden apostar
+// distinto en el juego de los martes que en el de los viernes. Por eso el
+// acuerdo vive dentro de un GamePreset y no en una colección global — ver el
+// grupo "contexto: martes vs viernes" al final.
+//
+// Es lógica pura, sin Firestore: el engine no toca red.
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/models.dart';
 import 'package:golf_bet_master/engines/pair_agreement_engine.dart';
+import 'package:golf_bet_master/services/firestore_service.dart' show GamePreset;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -346,6 +351,113 @@ void main() {
       final back = PairAgreement.fromFirestore(data, 'k')!;
       expect(back.templates.length, 1);
       expect(back.templates.single.type, BetModuleType.skins);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // El acuerdo pertenece a un JUEGO, no solo a la pareja.
+  // ══════════════════════════════════════════════════════════════════════════
+  group('contexto: martes vs viernes', () {
+    // Dos juegos con LOS MISMOS jugadores y apuestas distintas entre ellos.
+    // Si el acuerdo viviera en una colección global por pareja, uno pisaría al
+    // otro y no habría forma de tener ambos.
+    GamePreset preset(String name, List<PairAgreement> agreements) => GamePreset(
+          id: name,
+          name: name,
+          emoji: '⛳️',
+          description: '',
+          modulesJson: const [],
+          pairAgreementsJson: agreements.map((a) => a.toFirestore()).toList(),
+          updatedAt: DateTime(2026, 1, 1),
+        );
+
+    test('la misma pareja apuesta distinto en cada juego', () {
+      final martes = preset('Martes', [_agreement(yo, oscar, [_skins(20)])]);
+      final viernes = preset('Viernes', [_agreement(yo, oscar, [_medal(200)])]);
+
+      final mMods = martes.toPairModules([yo, oscar], _ids());
+      final vMods = viernes.toPairModules([yo, oscar], _ids());
+
+      expect(mMods.single.type, BetModuleType.skins);
+      expect(mMods.single.skins.valuePerSkin, 20);
+      expect(vMods.single.type, BetModuleType.medal);
+      expect(vMods.single.medal.value, 200);
+    });
+
+    test('cada juego resuelve varias parejas de forma independiente', () {
+      // Martes: yo↔Oscar skins, Rafa↔Oscar medal.
+      // Viernes: solo yo↔Rafa. Oscar no tiene acuerdo con nadie ese día.
+      final martes = preset('Martes', [
+        _agreement(yo, oscar, [_skins(20)]),
+        _agreement(rafa, oscar, [_medal(50)]),
+      ]);
+      final viernes = preset('Viernes', [_agreement(yo, rafa, [_skins(100)])]);
+
+      final mMods = martes.toPairModules([yo, rafa, oscar], _ids());
+      final vMods = viernes.toPairModules([yo, rafa, oscar], _ids());
+
+      expect(mMods.length, 2);
+      expect(vMods.length, 1);
+      expect(vMods.single.containsPair(yo, rafa), isTrue);
+    });
+
+    test('reglas de grupo y excepciones por pareja conviven', () {
+      // modulesJson = lo que juega todo el grupo; los acuerdos son aparte.
+      final grupal = _skins(20);
+      final juego = GamePreset(
+        id: 'g',
+        name: 'Martes',
+        emoji: '⛳️',
+        description: '',
+        modulesJson: [grupal.toJson()],
+        pairAgreementsJson: [_agreement(yo, oscar, [_medal(200)]).toFirestore()],
+        updatedAt: DateTime(2026, 1, 1),
+      );
+
+      final reglas = juego.toModules([yo, rafa, oscar]);
+      final excepciones = juego.toPairModules([yo, rafa, oscar], _ids());
+
+      // La regla cubre a los tres; la excepción solo al duelo.
+      expect(reglas.single.participantIds.length, 3);
+      expect(excepciones.single.participantIds.toSet(), {yo, oscar});
+    });
+
+    test('un preset viejo sin acuerdos se comporta como antes', () {
+      // Retrocompatibilidad: los presets guardados antes de esta versión no
+      // tienen el campo, y deben seguir aplicando solo sus reglas de grupo.
+      final viejo = GamePreset(
+        id: 'v',
+        name: 'Antiguo',
+        emoji: '⛳️',
+        description: '',
+        modulesJson: [_skins(20).toJson()],
+        updatedAt: DateTime(2026, 1, 1),
+      );
+      expect(viejo.pairAgreementsJson, isEmpty);
+      expect(viejo.pairAgreements, isEmpty);
+      expect(viejo.toPairModules([yo, rafa], _ids()), isEmpty);
+      expect(viejo.toModules([yo, rafa]).length, 1);
+    });
+
+    test('pairAgreements indexa por clave canónica y descarta lo ilegible', () {
+      final juego = GamePreset(
+        id: 'g',
+        name: 'Martes',
+        emoji: '⛳️',
+        description: '',
+        modulesJson: const [],
+        pairAgreementsJson: [
+          _agreement(yo, oscar, [_skins(20)]).toFirestore(),
+          {'p1Id': yo}, // sin el segundo id → inaplicable, se descarta
+          {'p1Id': rafa, 'p2Id': rafa, 'templates': []}, // par degenerado
+        ],
+        updatedAt: DateTime(2026, 1, 1),
+      );
+      expect(juego.pairAgreements.length, 1);
+      expect(
+        juego.pairAgreements.keys.single,
+        BetModuleInstance.pairKey(yo, oscar),
+      );
     });
   });
 }

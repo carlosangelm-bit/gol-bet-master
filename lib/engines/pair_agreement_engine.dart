@@ -10,7 +10,10 @@
 // configuración se reduce a revisar y ajustar las desviaciones.
 //
 // Es lógica pura: no toca Firestore ni UI, así que se puede testear sin red.
-// La persistencia vive en PairAgreementService.
+//
+// La persistencia vive dentro de [GamePreset]: un acuerdo pertenece a un juego
+// concreto ("el de los martes"), porque los mismos jugadores pueden apostar
+// distinto según el día. Un acuerdo sin juego que lo enmarque es ambiguo.
 // ─────────────────────────────────────────────────────────────────────────────
 import '../models/models.dart';
 

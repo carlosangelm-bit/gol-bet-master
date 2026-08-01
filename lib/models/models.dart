@@ -2267,11 +2267,14 @@ class PlayerLink {
 // que Oscar↔Rafa y Rafa↔Oscar son el mismo acuerdo y no puede haber dos
 // versiones divergentes del mismo trato.
 //
-// Vive bajo users/{uid} y no en un documento compartido: no hay autoridad
-// común sobre lo que dos terceros acordaron entre sí, así que cada usuario
-// lleva su propio registro de lo que ha visto jugar. Tampoco cabía en
-// [PlayerLink], que está indexado por UN jugador y solo puede expresar
-// "yo ↔ esa persona": no tiene dónde poner el acuerdo entre Oscar y Rafa.
+// Vive DENTRO de un [GamePreset], no en una colección global: los mismos
+// jugadores pueden apostar distinto en el juego de los martes que en el de los
+// viernes, así que el juego es parte de la identidad del acuerdo. Sin él,
+// "Yo↔Oscar" es ambiguo.
+//
+// Tampoco cabía en [PlayerLink], que está indexado por UN jugador y solo puede
+// expresar "yo ↔ esa persona": no tiene dónde poner el acuerdo entre Oscar y
+// Rafa, que es justo el caso que hay que soportar.
 //
 // La ventaja (sliding) queda deliberadamente FUERA. Ya tiene su propio camino
 // —PlayerLink.defaultSlidingAdjustment y SlidingAdjustmentEngine— y meter una
