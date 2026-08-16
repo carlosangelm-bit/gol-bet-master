@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../../engines/bet_engine.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
 import '../../widgets/common_widgets.dart';
@@ -171,6 +172,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+                // ── Bola Baja / Bola Alta del hoyo en curso ────────────
+                for (final g in round.betGroups)
+                  for (final m in g.modules)
+                    if (m.type == BetModuleType.nassauLowHigh && m.hasTeamSides)
+                      LowHighHoleBlock(
+                          round: round, mod: m, hole: _currentHole, t: t),
 
                 // ── Tabla de jugadores ─────────────────────────────────
                 _PlayerTable(
@@ -1659,6 +1667,220 @@ class _NavBtn extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Bola Baja / Bola Alta en el hoyo que se está jugando ─────────────────────
+//
+// Sin esto la regla "Acumular" es completamente invisible mientras se juega,
+// que es justo cuando importa: saber que la bola baja vale 2 puntos en este
+// hoyo cambia cómo lo juegas. Esa es la razón principal del bloque.
+//
+// Los datos salen del detalle por hoyo de BetEngine.lowHighBreakdown, el mismo
+// recorrido que reparte los puntos. No se recalcula nada aquí.
+class LowHighHoleBlock extends StatelessWidget {
+  final Round round;
+  final BetModuleInstance mod;
+  final int hole;
+  final GolfTheme t;
+
+  const LowHighHoleBlock({
+    super.key,
+    required this.round,
+    required this.mod,
+    required this.hole,
+    required this.t,
+  });
+
+  String _nombre(String id) => round.players
+      .firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id))
+      .name
+      .split(' ')
+      .first;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<LowHighSegmentBreakdown> segs;
+    try {
+      segs = BetEngine.lowHighBreakdown(round, mod);
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+
+    // El segmento del hoyo actual, nunca el Overall: el marcador que interesa
+    // mientras juegas es el de la vuelta en curso, y el Overall duplicaría los
+    // mismos hoyos.
+    LowHighSegmentBreakdown? seg;
+    for (final s in segs) {
+      if (s.segment == 'overall') continue;
+      if (s.holes.contains(hole)) { seg = s; break; }
+    }
+    // Ronda de 9 hoyos: solo hay un segmento y sí es el bueno.
+    seg ??= segs.where((s) => s.segment == 'nine' && s.holes.contains(hole)).firstOrNull;
+    if (seg == null) return const SizedBox.shrink();
+
+    final h = seg.resultForHole(hole);
+    if (h == null) return const SizedBox.shrink();
+
+    final sideA = mod.sideA;
+    final sideB = mod.sideB;
+    final neto  = mod.lowHigh.mode == GrossNetMode.net;
+    final p     = BetEngine.formatPoints;
+
+    // Aviso de acumulado: lo primero que hay que ver.
+    final avisos = <String>[
+      if (h.lowCarry > 1) 'La bola baja vale ${p(h.lowCarry)} puntos en este hoyo',
+      if (h.highCarry > 1) 'La bola alta vale ${p(h.highCarry)} puntos en este hoyo',
+    ];
+
+    Widget fila(String etiqueta, int? aVal, int? bVal, String? ganador) {
+      final ganaA = ganador == 'a';
+      final ganaB = ganador == 'b';
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(children: [
+          SizedBox(
+            width: 58,
+            child: Text(etiqueta,
+                style: TextStyle(
+                    color: t.sub, fontSize: 10, fontWeight: FontWeight.w700)),
+          ),
+          Expanded(
+            child: Text(aVal?.toString() ?? '—',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: ganaA ? t.profit : t.text,
+                    fontSize: 14,
+                    fontWeight: ganaA ? FontWeight.w900 : FontWeight.w600)),
+          ),
+          SizedBox(
+            width: 46,
+            child: Text(
+                !h.played ? '—' : (ganador == null ? 'empate' : (ganaA ? '◀' : '▶')),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: t.sub, fontSize: 10)),
+          ),
+          Expanded(
+            child: Text(bVal?.toString() ?? '—',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: ganaB ? t.profit : t.text,
+                    fontSize: 14,
+                    fontWeight: ganaB ? FontWeight.w900 : FontWeight.w600)),
+          ),
+        ]),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.divider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text(mod.type.icon, style: const TextStyle(fontSize: 12)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text('${mod.type.label} · hoyo $hole',
+                style: TextStyle(
+                    color: t.text, fontSize: 12, fontWeight: FontWeight.w800)),
+          ),
+          Text(neto ? 'NETO' : 'BRUTO',
+              style: TextStyle(
+                  color: t.sub, fontSize: 9, fontWeight: FontWeight.w800)),
+        ]),
+
+        // ── Acumulado pendiente ────────────────────────────────────────
+        if (avisos.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          ...avisos.map((a) => Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: t.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(color: t.accent.withValues(alpha: 0.35)),
+                ),
+                child: Row(children: [
+                  Icon(Icons.local_fire_department, color: t.accent, size: 13),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(a,
+                        style: TextStyle(
+                            color: t.accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ]),
+              )),
+        ],
+
+        const SizedBox(height: 8),
+        // Cabecera con los dos lados
+        Row(children: [
+          const SizedBox(width: 58),
+          Expanded(
+            child: Text(sideA.playerIds.map(_nombre).join(' + '),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: t.sub, fontSize: 10, fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(width: 46),
+          Expanded(
+            child: Text(sideB.playerIds.map(_nombre).join(' + '),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: t.sub, fontSize: 10, fontWeight: FontWeight.w700)),
+          ),
+        ]),
+        const SizedBox(height: 6),
+
+        fila('BOLA BAJA', h.aLow, h.bLow, h.lowWinner),
+        fila('BOLA ALTA', h.aHigh, h.bHigh, h.highWinner),
+
+        // ── Hoyo incompleto ────────────────────────────────────────────
+        if (!h.played) ...[
+          const SizedBox(height: 4),
+          Row(children: [
+            Icon(Icons.info_outline, color: t.sub, size: 12),
+            const SizedBox(width: 5),
+            Expanded(
+              child: Text(
+                'Faltan scores: el hoyo no se disputa hasta que anoten los '
+                'cuatro, y el marcador no se mueve.',
+                style: TextStyle(color: t.sub, fontSize: 10, height: 1.3),
+              ),
+            ),
+          ]),
+        ],
+
+        const SizedBox(height: 8),
+        Divider(height: 1, color: t.divider),
+        const SizedBox(height: 6),
+        // ── Marcador del segmento en curso ─────────────────────────────
+        Row(children: [
+          Expanded(
+            child: Text(seg.label.replaceFirst('Bola Baja/Alta ', ''),
+                style: TextStyle(
+                    color: t.sub, fontSize: 10, fontWeight: FontWeight.w700)),
+          ),
+          Text('${p(seg.aTotal)} – ${p(seg.bTotal)}',
+              style: TextStyle(
+                  color: t.text, fontSize: 13, fontWeight: FontWeight.w900)),
+          const SizedBox(width: 5),
+          Text('puntos', style: TextStyle(color: t.sub, fontSize: 9)),
+        ]),
+      ]),
     );
   }
 }

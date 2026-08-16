@@ -1579,7 +1579,18 @@ class BetEngine {
         // Hoyo incompleto: no se disputa ninguna categoría y el acumulado se
         // mantiene intacto. Sin los cuatro scores no hay bola alta que comparar,
         // y dejar correr solo la baja repartiría el hoyo a medias.
-        if (a.any((s) => s == null) || b.any((s) => s == null)) continue;
+        if (a.any((s) => s == null) || b.any((s) => s == null)) {
+          // Se deja constancia igualmente: la pantalla de captura necesita
+          // decir "este hoyo no cuenta todavía" y cuánto vale el punto que
+          // sigue pendiente. No altera los puntos.
+          tally.holes.add(LowHighHoleResult(
+            hole: h, played: false,
+            aScores: a.whereType<int>().toList()..sort(),
+            bScores: b.whereType<int>().toList()..sort(),
+            lowCarry: lowCarry, highCarry: highCarry,
+          ));
+          continue;
+        }
 
         final aS = a.cast<int>()..sort();
         final bS = b.cast<int>()..sort();
@@ -1616,16 +1627,32 @@ class BetEngine {
           }
         }
 
+        // Valor del punto AL ENTRAR al hoyo: es lo que la UI anuncia como
+        // "esta bola vale 2 puntos", y hay que capturarlo antes de resolver.
+        final lowCarryAntes  = lowCarry;
+        final highCarryAntes = highCarry;
+        var lowA = 0.0, lowB = 0.0, highA = 0.0, highB = 0.0;
+
         lowCarry = resolve(
           aScore: aS.first, bScore: bS.first,
           carry: lowCarry, carriesHere: cfg.carriesLow,
-          toA: (v) => tally.aLow += v, toB: (v) => tally.bLow += v,
+          toA: (v) { tally.aLow += v; lowA = v; },
+          toB: (v) { tally.bLow += v; lowB = v; },
         );
         highCarry = resolve(
           aScore: aS.last, bScore: bS.last,
           carry: highCarry, carriesHere: cfg.carriesHigh,
-          toA: (v) => tally.aHigh += v, toB: (v) => tally.bHigh += v,
+          toA: (v) { tally.aHigh += v; highA = v; },
+          toB: (v) { tally.bHigh += v; highB = v; },
         );
+
+        tally.holes.add(LowHighHoleResult(
+          hole: h, played: true,
+          aScores: aS, bScores: bS,
+          lowCarry: lowCarryAntes, highCarry: highCarryAntes,
+          lowPointsA: lowA, lowPointsB: lowB,
+          highPointsA: highA, highPointsB: highB,
+        ));
       }
       return tally;
     }
@@ -1731,6 +1758,7 @@ class BetEngine {
                 cfg.amountPerPoint > 0)
             ? tally.diff.abs() * cfg.amountPerPoint
             : 0,
+        holeResults: tally.holes,
       );
     }
 
@@ -2896,6 +2924,69 @@ class LedgerComputation {
 //
 // Ojo: "first"/"second" son lógicos, no numéricos. Con startingNine=back,
 // firstNine son los hoyos 10-18 y secondNine los 1-9.
+/// Qué pasó en UN hoyo de Bola Baja / Bola Alta.
+///
+/// Lo produce el mismo recorrido que reparte los puntos, así que lo que muestra
+/// la pantalla de captura es literalmente lo que el motor contó.
+class LowHighHoleResult {
+  final int hole;
+
+  /// true si los cuatro jugadores anotaron. Con false no se disputa NINGUNA
+  /// categoría —sin los cuatro scores no hay bola alta que comparar— y el
+  /// marcador no se mueve; la UI debe explicarlo.
+  final bool played;
+
+  /// Scores ya netos si la apuesta se juega en neto, ordenados de menor a
+  /// mayor: el primero es la bola baja del lado y el último la alta.
+  /// Con [played] false pueden venir incompletos.
+  final List<int> aScores;
+  final List<int> bScores;
+
+  /// Cuánto valía el punto de cada categoría AL ENTRAR a este hoyo. Mayor que 1
+  /// significa que viene acumulado de empates anteriores — es el dato que la UI
+  /// anuncia como "la bola baja vale 2 puntos aquí".
+  final double lowCarry;
+  final double highCarry;
+
+  /// Puntos otorgados en este hoyo. Con la regla "dividir" ambos pueden ser 0.5.
+  final double lowPointsA, lowPointsB, highPointsA, highPointsB;
+
+  const LowHighHoleResult({
+    required this.hole,
+    required this.played,
+    required this.aScores,
+    required this.bScores,
+    required this.lowCarry,
+    required this.highCarry,
+    this.lowPointsA = 0,
+    this.lowPointsB = 0,
+    this.highPointsA = 0,
+    this.highPointsB = 0,
+  });
+
+  int? get aLow  => aScores.isEmpty ? null : aScores.first;
+  int? get aHigh => aScores.isEmpty ? null : aScores.last;
+  int? get bLow  => bScores.isEmpty ? null : bScores.first;
+  int? get bHigh => bScores.isEmpty ? null : bScores.last;
+
+  /// 'a' | 'b' | null (empate o no disputado).
+  String? get lowWinner => !played
+      ? null
+      : lowPointsA > lowPointsB
+          ? 'a'
+          : lowPointsB > lowPointsA
+              ? 'b'
+              : null;
+
+  String? get highWinner => !played
+      ? null
+      : highPointsA > highPointsB
+          ? 'a'
+          : highPointsB > highPointsA
+              ? 'b'
+              : null;
+}
+
 /// Resultado de un segmento en Bola Baja / Bola Alta, listo para mostrarse.
 ///
 /// Lo produce [BetEngine.lowHighBreakdown] a partir del MISMO recorrido que usa
@@ -2922,6 +3013,9 @@ class LowHighSegmentBreakdown {
   /// Monto LIQUIDADO por diferencia de puntos. Cero si no aplica al segmento.
   final double pointAmount;
 
+  /// Detalle hoyo a hoyo del segmento, en orden de juego.
+  final List<LowHighHoleResult> holeResults;
+
   const LowHighSegmentBreakdown({
     required this.segment,
     required this.label,
@@ -2932,7 +3026,16 @@ class LowHighSegmentBreakdown {
     required this.bHigh,
     required this.segmentAmount,
     required this.pointAmount,
+    this.holeResults = const [],
   });
+
+  /// El resultado de [hole] dentro de este segmento, o null si no pertenece.
+  LowHighHoleResult? resultForHole(int hole) {
+    for (final h in holeResults) {
+      if (h.hole == hole) return h;
+    }
+    return null;
+  }
 
   double get aTotal => aLow + aHigh;
   double get bTotal => bLow + bHigh;
@@ -2953,6 +3056,11 @@ class LowHighSegmentBreakdown {
 /// aunque la diferencia no: A y B suman medio punto cada uno y el marcador se
 /// mueve sin que nadie cobre.
 class _LowHighTally {
+  /// Detalle hoyo a hoyo del recorrido, en orden de juego. Se llena como
+  /// SUBPRODUCTO del mismo walk que reparte los puntos, para que la pantalla
+  /// de captura no tenga que rehacer el cálculo.
+  final List<LowHighHoleResult> holes = [];
+
   double aLow = 0;
   double aHigh = 0;
   double bLow = 0;

@@ -1243,9 +1243,20 @@ class _OneVOneViewState extends State<_OneVOneView> {
             return state == _duelFilter;
           }).toList();
 
+    // Marcador real de los formatos por equipos. Va antes de los cruces y
+    // FUERA de los filtros: los filtros operan sobre duelos individuales, y el
+    // marcador del equipo no es uno de ellos.
+    final lowHighMods = [
+      for (final g in round.betGroups)
+        for (final m in g.modules)
+          if (m.type == BetModuleType.nassauLowHigh && m.hasTeamSides) m,
+    ];
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       child: Column(children: [
+        ...lowHighMods.map((m) => LowHighTeamCard(round: round, mod: m, t: t)),
+
         // ── Barra de filtros ─────────────────────────────────────────────
         if (canFilter) ...[
           _FiltersBar(
@@ -4868,3 +4879,169 @@ class _FinancialBreakdown extends StatelessWidget {
   }
 }
 
+
+// ── Tarjeta de equipo: Bola Baja / Bola Alta ─────────────────────────────────
+//
+// Va ARRIBA de los cruces individuales porque es el marcador real del formato.
+// Los cruces de abajo muestran "hoyos ganados", que viene de match play
+// individual y no tiene relación con cómo se calculó esta apuesta; sin esta
+// tarjeta, el jugador no tiene en ninguna parte el marcador que sí cuenta.
+//
+// Todos los números salen de BetEngine.lowHighBreakdown. Cero cálculo aquí.
+class LowHighTeamCard extends StatelessWidget {
+  final Round round;
+  final BetModuleInstance mod;
+  final GolfTheme t;
+
+  /// Segmento a destacar: el que se está jugando. Si es null se muestra el
+  /// resultado final de la ronda.
+  final String? segmentoEnCurso;
+
+  const LowHighTeamCard({
+    super.key,
+    required this.round,
+    required this.mod,
+    required this.t,
+    this.segmentoEnCurso,
+  });
+
+  String _nombre(String id) => round.players
+      .firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id))
+      .name
+      .split(' ')
+      .first;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<LowHighSegmentBreakdown> segs;
+    try {
+      segs = BetEngine.lowHighBreakdown(round, mod);
+    } catch (_) {
+      return const SizedBox.shrink(); // config inválida: ya se avisa en Resultados
+    }
+    if (segs.isEmpty) return const SizedBox.shrink();
+
+    final sideA = mod.sideA;
+    final sideB = mod.sideB;
+    final p = BetEngine.formatPoints;
+
+    // Segmento destacado: el que se juega, o el Overall como resumen.
+    final destacado = segs.firstWhere(
+      (s) => s.segment == (segmentoEnCurso ?? 'overall'),
+      orElse: () => segs.last,
+    );
+
+    var netoA = 0.0;
+    for (final s in segs) {
+      if (!s.isTie) netoA += s.diff > 0 ? s.total : -s.total;
+    }
+
+    Widget lado(BetSide side, double low, double high, double total, bool gana) =>
+        Expanded(
+          child: Column(children: [
+            Text(side.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: gana ? t.profit : t.text,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800)),
+            Text(side.playerIds.map(_nombre).join(' + '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: t.sub, fontSize: 10)),
+            const SizedBox(height: 6),
+            Text(p(total),
+                style: TextStyle(
+                    color: gana ? t.profit : t.text,
+                    fontSize: 30,
+                    fontWeight: FontWeight.w900,
+                    height: 1.0)),
+            const SizedBox(height: 2),
+            Text('baja ${p(low)} · alta ${p(high)}',
+                style: TextStyle(color: t.sub, fontSize: 10)),
+          ]),
+        );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.primary.withValues(alpha: 0.35), width: 1.5),
+      ),
+      child: Column(children: [
+        Row(children: [
+          Text(mod.type.icon, style: const TextStyle(fontSize: 14)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(mod.type.label,
+                style: TextStyle(
+                    color: t.text, fontSize: 13, fontWeight: FontWeight.w800)),
+          ),
+          Text(destacado.label.replaceFirst('Bola Baja/Alta ', ''),
+              style: TextStyle(
+                  color: t.primary, fontSize: 11, fontWeight: FontWeight.w800)),
+        ]),
+        const SizedBox(height: 12),
+
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          lado(sideA, destacado.aLow, destacado.aHigh, destacado.aTotal,
+              !destacado.isTie && destacado.diff > 0),
+          // La unidad se dice explícitamente: abajo hay tarjetas que marcan
+          // HOYOS ganados, y confundirlas cambia por completo la lectura.
+          Column(children: [
+            Text('PUNTOS',
+                style: TextStyle(
+                    color: t.sub,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8)),
+            const SizedBox(height: 4),
+            Text('vs', style: TextStyle(color: t.sub, fontSize: 11)),
+          ]),
+          lado(sideB, destacado.bLow, destacado.bHigh, destacado.bTotal,
+              !destacado.isTie && destacado.diff < 0),
+        ]),
+
+        const SizedBox(height: 10),
+        Divider(height: 1, color: t.divider),
+        const SizedBox(height: 8),
+
+        // Resumen de los otros segmentos, para no perder el contexto.
+        Wrap(
+          spacing: 10,
+          runSpacing: 4,
+          alignment: WrapAlignment.center,
+          children: segs.map((s) {
+            final etq = s.label.replaceFirst('Bola Baja/Alta ', '');
+            return Text(
+              s.isTie
+                  ? '$etq  empate'
+                  : '$etq  ${p(s.aTotal)}–${p(s.bTotal)}',
+              style: TextStyle(
+                  color: s.segment == destacado.segment ? t.text : t.sub,
+                  fontSize: 10,
+                  fontWeight: s.segment == destacado.segment
+                      ? FontWeight.w700
+                      : FontWeight.w500),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          netoA == 0
+              ? 'Sin saldo entre equipos'
+              : '${netoA > 0 ? sideB.name : sideA.name} paga '
+                  '\$${netoA.abs().toStringAsFixed(0)} a '
+                  '${netoA > 0 ? sideA.name : sideB.name}',
+          style: TextStyle(
+              color: netoA == 0 ? t.sub : t.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w800),
+        ),
+      ]),
+    );
+  }
+}

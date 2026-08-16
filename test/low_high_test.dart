@@ -576,6 +576,138 @@ void main() {
     });
   });
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // Detalle por hoyo — lo que consumen la tarjeta de equipo y la pantalla de
+  // captura. Sale del MISMO recorrido que reparte los puntos.
+  // ══════════════════════════════════════════════════════════════════════════
+  group('detalle por hoyo', () {
+    LowHighSegmentBreakdown front(Round r, [NassauLowHighConfig? cfg]) =>
+        BetEngine.lowHighBreakdown(r, _mod(cfg ?? soloSegmento))
+            .firstWhere((s) => s.segment == 'front9');
+
+    test('un hoyo completo expone bolas y ganador de cada categoría', () {
+      final r = _round(gross: {
+        a1: _with(4, {1: 3}), a2: _flat(4),
+        b1: _with(4, {1: 5}), b2: _with(4, {1: 6}),
+      });
+      final h = front(r).resultForHole(1)!;
+      expect(h.played, isTrue);
+      expect(h.aLow, 3);
+      expect(h.aHigh, 4);
+      expect(h.bLow, 5);
+      expect(h.bHigh, 6);
+      expect(h.lowWinner, 'a');
+      expect(h.highWinner, 'a');
+      expect(h.lowPointsA, 1);
+      expect(h.highPointsA, 1);
+    });
+
+    test('un hoyo empatado no da ganador en esa categoría', () {
+      final r = _round(gross: {
+        a1: _flat(4), a2: _flat(4), b1: _flat(4), b2: _flat(4),
+      });
+      final h = front(r).resultForHole(1)!;
+      expect(h.played, isTrue);
+      expect(h.lowWinner, isNull);
+      expect(h.highWinner, isNull);
+    });
+
+    test('un hoyo incompleto se marca y no mueve el marcador', () {
+      // b2 no anotó el hoyo 1.
+      final r = _round(gross: {
+        a1: _with(4, {1: 3}), a2: _flat(4), b1: _flat(4),
+        b2: {for (var h = 2; h <= 18; h++) h: 4},
+      });
+      final seg = front(r);
+      final h = seg.resultForHole(1)!;
+      expect(h.played, isFalse);
+      expect(h.lowWinner, isNull);
+      expect(h.highWinner, isNull);
+      expect(seg.diff, 0, reason: 'el marcador no se mueve');
+    });
+
+    test('CARRYOVER: el hoyo siguiente anuncia que la bola vale 2', () {
+      // Hoyo 1 baja empatada → el hoyo 2 entra con la baja valiendo 2.
+      final cfg = soloSegmento.copyWith(
+          tieRule: LowHighTieRule.carryover,
+          carryAppliesTo: LowHighCarryTarget.lowBall);
+      final r = _round(gross: {
+        a1: _with(4, {2: 3}), a2: _flat(5),
+        b1: _flat(4), b2: _flat(5),
+      });
+      final seg = front(r, cfg);
+      expect(seg.resultForHole(1)!.lowCarry, 1, reason: 'el 1 entra normal');
+      expect(seg.resultForHole(2)!.lowCarry, 2,
+          reason: 'tras el empate del 1, la baja vale 2 en el 2');
+      // Y la alta, que no acumula, sigue valiendo 1.
+      expect(seg.resultForHole(2)!.highCarry, 1);
+      // Al ganarla, se lleva los 2 puntos.
+      expect(seg.resultForHole(2)!.lowPointsA, 2);
+    });
+
+    test('el acumulado no cruza de Front a Back, pero sí corre en Overall', () {
+      final cfg = soloSegmento.copyWith(
+          tieRule: LowHighTieRule.carryover,
+          carryAppliesTo: LowHighCarryTarget.lowBall);
+      final r = _round(gross: {
+        a1: {9: 4, 10: 3}, a2: {9: 5, 10: 5},
+        b1: {9: 4, 10: 4}, b2: {9: 5, 10: 5},
+      });
+      final segs = BetEngine.lowHighBreakdown(r, _mod(cfg));
+      final back = segs.firstWhere((s) => s.segment == 'back9');
+      final overall = segs.firstWhere((s) => s.segment == 'overall');
+      // Back arranca limpio: el empate del hoyo 9 expiró con el Front.
+      expect(back.resultForHole(10)!.lowCarry, 1);
+      // Overall recorre los 18 seguidos: el empate del 9 sigue vivo en el 10.
+      expect(overall.resultForHole(10)!.lowCarry, 2);
+    });
+
+    test('en neto se exponen los scores YA ajustados', () {
+      // A recibe 1 golpe por hoyo con HCP 18: bruto 5 → neto 4.
+      final r = _round(
+        gross: {a1: _flat(5), a2: _flat(5), b1: _flat(4), b2: _flat(4)},
+        hcps: const {a1: 18, a2: 18, b1: 0, b2: 0},
+      );
+      final h = front(r, soloSegmento.copyWith(mode: GrossNetMode.net))
+          .resultForHole(1)!;
+      expect(h.aLow, 4, reason: 'neto, no el bruto 5');
+      expect(h.bLow, 4);
+      expect(h.lowWinner, isNull, reason: 'en neto empatan');
+    });
+
+    test('los puntos del hoyo suman el total del segmento', () {
+      // Coherencia entre el detalle que se muestra y el agregado que se cobra.
+      final r = _round(gross: {
+        a1: _with(4, {1: 3, 5: 3}), a2: _flat(4),
+        b1: _with(4, {1: 5}), b2: _with(4, {1: 6}),
+      });
+      final seg = front(r);
+      var aSum = 0.0, bSum = 0.0;
+      for (final h in seg.holeResults) {
+        aSum += h.lowPointsA + h.highPointsA;
+        bSum += h.lowPointsB + h.highPointsB;
+      }
+      expect(aSum, seg.aTotal);
+      expect(bSum, seg.bTotal);
+    });
+
+    test('ronda de 9 hoyos: un solo segmento con su detalle', () {
+      final r = _round(
+        gross: {
+          a1: {for (var h = 1; h <= 9; h++) h: h == 1 ? 3 : 4},
+          a2: {for (var h = 1; h <= 9; h++) h: 4},
+          b1: {for (var h = 1; h <= 9; h++) h: h == 1 ? 5 : 4},
+          b2: {for (var h = 1; h <= 9; h++) h: h == 1 ? 6 : 4},
+        },
+        totalHoles: 9,
+      );
+      final segs = BetEngine.lowHighBreakdown(r, _mod(soloSegmento));
+      expect(segs.length, 1);
+      expect(segs.single.segment, 'nine');
+      expect(segs.single.resultForHole(1)!.lowWinner, 'a');
+    });
+  });
+
   group('etiquetas', () {
     test('summaryLabel interpola de verdad, no muestra la plantilla', () {
       // Regresión: la cadena estaba escrita con \$ (dólar escapado), así que
