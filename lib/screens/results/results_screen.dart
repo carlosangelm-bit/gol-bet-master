@@ -176,6 +176,15 @@ class _ResultsScreenState extends State<ResultsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Apuestas que el motor no pudo liquidar. Antes de todo:
+                  // el podio de abajo NO las incluye, y sin este aviso un
+                  // balance incompleto es indistinguible de uno correcto.
+                  if (LedgerEngine.integrityErrors(round).isNotEmpty) ...[
+                    _ResultsIntegrityBanner(
+                        errors: LedgerEngine.integrityErrors(round), t: t),
+                    const SizedBox(height: 20),
+                  ],
+
                   // NIVEL 1: Podio PGA
                   _PGAPodium(players: sortedPlayers, round: round, balances: balances, t: t, g: g),
                   const SizedBox(height: 28),
@@ -1363,9 +1372,20 @@ class _ResultsBodyState extends State<ResultsBody> {
     final sortedPlayers = getDisplayPlayers(round)
       ..sort((a, b) => (balances[b.id] ?? 0).compareTo(balances[a.id] ?? 0));
 
+    // Apuestas que no se pudieron liquidar. Va ARRIBA del balance a propósito:
+    // sin esto, una apuesta rota se ve como un balance de $0 perfectamente
+    // normal, y el usuario no tiene forma de saber que falta dinero. El aviso
+    // existía solo en la pestaña de Apuestas, que no es donde se leen los
+    // números finales.
+    final integrityErrors = LedgerEngine.integrityErrors(round);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (integrityErrors.isNotEmpty) ...[
+          _ResultsIntegrityBanner(errors: integrityErrors, t: t),
+          const SizedBox(height: 16),
+        ],
         _PGASectionLabel(label: 'BALANCE FINAL', icon: Icons.emoji_events_rounded, g: g),
         const SizedBox(height: 10),
         _PGAPodium(players: sortedPlayers, round: round, balances: balances, t: t, g: g),
@@ -1392,6 +1412,63 @@ class _ResultsBodyState extends State<ResultsBody> {
           SlidingSummaryCard(round: round, t: t),
         ],
         const SizedBox(height: 20),
+      ]),
+    );
+  }
+}
+
+// ── Aviso de apuestas sin liquidar ───────────────────────────────────────────
+//
+// El motor descarta un módulo que no puede calcular y deja constancia en
+// LedgerEngine.integrityErrors. Sin mostrarlo aquí, el usuario ve un balance de
+// $0 indistinguible de "nadie debe nada" — que en una app de apuestas es la
+// peor forma de fallar.
+class _ResultsIntegrityBanner extends StatelessWidget {
+  final List<String> errors;
+  final GolfTheme t;
+  const _ResultsIntegrityBanner({required this.errors, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.loss.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.loss.withValues(alpha: 0.40)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.warning_amber_rounded, color: t.loss, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              errors.length == 1
+                  ? '1 apuesta no se pudo liquidar'
+                  : '${errors.length} apuestas no se pudieron liquidar',
+              style: TextStyle(
+                  color: t.loss, fontWeight: FontWeight.w800, fontSize: 14),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        Text(
+          'El balance de abajo NO las incluye.',
+          style: TextStyle(color: t.loss, fontSize: 12, height: 1.35),
+        ),
+        const SizedBox(height: 10),
+        ...errors.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('· ', style: TextStyle(color: t.loss, fontSize: 12)),
+                Expanded(
+                  child: Text(e,
+                      style: TextStyle(
+                          color: t.loss, fontSize: 12, height: 1.35)),
+                ),
+              ]),
+            )),
       ]),
     );
   }
