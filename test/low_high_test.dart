@@ -375,6 +375,63 @@ void main() {
   });
 
   // ════════════════════════════════════════════════════════════════════════
+  group('ronda real con jugadores virtuales', () {
+    test('liquida aunque participantIds apunte a los virtuales de equipo', () {
+      // En Best Ball, Setup crea un jugador virtual por lado y reescribe
+      // participantIds para apuntarlos, dejando los lados con los ids REALES.
+      // Este test fija que el motor se guía por los lados y no por
+      // participantIds: si mirara los participantes buscaría scores en unos
+      // jugadores virtuales que nunca anotan, y la apuesta no pagaría nada.
+      const vA = 'bb_team_A', vB = 'bb_team_B';
+      final r = _round(gross: {
+        a1: _with(4, {1: 3}), a2: _flat(4),
+        b1: _with(4, {1: 5}), b2: _with(4, {1: 6}),
+      });
+      final conVirtuales = Round(
+        id: r.id, name: r.name, course: r.course,
+        players: [
+          ...r.players,
+          Player(id: vA, name: 'Equipo A', isVirtual: true, teamMemberIds: const [a1, a2]),
+          Player(id: vB, name: 'Equipo B', isVirtual: true, teamMemberIds: const [b1, b2]),
+        ],
+        roundPlayers: [
+          ...r.roundPlayers,
+          RoundPlayer(playerId: vA, handicapEnRonda: 0),
+          RoundPlayer(playerId: vB, handicapEnRonda: 0),
+        ],
+        betGroups: const [], scores: r.scores,
+        events: const {}, oyeseRankings: const {}, sliding: const [],
+        createdAt: r.createdAt, totalHoles: 18,
+      );
+
+      final mod = BetModuleInstance(
+        id: 'lh', type: BetModuleType.nassauLowHigh, name: 'LH',
+        participantIds: const [vA, vB], // ← los virtuales, no los reales
+        sides: const [
+          BetSide(id: 'A', name: 'Equipo A', playerIds: [a1, a2]),
+          BetSide(id: 'B', name: 'Equipo B', playerIds: [b1, b2]),
+        ],
+        scope: const BetScope.teams(),
+        nassauLowHighConfig: soloSegmento,
+      );
+      final grupo = BetGroup(
+        id: 'g', name: 'Partida', format: PartidaFormat.allInOnePot,
+        playerIds: const [a1, a2, b1, b2, vA, vB], modules: [mod],
+      );
+
+      final comp = BetEngine.safeComputeAll(Round(
+        id: conVirtuales.id, name: conVirtuales.name, course: conVirtuales.course,
+        players: conVirtuales.players, roundPlayers: conVirtuales.roundPlayers,
+        betGroups: [grupo], scores: conVirtuales.scores,
+        events: const {}, oyeseRankings: const {}, sliding: const [],
+        createdAt: conVirtuales.createdAt, totalHoles: 18,
+      ));
+
+      expect(comp.errors, isEmpty);
+      expect(_netA(comp.entries), 200);
+    });
+  });
+
   group('etiquetas', () {
     test('summaryLabel interpola de verdad, no muestra la plantilla', () {
       // Regresión: la cadena estaba escrita con \$ (dólar escapado), así que

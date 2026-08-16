@@ -1493,28 +1493,23 @@ class _RoundBetsSummary extends StatelessWidget {
   final _ThemeGrad g;
   const _RoundBetsSummary({required this.round, required this.t, required this.g});
 
+  String _nombre(String id) => round.players
+      .firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id))
+      .name
+      .split(' ')
+      .first;
+
+  /// Jugadores cuyos scores necesita esta apuesta para liquidar.
+  List<String> _jugadoresDe(BetGroup grp, BetModuleInstance m) => m.hasTeamSides
+      ? [...m.sideA.playerIds, ...m.sideB.playerIds]
+      : m.effectivePids(grp.playerIds);
+
   @override
   Widget build(BuildContext context) {
     final mods = [
       for (final grp in round.betGroups)
         for (final m in grp.modules) (grp, m),
     ];
-
-    String quien(BetGroup grp, BetModuleInstance m) {
-      String nombre(String id) => round.players
-          .firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id))
-          .name
-          .split(' ')
-          .first;
-      if (m.hasTeamSides) {
-        final a = m.sideA.playerIds.map(nombre).join(' + ');
-        final b = m.sideB.playerIds.map(nombre).join(' + ');
-        return '$a  vs  $b';
-      }
-      final pids = m.effectivePids(grp.playerIds);
-      if (pids.length == 2) return '${nombre(pids[0])} vs ${nombre(pids[1])}';
-      return '${pids.length} jugadores';
-    }
 
     return Container(
       width: double.infinity,
@@ -1536,12 +1531,21 @@ class _RoundBetsSummary extends StatelessWidget {
                   letterSpacing: 0.6)),
         ]),
         const SizedBox(height: 10),
+
         if (mods.isEmpty)
           Text('Esta ronda se jugó sin apuestas configuradas.',
               style: TextStyle(color: t.sub, fontSize: 12))
-        else
+        else ...[
           ...mods.map((e) {
             final (grp, m) = e;
+            final pids = _jugadoresDe(grp, m);
+            final quien = m.hasTeamSides
+                ? '${m.sideA.playerIds.map(_nombre).join(" + ")}'
+                    '  vs  ${m.sideB.playerIds.map(_nombre).join(" + ")}'
+                : pids.length == 2
+                    ? '${_nombre(pids[0])} vs ${_nombre(pids[1])}'
+                    : '${pids.length} jugadores';
+
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1557,14 +1561,14 @@ class _RoundBetsSummary extends StatelessWidget {
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700)),
                         const SizedBox(height: 1),
-                        Text(quien(grp, m),
+                        Text(quien,
                             style: TextStyle(color: t.sub, fontSize: 11)),
                       ]),
                 ),
                 if (m.hasTeamSides)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: g.sectionColor.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(5),
@@ -1578,6 +1582,40 @@ class _RoundBetsSummary extends StatelessWidget {
               ]),
             );
           }),
+
+          // ── Cobertura de scores ──────────────────────────────────────────
+          //
+          // Una apuesta solo liquida los hoyos donde TODOS sus jugadores
+          // anotaron. Sin este dato, una que no paga por falta de scores es
+          // indistinguible de una que no paga porque todo quedó empatado.
+          Divider(height: 18, color: g.cardBorder),
+          ...mods.map((e) {
+            final (grp, m) = e;
+            final pids = _jugadoresDe(grp, m);
+            final completos = round.course.holes
+                .where((ch) =>
+                    pids.every((pid) => round.getScore(pid, ch.hole).hasScore))
+                .length;
+            final total = round.course.holes.length;
+            final falta = completos < total;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(children: [
+                Icon(falta ? Icons.error_outline : Icons.check_circle_outline,
+                    color: falta ? t.loss : t.profit, size: 13),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '${m.type.label}: $completos de $total hoyos con score de '
+                    'sus ${pids.length} jugadores',
+                    style:
+                        TextStyle(color: falta ? t.loss : t.sub, fontSize: 11),
+                  ),
+                ),
+              ]),
+            );
+          }),
+        ],
       ]),
     );
   }
