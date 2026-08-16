@@ -116,6 +116,28 @@ void main() {
     });
   });
 
+  group('el importe del Match incluye las presiones', () {
+    test('un match con presses vale más que solo el match principal', () {
+      // El ganador se decide con el match principal, pero el DINERO en juego
+      // no puede ignorar las presses: son dinero real entre estos dos, y
+      // dejarlas fuera subestimaría el Match en la comparación que decide qué
+      // apuesta representa el duelo.
+      final conPress = BetModuleInstance(
+        id: 'm', type: BetModuleType.matchAutoPress, name: 'Match',
+        participantIds: const [p1, p2],
+        matchAutoPressConfig: const MatchAutoPressConfig(
+            matchValue: 100, pressValue: 50, pressTriggerValue: 2,
+            maxPresses: 5),
+      );
+      final sinPress = _match(100);
+
+      final con = _fuente([conPress])!;
+      final sin = _fuente([sinPress])!;
+      expect(con.netAmount, greaterThan(sin.netAmount));
+      expect(sin.netAmount, 100);
+    });
+  });
+
   group('el importe es la unidad común', () {
     test('netAmount refleja lo que movió el ledger en ese duelo', () {
       final f = _fuente([_nassau(20)])!;

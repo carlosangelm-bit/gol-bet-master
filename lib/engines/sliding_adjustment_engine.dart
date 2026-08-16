@@ -5,17 +5,30 @@
 // Estrategia: usa las LedgerEntries ya calculadas por BetEngine para deducir
 // quién ganó en cada apuesta, evitando duplicar la lógica de cálculo.
 //
-// Prioridad de apuesta principal:
-//   1. Match + Press (solo el match principal, primer nodo del árbol)
-//      → Usa los entries de BetModuleType.matchAutoPress para el par.
-//      → Ganador = quién acumula más amount recibido en el match.
-//   2. Nassau (si no hay Match)
-//      → Ganador = quién gana más segmentos (front/back/total) por cantidad.
-//   3. Skins (si no hay Match ni Nassau)
-//      → Ganador = quién acumula más skins en los entries.
+// Cuando una pareja tiene varias apuestas, se elige UNA para representar el
+// duelo. El criterio es el DINERO en juego, tomado del ledger: es la única
+// unidad común entre tipos. Match + Press, Nassau y Skins compiten los tres en
+// la misma comparación.
 //
-// Si se juegan Nassau Y Match para el mismo par, gana quien tenga el margen
-// mayor (medido en segmentos/hoyos). En empate perfecto no hay ajuste.
+// A igualdad de importe decide un orden declarado —match play antes que hoyo
+// suelto: ver [_ordenDesempate]— y no el orden en que estén escritas las ramas.
+//
+// Por qué NO se comparan los márgenes: cada tipo mide el suyo en su propia
+// unidad. Nassau cuenta segmentos ganados (máx. 3); Match contaba asientos del
+// ledger, de modo que un match con dos presses daba 3. Compararlos era comparar
+// segmentos contra filas, y el resultado era casualidad. Por eso [DuelResult]
+// no expone un `absMargin` y su [DuelResult.margin] vale solo por el signo.
+//
+// Cada apuesta deduce su ganador de sus propios entries:
+//   · Match + Press → signo del neto del match principal
+//   · Nassau        → segmentos ganados (front / back / total)
+//   · Skins         → skins acumuladas
+// En empate perfecto no hay ajuste.
+//
+// PENDIENTE de producto: elegir una sola fuente puede no ser lo correcto. Con
+// dos apuestas activas, la sugerencia podría considerar el total o dejar
+// elegir. Cambiar el criterio arregló el caso reportado, pero no responde si
+// seleccionar era la pregunta buena.
 //
 // El ajuste es bilateral ±1:
 //   ganador → delta = -1 (recibe menos strokes en la próxima ronda)
@@ -344,11 +357,16 @@ class SlidingAdjustmentEngine {
     // de match, no se puede saber desde el ledger, así que no se inventa.
     final margin = p1net > 0.001 ? 1 : p1net < -0.001 ? -1 : 0;
 
-    // Dinero total movido por esta apuesta en este duelo — incluidas las
-    // presses, porque también es dinero en juego entre estos dos.
-    var bruto = 0.0;
+    // Dinero en juego: sobre TODOS los entries, presses incluidas.
+    //
+    // El ganador se decide con `relevant` —solo el match principal— pero el
+    // importe no puede ignorar las presiones: son dinero real entre estos dos,
+    // y dejarlas fuera subestimaría el Match justo en la comparación que
+    // decide qué apuesta representa el duelo.
+    var neto = 0.0;
     for (final e in entries) {
-      bruto += e.amount;
+      if (e.toPlayerId   == p1Id) neto += e.amount;
+      if (e.fromPlayerId == p1Id) neto -= e.amount;
     }
 
     final label = margin > 0
@@ -361,7 +379,7 @@ class SlidingAdjustmentEngine {
       playerAId: p1Id,
       playerBId: p2Id,
       margin:    margin,
-      netAmount: p1net.abs(),
+      netAmount: neto.abs(),
       betType:   BetModuleType.matchAutoPress,
       sourceBet: label,
     );
