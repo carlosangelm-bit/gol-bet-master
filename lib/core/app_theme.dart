@@ -1,3 +1,4 @@
+import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
 
 enum AppThemeMode { light, dark, classic }
@@ -13,8 +14,12 @@ class _P {
   // El relleno es más opaco en oscuro que en claro: sobre un fondo oscuro el
   // texto necesita más base para no flotar sobre el ruido del desenfoque.
   static const lGlassFill     = Color(0x26FFFFFF); // ~15% blanco
-  static const lGlassBordHi   = Color(0xB3FFFFFF); // borde iluminado
-  static const lGlassBordLo   = Color(0x1A9E9E9E); // borde en sombra
+  // En claro el borde NO puede ser luz sobre luz: 0xB3FFFFFF sobre fondo
+  // blanco es invisible —comprobado ampliando la tarjeta—. Se ancla contra el
+  // fondo: blanco más opaco arriba-izquierda y NEGRO tenue abajo-derecha, que
+  // es lo que dibuja el canto.
+  static const lGlassBordHi   = Color(0xE6FFFFFF);
+  static const lGlassBordLo   = Color(0x14000000); // negro ~8%
   static const lGlassShadow   = Color(0x1A000000);
 
   static const dGlassFill     = Color(0x40FFFFFF); // ~25% blanco
@@ -204,4 +209,69 @@ class GolfThemeExt {
 // Extension para acceder al tema desde context
 extension GolfThemeContext on BuildContext {
   GolfTheme get gt => GolfThemeExt.current;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ESCALA TIPOGRÁFICA — cuatro pasos, ni uno más
+//
+// Minimalismo aquí no es quitar adornos: es reducir el número de decisiones que
+// el ojo procesa. Con seis tamaños conviviendo en una tarjeta de 200px, el
+// lector no sabe qué mirar primero.
+//
+// Lo que hoy vive entre escalones se colapsa al de arriba o al de abajo. No hay
+// tamaños intermedios: si algo no encaja en ninguno de los cuatro, la pregunta
+// es qué jerarquía tiene, no qué tamaño necesita.
+//
+// El contexto manda: se usa bajo sol directo, a una mano, mirando dos segundos.
+// Por eso los pesos son altos y no hay nada por debajo de 11.
+// ─────────────────────────────────────────────────────────────────────────────
+class GolfType {
+  const GolfType._();
+
+  /// Cifras alineadas en columna. Sin esto las de ancho variable bailan al
+  /// cambiar de hoyo y las columnas de montos dejan de leerse como columna.
+  static const _tabular = [FontFeature.tabularFigures()];
+
+  /// HÉROE — la cifra que responde la pregunta de la pantalla. Una por pantalla.
+  static TextStyle hero(Color color, {double size = 48}) => TextStyle(
+        color: color,
+        fontSize: size,
+        fontWeight: FontWeight.w700,
+        height: 1.0,
+        letterSpacing: -1.5,
+        fontFeatures: _tabular,
+      );
+
+  /// TÍTULO — nombre de tarjeta o de sección.
+  static TextStyle title(Color color, {double size = 21}) => TextStyle(
+        color: color,
+        fontSize: size,
+        fontWeight: FontWeight.w600,
+        height: 1.2,
+        letterSpacing: -0.3,
+      );
+
+  /// CUERPO — contenido.
+  static TextStyle body(Color color,
+          {double size = 15, FontWeight weight = FontWeight.w400}) =>
+      TextStyle(color: color, fontSize: size, fontWeight: weight, height: 1.35);
+
+  /// CUERPO con cifras tabulares, para montos y scores dentro del texto.
+  static TextStyle bodyNum(Color color,
+          {double size = 15, FontWeight weight = FontWeight.w500}) =>
+      TextStyle(
+        color: color,
+        fontSize: size,
+        fontWeight: weight,
+        height: 1.35,
+        fontFeatures: _tabular,
+      );
+
+  /// ETIQUETA — encabezados de columna y unidades. Siempre en MAYÚSCULAS.
+  static TextStyle label(Color color, {double size = 11}) => TextStyle(
+        color: color,
+        fontSize: size,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.5,
+      );
 }

@@ -79,9 +79,16 @@ class GAvatar extends StatelessWidget {
   final double size;
   const GAvatar({super.key, required this.name, this.colorIndex = 0, this.size = 36});
 
+  // Paleta de IDENTIDAD: dice quién, no qué pasa.
+  //
+  // Deliberadamente sin verde ni rojo. Antes empezaba en 0xFF2E7D32 y llevaba
+  // 0xFFC62828, que son exactamente los tokens profit y loss: un equipo podía
+  // pintarse del mismo rojo que significa "pagas", y eso ocurría justo en la
+  // barra proporcional del marcador. Con la identidad fuera del canal del
+  // dinero, un color saturado verde o rojo en pantalla solo puede ser dinero.
   static const _colors = [
-    Color(0xFF2E7D32), Color(0xFF1565C0), Color(0xFF6A1B9A),
-    Color(0xFFC62828), Color(0xFFE65100), Color(0xFF00695C),
+    Color(0xFF283593), Color(0xFF1565C0), Color(0xFF6A1B9A),
+    Color(0xFFAD1457), Color(0xFFE65100), Color(0xFF00695C),
     Color(0xFF4A148C), Color(0xFF006064),
   ];
 
