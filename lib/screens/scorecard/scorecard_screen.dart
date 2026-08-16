@@ -4893,8 +4893,8 @@ class LowHighTeamCard extends StatelessWidget {
   final BetModuleInstance mod;
   final GolfTheme t;
 
-  /// Segmento a destacar: el que se está jugando. Si es null se muestra el
-  /// resultado final de la ronda.
+  /// Segmento a destacar: el que se está jugando. Si es null se resume el
+  /// Overall, que es el resultado final de la ronda.
   final String? segmentoEnCurso;
 
   const LowHighTeamCard({
@@ -4911,6 +4911,15 @@ class LowHighTeamCard extends StatelessWidget {
       .split(' ')
       .first;
 
+  /// Color del lado: el de su primer miembro, el mismo de su avatar.
+  Color _colorDe(BetSide side) {
+    final p = round.players.firstWhere(
+      (p) => side.playerIds.contains(p.id),
+      orElse: () => Player(id: '', name: ''),
+    );
+    return GAvatar.colorFor(p.colorIndex);
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<LowHighSegmentBreakdown> segs;
@@ -4923,125 +4932,277 @@ class LowHighTeamCard extends StatelessWidget {
 
     final sideA = mod.sideA;
     final sideB = mod.sideB;
-    final p = BetEngine.formatPoints;
+    final fmt   = BetEngine.formatPoints;
 
-    // Segmento destacado: el que se juega, o el Overall como resumen.
     final destacado = segs.firstWhere(
       (s) => s.segment == (segmentoEnCurso ?? 'overall'),
       orElse: () => segs.last,
     );
+
+    var colorA = _colorDe(sideA);
+    var colorB = _colorDe(sideB);
+    // Dos lados del mismo color serían ilegibles justo donde el color ES la
+    // información. Se desempata girando el tono del lado B.
+    if (colorA.toARGB32() == colorB.toARGB32()) {
+      colorB = HSLColor.fromColor(colorB)
+          .withHue((HSLColor.fromColor(colorB).hue + 150) % 360)
+          .toColor();
+    }
+
+    // Proporción del duelo. Sin puntos aún, se reparte a la mitad: una barra
+    // en blanco diría "va ganando A" cuando no ha pasado nada.
+    final suma  = destacado.aTotal + destacado.bTotal;
+    final share = suma > 0 ? destacado.aTotal / suma : 0.5;
+    final ganaA = !destacado.isTie && destacado.diff > 0;
+    final ganaB = !destacado.isTie && destacado.diff < 0;
 
     var netoA = 0.0;
     for (final s in segs) {
       if (!s.isTie) netoA += s.diff > 0 ? s.total : -s.total;
     }
 
-    Widget lado(BetSide side, double low, double high, double total, bool gana) =>
+    // ── Columna de un lado ────────────────────────────────────────────────
+    Widget lado(BetSide side, Color color, double low, double high,
+            double total, bool gana, bool derecha) =>
         Expanded(
-          child: Column(children: [
-            Text(side.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: gana ? t.profit : t.text,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800)),
-            Text(side.playerIds.map(_nombre).join(' + '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: t.sub, fontSize: 10)),
-            const SizedBox(height: 6),
-            Text(p(total),
-                style: TextStyle(
-                    color: gana ? t.profit : t.text,
-                    fontSize: 30,
+          child: Column(
+            crossAxisAlignment:
+                derecha ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!derecha) ...[
+                    _punto(color),
+                    const SizedBox(width: 6),
+                  ],
+                  Flexible(
+                    child: Text(side.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: t.text,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.2)),
+                  ),
+                  if (derecha) ...[
+                    const SizedBox(width: 6),
+                    _punto(color),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 1),
+              Text(side.playerIds.map(_nombre).join(' + '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: derecha ? TextAlign.right : TextAlign.left,
+                  style: TextStyle(color: t.sub, fontSize: 10)),
+              const SizedBox(height: 8),
+              Text(fmt(total),
+                  style: TextStyle(
+                    color: gana ? color : t.text.withValues(alpha: 0.55),
+                    fontSize: 40,
                     fontWeight: FontWeight.w900,
-                    height: 1.0)),
-            const SizedBox(height: 2),
-            Text('baja ${p(low)} · alta ${p(high)}',
-                style: TextStyle(color: t.sub, fontSize: 10)),
-          ]),
+                    height: 0.95,
+                    letterSpacing: -1.5,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  )),
+              const SizedBox(height: 3),
+              Text('baja ${fmt(low)}   alta ${fmt(high)}',
+                  style: TextStyle(
+                      color: t.sub,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: const [FontFeature.tabularFigures()])),
+            ],
+          ),
         );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: t.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: t.primary.withValues(alpha: 0.35), width: 1.5),
-      ),
-      child: Column(children: [
-        Row(children: [
-          Text(mod.type.icon, style: const TextStyle(fontSize: 14)),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(mod.type.label,
-                style: TextStyle(
-                    color: t.text, fontSize: 13, fontWeight: FontWeight.w800)),
+        borderRadius: BorderRadius.circular(18),
+        // El fondo se inclina hacia quien va ganando: el gradiente cambia de
+        // color justo en la proporción del marcador, así que la mitad
+        // dominante se lee antes que los números.
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            colorA.withValues(alpha: 0.16),
+            colorA.withValues(alpha: 0.05),
+            colorB.withValues(alpha: 0.05),
+            colorB.withValues(alpha: 0.16),
+          ],
+          stops: [0, (share * 0.9).clamp(0.05, 0.95),
+                  (share * 1.1).clamp(0.05, 0.95), 1],
+        ),
+        border: Border.all(color: t.divider.withValues(alpha: 0.6)),
+        boxShadow: [
+          BoxShadow(
+            color: (ganaA ? colorA : ganaB ? colorB : Colors.black)
+                .withValues(alpha: 0.10),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
           ),
-          Text(destacado.label.replaceFirst('Bola Baja/Alta ', ''),
-              style: TextStyle(
-                  color: t.primary, fontSize: 11, fontWeight: FontWeight.w800)),
-        ]),
-        const SizedBox(height: 12),
-
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          lado(sideA, destacado.aLow, destacado.aHigh, destacado.aTotal,
-              !destacado.isTie && destacado.diff > 0),
-          // La unidad se dice explícitamente: abajo hay tarjetas que marcan
-          // HOYOS ganados, y confundirlas cambia por completo la lectura.
-          Column(children: [
-            Text('PUNTOS',
-                style: TextStyle(
-                    color: t.sub,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8)),
-            const SizedBox(height: 4),
-            Text('vs', style: TextStyle(color: t.sub, fontSize: 11)),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
+        child: Column(children: [
+          // ── Cabecera ──────────────────────────────────────────────────
+          Row(children: [
+            Text(mod.type.icon, style: const TextStyle(fontSize: 13)),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(mod.type.label.toUpperCase(),
+                  style: TextStyle(
+                      color: t.sub,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.9)),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: t.text.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                  destacado.label.replaceFirst('Bola Baja/Alta ', ''),
+                  style: TextStyle(
+                      color: t.text,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800)),
+            ),
           ]),
-          lado(sideB, destacado.bLow, destacado.bHigh, destacado.bTotal,
-              !destacado.isTie && destacado.diff < 0),
+          const SizedBox(height: 14),
+
+          // ── Marcador ──────────────────────────────────────────────────
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            lado(sideA, colorA, destacado.aLow, destacado.aHigh,
+                destacado.aTotal, ganaA, false),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Column(children: [
+                const SizedBox(height: 22),
+                // La unidad, explícita: justo debajo hay tarjetas que marcan
+                // HOYOS ganados y confundirlas cambia la lectura entera.
+                Text('PUNTOS',
+                    style: TextStyle(
+                        color: t.sub.withValues(alpha: 0.8),
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.1)),
+              ]),
+            ),
+            lado(sideB, colorB, destacado.bLow, destacado.bHigh,
+                destacado.bTotal, ganaB, true),
+          ]),
+          const SizedBox(height: 12),
+
+          // ── Barra proporcional: el duelo de un vistazo ────────────────
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: SizedBox(
+              height: 9,
+              child: Stack(children: [
+                // Fondo completo del lado B…
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [colorB.withValues(alpha: 0.75), colorB],
+                    ),
+                  ),
+                ),
+                // …y encima el trozo que le corresponde al lado A.
+                FractionallySizedBox(
+                  widthFactor: share.clamp(0.0, 1.0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [colorA, colorA.withValues(alpha: 0.75)],
+                      ),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // ── Otros segmentos ──────────────────────────────────────────
+          Wrap(
+            spacing: 8,
+            runSpacing: 5,
+            alignment: WrapAlignment.center,
+            children: segs.map((s) {
+              final etq = s.label.replaceFirst('Bola Baja/Alta ', '');
+              final act = s.segment == destacado.segment;
+              return Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: act
+                      ? t.text.withValues(alpha: 0.08)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                      color: act
+                          ? Colors.transparent
+                          : t.divider.withValues(alpha: 0.7)),
+                ),
+                child: Text(
+                  s.isTie
+                      ? '$etq  empate'
+                      : '$etq  ${fmt(s.aTotal)}–${fmt(s.bTotal)}',
+                  style: TextStyle(
+                      color: act ? t.text : t.sub,
+                      fontSize: 10,
+                      fontWeight: act ? FontWeight.w800 : FontWeight.w600,
+                      fontFeatures: const [FontFeature.tabularFigures()]),
+                ),
+              );
+            }).toList(),
+          ),
+
+          if (netoA != 0) ...[
+            const SizedBox(height: 11),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 12),
+              decoration: BoxDecoration(
+                color: (netoA > 0 ? colorA : colorB).withValues(alpha: 0.13),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${netoA > 0 ? sideB.name : sideA.name}  →  '
+                '${netoA > 0 ? sideA.name : sideB.name}   '
+                '\$${netoA.abs().toStringAsFixed(0)}',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: netoA > 0 ? colorA : colorB,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    fontFeatures: const [FontFeature.tabularFigures()]),
+              ),
+            ),
+          ],
         ]),
-
-        const SizedBox(height: 10),
-        Divider(height: 1, color: t.divider),
-        const SizedBox(height: 8),
-
-        // Resumen de los otros segmentos, para no perder el contexto.
-        Wrap(
-          spacing: 10,
-          runSpacing: 4,
-          alignment: WrapAlignment.center,
-          children: segs.map((s) {
-            final etq = s.label.replaceFirst('Bola Baja/Alta ', '');
-            return Text(
-              s.isTie
-                  ? '$etq  empate'
-                  : '$etq  ${p(s.aTotal)}–${p(s.bTotal)}',
-              style: TextStyle(
-                  color: s.segment == destacado.segment ? t.text : t.sub,
-                  fontSize: 10,
-                  fontWeight: s.segment == destacado.segment
-                      ? FontWeight.w700
-                      : FontWeight.w500),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          netoA == 0
-              ? 'Sin saldo entre equipos'
-              : '${netoA > 0 ? sideB.name : sideA.name} paga '
-                  '\$${netoA.abs().toStringAsFixed(0)} a '
-                  '${netoA > 0 ? sideA.name : sideB.name}',
-          style: TextStyle(
-              color: netoA == 0 ? t.sub : t.text,
-              fontSize: 12,
-              fontWeight: FontWeight.w800),
-        ),
-      ]),
+      ),
     );
   }
+
+  Widget _punto(Color c) => Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          color: c,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(color: c.withValues(alpha: 0.5), blurRadius: 5),
+          ],
+        ),
+      );
 }

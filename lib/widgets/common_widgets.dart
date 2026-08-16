@@ -85,6 +85,13 @@ class GAvatar extends StatelessWidget {
     Color(0xFF4A148C), Color(0xFF006064),
   ];
 
+  /// Color asignado a un jugador por su índice.
+  ///
+  /// Público para que otras superficies —la tarjeta de duelo por equipos, por
+  /// ejemplo— usen exactamente el mismo color que su avatar. Si cada pantalla
+  /// eligiera el suyo, un equipo sería verde en un sitio y azul en otro.
+  static Color colorFor(int colorIndex) => _colors[colorIndex % _colors.length];
+
   @override
   Widget build(BuildContext context) {
     final c = _colors[colorIndex % _colors.length];
