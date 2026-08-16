@@ -392,6 +392,22 @@ void main() {
       expect(() => BetEngine.computeModule(r, _group(), mod), throwsStateError);
     });
 
+    test('sin lados configurados avisa en vez de callar', () {
+      // Regresión: el formato aparecía configurado pero nadie cobraba, porque
+      // el editor no ofrecía la sección de equipos para este tipo y el módulo
+      // llegaba sin lados. Ahora falla visible.
+      final r = _round(gross: {
+        a1: _with(4, {1: 3}), a2: _flat(4), b1: _flat(4), b2: _flat(4),
+      });
+      final sinLados = BetModuleInstance(
+        id: 'lh', type: BetModuleType.nassauLowHigh, name: 'LH',
+        participantIds: const [a1, a2, b1, b2],
+        nassauLowHighConfig: soloSegmento,
+      );
+      expect(() => BetEngine.computeModule(r, _group(), sinLados),
+          throwsStateError);
+    });
+
     test('sin ninguna modalidad activa no liquida nada', () {
       final r = _round(gross: {
         a1: _with(4, {1: 3}), a2: _flat(4), b1: _flat(4), b2: _flat(4),

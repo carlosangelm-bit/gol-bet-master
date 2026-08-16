@@ -7,10 +7,20 @@ import '../core/app_theme.dart';
 import '../models/models.dart';
 
 // Tipos de módulo que admiten configuración de lados (equipo vs equipo).
+// Tipos que ofrecen la sección de equipos. Es una lista explícita: al
+// añadir un tipo con semántica de equipo hay que meterlo aquí o la sección
+// nunca aparece, los lados quedan sin configurar y el módulo no liquida nada.
 const _teamSupportedTypes = {
   BetModuleType.matchAutoPress,
   BetModuleType.nassau,
   BetModuleType.skins,
+  BetModuleType.nassauLowHigh,
+};
+
+// Tipos donde el juego por equipos NO es opcional: sin dos lados no tienen
+// definición. El interruptor se muestra fijo en activado.
+const _teamRequiredTypes = {
+  BetModuleType.nassauLowHigh,
 };
 
 class BetModuleEditSheet extends StatefulWidget {
@@ -122,9 +132,16 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       _nameBCtrl.text = m.sideB.name;
       _playMode = m.sideA.playMode; // Ambos lados usan el mismo modo
     } else {
-      _sidesEnabled = false;
+      // Los formatos que exigen equipos arrancan con el modo activo: sin
+      // lados no calculan nada, y dejarlo apagado daría un módulo mudo.
+      _sidesEnabled = _teamRequiredTypes.contains(m.type);
       _sideAIds = [];
       _sideBIds = [];
+      if (_sidesEnabled) {
+        // Reparto inicial por mitades para que el editor abra con algo válido
+        // en vez de dos lados vacíos que no dejarían guardar.
+        _autoAssignSides(widget.players ?? const []);
+      }
       _nameACtrl.text = 'Equipo A';
       _nameBCtrl.text = 'Equipo B';
       _playMode = TeamPlayMode.bestBall; // Default
@@ -914,15 +931,19 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
               color: t.text, fontWeight: FontWeight.w700, fontSize: 14)),
             const SizedBox(height: 2),
             Text(
-              _sidesEnabled
-                  ? 'Lado A vs Lado B — ${_playMode.label}'
-                  : 'Activar para definir Lado A y Lado B',
+              _teamRequiredTypes.contains(_current.type)
+                  ? 'Este formato es 2 vs 2: define Lado A y Lado B abajo'
+                  : _sidesEnabled
+                      ? 'Lado A vs Lado B — ${_playMode.label}'
+                      : 'Activar para definir Lado A y Lado B',
               style: TextStyle(color: t.sub, fontSize: 11),
             ),
           ])),
           Switch(
             value: _sidesEnabled,
-            onChanged: (v) => setState(() {
+            onChanged: _teamRequiredTypes.contains(_current.type)
+                ? null // obligatorio para este formato
+                : (v) => setState(() {
               _sidesEnabled = v;
               if (v && _sideAIds.isEmpty && _sideBIds.isEmpty) {
                 // Auto-asignar: primera mitad a A, segunda a B (helper)

@@ -526,9 +526,13 @@ class BetEngine {
         entries.addAll(_oyeses(round, pids, mod));
         break;
       case BetModuleType.nassauLowHigh:
-        // Solo tiene sentido 2 vs 2. Sin lados configurados no hay equipos que
-        // enfrentar, así que no liquida nada en vez de inventar un reparto.
-        break;
+        // Sin lados no hay bola baja ni alta que comparar. Antes esto devolvía
+        // vacío y el módulo se quedaba mudo: la apuesta aparecía configurada y
+        // nadie cobraba nada. Lanzar lo convierte en un aviso visible, que
+        // safeComputeAll reporta sin tumbar el resto de la ronda.
+        throw StateError(
+            'Bola Baja / Bola Alta necesita dos equipos de 2 jugadores. '
+            'Abre la apuesta y define el Lado A y el Lado B.');
       case BetModuleType.units:
         entries.addAll(_units(round, pids, mod));
         break;
