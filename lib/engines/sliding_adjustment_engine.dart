@@ -29,14 +29,32 @@ import '../engines/bet_engine.dart';
 class DuelResult {
   final String playerAId;
   final String playerBId;
-  /// > 0 → playerA ganó, < 0 → playerB ganó, 0 → empate
+  /// SIGNO del resultado: > 0 gana A, < 0 gana B, 0 empate.
+  ///
+  /// Su MAGNITUD no es comparable entre tipos de apuesta: en Nassau son
+  /// segmentos ganados (máx. 3) y en Match era un conteo de asientos del
+  /// ledger. Por eso no existe un `absMargin`: compararlos era comparar
+  /// segmentos contra filas, y cualquier orden que saliera de ahí era
+  /// casualidad. Para decidir entre apuestas está [netAmount].
   final int margin;
+
+  /// Dinero en juego de este duelo, en valor absoluto.
+  ///
+  /// Es la ÚNICA unidad común entre tipos: un peso es un peso en Nassau, en
+  /// Match y en Skins. El ledger ya lo tiene, así que no hay que estimarlo.
+  final double netAmount;
+
+  /// De qué apuesta salió, para poder decirlo en pantalla.
+  final BetModuleType betType;
+
   final String sourceBet;
 
   const DuelResult({
     required this.playerAId,
     required this.playerBId,
     required this.margin,
+    required this.netAmount,
+    required this.betType,
     required this.sourceBet,
   });
 
@@ -46,7 +64,6 @@ class DuelResult {
 
   String get winnerId  => margin > 0 ? playerAId : playerBId;
   String get loserId   => margin > 0 ? playerBId : playerAId;
-  int    get absMargin => margin.abs();
 }
 
 /// Sugerencia de ajuste de sliding para un par de jugadores.
@@ -257,14 +274,45 @@ class SlidingAdjustmentEngine {
       skinsResult = _duelFromSkinsEntries(p1Id, p2Id, skinsEntries);
     }
 
-    // Prioridad: si hay Match y Nassau, el de mayor margen gana
-    if (matchResult != null && nassauResult != null) {
-      return matchResult.absMargin >= nassauResult.absMargin
-          ? matchResult
-          : nassauResult;
-    }
-    return matchResult ?? nassauResult ?? skinsResult;
+    // ── Qué apuesta representa el duelo ───────────────────────────────────
+    //
+    // Manda el DINERO en juego, que es la única unidad común entre tipos. El
+    // criterio anterior comparaba matchResult.absMargin contra
+    // nassauResult.absMargin, y esos números no medían lo mismo: uno contaba
+    // asientos del ledger y el otro segmentos ganados, máximo 3. Cualquier
+    // orden que saliera de esa comparación era casualidad.
+    //
+    // Skins entra aquí también. Antes quedaba fuera del if y solo aparecía si
+    // no había ninguno de los otros dos, así que unos Skins de $500 perdían
+    // contra un Nassau de $60 por estar después en la cadena de ??.
+    final candidatos = [matchResult, nassauResult, skinsResult]
+        .whereType<DuelResult>()
+        .toList();
+    if (candidatos.isEmpty) return null;
+
+    candidatos.sort((a, b) {
+      final porDinero = b.netAmount.compareTo(a.netAmount);
+      if (porDinero != 0) return porDinero;
+      // Empate de importe: se decide por un orden FIJO y declarado, no por el
+      // orden en que estén escritas las ramas. Antes el >= hacía que ganara
+      // la rama de la izquierda, que es un efecto de la escritura y no una
+      // regla que nadie eligiera.
+      return _ordenDesempate(a.betType).compareTo(_ordenDesempate(b.betType));
+    });
+    return candidatos.first;
   }
+
+  /// Precedencia cuando dos apuestas ponen el mismo dinero en juego.
+  ///
+  /// Los formatos de match play van antes que los de hoyo suelto: el ajuste de
+  /// ventaja trata de equilibrar el enfrentamiento directo, y ahí un match
+  /// describe mejor la relación entre dos jugadores que un recuento de skins.
+  static int _ordenDesempate(BetModuleType t) => switch (t) {
+        BetModuleType.matchAutoPress => 0,
+        BetModuleType.nassau => 1,
+        BetModuleType.skins => 2,
+        _ => 3,
+      };
 
   // ── Match: balancear amount recibido vs pagado ──────────────────────────────
   // El label del match principal contiene 'Match H' o 'Match' sin número de press.
@@ -288,29 +336,33 @@ class SlidingAdjustmentEngine {
       if (e.fromPlayerId == p1Id) p1net -= e.amount;
     }
 
-    // Margen nominal: positivo = p1 ganó, negativo = p2 ganó
-    // Usamos el número de hoyos UP como proxy del margen.
-    // Como no tenemos el score exacto del match aquí, usamos el signo del amount neto.
+    // Solo el SIGNO. Antes se contaban asientos del ledger y se llamaban
+    // "matches ganados": un match con dos presses daba margen 3, que además se
+    // comparaba contra los segmentos de Nassau. Filas contra segmentos.
+    //
+    // Quién ganó sale del neto, que sí es un hecho. Cuánto ganó, en unidades
+    // de match, no se puede saber desde el ledger, así que no se inventa.
     final margin = p1net > 0.001 ? 1 : p1net < -0.001 ? -1 : 0;
 
-    // Contar hoyos ganados en el match (cada entry de match = 1 resultado de match)
-    final int hoyosGanadosP1 = relevant.where((e) => e.toPlayerId == p1Id).length;
-    final int hoyosGanadosP2 = relevant.where((e) => e.toPlayerId == p2Id).length;
-    final int matchMargin    = hoyosGanadosP1 - hoyosGanadosP2;
+    // Dinero total movido por esta apuesta en este duelo — incluidas las
+    // presses, porque también es dinero en juego entre estos dos.
+    var bruto = 0.0;
+    for (final e in entries) {
+      bruto += e.amount;
+    }
 
-    // Prefería usar matchMargin si hay diferencia de matches, sino el amount neto
-    final int finalMargin = matchMargin != 0 ? matchMargin : margin;
-
-    final label = finalMargin > 0
-        ? 'Match ($finalMargin match${finalMargin != 1 ? "es" : ""} ganado${finalMargin != 1 ? "s" : ""})'
-        : finalMargin < 0
-            ? 'Match (${finalMargin.abs()} match${finalMargin.abs() != 1 ? "es" : ""} perdido${finalMargin.abs() != 1 ? "s" : ""})'
+    final label = margin > 0
+        ? 'Match (gana ${entries.length > 1 ? "con presiones" : "el match"})'
+        : margin < 0
+            ? 'Match (pierde ${entries.length > 1 ? "con presiones" : "el match"})'
             : 'Match (AS)';
 
     return DuelResult(
       playerAId: p1Id,
       playerBId: p2Id,
-      margin:    finalMargin,
+      margin:    margin,
+      netAmount: p1net.abs(),
+      betType:   BetModuleType.matchAutoPress,
       sourceBet: label,
     );
   }
@@ -335,10 +387,20 @@ class SlidingAdjustmentEngine {
             ? 'Nassau ($segsGanadosP1-$segsGanadosP2 segmentos)'
             : 'Nassau (empate $segsGanadosP1-$segsGanadosP2)';
 
+
+    // Neto de esta apuesta en este duelo: la unidad que sí compara con las
+    // demás. El margen de arriba solo vale dentro de este tipo.
+    var neto = 0.0;
+    for (final e in entries) {
+      if (e.toPlayerId   == p1Id) neto += e.amount;
+      if (e.fromPlayerId == p1Id) neto -= e.amount;
+    }
     return DuelResult(
       playerAId: p1Id,
       playerBId: p2Id,
       margin:    margin,
+      netAmount: neto.abs(),
+      betType:   BetModuleType.nassau,
       sourceBet: label,
     );
   }
@@ -357,10 +419,20 @@ class SlidingAdjustmentEngine {
     final margin = skinsP1 - skinsP2;
     final label = 'Skins ($skinsP1 vs $skinsP2)';
 
+
+    // Neto de esta apuesta en este duelo: la unidad que sí compara con las
+    // demás. El margen de arriba solo vale dentro de este tipo.
+    var neto = 0.0;
+    for (final e in entries) {
+      if (e.toPlayerId   == p1Id) neto += e.amount;
+      if (e.fromPlayerId == p1Id) neto -= e.amount;
+    }
     return DuelResult(
       playerAId: p1Id,
       playerBId: p2Id,
       margin:    margin,
+      netAmount: neto.abs(),
+      betType:   BetModuleType.skins,
       sourceBet: label,
     );
   }
