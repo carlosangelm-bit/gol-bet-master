@@ -50,6 +50,110 @@ enum PointBetScope {
   all,
 }
 
+/// Qué combinaciones admite cada conteo, y POR QUÉ no admite las demás.
+///
+/// Las combinaciones incoherentes no se prohíben con validación: no se
+/// ofrecen, y la opción atenuada dice el motivo. Un usuario que ve "Equipos"
+/// en gris con "Medal no tiene semántica de equipo" entiende el modelo; uno
+/// que lo elige y recibe un error, no.
+///
+/// Cada campo está derivado del motor, no de una intuición:
+///   · [teams]          → el switch de BetEngine.computeModule cuando
+///                        hasTeamSides. Los tipos que caen al default no
+///                        tienen motor de equipo: se liquidan como individual.
+///   · [requiresTeams]  → BetModuleType.requiresTeams
+///   · [perPairAmount]  → BetModuleInstance.supportsPlayerOverride
+///   · [segments]       → si el motor liquida por Front/Back/Total
+///
+/// Añadir un formato nuevo es añadir una fila aquí. Que el catálogo viviera
+/// repartido por cinco pantallas costó dos bugs silenciosos esta sesión.
+class BetTypeRules {
+  /// Se puede jugar por equipos.
+  final bool teams;
+
+  /// Por qué no, si [teams] es false. Texto para mostrar en la opción atenuada.
+  final String? sinEquipos;
+
+  /// No tiene definición sin dos lados.
+  final bool requiresTeams;
+
+  /// Liquida por segmentos (Front 9 / Back 9 / Total).
+  final bool segments;
+  final String? sinSegmentos;
+
+  /// Admite un importe distinto por pareja dentro del mismo módulo.
+  final bool perPairAmount;
+  final String? sinMontoPorPareja;
+
+  const BetTypeRules({
+    this.teams = false,
+    this.sinEquipos,
+    this.requiresTeams = false,
+    this.segments = false,
+    this.sinSegmentos,
+    this.perPairAmount = false,
+    this.sinMontoPorPareja,
+  });
+}
+
+extension BetModuleTypeRules on BetModuleType {
+  BetTypeRules get rules => switch (this) {
+        BetModuleType.skins => const BetTypeRules(
+            teams: true,
+            perPairAmount: true,
+            sinSegmentos: 'Los skins se resuelven hoyo a hoyo, no por vuelta.',
+          ),
+        BetModuleType.nassau => const BetTypeRules(
+            teams: true,
+            segments: true,
+            sinMontoPorPareja:
+                'Nassau tiene tres importes —Front, Back y Total— y un ajuste '
+                'por pareja solo puede llevar uno.',
+          ),
+        BetModuleType.nassauLowHigh => const BetTypeRules(
+            teams: true,
+            requiresTeams: true,
+            segments: true,
+            sinMontoPorPareja:
+                'Se juega 2 vs 2: los cruces entre jugadores no son apuestas, '
+                'son cómo se reparte el importe del duelo.',
+          ),
+        BetModuleType.medal => const BetTypeRules(
+            perPairAmount: true,
+            sinEquipos: 'Medal aún no tiene semántica de equipo: se liquidaría '
+                'como duelos individuales entre todos.',
+            sinSegmentos: 'Medal ya elige entre 9 y 18 hoyos en su detalle.',
+          ),
+        BetModuleType.putts => const BetTypeRules(
+            perPairAmount: true,
+            sinEquipos: 'Putts aún no tiene semántica de equipo: se liquidaría '
+                'como duelos individuales entre todos.',
+            sinSegmentos: 'Putts ya elige entre total y hoyo a hoyo en su detalle.',
+          ),
+        BetModuleType.oyeses => const BetTypeRules(
+            perPairAmount: true,
+            sinEquipos: 'Los oyeses son de tiro individual: no hay bola de '
+                'equipo que comparar.',
+            sinSegmentos: 'Se juegan en los par 3, que no caen por vuelta.',
+          ),
+        BetModuleType.units => const BetTypeRules(
+            perPairAmount: true,
+            sinEquipos: 'Las unidades premian un logro individual —birdie, '
+                'eagle, sandy— que no se atribuye a un equipo.',
+            sinSegmentos: 'Las unidades se cobran cuando ocurren, no por vuelta.',
+          ),
+        // Retirado del catálogo, pero las rondas guardadas lo siguen usando.
+        BetModuleType.matchAutoPress => const BetTypeRules(
+            teams: true,
+            sinSegmentos: 'El match corre los 18 hoyos; las presiones abren '
+                'sus propios tramos.',
+            sinMontoPorPareja:
+                'Tiene dos importes —match y presión— y un ajuste por pareja '
+                'solo puede llevar uno.',
+          ),
+      };
+}
+
 /// Tipos que se pueden crear hoy. **Toda hoja de selección debe usar esto.**
 ///
 /// Un tipo retirado sigue existiendo en el enum, en la deserialización, en el
