@@ -1525,7 +1525,14 @@ class BetEngine {
   // Se apoya en [segmentsOf] y no en los números de hoyo 1-9 / 10-18: una ronda
   // que arranca por el tee 10 tiene su primer segmento en los hoyos 10-18, y
   // partir por número invertiría Front y Back.
-  static List<LedgerEntry> _nassauLowHighTeam(Round round, BetModuleInstance mod) {
+  /// Contexto compartido por la liquidación y el desglose de lectura.
+  ///
+  /// Devuelve la config, la segmentación de la ronda y el recorrido de hoyos.
+  /// Existe para que ambos caminos partan del MISMO cálculo: si cada uno
+  /// construyera el suyo, el marcador mostrado podría dejar de explicar el
+  /// dinero cobrado sin que nada lo detectara.
+  static (NassauLowHighConfig, RoundSegments, _LowHighTally Function(List<int>))
+      _lowHighContext(Round round, BetModuleInstance mod) {
     final cfg   = mod.lowHigh;
     final sideA = mod.sideA;
     final sideB = mod.sideB;
@@ -1539,7 +1546,6 @@ class BetEngine {
           '(${sideA.name}: ${sideA.playerIds.length}, '
           '${sideB.name}: ${sideB.playerIds.length})');
     }
-    if (!cfg.hasSettlement) return const [];
 
     final allPlayerIds = [...sideA.playerIds, ...sideB.playerIds];
     final hcpMap = mod.useHandicap
@@ -1557,7 +1563,7 @@ class BetEngine {
       return s.grossScore! - GameEngine.strokesReceived(hcp, ch);
     }
 
-    final seg = segmentsOf(round);
+    final segs = segmentsOf(round);
 
     // Recorre [holes] con estado de acumulado propio y devuelve los puntos.
     _LowHighTally walk(List<int> holes) {
@@ -1624,6 +1630,19 @@ class BetEngine {
       return tally;
     }
 
+    return (cfg, segs, walk);
+  }
+
+  static List<LedgerEntry> _nassauLowHighTeam(Round round, BetModuleInstance mod) {
+    final cfg = mod.lowHigh;
+    // Sin ninguna modalidad activa no hay nada que cobrar. Se comprueba aquí y
+    // no en el contexto porque el desglose SÍ tiene sentido mostrarlo: el
+    // marcador existe aunque no se liquide dinero.
+    if (!cfg.hasSettlement) return const [];
+
+    final sideA = mod.sideA;
+    final sideB = mod.sideB;
+    final (_, segs, walk) = _lowHighContext(round, mod);
     final entries = <LedgerEntry>[];
 
     // Reparte [total] entre los cruces de ambos lados, igual que el Nassau por
@@ -1645,51 +1664,119 @@ class BetEngine {
       }
     }
 
-    void settle(_LowHighTally tally, double fixedAmount, bool payPoints,
-        String label) {
-      final diff = tally.diff;
-      if (diff == 0) return; // segmento empatado: no se cobra nada
-      final aWins = diff > 0;
-      final vs = '${sideA.name} vs ${sideB.name}';
-
-      if (cfg.segmentBetEnabled && fixedAmount > 0) {
-        pay(fixedAmount, aWins, '$label ($vs)');
+    // El reparto por segmentos vive en _lowHighSegments, que es exactamente la
+    // misma fuente que consume la UI. Así el desglose que se muestra y el
+    // dinero que se cobra no pueden desincronizarse: si divergieran, el
+    // jugador vería un marcador que no explica lo que pagó.
+    final vs = '${sideA.name} vs ${sideB.name}';
+    for (final seg in _lowHighSegments(cfg, segs, walk)) {
+      if (seg.isTie) continue; // segmento empatado: no se cobra nada
+      final aWins = seg.diff > 0;
+      if (seg.segmentAmount > 0) {
+        pay(seg.segmentAmount, aWins, '${seg.label} ($vs)');
       }
-      if (payPoints && cfg.pointBetEnabled && cfg.amountPerPoint > 0) {
-        final pts = diff.abs();
-        pay(pts * cfg.amountPerPoint, aWins,
-            '$label · ${_fmtPoints(pts)} punto${pts == 1 ? "" : "s"} ($vs)');
+      if (seg.pointAmount > 0) {
+        final pts = seg.diff.abs();
+        pay(seg.pointAmount, aWins,
+            '${seg.label} · ${formatPoints(pts)} punto${pts == 1 ? "" : "s"} ($vs)');
       }
-    }
-
-    // Ronda de 9 hoyos: Front y Overall cubrirían exactamente los mismos hoyos,
-    // así que cobrar los dos sería cobrar dos veces lo mismo. Se liquida uno.
-    if (seg.singleNine) {
-      if (cfg.front9Enabled || cfg.overallEnabled) {
-        settle(walk(seg.firstNine), cfg.amountForFront(),
-            cfg.pointsOnHalves || cfg.pointsOnOverall, 'Bola Baja/Alta 9 hoyos');
-      }
-      return entries;
-    }
-
-    if (cfg.front9Enabled) {
-      settle(walk(seg.firstNine), cfg.amountForFront(), cfg.pointsOnHalves,
-          'Bola Baja/Alta Front 9');
-    }
-    if (cfg.back9Enabled) {
-      settle(walk(seg.secondNine), cfg.amountForBack(), cfg.pointsOnHalves,
-          'Bola Baja/Alta Back 9');
-    }
-    if (cfg.overallEnabled) {
-      settle(walk(seg.playOrder), cfg.amountForOverall(), cfg.pointsOnOverall,
-          'Bola Baja/Alta Overall');
     }
     return entries;
   }
 
+  /// Desglose por segmento de un módulo de Bola Baja / Bola Alta.
+  ///
+  /// Solo lectura: no genera asientos ni toca nada. Existe para que la UI pueda
+  /// mostrar puntos y montos por segmento SIN recalcularlos por su cuenta —
+  /// [_nassauLowHighTeam] consume este mismo resultado para liquidar.
+  ///
+  /// Lanza el mismo [StateError] que la liquidación si los lados no son 2 vs 2,
+  /// así que conviene comprobar [BetModuleInstance.hasTeamSides] antes.
+  static List<LowHighSegmentBreakdown> lowHighBreakdown(
+      Round round, BetModuleInstance mod) {
+    final (cfg, segs, walk) = _lowHighContext(round, mod);
+    return _lowHighSegments(cfg, segs, walk);
+  }
+
+  /// Reparto de la ronda en segmentos liquidables, con sus puntos y montos.
+  ///
+  /// [walk] recorre una lista de hoyos y devuelve los puntos acumulados; se
+  /// recibe como parámetro para que liquidación y desglose usen el MISMO
+  /// recorrido, con su mismo estado de acumulado.
+  static List<LowHighSegmentBreakdown> _lowHighSegments(
+    NassauLowHighConfig cfg,
+    RoundSegments segs,
+    _LowHighTally Function(List<int>) walk,
+  ) {
+    LowHighSegmentBreakdown build({
+      required String id,
+      required String label,
+      required List<int> holes,
+      required double fixedAmount,
+      required bool payPoints,
+    }) {
+      final tally = walk(holes);
+      final tie = tally.diff == 0;
+      return LowHighSegmentBreakdown(
+        segment: id,
+        label: label,
+        holes: holes,
+        aLow: tally.aLow, aHigh: tally.aHigh,
+        bLow: tally.bLow, bHigh: tally.bHigh,
+        // Los montos son los LIQUIDADOS: cero si el segmento quedó empatado o
+        // si esa modalidad no aplica. Así la tabla suma lo mismo que el ledger.
+        segmentAmount:
+            (!tie && cfg.segmentBetEnabled && fixedAmount > 0) ? fixedAmount : 0,
+        pointAmount: (!tie && payPoints && cfg.pointBetEnabled &&
+                cfg.amountPerPoint > 0)
+            ? tally.diff.abs() * cfg.amountPerPoint
+            : 0,
+      );
+    }
+
+    // Ronda de 9 hoyos: Front y Overall cubrirían exactamente los mismos hoyos,
+    // así que liquidar los dos sería cobrar dos veces lo mismo. Va uno solo.
+    if (segs.singleNine) {
+      if (!cfg.front9Enabled && !cfg.overallEnabled) return const [];
+      return [
+        build(
+          id: 'nine',
+          label: 'Bola Baja/Alta 9 hoyos',
+          holes: segs.firstNine,
+          fixedAmount: cfg.amountForFront(),
+          payPoints: cfg.pointsOnHalves || cfg.pointsOnOverall,
+        )
+      ];
+    }
+
+    return [
+      if (cfg.front9Enabled)
+        build(
+          id: 'front9', label: 'Bola Baja/Alta Front 9',
+          holes: segs.firstNine,
+          fixedAmount: cfg.amountForFront(), payPoints: cfg.pointsOnHalves,
+        ),
+      if (cfg.back9Enabled)
+        build(
+          id: 'back9', label: 'Bola Baja/Alta Back 9',
+          holes: segs.secondNine,
+          fixedAmount: cfg.amountForBack(), payPoints: cfg.pointsOnHalves,
+        ),
+      if (cfg.overallEnabled)
+        build(
+          id: 'overall', label: 'Bola Baja/Alta Overall',
+          holes: segs.playOrder,
+          fixedAmount: cfg.amountForOverall(), payPoints: cfg.pointsOnOverall,
+        ),
+    ];
+  }
+
   /// Formatea puntos evitando el ".0" cuando son enteros — con la regla de
   /// empate "dividir" pueden salir medios puntos.
-  static String _fmtPoints(double p) =>
+  ///
+  /// Pública para que la UI use la MISMA convención que las descripciones de
+  /// los asientos: 1.5 se muestra como 1.5, y 2 como 2.
+  static String formatPoints(double p) =>
       p == p.roundToDouble() ? p.toStringAsFixed(0) : p.toStringAsFixed(1);
 
   // ── SKINS (equipo best-ball por hoyo) ─────────────────────────────────────
@@ -2809,6 +2896,56 @@ class LedgerComputation {
 //
 // Ojo: "first"/"second" son lógicos, no numéricos. Con startingNine=back,
 // firstNine son los hoyos 10-18 y secondNine los 1-9.
+/// Resultado de un segmento en Bola Baja / Bola Alta, listo para mostrarse.
+///
+/// Lo produce [BetEngine.lowHighBreakdown] a partir del MISMO recorrido que usa
+/// la liquidación, así que los montos de aquí son exactamente los que se
+/// cobraron: la suma de [total] de todos los segmentos coincide con lo que el
+/// ledger movió por este módulo.
+class LowHighSegmentBreakdown {
+  /// 'front9' | 'back9' | 'overall' | 'nine' (ronda de 9 hoyos).
+  final String segment;
+
+  /// Etiqueta mostrable, la misma que aparece en los asientos del ledger.
+  final String label;
+
+  final List<int> holes;
+
+  /// Puntos de cada lado, separados por categoría. Pueden ser medios puntos
+  /// con la regla de empate "dividir".
+  final double aLow, aHigh, bLow, bHigh;
+
+  /// Monto LIQUIDADO por la apuesta fija de este segmento. Cero si quedó
+  /// empatado o si esa modalidad está desactivada.
+  final double segmentAmount;
+
+  /// Monto LIQUIDADO por diferencia de puntos. Cero si no aplica al segmento.
+  final double pointAmount;
+
+  const LowHighSegmentBreakdown({
+    required this.segment,
+    required this.label,
+    required this.holes,
+    required this.aLow,
+    required this.aHigh,
+    required this.bLow,
+    required this.bHigh,
+    required this.segmentAmount,
+    required this.pointAmount,
+  });
+
+  double get aTotal => aLow + aHigh;
+  double get bTotal => bLow + bHigh;
+
+  /// Positiva = gana el lado A.
+  double get diff => aTotal - bTotal;
+
+  bool get isTie => diff == 0;
+
+  /// Lo que el lado perdedor paga al ganador en este segmento.
+  double get total => segmentAmount + pointAmount;
+}
+
 /// Puntos acumulados de un segmento en Bola Baja / Bola Alta.
 ///
 /// Se guardan las cuatro cifras y no solo la diferencia porque la UI muestra el

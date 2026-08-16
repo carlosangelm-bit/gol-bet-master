@@ -41,6 +41,13 @@
         ]
       },
       {
+        "_comment": "CanvasKit va versionado con el engine de Flutter. Cacheado, una carga en frío tras un deploy mezcla el wasm viejo con el bundle nuevo y la app revienta con 'flutterCanvasKit.PathBuilder is not a constructor'. Se arregla con hard reload, que el usuario final no sabe hacer.",
+        "source": "/canvaskit/**",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        ]
+      },
+      {
         "source": "**/*.@(woff2|png|jpg|svg|ico)",
         "headers": [
           { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }

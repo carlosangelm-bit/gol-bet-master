@@ -432,6 +432,104 @@ void main() {
     });
   });
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // El desglose que se muestra y el dinero que se cobra salen del mismo
+  // recorrido. Si divergieran, el marcador dejaría de explicar el pago.
+  // ══════════════════════════════════════════════════════════════════════════
+  group('desglose por segmento', () {
+    /// Lo que el lado A cobra netamente según los asientos del ledger.
+    double netLedger(NassauLowHighConfig cfg, Round r) =>
+        _netA(_run(r, cfg));
+
+    /// Lo mismo según la tabla de segmentos.
+    double netDesglose(NassauLowHighConfig cfg, Round r) {
+      final segs = BetEngine.lowHighBreakdown(r, _mod(cfg));
+      var net = 0.0;
+      for (final s in segs) {
+        if (s.isTie) continue;
+        net += s.diff > 0 ? s.total : -s.total;
+      }
+      return net;
+    }
+
+    test('la suma de los netos coincide con el ledger — solo fija', () {
+      final r = _round(gross: {
+        a1: _with(4, {1: 3}), a2: _flat(4),
+        b1: _with(4, {1: 5}), b2: _with(4, {1: 6}),
+      });
+      expect(netDesglose(soloSegmento, r), netLedger(soloSegmento, r));
+      expect(netDesglose(soloSegmento, r), 200);
+    });
+
+    test('coincide con las dos modalidades activas', () {
+      final cfg = soloSegmento.copyWith(
+          pointBetEnabled: true, amountPerPoint: 20,
+          pointScope: PointBetScope.all);
+      final r = _round(gross: {
+        a1: _with(4, {1: 3}), a2: _flat(4),
+        b1: _with(4, {1: 5}), b2: _with(4, {1: 6}),
+      });
+      expect(netDesglose(cfg, r), netLedger(cfg, r));
+    });
+
+    test('coincide con carryover y alcance por segmento', () {
+      final cfg = soloSegmento.copyWith(
+          tieRule: LowHighTieRule.carryover,
+          carryAppliesTo: LowHighCarryTarget.lowBall,
+          pointBetEnabled: true, amountPerPoint: 10,
+          pointScope: PointBetScope.perSegment);
+      final r = _round(gross: {
+        a1: {9: 4, 10: 3}, a2: {9: 5, 10: 5},
+        b1: {9: 4, 10: 4}, b2: {9: 5, 10: 5},
+      });
+      expect(netDesglose(cfg, r), netLedger(cfg, r));
+    });
+
+    test('un segmento empatado sale como empate y con 0', () {
+      final r = _round(gross: {
+        a1: _flat(4), a2: _flat(4), b1: _flat(4), b2: _flat(4),
+      });
+      final segs = BetEngine.lowHighBreakdown(r, _mod(soloSegmento));
+      expect(segs, isNotEmpty);
+      for (final s in segs) {
+        expect(s.isTie, isTrue);
+        expect(s.total, 0);
+      }
+    });
+
+    test('los puntos por categoría cuadran con el total del lado', () {
+      final r = _round(gross: {
+        a1: _with(4, {1: 3}), a2: _flat(4),
+        b1: _with(4, {1: 5}), b2: _with(4, {1: 6}),
+      });
+      final front = BetEngine.lowHighBreakdown(r, _mod(soloSegmento))
+          .firstWhere((s) => s.segment == 'front9');
+      expect(front.aLow, 1);
+      expect(front.aHigh, 1);
+      expect(front.aTotal, 2);
+      expect(front.bTotal, 0);
+      expect(front.diff, 2);
+    });
+
+    test('solo aparecen los segmentos activos', () {
+      final cfg = soloSegmento.copyWith(back9Enabled: false, overallEnabled: false);
+      final r = _round(gross: {
+        a1: _flat(4), a2: _flat(4), b1: _flat(4), b2: _flat(4),
+      });
+      final segs = BetEngine.lowHighBreakdown(r, _mod(cfg));
+      expect(segs.map((s) => s.segment), ['front9']);
+    });
+
+    test('sin apuesta por puntos, pointAmount es cero', () {
+      final r = _round(gross: {
+        a1: _with(4, {1: 3}), a2: _flat(4),
+        b1: _with(4, {1: 5}), b2: _with(4, {1: 6}),
+      });
+      final segs = BetEngine.lowHighBreakdown(r, _mod(soloSegmento));
+      expect(segs.every((s) => s.pointAmount == 0), isTrue);
+    });
+  });
+
   group('etiquetas', () {
     test('summaryLabel interpola de verdad, no muestra la plantilla', () {
       // Regresión: la cadena estaba escrita con \$ (dólar escapado), así que

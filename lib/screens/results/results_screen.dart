@@ -4,6 +4,7 @@
 // Nivel 2: cara a cara          (pagos cinematográficos)
 // Nivel 3: detalle expandible   (breakdown por tipo de apuesta)
 // ─────────────────────────────────────────────────────────────────────────────
+import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
@@ -190,6 +191,12 @@ class _ResultsScreenState extends State<ResultsScreen> {
                   // ronda en vivo no había forma de ver qué se está liquidando.
                   _RoundBetsSummary(round: round, t: t, g: g),
                   const SizedBox(height: 20),
+
+                  // Resultado por equipos de los formatos que lo tienen. Va
+                  // antes del ranking individual porque es lo que explica el
+                  // dinero: el ranking dice cuánto, esto dice por qué.
+                  ..._lowHighModules(round).map((m) =>
+                      _LowHighTeamResult(round: round, mod: m, t: t, g: g)),
 
                   // NIVEL 1: Podio PGA
                   _PGAPodium(players: sortedPlayers, round: round, balances: balances, t: t, g: g),
@@ -1402,6 +1409,9 @@ class _ResultsBodyState extends State<ResultsBody> {
         _RoundBetsSummary(round: round, t: t, g: g),
         const SizedBox(height: 20),
 
+        ..._lowHighModules(round).map((m) =>
+            _LowHighTeamResult(round: round, mod: m, t: t, g: g)),
+
         _PGASectionLabel(label: 'BALANCE FINAL', icon: Icons.emoji_events_rounded, g: g),
         const SizedBox(height: 10),
         _PGAPodium(players: sortedPlayers, round: round, balances: balances, t: t, g: g),
@@ -1672,6 +1682,206 @@ class _RoundBetsSummary extends StatelessWidget {
             );
           }),
         ],
+      ]),
+    );
+  }
+}
+
+
+/// Módulos de Bola Baja / Bola Alta con equipos válidos.
+///
+/// Se comparte entre las DOS vistas de resultados —la de la ronda en vivo y la
+/// del detalle en Historial— porque ya me pasó dos veces poner la información
+/// en una sola y dar por hecho que era la que se usaba.
+List<BetModuleInstance> _lowHighModules(Round round) => [
+      for (final g in round.betGroups)
+        for (final m in g.modules)
+          if (m.type == BetModuleType.nassauLowHigh && m.hasTeamSides) m,
+    ];
+
+// ── Resultado por equipos: Bola Baja / Bola Alta ─────────────────────────────
+//
+// El ranking individual de abajo sigue siendo el que manda para pagar —el
+// dinero se mueve persona a persona— pero no explica NADA del formato: no
+// muestra los puntos de bola baja y alta, ni el desglose por segmento, que es
+// la esencia del juego.
+//
+// Los números salen de BetEngine.lowHighBreakdown, que consume el mismo
+// recorrido que la liquidación. No hay un segundo cálculo de puntos.
+class _LowHighTeamResult extends StatelessWidget {
+  final Round round;
+  final BetModuleInstance mod;
+  final GolfTheme t;
+  final _ThemeGrad g;
+  const _LowHighTeamResult({
+    required this.round, required this.mod, required this.t, required this.g,
+  });
+
+  String _nombre(String id) => round.players
+      .firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id))
+      .name
+      .split(' ')
+      .first;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<LowHighSegmentBreakdown> segs;
+    try {
+      segs = BetEngine.lowHighBreakdown(round, mod);
+    } catch (_) {
+      // Configuración inválida: el banner de integridad ya lo explica arriba.
+      return const SizedBox.shrink();
+    }
+    if (segs.isEmpty) return const SizedBox.shrink();
+
+    final cfg = mod.lowHigh;
+    final sideA = mod.sideA;
+    final sideB = mod.sideB;
+    final muestraPuntos = cfg.pointBetEnabled;
+
+    // Neto de toda la apuesta desde la perspectiva del lado A.
+    var netoA = 0.0;
+    for (final s in segs) {
+      if (!s.isTie) netoA += s.diff > 0 ? s.total : -s.total;
+    }
+
+    Widget celda(String txt, {bool fuerte = false, Color? color, int flex = 1}) =>
+        Expanded(
+          flex: flex,
+          child: Text(txt,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: color ?? (fuerte ? t.text : t.sub),
+                fontSize: 11,
+                fontWeight: fuerte ? FontWeight.w800 : FontWeight.w600,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              )),
+        );
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: g.cardSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: g.cardBorder),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // ── Encabezado: los dos lados ────────────────────────────────────
+        Row(children: [
+          Text(mod.type.icon, style: const TextStyle(fontSize: 15)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(mod.type.label,
+                style: TextStyle(
+                    color: t.text, fontSize: 14, fontWeight: FontWeight.w800)),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: g.sectionColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(5),
+            ),
+            child: Text(
+                cfg.mode == GrossNetMode.net ? 'NETO' : 'BRUTO',
+                style: TextStyle(
+                    color: g.sectionColor,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800)),
+          ),
+        ]),
+        const SizedBox(height: 4),
+        Text(
+          '${sideA.name} · ${sideA.playerIds.map(_nombre).join(" + ")}'
+          '   vs   ${sideB.name} · ${sideB.playerIds.map(_nombre).join(" + ")}',
+          style: TextStyle(color: t.sub, fontSize: 11),
+        ),
+        const SizedBox(height: 12),
+
+        // ── Cabecera de la tabla ─────────────────────────────────────────
+        Row(children: [
+          Expanded(flex: 3, child: Text('SEGMENTO',
+              style: TextStyle(
+                  color: t.sub, fontSize: 9, fontWeight: FontWeight.w800))),
+          celda('BAJA A'), celda('ALTA A'), celda('A', fuerte: true),
+          celda('BAJA B'), celda('ALTA B'), celda('B', fuerte: true),
+          if (muestraPuntos) celda('PTOS', flex: 2),
+          celda('NETO', flex: 3),
+        ]),
+        Divider(height: 12, color: g.cardBorder),
+
+        // ── Una fila por segmento ────────────────────────────────────────
+        ...segs.map((s) {
+          final ganaA = !s.isTie && s.diff > 0;
+          final colorNeto = s.isTie ? t.sub : (ganaA ? t.profit : t.loss);
+          final p = BetEngine.formatPoints;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 7),
+            child: Row(children: [
+              Expanded(
+                flex: 3,
+                child: Text(
+                  s.label.replaceFirst('Bola Baja/Alta ', ''),
+                  style: TextStyle(
+                      color: t.text, fontSize: 11, fontWeight: FontWeight.w700),
+                ),
+              ),
+              celda(p(s.aLow)), celda(p(s.aHigh)),
+              celda(p(s.aTotal), fuerte: true, color: ganaA ? t.profit : null),
+              celda(p(s.bLow)), celda(p(s.bHigh)),
+              celda(p(s.bTotal),
+                  fuerte: true, color: (!s.isTie && !ganaA) ? t.profit : null),
+              if (muestraPuntos)
+                celda(s.pointAmount > 0
+                        ? '\$${s.pointAmount.toStringAsFixed(0)}'
+                        : '—',
+                    flex: 2),
+              Expanded(
+                flex: 3,
+                child: Text(
+                  // Un segmento empatado se muestra explícitamente, no se omite.
+                  s.isTie
+                      ? 'Empate'
+                      : '${ganaA ? sideA.name : sideB.name} '
+                          '\$${s.total.toStringAsFixed(0)}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: colorNeto,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800),
+                ),
+              ),
+            ]),
+          );
+        }),
+
+        Divider(height: 12, color: g.cardBorder),
+        // ── Total del duelo ──────────────────────────────────────────────
+        Row(children: [
+          Expanded(
+            child: Text('TOTAL',
+                style: TextStyle(
+                    color: t.sub, fontSize: 10, fontWeight: FontWeight.w800)),
+          ),
+          Text(
+            netoA == 0
+                ? 'Sin saldo entre equipos'
+                : '${netoA > 0 ? sideB.name : sideA.name} paga '
+                    '\$${netoA.abs().toStringAsFixed(0)} a '
+                    '${netoA > 0 ? sideA.name : sideB.name}',
+            style: TextStyle(
+                color: netoA == 0 ? t.sub : t.text,
+                fontSize: 12,
+                fontWeight: FontWeight.w800),
+          ),
+        ]),
+        const SizedBox(height: 4),
+        Text(
+          'El pago se reparte entre los cruces de ambos lados; el desglose por '
+          'jugador está más abajo.',
+          style: TextStyle(color: t.sub, fontSize: 10, height: 1.3),
+        ),
       ]),
     );
   }
