@@ -1595,27 +1595,74 @@ class _RoundBetsSummary extends StatelessWidget {
           ...mods.map((e) {
             final (grp, m) = e;
             final pids = _jugadoresDe(grp, m);
-            final completos = round.course.holes
+            final holes = round.course.holes;
+            final completos = holes
                 .where((ch) =>
                     pids.every((pid) => round.getScore(pid, ch.hole).hasScore))
                 .length;
-            final total = round.course.holes.length;
+            final total = holes.length;
             final falta = completos < total;
+
+            // Cuántos hoyos anotó CADA jugador. Con solo el total no se sabe
+            // si falta un jugador entero o un hoyo suelto de varios, que son
+            // problemas distintos y se arreglan distinto.
+            final porJugador = {
+              for (final pid in pids)
+                pid: holes
+                    .where((ch) => round.getScore(pid, ch.hole).hasScore)
+                    .length,
+            };
+            // Hoyos donde falta alguien, para poder ir directo a corregirlos.
+            final huecos = holes
+                .where((ch) => !pids
+                    .every((pid) => round.getScore(pid, ch.hole).hasScore))
+                .map((ch) => ch.hole)
+                .toList();
+
             return Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(children: [
-                Icon(falta ? Icons.error_outline : Icons.check_circle_outline,
-                    color: falta ? t.loss : t.profit, size: 13),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    '${m.type.label}: $completos de $total hoyos con score de '
-                    'sus ${pids.length} jugadores',
-                    style:
-                        TextStyle(color: falta ? t.loss : t.sub, fontSize: 11),
-                  ),
-                ),
-              ]),
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Icon(
+                          falta
+                              ? Icons.error_outline
+                              : Icons.check_circle_outline,
+                          color: falta ? t.loss : t.profit,
+                          size: 13),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          '${m.type.label}: $completos de $total hoyos con '
+                          'score de sus ${pids.length} jugadores',
+                          style: TextStyle(
+                              color: falta ? t.loss : t.sub, fontSize: 11),
+                        ),
+                      ),
+                    ]),
+                    if (falta) ...[
+                      const SizedBox(height: 3),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 19),
+                        child: Text(
+                          porJugador.entries
+                              .map((e) => '${_nombre(e.key)} ${e.value}')
+                              .join('  ·  '),
+                          style: TextStyle(color: t.sub, fontSize: 10),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 19, top: 2),
+                        child: Text(
+                          'Hoyos incompletos: '
+                          '${huecos.take(12).join(", ")}'
+                          '${huecos.length > 12 ? "…" : ""}',
+                          style: TextStyle(color: t.sub, fontSize: 10),
+                        ),
+                      ),
+                    ],
+                  ]),
             );
           }),
         ],
