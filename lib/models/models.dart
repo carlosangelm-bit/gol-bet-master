@@ -50,6 +50,15 @@ enum PointBetScope {
   all,
 }
 
+extension BetModuleTeamRules on BetModuleType {
+  /// true si el formato no tiene definición sin dos equipos enfrentados.
+  ///
+  /// Estos módulos deben editarse siempre en el editor que sabe configurar
+  /// lados: abrirlos en uno que no los ofrece produce una apuesta sin equipos,
+  /// que no liquida nada y parece bien configurada.
+  bool get requiresTeams => this == BetModuleType.nassauLowHigh;
+}
+
 extension LowHighTieRuleLabel on LowHighTieRule {
   String get label => switch (this) {
         LowHighTieRule.split => 'Dividir (½ punto)',

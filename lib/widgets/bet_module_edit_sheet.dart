@@ -19,9 +19,12 @@ const _teamSupportedTypes = {
 
 // Tipos donde el juego por equipos NO es opcional: sin dos lados no tienen
 // definición. El interruptor se muestra fijo en activado.
-const _teamRequiredTypes = {
-  BetModuleType.nassauLowHigh,
-};
+//
+// Se deriva de BetModuleType.requiresTeams para no tener dos listas que
+// puedan desincronizarse — que es exactamente lo que ya pasó con
+// _teamSupportedTypes y el selector de tipos de Setup.
+final _teamRequiredTypes =
+    BetModuleType.values.where((t) => t.requiresTeams).toSet();
 
 class BetModuleEditSheet extends StatefulWidget {
   final BetGroup group;

@@ -2971,8 +2971,9 @@ class _SetupScreenState extends State<SetupScreen> {
           _sectionLabel('BOLA BAJA / BOLA ALTA', t),
           const SizedBox(height: 8),
           Text(
-            'Formato 2 vs 2. Toca la apuesta en la lista para armar los equipos '
-            'y configurar los montos.',
+            'Formato 2 vs 2. Los equipos y los montos se configuran en el '
+            'editor de la apuesta: ciérrala y tócala en la tarjeta de la '
+            'partida.',
             style: TextStyle(color: t.sub, fontSize: 12, height: 1.4),
           ),
         ];
@@ -3966,7 +3967,16 @@ class _SetupScreenState extends State<SetupScreen> {
                 if (newGroup.modules.length == startIdx + 1) {
                   final newMod = newGroup.modules[startIdx];
                   Future.delayed(const Duration(milliseconds: 220), () {
-                    if (mounted) _editModuleInstance(gi, startIdx, newMod, newGroup, t);
+                    if (!mounted) return;
+                    // Los formatos por equipos van al editor que sabe armar
+                    // lados. _editModuleInstance no los ofrece, así que
+                    // guardar desde ahí dejaba la apuesta SIN equipos: no
+                    // liquidaba nada y en pantalla se veía bien configurada.
+                    if (newMod.type.requiresTeams) {
+                      _openModuleEdit(context, newGroup, newMod, t);
+                    } else {
+                      _editModuleInstance(gi, startIdx, newMod, newGroup, t);
+                    }
                   });
                 }
               } : null,
@@ -4297,6 +4307,69 @@ class _SetupScreenState extends State<SetupScreen> {
   void _launchRound(BuildContext ctx) {
     final t = context.read<RoundProvider>().theme;
     final auth = context.read<AuthProvider>();
+
+    // Última red antes de jugar: una apuesta por equipos SIN equipos no liquida
+    // nada, y el fallo solo se descubre al terminar la ronda —con el dinero ya
+    // jugado y sin forma de recuperar el resultado. Se corta aquí.
+    final sinEquipos = [
+      for (final g in _groups)
+        for (final m in g.modules)
+          if (m.type.requiresTeams && !m.hasTeamSides) '${g.name} · ${m.type.label}',
+    ];
+    if (sinEquipos.isNotEmpty) {
+      showDialog(
+        context: ctx,
+        builder: (dctx) => AlertDialog(
+          backgroundColor: t.card,
+          title: Row(children: [
+            Icon(Icons.warning_amber_rounded, color: t.loss, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('Falta definir equipos',
+                  style: TextStyle(
+                      color: t.text, fontSize: 16, fontWeight: FontWeight.w800)),
+            ),
+          ]),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                sinEquipos.length == 1
+                    ? 'Esta apuesta es 2 vs 2 y no tiene equipos, así que no '
+                        'cobraría nada:'
+                    : 'Estas apuestas son 2 vs 2 y no tienen equipos, así que '
+                        'no cobrarían nada:',
+                style: TextStyle(color: t.sub, fontSize: 12, height: 1.35),
+              ),
+              const SizedBox(height: 10),
+              ...sinEquipos.map((e) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text('· $e',
+                        style: TextStyle(
+                            color: t.text,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600)),
+                  )),
+              const SizedBox(height: 10),
+              Text(
+                'Tócala en la tarjeta de su partida para armar el Lado A y el '
+                'Lado B.',
+                style: TextStyle(color: t.sub, fontSize: 11, height: 1.35),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dctx),
+              child: Text('Entendido', style: TextStyle(color: t.primary)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: ctx,
       backgroundColor: t.card,
