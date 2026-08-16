@@ -2472,6 +2472,8 @@ class _ActiveRoundView extends StatelessWidget {
                '·T\$${m.nassau.totalValue.toStringAsFixed(0)}';
       case BetModuleType.matchAutoPress:
         return '\$${m.matchAutoPress.matchValue.toStringAsFixed(0)} match';
+      case BetModuleType.nassauLowHigh:
+        return '\$${m.lowHigh.segmentAmount.toStringAsFixed(0)}/seg';
       case BetModuleType.medal:
         return '\$${m.medal.value.toStringAsFixed(0)}';
       case BetModuleType.putts:

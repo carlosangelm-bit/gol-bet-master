@@ -487,6 +487,8 @@ class BetEngine {
         case BetModuleType.skins:
           // Skins en modo equipo: cada hoyo best-ball entre lados
           return _skinsTeam(round, mod);
+        case BetModuleType.nassauLowHigh:
+          return _nassauLowHighTeam(round, mod);
         // nassauPress ya no existe como tipo separado; nassau unificado lo maneja
         default:
           // Medal, putts, oyeses, units: no tienen semántica de equipo aún.
@@ -522,6 +524,10 @@ class BetEngine {
         break;
       case BetModuleType.oyeses:
         entries.addAll(_oyeses(round, pids, mod));
+        break;
+      case BetModuleType.nassauLowHigh:
+        // Solo tiene sentido 2 vs 2. Sin lados configurados no hay equipos que
+        // enfrentar, así que no liquida nada en vez de inventar un reparto.
         break;
       case BetModuleType.units:
         entries.addAll(_units(round, pids, mod));
@@ -1498,6 +1504,189 @@ class BetEngine {
     }
     return entries;
   }
+
+  // ── BOLA BAJA / BOLA ALTA (2 vs 2) ────────────────────────────────────────
+  //
+  // Cada hoyo reparte hasta dos puntos, uno por categoría:
+  //   • bola baja  → el MENOR score de cada equipo, comparados entre sí
+  //   • bola alta  → el MAYOR score de cada equipo, comparados entre sí
+  // Son independientes: un equipo puede llevarse las dos, repartirlas 1-1 o
+  // empatar cualquiera.
+  //
+  // Los tres segmentos se recorren POR SEPARADO, cada uno con su propio estado
+  // de acumulado. El Overall no es la suma de Front y Back: con carryover
+  // activo, un punto acumulado expira al cerrar el Front pero sigue vivo en el
+  // recorrido completo del Overall, así que los números pueden diferir.
+  //
+  // Se apoya en [segmentsOf] y no en los números de hoyo 1-9 / 10-18: una ronda
+  // que arranca por el tee 10 tiene su primer segmento en los hoyos 10-18, y
+  // partir por número invertiría Front y Back.
+  static List<LedgerEntry> _nassauLowHighTeam(Round round, BetModuleInstance mod) {
+    final cfg   = mod.lowHigh;
+    final sideA = mod.sideA;
+    final sideB = mod.sideB;
+
+    // El formato solo está definido para 2 vs 2: con tres jugadores por lado,
+    // "la bola alta" es ambigua (¿el peor, o el segundo peor?). Se rechaza en
+    // vez de elegir por el usuario; safeComputeAll lo reporta sin tumbar la ronda.
+    if (sideA.playerIds.length != 2 || sideB.playerIds.length != 2) {
+      throw StateError(
+          'Bola Baja / Bola Alta requiere exactamente 2 jugadores por lado '
+          '(${sideA.name}: ${sideA.playerIds.length}, '
+          '${sideB.name}: ${sideB.playerIds.length})');
+    }
+    if (!cfg.hasSettlement) return const [];
+
+    final allPlayerIds = [...sideA.playerIds, ...sideB.playerIds];
+    final hcpMap = mod.useHandicap
+        ? GameEngine.buildTeamHcpMap(round, allPlayerIds, cfg: mod.teamHandicap)
+        : <String, double>{};
+
+    // Score de un jugador en un hoyo, ya neto si aplica. null si no anotó.
+    int? scoreOf(String pid, int holeNum) {
+      final s = round.getScore(pid, holeNum);
+      if (!s.hasScore) return null;
+      if (!mod.useHandicap) return s.grossScore;
+      final ch = round.course.holes.firstWhere((h) => h.hole == holeNum,
+          orElse: () => round.course.holes.first);
+      final hcp = hcpMap[pid] ?? round.getHandicap(pid);
+      return s.grossScore! - GameEngine.strokesReceived(hcp, ch);
+    }
+
+    final seg = segmentsOf(round);
+
+    // Recorre [holes] con estado de acumulado propio y devuelve los puntos.
+    _LowHighTally walk(List<int> holes) {
+      final tally = _LowHighTally();
+      // Cuánto vale el punto de cada categoría en el próximo hoyo disputado.
+      var lowCarry = 1.0;
+      var highCarry = 1.0;
+
+      for (final h in holes) {
+        final a = sideA.playerIds.map((p) => scoreOf(p, h)).toList();
+        final b = sideB.playerIds.map((p) => scoreOf(p, h)).toList();
+
+        // Hoyo incompleto: no se disputa ninguna categoría y el acumulado se
+        // mantiene intacto. Sin los cuatro scores no hay bola alta que comparar,
+        // y dejar correr solo la baja repartiría el hoyo a medias.
+        if (a.any((s) => s == null) || b.any((s) => s == null)) continue;
+
+        final aS = a.cast<int>()..sort();
+        final bS = b.cast<int>()..sort();
+
+        // Devuelve el nuevo valor del acumulado tras resolver la categoría.
+        double resolve({
+          required int aScore,
+          required int bScore,
+          required double carry,
+          required bool carriesHere,
+          required void Function(double) toA,
+          required void Function(double) toB,
+        }) {
+          if (aScore < bScore) {
+            toA(carry);
+            return 1.0;
+          }
+          if (bScore < aScore) {
+            toB(carry);
+            return 1.0;
+          }
+          // Empate.
+          switch (cfg.tieRule) {
+            case LowHighTieRule.split:
+              toA(carry / 2);
+              toB(carry / 2);
+              return 1.0;
+            case LowHighTieRule.carryover:
+              // Si el carryover no aplica a ESTA categoría se comporta como
+              // "sin punto": nadie suma y el valor no crece.
+              return carriesHere ? carry + 1 : 1.0;
+            case LowHighTieRule.noPoint:
+              return 1.0;
+          }
+        }
+
+        lowCarry = resolve(
+          aScore: aS.first, bScore: bS.first,
+          carry: lowCarry, carriesHere: cfg.carriesLow,
+          toA: (v) => tally.aLow += v, toB: (v) => tally.bLow += v,
+        );
+        highCarry = resolve(
+          aScore: aS.last, bScore: bS.last,
+          carry: highCarry, carriesHere: cfg.carriesHigh,
+          toA: (v) => tally.aHigh += v, toB: (v) => tally.bHigh += v,
+        );
+      }
+      return tally;
+    }
+
+    final entries = <LedgerEntry>[];
+
+    // Reparte [total] entre los cruces de ambos lados, igual que el Nassau por
+    // equipos: lo configurado es el valor del duelo completo, no por jugador.
+    void pay(double total, bool aWins, String reason) {
+      if (total <= 0) return;
+      final amount = teamCrossAmount(
+          total, sideA.playerIds.length, sideB.playerIds.length);
+      for (final pA in sideA.playerIds) {
+        for (final pB in sideB.playerIds) {
+          entries.add(LedgerEntry(
+            fromPlayerId: aWins ? pB : pA,
+            toPlayerId:   aWins ? pA : pB,
+            amount: amount,
+            betType: BetModuleType.nassauLowHigh,
+            reason: reason,
+          ));
+        }
+      }
+    }
+
+    void settle(_LowHighTally tally, double fixedAmount, bool payPoints,
+        String label) {
+      final diff = tally.diff;
+      if (diff == 0) return; // segmento empatado: no se cobra nada
+      final aWins = diff > 0;
+      final vs = '${sideA.name} vs ${sideB.name}';
+
+      if (cfg.segmentBetEnabled && fixedAmount > 0) {
+        pay(fixedAmount, aWins, '$label ($vs)');
+      }
+      if (payPoints && cfg.pointBetEnabled && cfg.amountPerPoint > 0) {
+        final pts = diff.abs();
+        pay(pts * cfg.amountPerPoint, aWins,
+            '$label · ${_fmtPoints(pts)} punto${pts == 1 ? "" : "s"} ($vs)');
+      }
+    }
+
+    // Ronda de 9 hoyos: Front y Overall cubrirían exactamente los mismos hoyos,
+    // así que cobrar los dos sería cobrar dos veces lo mismo. Se liquida uno.
+    if (seg.singleNine) {
+      if (cfg.front9Enabled || cfg.overallEnabled) {
+        settle(walk(seg.firstNine), cfg.amountForFront(),
+            cfg.pointsOnHalves || cfg.pointsOnOverall, 'Bola Baja/Alta 9 hoyos');
+      }
+      return entries;
+    }
+
+    if (cfg.front9Enabled) {
+      settle(walk(seg.firstNine), cfg.amountForFront(), cfg.pointsOnHalves,
+          'Bola Baja/Alta Front 9');
+    }
+    if (cfg.back9Enabled) {
+      settle(walk(seg.secondNine), cfg.amountForBack(), cfg.pointsOnHalves,
+          'Bola Baja/Alta Back 9');
+    }
+    if (cfg.overallEnabled) {
+      settle(walk(seg.playOrder), cfg.amountForOverall(), cfg.pointsOnOverall,
+          'Bola Baja/Alta Overall');
+    }
+    return entries;
+  }
+
+  /// Formatea puntos evitando el ".0" cuando son enteros — con la regla de
+  /// empate "dividir" pueden salir medios puntos.
+  static String _fmtPoints(double p) =>
+      p == p.roundToDouble() ? p.toStringAsFixed(0) : p.toStringAsFixed(1);
 
   // ── SKINS (equipo best-ball por hoyo) ─────────────────────────────────────
   static List<LedgerEntry> _skinsTeam(Round round, BetModuleInstance mod) {
@@ -2616,6 +2805,25 @@ class LedgerComputation {
 //
 // Ojo: "first"/"second" son lógicos, no numéricos. Con startingNine=back,
 // firstNine son los hoyos 10-18 y secondNine los 1-9.
+/// Puntos acumulados de un segmento en Bola Baja / Bola Alta.
+///
+/// Se guardan las cuatro cifras y no solo la diferencia porque la UI muestra el
+/// desglose por categoría, y porque con la regla "dividir" los totales cambian
+/// aunque la diferencia no: A y B suman medio punto cada uno y el marcador se
+/// mueve sin que nadie cobre.
+class _LowHighTally {
+  double aLow = 0;
+  double aHigh = 0;
+  double bLow = 0;
+  double bHigh = 0;
+
+  double get aTotal => aLow + aHigh;
+  double get bTotal => bLow + bHigh;
+
+  /// Positiva = gana el lado A.
+  double get diff => aTotal - bTotal;
+}
+
 class RoundSegments {
   final List<int> firstNine;
   final List<int> secondNine;

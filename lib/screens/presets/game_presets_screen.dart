@@ -845,6 +845,18 @@ class _PresetConfigWidgets {
     void Function(BetModuleInstance) update,
   ) {
     switch (cfg.type) {
+      case BetModuleType.nassauLowHigh:
+        // Necesita dos equipos de dos, y un preset guarda módulos SIN
+        // jugadores, así que aquí no hay lados que configurar.
+        return [
+          _label('BOLA BAJA / BOLA ALTA', t),
+          const SizedBox(height: 8),
+          Text(
+            'Este formato se arma con dos equipos de dos jugadores, así que '
+            'se configura dentro de la ronda y no en una configuración guardada.',
+            style: TextStyle(color: t.sub, fontSize: 12, height: 1.4),
+          ),
+        ];
       case BetModuleType.skins:
         return _skinsWidgets(cfg, t, setSt, update);
       case BetModuleType.nassau:

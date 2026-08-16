@@ -2964,6 +2964,18 @@ class _SetupScreenState extends State<SetupScreen> {
     ];
 
     switch (cfg.type) {
+      case BetModuleType.nassauLowHigh:
+        // Los lados se configuran en BetModuleEditSheet, que es el editor
+        // que tiene la sección de equipos. Aquí no hay dónde ponerlos.
+        return [
+          _sectionLabel('BOLA BAJA / BOLA ALTA', t),
+          const SizedBox(height: 8),
+          Text(
+            'Formato 2 vs 2. Toca la apuesta en la lista para armar los equipos '
+            'y configurar los montos.',
+            style: TextStyle(color: t.sub, fontSize: 12, height: 1.4),
+          ),
+        ];
       case BetModuleType.skins:
         final s = cfg.skins;
         final ctrl = _cfgCtrl('skins.value', s.valuePerSkin.toStringAsFixed(0));

@@ -1816,6 +1816,13 @@ class _BetRow extends StatelessWidget {
         return '$label · \$${mod.putts.value.toStringAsFixed(0)}/putt';
       case BetModuleType.oyeses:
         return '$label · \$${mod.oyeses.value.toStringAsFixed(0)}/oyés';
+      case BetModuleType.nassauLowHigh:
+        final lh = mod.lowHigh;
+        final partes = <String>[
+          if (lh.segmentBetEnabled) '\$${lh.segmentAmount.toStringAsFixed(0)}/seg',
+          if (lh.pointBetEnabled) '\$${lh.amountPerPoint.toStringAsFixed(0)}/pto',
+        ];
+        return '$label · ${partes.join(" + ")}';
       case BetModuleType.units:
         final rv = mod.units.representativeValue;
         return '$label · \$${rv.toStringAsFixed(0)}/u';
@@ -1832,6 +1839,8 @@ class _BetRow extends StatelessWidget {
         return mod.matchAutoPress.mode == GrossNetMode.gross ? 'Gross' : 'Net';
       case BetModuleType.medal:
         return mod.medal.mode == GrossNetMode.gross ? 'Gross' : 'Net';
+      case BetModuleType.nassauLowHigh:
+        return mod.lowHigh.mode == GrossNetMode.gross ? 'Gross' : 'Net';
       case BetModuleType.putts:
       case BetModuleType.oyeses:
       case BetModuleType.units:
@@ -1984,6 +1993,7 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
       case BetModuleType.putts:        return mod.putts.value;
       case BetModuleType.oyeses:       return mod.oyeses.value;
       case BetModuleType.units:        return mod.units.representativeValue;
+      case BetModuleType.nassauLowHigh: return mod.lowHigh.segmentAmount;
     }
   }
 
@@ -1997,6 +2007,7 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
       case BetModuleType.putts:        return {'valuePerPutt': newVal};
       case BetModuleType.oyeses:       return {'value': newVal};
       case BetModuleType.units:        return {'value': newVal};
+      case BetModuleType.nassauLowHigh: return {'segmentAmount': newVal};
     }
   }
 
@@ -2618,6 +2629,13 @@ BetModuleInstance _buildNewModuleForType(
   final participants = [p1Id, p2Id];
 
   switch (type) {
+    case BetModuleType.nassauLowHigh:
+      // Formato 2 vs 2: nace sin lados y la hoja de edición pide los equipos.
+      return BetModuleInstance(
+        id: id, type: type, name: type.label,
+        participantIds: participants,
+        nassauLowHighConfig: const NassauLowHighConfig(),
+      );
     case BetModuleType.skins:
       return BetModuleInstance(
         id: id, type: type, name: type.label,

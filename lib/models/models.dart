@@ -21,7 +21,58 @@ DateTime _parseDate(dynamic value) {
 }
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
-enum BetModuleType { skins, nassau, matchAutoPress, medal, putts, oyeses, units }
+enum BetModuleType { skins, nassau, matchAutoPress, medal, putts, oyeses, units, nassauLowHigh }
+
+/// Qué hacer cuando una categoría (bola baja o alta) queda empatada en un hoyo.
+enum LowHighTieRule {
+  /// Medio punto para cada equipo. No mueve la diferencia, pero sí los totales.
+  split,
+
+  /// Nadie suma. El punto se pierde.
+  noPoint,
+
+  /// El punto se acumula al siguiente hoyo de ESA misma categoría.
+  carryover,
+}
+
+/// A qué categorías aplica el carryover cuando [LowHighTieRule.carryover].
+enum LowHighCarryTarget { lowBall, highBall, both }
+
+/// En qué segmentos se cobra la apuesta por diferencia de puntos.
+enum PointBetScope {
+  /// Solo Front 9 y Back 9.
+  perSegment,
+
+  /// Solo el Overall de 18 hoyos.
+  overallOnly,
+
+  /// Los tres segmentos.
+  all,
+}
+
+extension LowHighTieRuleLabel on LowHighTieRule {
+  String get label => switch (this) {
+        LowHighTieRule.split => 'Dividir (½ punto)',
+        LowHighTieRule.noPoint => 'Sin punto',
+        LowHighTieRule.carryover => 'Acumular',
+      };
+
+  String get description => switch (this) {
+        LowHighTieRule.split =>
+          'Cada equipo suma medio punto. No cambia la diferencia, pero sí los totales.',
+        LowHighTieRule.noPoint => 'El punto se pierde. Nadie suma.',
+        LowHighTieRule.carryover =>
+          'El punto pasa al siguiente hoyo de esa misma bola, que vale doble.',
+      };
+}
+
+extension PointBetScopeLabel on PointBetScope {
+  String get label => switch (this) {
+        PointBetScope.perSegment => 'Front y Back',
+        PointBetScope.overallOnly => 'Solo Overall',
+        PointBetScope.all => 'Los tres',
+      };
+}
 
 /// Estructura de expansión de una apuesta.
 /// Determina cómo se generan los BetModuleInstance internos.
@@ -226,6 +277,7 @@ extension BetModuleLabel on BetModuleType {
     BetModuleType.putts:         'Putts',
     BetModuleType.oyeses:        'Oyeses',
     BetModuleType.units:         'Units',
+    BetModuleType.nassauLowHigh: 'Bola Baja / Bola Alta',
   }[this]!;
 
   String get icon => const {
@@ -236,6 +288,7 @@ extension BetModuleLabel on BetModuleType {
     BetModuleType.putts:         '⛳',
     BetModuleType.oyeses:        '🌟',
     BetModuleType.units:         '💫',
+    BetModuleType.nassauLowHigh: '⚖️',
   }[this]!;
 
   String get description => const {
@@ -246,6 +299,7 @@ extension BetModuleLabel on BetModuleType {
     BetModuleType.putts:         'Menor cantidad de putts por segmento.',
     BetModuleType.oyeses:        'Ranking en par 3s. El más cercano cobra.',
     BetModuleType.units:         'Eagles, birdies, sandy pars y más.',
+    BetModuleType.nassauLowHigh: '2 vs 2. Cada hoyo reparte un punto por la bola baja y otro por la alta.',
   }[this]!;
 }
 
@@ -580,6 +634,176 @@ class SkinsConfig {
 }
 
 // ── MatchAutoPressConfig ─────────────────────────────────────────────────────
+// ── Bola Baja / Bola Alta ─────────────────────────────────────────────────────
+//
+// Formato 2 vs 2. Cada hoyo reparte hasta DOS puntos:
+//   • bola baja  → el menor score de cada equipo, uno contra otro
+//   • bola alta  → el mayor score de cada equipo, uno contra otro
+// Las dos categorías son independientes: un equipo puede llevarse las dos,
+// repartirlas 1-1, o empatar cualquiera.
+//
+// Se acumula en tres segmentos, y el Overall NO es la suma de Front y Back: se
+// recorre la ronda completa por separado. Con carryover activo eso importa,
+// porque un punto acumulado que expira al cerrar el Front sí sigue vivo en el
+// recorrido del Overall.
+//
+// Liquidación: dos modalidades que pueden convivir y se SUMAN.
+//   • [segmentBetEnabled] → monto fijo al que gane cada segmento
+//   • [pointBetEnabled]   → monto por cada punto neto de diferencia
+class NassauLowHighConfig {
+  final GrossNetMode mode;
+  final LowHighTieRule tieRule;
+
+  // ── Segmentos activos ──────────────────────────────────────────────────────
+  final bool front9Enabled;
+  final bool back9Enabled;
+  final bool overallEnabled;
+
+  // ── Modalidades de liquidación ─────────────────────────────────────────────
+  final bool segmentBetEnabled;
+  final bool pointBetEnabled;
+
+  // ── Apuesta fija por segmento ganado ───────────────────────────────────────
+  /// Monto por defecto. Los `*Amount` lo sobrescriben por segmento cuando no
+  /// son null, para poder tener un Overall más caro sin repetir los otros dos.
+  final double segmentAmount;
+  final double? front9Amount;
+  final double? back9Amount;
+  final double? overallAmount;
+
+  // ── Apuesta por diferencia de puntos ───────────────────────────────────────
+  final double amountPerPoint;
+  final PointBetScope pointScope;
+
+  // ── Carryover ──────────────────────────────────────────────────────────────
+  /// A qué bolas aplica el acumulado. Solo tiene efecto con
+  /// [LowHighTieRule.carryover]; con las otras reglas se ignora.
+  final LowHighCarryTarget carryAppliesTo;
+
+  const NassauLowHighConfig({
+    this.mode = GrossNetMode.net,
+    this.tieRule = LowHighTieRule.noPoint,
+    this.front9Enabled = true,
+    this.back9Enabled = true,
+    this.overallEnabled = true,
+    this.segmentBetEnabled = true,
+    this.pointBetEnabled = false,
+    this.segmentAmount = 200,
+    this.front9Amount,
+    this.back9Amount,
+    this.overallAmount,
+    this.amountPerPoint = 20,
+    this.pointScope = PointBetScope.all,
+    this.carryAppliesTo = LowHighCarryTarget.both,
+  });
+
+  /// Monto fijo de un segmento, cayendo a [segmentAmount] si no tiene propio.
+  double amountForFront()   => front9Amount   ?? segmentAmount;
+  double amountForBack()    => back9Amount    ?? segmentAmount;
+  double amountForOverall() => overallAmount  ?? segmentAmount;
+
+  /// true si la apuesta por puntos aplica al Overall.
+  bool get pointsOnOverall =>
+      pointScope == PointBetScope.overallOnly || pointScope == PointBetScope.all;
+
+  /// true si la apuesta por puntos aplica a Front y Back.
+  bool get pointsOnHalves =>
+      pointScope == PointBetScope.perSegment || pointScope == PointBetScope.all;
+
+  bool get carriesLow =>
+      tieRule == LowHighTieRule.carryover &&
+      carryAppliesTo != LowHighCarryTarget.highBall;
+
+  bool get carriesHigh =>
+      tieRule == LowHighTieRule.carryover &&
+      carryAppliesTo != LowHighCarryTarget.lowBall;
+
+  /// true si hay algo que cobrar. Sin ninguna modalidad activa el módulo no
+  /// liquida nada y la UI debería impedir guardarlo así.
+  bool get hasSettlement => segmentBetEnabled || pointBetEnabled;
+
+  NassauLowHighConfig copyWith({
+    GrossNetMode? mode,
+    LowHighTieRule? tieRule,
+    bool? front9Enabled,
+    bool? back9Enabled,
+    bool? overallEnabled,
+    bool? segmentBetEnabled,
+    bool? pointBetEnabled,
+    double? segmentAmount,
+    double? front9Amount,
+    bool clearFront9Amount = false,
+    double? back9Amount,
+    bool clearBack9Amount = false,
+    double? overallAmount,
+    bool clearOverallAmount = false,
+    double? amountPerPoint,
+    PointBetScope? pointScope,
+    LowHighCarryTarget? carryAppliesTo,
+  }) =>
+      NassauLowHighConfig(
+        mode: mode ?? this.mode,
+        tieRule: tieRule ?? this.tieRule,
+        front9Enabled: front9Enabled ?? this.front9Enabled,
+        back9Enabled: back9Enabled ?? this.back9Enabled,
+        overallEnabled: overallEnabled ?? this.overallEnabled,
+        segmentBetEnabled: segmentBetEnabled ?? this.segmentBetEnabled,
+        pointBetEnabled: pointBetEnabled ?? this.pointBetEnabled,
+        segmentAmount: segmentAmount ?? this.segmentAmount,
+        front9Amount:
+            clearFront9Amount ? null : (front9Amount ?? this.front9Amount),
+        back9Amount:
+            clearBack9Amount ? null : (back9Amount ?? this.back9Amount),
+        overallAmount:
+            clearOverallAmount ? null : (overallAmount ?? this.overallAmount),
+        amountPerPoint: amountPerPoint ?? this.amountPerPoint,
+        pointScope: pointScope ?? this.pointScope,
+        carryAppliesTo: carryAppliesTo ?? this.carryAppliesTo,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'mode': mode.name,
+        'tieRule': tieRule.name,
+        'front9Enabled': front9Enabled,
+        'back9Enabled': back9Enabled,
+        'overallEnabled': overallEnabled,
+        'segmentBetEnabled': segmentBetEnabled,
+        'pointBetEnabled': pointBetEnabled,
+        'segmentAmount': segmentAmount,
+        if (front9Amount != null) 'front9Amount': front9Amount,
+        if (back9Amount != null) 'back9Amount': back9Amount,
+        if (overallAmount != null) 'overallAmount': overallAmount,
+        'amountPerPoint': amountPerPoint,
+        'pointScope': pointScope.name,
+        'carryAppliesTo': carryAppliesTo.name,
+      };
+
+  factory NassauLowHighConfig.fromJson(Map<String, dynamic> j) =>
+      NassauLowHighConfig(
+        mode: GrossNetMode.values.firstWhere(
+            (m) => m.name == j['mode'], orElse: () => GrossNetMode.net),
+        tieRule: LowHighTieRule.values.firstWhere(
+            (r) => r.name == j['tieRule'],
+            orElse: () => LowHighTieRule.noPoint),
+        front9Enabled: j['front9Enabled'] as bool? ?? true,
+        back9Enabled: j['back9Enabled'] as bool? ?? true,
+        overallEnabled: j['overallEnabled'] as bool? ?? true,
+        segmentBetEnabled: j['segmentBetEnabled'] as bool? ?? true,
+        pointBetEnabled: j['pointBetEnabled'] as bool? ?? false,
+        segmentAmount: (j['segmentAmount'] as num?)?.toDouble() ?? 200,
+        front9Amount: (j['front9Amount'] as num?)?.toDouble(),
+        back9Amount: (j['back9Amount'] as num?)?.toDouble(),
+        overallAmount: (j['overallAmount'] as num?)?.toDouble(),
+        amountPerPoint: (j['amountPerPoint'] as num?)?.toDouble() ?? 20,
+        pointScope: PointBetScope.values.firstWhere(
+            (s) => s.name == j['pointScope'],
+            orElse: () => PointBetScope.all),
+        carryAppliesTo: LowHighCarryTarget.values.firstWhere(
+            (c) => c.name == j['carryAppliesTo'],
+            orElse: () => LowHighCarryTarget.both),
+      );
+}
+
 // Configuración para el juego Match + Press Automático.
 // Un match principal (Press #1) más presiones que se abren dinámicamente
 // cuando el score del match principal alcanza abs(score) == pressTriggerValue.
@@ -1317,6 +1541,7 @@ class BetModuleInstance {
   final BetFormatMode          formatMode;
   final SkinsConfig?          skinsConfig;
   final NassauConfig?         nassauConfig;
+  final NassauLowHighConfig?  nassauLowHighConfig;
   final MatchAutoPressConfig? matchAutoPressConfig;
   final MedalConfig?          medalConfig;
   final PuttsConfig?          puttsConfig;
@@ -1386,6 +1611,7 @@ class BetModuleInstance {
     this.formatMode = BetFormatMode.onePot,
     this.skinsConfig,
     this.nassauConfig,
+    this.nassauLowHighConfig,
     this.matchAutoPressConfig,
     this.medalConfig,
     this.puttsConfig,
@@ -1427,6 +1653,7 @@ class BetModuleInstance {
 
   SkinsConfig          get skins          => skinsConfig          ?? SkinsConfig.def;
   NassauConfig         get nassau         => nassauConfig         ?? NassauConfig.def;
+  NassauLowHighConfig  get lowHigh        => nassauLowHighConfig  ?? const NassauLowHighConfig();
   MatchAutoPressConfig get matchAutoPress => matchAutoPressConfig ?? MatchAutoPressConfig.def;
   MedalConfig          get medal          => medalConfig          ?? MedalConfig.def;
   PuttsConfig          get putts          => puttsConfig          ?? PuttsConfig.def;
@@ -1442,11 +1669,15 @@ class BetModuleInstance {
     BetModuleType.putts         => putts.value,
     BetModuleType.oyeses        => oyeses.value,
     BetModuleType.units         => units.valueFor(UnitEventType.birdie),
+    // Sin un importe único: tiene fijo por segmento y variable por punto.
+    // Se expone el fijo por ser el que domina la liquidación típica.
+    BetModuleType.nassauLowHigh => lowHigh.segmentAmount,
   };
 
   bool get useHandicap => switch (type) {
     BetModuleType.skins         => skins.mode == GrossNetMode.net,
     BetModuleType.nassau        => nassau.mode == GrossNetMode.net,
+    BetModuleType.nassauLowHigh => lowHigh.mode == GrossNetMode.net,
     BetModuleType.matchAutoPress=> matchAutoPress.mode == GrossNetMode.net,
     BetModuleType.medal         => medal.mode == GrossNetMode.net,
     _                           => false,
@@ -1485,6 +1716,14 @@ class BetModuleInstance {
                             '${oyeses.zapatoEnabled ? ' · zapato 👟' : ''}',
     BetModuleType.units  => '\$${units.representativeValue.toStringAsFixed(0)} / unidad'
                             ' · ${UnitEventType.values.length} eventos',
+    BetModuleType.nassauLowHigh => () {
+      final c = lowHigh;
+      final partes = <String>[
+        if (c.segmentBetEnabled) '\$${c.segmentAmount.toStringAsFixed(0)}/segmento',
+        if (c.pointBetEnabled)   '\$${c.amountPerPoint.toStringAsFixed(0)}/punto',
+      ];
+      return '\${partes.join(" + ")} · \${c.mode == GrossNetMode.net ? "Net" : "Gross"}';
+    }(),
   };
 
   // ── copyWith ──────────────────────────────────────────────────────────────
@@ -1498,6 +1737,7 @@ class BetModuleInstance {
     BetFormatMode?        formatMode,
     SkinsConfig?          skinsConfig,
     NassauConfig?         nassauConfig,
+    NassauLowHighConfig?  nassauLowHighConfig,
     MatchAutoPressConfig? matchAutoPressConfig,
     MedalConfig?          medalConfig,
     PuttsConfig?          puttsConfig,
@@ -1526,6 +1766,7 @@ class BetModuleInstance {
     formatMode:           formatMode           ?? this.formatMode,
     skinsConfig:          skinsConfig          ?? this.skinsConfig,
     nassauConfig:         nassauConfig         ?? this.nassauConfig,
+    nassauLowHighConfig:  nassauLowHighConfig  ?? this.nassauLowHighConfig,
     matchAutoPressConfig: matchAutoPressConfig ?? this.matchAutoPressConfig,
     medalConfig:          medalConfig          ?? this.medalConfig,
     puttsConfig:          puttsConfig          ?? this.puttsConfig,
@@ -1577,6 +1818,7 @@ class BetModuleInstance {
     if (sides != null) 'sides': sides!.map((s) => s.toJson()).toList(),
     if (skinsConfig          != null) 'skinsConfig':          skinsConfig!.toJson(),
     if (nassauConfig         != null) 'nassauConfig':         nassauConfig!.toJson(),
+    if (nassauLowHighConfig  != null) 'nassauLowHighConfig':  nassauLowHighConfig!.toJson(),
     if (matchAutoPressConfig != null) 'matchAutoPressConfig': matchAutoPressConfig!.toJson(),
     if (medalConfig          != null) 'medalConfig':          medalConfig!.toJson(),
     if (puttsConfig          != null) 'puttsConfig':          puttsConfig!.toJson(),
@@ -1715,6 +1957,7 @@ class BetModuleInstance {
         formatMode:            formatMode,
         skinsConfig:           skinsConfig,
         nassauConfig:          nassauConfig,
+        nassauLowHighConfig:   nassauLowHighConfig,
         matchAutoPressConfig:  matchAutoPressConfig,
         medalConfig:           medalConfig,
         puttsConfig:           puttsConfig,
@@ -1747,6 +1990,7 @@ class BetModuleInstance {
       BetModuleType.putts          => putts.toJson(),
       BetModuleType.oyeses         => oyeses.toJson(),
       BetModuleType.units          => units.toJson(),
+      BetModuleType.nassauLowHigh  => lowHigh.toJson(),
     };
     // Orden estable: el mapa podría iterar distinto entre instancias
     final keys = cfg.keys.toList()..sort();
@@ -1904,6 +2148,7 @@ class BetModuleInstance {
       sides: sides,
       skinsConfig:          type == BetModuleType.skins         ? SkinsConfig.def          : null,
       nassauConfig:         type == BetModuleType.nassau        ? NassauConfig.def         : null,
+      nassauLowHighConfig:  type == BetModuleType.nassauLowHigh ? const NassauLowHighConfig() : null,
       matchAutoPressConfig: type == BetModuleType.matchAutoPress? MatchAutoPressConfig.def : null,
       medalConfig:          type == BetModuleType.medal         ? MedalConfig.def          : null,
       puttsConfig:          type == BetModuleType.putts         ? PuttsConfig.def          : null,
@@ -1939,6 +2184,7 @@ class BetModuleInstance {
     // Configuración tipada opcional: si null se usan los defaults.
     SkinsConfig?          skinsConfig,
     NassauConfig?         nassauConfig,
+    NassauLowHighConfig?  nassauLowHighConfig,
     MatchAutoPressConfig? matchAutoPressConfig,
     MedalConfig?          medalConfig,
     PuttsConfig?          puttsConfig,
@@ -1961,6 +2207,7 @@ class BetModuleInstance {
         pairConfigOverrides:   pairConfigOverrides,
         skinsConfig:          skinsConfig          ?? (type == BetModuleType.skins         ? SkinsConfig.def          : null),
         nassauConfig:         nassauConfig         ?? (type == BetModuleType.nassau        ? NassauConfig.def         : null),
+        nassauLowHighConfig:  nassauLowHighConfig  ?? (type == BetModuleType.nassauLowHigh ? const NassauLowHighConfig() : null),
         matchAutoPressConfig: matchAutoPressConfig ?? (type == BetModuleType.matchAutoPress? MatchAutoPressConfig.def : null),
         medalConfig:          medalConfig          ?? (type == BetModuleType.medal         ? MedalConfig.def          : null),
         puttsConfig:          puttsConfig          ?? (type == BetModuleType.putts         ? PuttsConfig.def          : null),
@@ -1980,6 +2227,7 @@ class BetModuleInstance {
         betGroupName:  betGroupName,
         skinsConfig:          skinsConfig          ?? (type == BetModuleType.skins         ? SkinsConfig.def          : null),
         nassauConfig:         nassauConfig         ?? (type == BetModuleType.nassau        ? NassauConfig.def         : null),
+        nassauLowHighConfig:  nassauLowHighConfig  ?? (type == BetModuleType.nassauLowHigh ? const NassauLowHighConfig() : null),
         matchAutoPressConfig: matchAutoPressConfig ?? (type == BetModuleType.matchAutoPress? MatchAutoPressConfig.def : null),
         medalConfig:          medalConfig          ?? (type == BetModuleType.medal         ? MedalConfig.def          : null),
         puttsConfig:          puttsConfig          ?? (type == BetModuleType.putts         ? PuttsConfig.def          : null),
@@ -2718,6 +2966,7 @@ class BetModuleTemplate {
   final PuttsConfig?             puttsConfig;
   final OyesesConfig?            oyesesConfig;
   final UnitsConfig?             unitsConfig;
+  final NassauLowHighConfig?     nassauLowHighConfig;
 
   const BetModuleTemplate({
     required this.type,
@@ -2729,11 +2978,13 @@ class BetModuleTemplate {
     this.puttsConfig,
     this.oyesesConfig,
     this.unitsConfig,
+    this.nassauLowHighConfig,
   });
 
   // ── Getters de acceso rápido (igual que BetModuleInstance) ─────────────────
   SkinsConfig          get skins  => skinsConfig          ?? SkinsConfig.def;
   NassauConfig         get nassau => nassauConfig         ?? NassauConfig.def;
+  NassauLowHighConfig  get lowHigh => nassauLowHighConfig ?? const NassauLowHighConfig();
   MedalConfig          get medal  => medalConfig          ?? MedalConfig.def;
   PuttsConfig          get putts  => puttsConfig          ?? PuttsConfig.def;
   OyesesConfig         get oyeses => oyesesConfig         ?? OyesesConfig.def;
@@ -2759,6 +3010,8 @@ class BetModuleTemplate {
         return '\$${oyeses.value.toStringAsFixed(0)}/oyés';
       case BetModuleType.units:
         return '\$${units.representativeValue.toStringAsFixed(0)}/u';
+      case BetModuleType.nassauLowHigh:
+        return '\$${lowHigh.segmentAmount.toStringAsFixed(0)}/segmento';
     }
   }
 
@@ -2772,6 +3025,7 @@ class BetModuleTemplate {
     puttsConfig:          t == BetModuleType.putts         ? PuttsConfig.def          : null,
     oyesesConfig:         t == BetModuleType.oyeses        ? OyesesConfig.def         : null,
     unitsConfig:          t == BetModuleType.units         ? UnitsConfig.def          : null,
+    nassauLowHighConfig:  t == BetModuleType.nassauLowHigh? const NassauLowHighConfig() : null,
   );
 
   /// Convierte la plantilla a un BetModuleInstance 1v1 listo para el engine.

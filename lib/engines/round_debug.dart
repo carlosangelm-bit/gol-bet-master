@@ -500,6 +500,9 @@ class RoundDebug {
       BetModuleType.putts   => '\$${m.putts.value.toStringAsFixed(0)}/putt ${m.putts.puttsMode.name}',
       BetModuleType.units   => 'birdie=\$${m.units.valueFor(UnitEventType.birdie).toStringAsFixed(0)}',
       BetModuleType.matchAutoPress => '\$${m.matchAutoPress.matchValue.toStringAsFixed(0)} trigger=${m.matchAutoPress.pressTriggerValue}',
+      BetModuleType.nassauLowHigh => 'seg=\$${m.lowHigh.segmentAmount.toStringAsFixed(0)} '
+          'pto=\$${m.lowHigh.amountPerPoint.toStringAsFixed(0)} '
+          'tie=${m.lowHigh.tieRule.name} ${m.lowHigh.mode.name}',
     };
   }
 }

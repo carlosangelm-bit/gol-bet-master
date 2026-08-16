@@ -54,6 +54,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   late final TextEditingController _medalCtrl;
   late final TextEditingController _puttsCtrl;
   late final TextEditingController _oyesCtrl, _zapatoCtrl;
+  late final TextEditingController _lhSegCtrl, _lhPointCtrl;
   late final Map<UnitEventType, TextEditingController> _unitCtrls;
 
   // ── Estado de configuración de lados ──────────────────────────────────────
@@ -98,6 +99,8 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _medalCtrl  = TextEditingController(text: m.medal.value.toStringAsFixed(0));
     _puttsCtrl  = TextEditingController(text: m.putts.value.toStringAsFixed(0));
     _oyesCtrl   = TextEditingController(text: m.oyeses.value.toStringAsFixed(0));
+    _lhSegCtrl   = TextEditingController(text: m.lowHigh.segmentAmount.toStringAsFixed(0));
+    _lhPointCtrl = TextEditingController(text: m.lowHigh.amountPerPoint.toStringAsFixed(0));
     _zapatoCtrl = TextEditingController(
         text: m.oyeses.zapatoValue > 0 ? m.oyeses.zapatoValue.toStringAsFixed(0) : '');
     _unitCtrls  = {
@@ -147,6 +150,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _medalCtrl.dispose();
     _puttsCtrl.dispose();
     _oyesCtrl.dispose(); _zapatoCtrl.dispose();
+    _lhSegCtrl.dispose(); _lhPointCtrl.dispose();
     for (final c in _unitCtrls.values) {
       c.dispose();
     }
@@ -347,8 +351,175 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       case BetModuleType.putts:         return _puttsFields(t);
       case BetModuleType.oyeses:        return _oyesesFields(t);
       case BetModuleType.units:         return _unitsFields(t);
+      case BetModuleType.nassauLowHigh: return _lowHighFields(t);
     }
   }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // BOLA BAJA / BOLA ALTA
+  // ══════════════════════════════════════════════════════════════════════════
+
+  NassauLowHighConfig get _lh => _current.lowHigh;
+
+  void _setLH(NassauLowHighConfig cfg) =>
+      setState(() => _current = _current.copyWith(nassauLowHighConfig: cfg));
+
+  List<Widget> _lowHighFields(GolfTheme t) {
+    final c = _lh;
+    return [
+      // Los lados se arman en la sección de equipos de este mismo sheet.
+      _lhBanner(
+        'Cada hoyo reparte hasta dos puntos: uno para la bola baja (el mejor '
+        'score de cada equipo) y otro para la bola alta (el peor). Se acumulan '
+        'en Front 9, Back 9 y Overall.',
+        t,
+      ),
+      const SizedBox(height: 18),
+
+      _label('SCORE', t),
+      const SizedBox(height: 8),
+      _segmented(['Gross', 'Net'], c.mode == GrossNetMode.net ? 1 : 0, t, (i) {
+        _setLH(c.copyWith(
+            mode: i == 1 ? GrossNetMode.net : GrossNetMode.gross));
+      }),
+      const SizedBox(height: 18),
+
+      _label('SEGMENTOS QUE SE JUEGAN', t),
+      const SizedBox(height: 8),
+      _lhToggle('Front 9', c.front9Enabled, t,
+          (v) => _setLH(c.copyWith(front9Enabled: v))),
+      _lhToggle('Back 9', c.back9Enabled, t,
+          (v) => _setLH(c.copyWith(back9Enabled: v))),
+      _lhToggle('Overall (18 hoyos)', c.overallEnabled, t,
+          (v) => _setLH(c.copyWith(overallEnabled: v))),
+      const SizedBox(height: 18),
+
+      _label('EMPATE EN UNA BOLA', t),
+      const SizedBox(height: 8),
+      _segmented(
+        LowHighTieRule.values.map((r) => r.label).toList(),
+        LowHighTieRule.values.indexOf(c.tieRule),
+        t,
+        (i) => _setLH(c.copyWith(tieRule: LowHighTieRule.values[i])),
+      ),
+      const SizedBox(height: 6),
+      Text(c.tieRule.description,
+          style: TextStyle(color: t.sub, fontSize: 11, height: 1.35)),
+
+      // El destino del acumulado solo importa si la regla es acumular.
+      if (c.tieRule == LowHighTieRule.carryover) ...[
+        const SizedBox(height: 12),
+        _label('EL ACUMULADO APLICA A', t),
+        const SizedBox(height: 8),
+        _segmented(
+          const ['Bola baja', 'Bola alta', 'Las dos'],
+          LowHighCarryTarget.values.indexOf(c.carryAppliesTo),
+          t,
+          (i) => _setLH(
+              c.copyWith(carryAppliesTo: LowHighCarryTarget.values[i])),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'El acumulado de cada bola corre por separado y expira al cerrar el '
+          'segmento. El Overall lleva su propia cuenta sobre los 18 hoyos.',
+          style: TextStyle(color: t.sub, fontSize: 11, height: 1.35),
+        ),
+      ],
+      const SizedBox(height: 22),
+
+      // ── Modalidad 1: fijo por segmento ──────────────────────────────────
+      _lhToggle('Apuesta fija por segmento ganado', c.segmentBetEnabled, t,
+          (v) => _setLH(c.copyWith(segmentBetEnabled: v)),
+          bold: true),
+      if (c.segmentBetEnabled) ...[
+        const SizedBox(height: 10),
+        _amountField('Monto por segmento', _lhSegCtrl, t, onChanged: (v) {
+          _setLH(_lh.copyWith(segmentAmount: v));
+        }),
+        const SizedBox(height: 6),
+        Text(
+          'Se aplica a cada segmento activo. Para montos distintos por '
+          'segmento, ajústalos después de crear la apuesta.',
+          style: TextStyle(color: t.sub, fontSize: 11, height: 1.35),
+        ),
+      ],
+      const SizedBox(height: 18),
+
+      // ── Modalidad 2: variable por punto ─────────────────────────────────
+      _lhToggle('Apuesta por diferencia de puntos', c.pointBetEnabled, t,
+          (v) => _setLH(c.copyWith(pointBetEnabled: v)),
+          bold: true),
+      if (c.pointBetEnabled) ...[
+        const SizedBox(height: 10),
+        _amountField('Monto por punto', _lhPointCtrl, t, onChanged: (v) {
+          _setLH(_lh.copyWith(amountPerPoint: v));
+        }),
+        const SizedBox(height: 12),
+        _label('SE COBRA EN', t),
+        const SizedBox(height: 8),
+        _segmented(
+          PointBetScope.values.map((s) => s.label).toList(),
+          PointBetScope.values.indexOf(c.pointScope),
+          t,
+          (i) => _setLH(c.copyWith(pointScope: PointBetScope.values[i])),
+        ),
+      ],
+
+      // Sin ninguna modalidad activa el módulo no liquida nada.
+      if (!c.hasSettlement) ...[
+        const SizedBox(height: 16),
+        _lhBanner(
+          'Activa al menos una modalidad: así configurada, esta apuesta no '
+          'cobra nada.',
+          t,
+          warning: true,
+        ),
+      ],
+    ];
+  }
+
+  Widget _lhBanner(String text, GolfTheme t, {bool warning = false}) {
+    final color = warning ? t.loss : t.primary;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(children: [
+        Icon(warning ? Icons.warning_amber_rounded : Icons.info_outline,
+            color: color, size: 14),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(text,
+              style: TextStyle(color: color, fontSize: 11, height: 1.35)),
+        ),
+      ]),
+    );
+  }
+
+  Widget _lhToggle(String label, bool value, GolfTheme t,
+          void Function(bool) onChanged, {bool bold = false}) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(children: [
+          Expanded(
+            child: Text(label,
+                style: TextStyle(
+                    color: t.text,
+                    fontSize: bold ? 14 : 13,
+                    fontWeight: bold ? FontWeight.w800 : FontWeight.w600)),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeThumbColor: t.accent,
+            activeTrackColor: t.accent.withValues(alpha: 0.4),
+            inactiveTrackColor: t.divider,
+          ),
+        ]),
+      );
 
   // ══════════════════════════════════════════════════════════════════════════
   // SECCIÓN DE ALCANCE — quién juega esta apuesta
