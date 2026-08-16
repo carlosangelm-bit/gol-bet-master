@@ -641,7 +641,7 @@ class _HandicapStats extends StatelessWidget {
       _StatBox(
         label: 'Mejor\ndiferencial',
         value: best?.differential.toStringAsFixed(1) ?? '—',
-        color: t.profit, t: t,
+        color: t.primary, t: t,
       ),
     ]);
   }
@@ -1091,7 +1091,7 @@ class _ProfileFormSheetState extends State<_ProfileFormSheet> {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
       ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-        backgroundColor: widget.t.loss,
+        backgroundColor: widget.t.danger,
         content: const Text('El nombre no puede estar vacío'),
       ));
       return;
@@ -1124,7 +1124,7 @@ class _ProfileFormSheetState extends State<_ProfileFormSheet> {
       if (kDebugMode) debugPrint('_ProfileFormSheet save error: $e');
       if (ctx.mounted) {
         ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-          backgroundColor: widget.t.loss,
+          backgroundColor: widget.t.danger,
           content: Text('Error al guardar: $e'),
         ));
       }
@@ -1589,7 +1589,7 @@ class _FavCoursePickerSheetState extends State<_FavCoursePickerSheet> {
 
   Widget _buildResults(BuildContext ctx, GolfTheme t) {
     if (_searching) return Center(child: CircularProgressIndicator(color: t.primary));
-    if (_error != null) return Center(child: Text(_error!, style: TextStyle(color: t.loss)));
+    if (_error != null) return Center(child: Text(_error!, style: TextStyle(color: t.danger)));
     if (_results.isEmpty && _ctrl.text.length >= 2) {
       return Center(child: Text('Sin resultados',
           style: TextStyle(color: t.sub, fontSize: 14)));

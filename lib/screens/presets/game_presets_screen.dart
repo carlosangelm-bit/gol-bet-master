@@ -78,10 +78,10 @@ class _GamePresetsScreenState extends State<GamePresetsScreen> {
             Container(
               width: 70, height: 70,
               decoration: BoxDecoration(
-                color: t.loss.withValues(alpha: 0.1),
+                color: t.danger.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(18),
               ),
-              child: Icon(Icons.wifi_off_outlined, color: t.loss, size: 36),
+              child: Icon(Icons.wifi_off_outlined, color: t.danger, size: 36),
             ),
             const SizedBox(height: 20),
             Text('Error de conexión',
@@ -210,7 +210,7 @@ class _GamePresetsScreenState extends State<GamePresetsScreen> {
             const SizedBox(width: 8),
             GestureDetector(
               onTap: () => _confirmDelete(context, t, preset),
-              child: Icon(Icons.delete_outline, color: t.loss.withValues(alpha: 0.7), size: 20),
+              child: Icon(Icons.delete_outline, color: t.danger.withValues(alpha: 0.7), size: 20),
             ),
           ]),
 
@@ -278,7 +278,7 @@ class _GamePresetsScreenState extends State<GamePresetsScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Eliminar', style: TextStyle(color: t.loss)),
+            child: Text('Eliminar', style: TextStyle(color: t.danger)),
           ),
         ],
       ),
@@ -748,14 +748,14 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
       ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-        backgroundColor: t.loss,
+        backgroundColor: t.danger,
         content: const Text('El nombre es requerido'),
       ));
       return;
     }
     if (_modules.isEmpty) {
       ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-        backgroundColor: t.loss,
+        backgroundColor: t.danger,
         content: const Text('Agrega al menos una apuesta'),
       ));
       return;
@@ -788,7 +788,7 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
           msg = 'Error al guardar. Intenta de nuevo.';
         }
         ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-          backgroundColor: t.loss,
+          backgroundColor: t.danger,
           content: Text(msg),
           duration: const Duration(seconds: 4),
         ));

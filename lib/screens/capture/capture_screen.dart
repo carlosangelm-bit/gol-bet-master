@@ -701,7 +701,7 @@ class _ScoreStepper extends StatelessWidget {
     final borderWidth  = hasScore ? 1.5 : 1.0;
 
     return Row(mainAxisSize: MainAxisSize.min, children: [
-      _stepBtn(Icons.remove, t.loss, onDec, t),
+      _stepBtn(Icons.remove, t.sub, onDec, t),
       const SizedBox(width: 4),
       GestureDetector(
         // Toque en el círculo cuando no hay score → registra el par
@@ -725,7 +725,7 @@ class _ScoreStepper extends StatelessWidget {
         ),
       ),
       const SizedBox(width: 4),
-      _stepBtn(Icons.add, t.profit, onInc, t),
+      _stepBtn(Icons.add, t.primary, onInc, t),
     ]);
   }
 
@@ -876,7 +876,7 @@ class _ActivePlayerZoneState extends State<_ActivePlayerZone> {
           if (score.hasScore)
             GestureDetector(
               onTap: () => prov.updateScore(widget.activePlayerId, widget.hole, null, 0),
-              child: Text('Borrar', style: TextStyle(color: t.loss.withValues(alpha: 0.7), fontSize: 11, fontWeight: FontWeight.w600)),
+              child: Text('Borrar', style: TextStyle(color: t.danger.withValues(alpha: 0.7), fontSize: 11, fontWeight: FontWeight.w600)),
             ),
         ]),
         const SizedBox(height: 10),

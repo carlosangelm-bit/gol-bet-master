@@ -123,12 +123,12 @@ class _PlayersScreenState extends State<PlayersScreen> {
             Container(
               width: 70, height: 70,
               decoration: BoxDecoration(
-                color: t.loss.withValues(alpha: 0.1),
+                color: t.danger.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Icon(
                 isBlocked ? Icons.block_outlined : Icons.cloud_off_outlined,
-                color: t.loss, size: 36,
+                color: t.danger, size: 36,
               ),
             ),
             const SizedBox(height: 16),
@@ -272,7 +272,7 @@ class _PlayersScreenState extends State<PlayersScreen> {
           TextButton(onPressed: () => Navigator.pop(d, false),
               child: Text('Cancelar', style: TextStyle(color: t.sub))),
           TextButton(onPressed: () => Navigator.pop(d, true),
-              child: Text('Quitar', style: TextStyle(color: t.loss))),
+              child: Text('Quitar', style: TextStyle(color: t.danger))),
         ],
       ),
     );
@@ -433,7 +433,7 @@ class _PlayerTile extends StatelessWidget {
                     child: Text(
                       '${sliding > 0 ? '+' : ''}${sliding.toStringAsFixed(0)} slide',
                       style: TextStyle(
-                        color: sliding > 0 ? t.profit : t.loss,
+                        color: sliding > 0 ? t.primary : t.sub,
                         fontSize: 10, fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -480,7 +480,7 @@ class _PlayerTile extends StatelessWidget {
               GestureDetector(
                 onTap: onDelete,
                 child: Icon(Icons.remove_circle_outline,
-                    color: t.loss.withValues(alpha: 0.6), size: 20),
+                    color: t.danger.withValues(alpha: 0.6), size: 20),
               ),
             ]),
           ]),
@@ -710,16 +710,16 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
               style: TextStyle(
                 color: _slidingVal == 0
                     ? t.sub
-                    : _slidingVal > 0 ? t.profit : t.loss,
+                    : _slidingVal > 0 ? t.primary : t.sub,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 8),
             Row(children: [
-              _slidingBtn('−5', t.loss, () => setState(() => _slidingVal -= 5), t),
+              _slidingBtn('−5', t.sub, () => setState(() => _slidingVal -= 5), t),
               const SizedBox(width: 4),
-              _slidingBtn('−1', t.loss, () => setState(() => _slidingVal -= 1), t),
+              _slidingBtn('−1', t.sub, () => setState(() => _slidingVal -= 1), t),
               const SizedBox(width: 8),
               Expanded(
                 child: Container(
@@ -727,12 +727,12 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
                   decoration: BoxDecoration(
                     color: _slidingVal == 0
                         ? t.surface
-                        : (_slidingVal > 0 ? t.profit : t.loss).withValues(alpha: 0.08),
+                        : (_slidingVal > 0 ? t.primary : t.sub).withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
                       color: _slidingVal == 0
                           ? t.divider
-                          : (_slidingVal > 0 ? t.profit : t.loss).withValues(alpha: 0.5),
+                          : (_slidingVal > 0 ? t.primary : t.sub).withValues(alpha: 0.5),
                       width: _slidingVal == 0 ? 1 : 1.5,
                     ),
                   ),
@@ -742,7 +742,7 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
                       style: TextStyle(
                         color: _slidingVal == 0
                             ? t.sub
-                            : (_slidingVal > 0 ? t.profit : t.loss),
+                            : (_slidingVal > 0 ? t.primary : t.sub),
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
                       ),
@@ -751,9 +751,9 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
                 ),
               ),
               const SizedBox(width: 8),
-              _slidingBtn('+1', t.profit, () => setState(() => _slidingVal += 1), t),
+              _slidingBtn('+1', t.primary, () => setState(() => _slidingVal += 1), t),
               const SizedBox(width: 4),
-              _slidingBtn('+5', t.profit, () => setState(() => _slidingVal += 5), t),
+              _slidingBtn('+5', t.primary, () => setState(() => _slidingVal += 5), t),
             ]),
             if (_slidingVal != 0) ...[
               const SizedBox(height: 6),
@@ -815,12 +815,12 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: isLinked
-            ? t.profit.withValues(alpha: 0.06)
+            ? t.primary.withValues(alpha: 0.06)
             : t.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isLinked
-              ? t.profit.withValues(alpha: 0.3)
+              ? t.primary.withValues(alpha: 0.3)
               : t.divider,
         ),
       ),
@@ -829,14 +829,14 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
         Row(children: [
           Icon(
             isLinked ? Icons.link : Icons.link_off,
-            color: isLinked ? t.profit : t.sub,
+            color: isLinked ? t.primary : t.sub,
             size: 18,
           ),
           const SizedBox(width: 8),
           Text(
             'CUENTA VINCULADA',
             style: TextStyle(
-              color: isLinked ? t.profit : t.sub,
+              color: isLinked ? t.primary : t.sub,
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
@@ -854,7 +854,7 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
                 SizedBox(
                   width: 14, height: 14,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: t.profit),
+                      strokeWidth: 2, color: t.primary),
                 ),
                 const SizedBox(width: 8),
                 Text('Cargando info...', style: TextStyle(color: t.sub, fontSize: 12)),
@@ -862,7 +862,7 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
             )
           else ...[
             Row(children: [
-              Icon(Icons.verified_user_outlined, color: t.profit, size: 14),
+              Icon(Icons.verified_user_outlined, color: t.primary, size: 14),
               const SizedBox(width: 6),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -881,10 +881,10 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
             GestureDetector(
               onTap: () => _confirmUnlink(context, t),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.link_off, color: t.loss, size: 14),
+                Icon(Icons.link_off, color: t.danger, size: 14),
                 const SizedBox(width: 4),
                 Text('Desvincular cuenta',
-                    style: TextStyle(color: t.loss, fontSize: 12,
+                    style: TextStyle(color: t.danger, fontSize: 12,
                         fontWeight: FontWeight.w600)),
               ]),
             ),
@@ -960,7 +960,7 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
             Row(children: [
               Icon(
                 _linkSuccess ? Icons.check_circle_outline : Icons.info_outline,
-                color: _linkSuccess ? t.profit : t.loss,
+                color: _linkSuccess ? t.primary : t.danger,
                 size: 14,
               ),
               const SizedBox(width: 6),
@@ -968,7 +968,7 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
                 child: Text(
                   _linkMsg!,
                   style: TextStyle(
-                    color: _linkSuccess ? t.profit : t.loss,
+                    color: _linkSuccess ? t.primary : t.danger,
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -1068,7 +1068,7 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
           TextButton(onPressed: () => Navigator.pop(d, false),
               child: Text('Cancelar', style: TextStyle(color: t.sub))),
           TextButton(onPressed: () => Navigator.pop(d, true),
-              child: Text('Desvincular', style: TextStyle(color: t.loss))),
+              child: Text('Desvincular', style: TextStyle(color: t.danger))),
         ],
       ),
     );
@@ -1093,7 +1093,7 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
       ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-        backgroundColor: widget.t.loss,
+        backgroundColor: widget.t.danger,
         content: const Text('El nombre no puede estar vacío'),
       ));
       return;
@@ -1111,7 +1111,7 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
       if (kDebugMode) debugPrint('Error saving player: $e');
       if (ctx.mounted) {
         ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-          backgroundColor: widget.t.loss,
+          backgroundColor: widget.t.danger,
           content: Text('Error al guardar: $e'),
         ));
       }

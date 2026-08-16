@@ -2298,9 +2298,9 @@ class _ActiveRoundView extends StatelessWidget {
                             ]),
                             const SizedBox(height: 10),
                             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                              _handicapBtn('−5', t.loss, () => applyEdit(current - 5)),
+                              _handicapBtn('−5', t.sub, () => applyEdit(current - 5)),
                               const SizedBox(width: 6),
-                              _handicapBtn('−1', t.loss, () => applyEdit(current - 1)),
+                              _handicapBtn('−1', t.sub, () => applyEdit(current - 1)),
                               const SizedBox(width: 10),
                               Container(
                                 width: 52, height: 40,
@@ -2315,9 +2315,9 @@ class _ActiveRoundView extends StatelessWidget {
                                 )),
                               ),
                               const SizedBox(width: 10),
-                              _handicapBtn('+1', t.profit, () => applyEdit(current + 1)),
+                              _handicapBtn('+1', t.primary, () => applyEdit(current + 1)),
                               const SizedBox(width: 6),
-                              _handicapBtn('+5', t.profit, () => applyEdit(current + 5)),
+                              _handicapBtn('+5', t.primary, () => applyEdit(current + 5)),
                             ]),
                           ]),
                         ),
@@ -3216,7 +3216,7 @@ class _ActiveRoundView extends StatelessWidget {
       content: Text('Se perderán todos los datos de esta ronda.', style: TextStyle(color: t.sub)),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancelar', style: TextStyle(color: t.sub))),
-        TextButton(onPressed: () { prov.resetRound(); Navigator.pop(ctx); }, child: Text('Abandonar', style: TextStyle(color: t.loss, fontWeight: FontWeight.w700))),
+        TextButton(onPressed: () { prov.resetRound(); Navigator.pop(ctx); }, child: Text('Abandonar', style: TextStyle(color: t.danger, fontWeight: FontWeight.w700))),
       ],
     ));
   }

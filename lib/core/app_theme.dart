@@ -32,6 +32,25 @@ class _P {
   static const cGlassBordLo   = Color(0x0DFFFFFF);
   static const cGlassShadow   = Color(0x40000000);
 
+  // ── Sistema: peligro y saldo cero ──────────────────────────────────────────
+  //
+  // danger NO es loss. Rojo de error y rojo de "pagas" son dos mensajes
+  // distintos, y compartir token impedía distinguirlos en código o cambiar uno
+  // sin el otro. Arrancan con el mismo tono en claro y oscuro para que la
+  // migración no altere nada visualmente; separarlos después es cambiar un
+  // valor. En clásico sí difieren desde ya: cLoss es un rosa pálido que como
+  // color de error no se lee.
+  static const lDanger = Color(0xFFC62828);
+  static const dDanger = Color(0xFFEF5350);
+  static const cDanger = Color(0xFFE57373);
+
+  // "En ceros" es un estado del dinero, no la ausencia de dato: mereces saber
+  // que quedaste a mano, no ver un gris de campo vacío. Tono frío y neutro,
+  // distinto tanto de sub como de los dos colores del dinero.
+  static const lEven = Color(0xFF546E7A);
+  static const dEven = Color(0xFFB0BEC5);
+  static const cEven = Color(0xFFB0BEC5);
+
   // Light
   static const lBg      = Color(0xFFFFFFFF);
   static const lSurface = Color(0xFFF5F5F5);
@@ -98,6 +117,20 @@ class GolfTheme {
   /// Sombra amplia y suave: separa la tarjeta del fondo sin dibujarle un marco.
   final Color glassShadow;
 
+  /// Rojo de SISTEMA: error, validación fallida, acción destructiva.
+  ///
+  /// Distinto de [loss] a propósito, aunque hoy compartan tono: uno dice "algo
+  /// va mal", el otro "pagas dinero". Con un solo token no se podía auditar
+  /// cuál era cuál ni ajustar uno sin arrastrar el otro.
+  final Color danger;
+
+  /// Saldo cero: ni cobras ni pagas, quedaste a mano.
+  ///
+  /// Token propio y no [sub] porque es un RESULTADO del dinero, no un dato
+  /// ausente. Verlo en el mismo gris que un campo vacío lo degrada a "no hay
+  /// información" cuando en realidad la hay.
+  final Color even;
+
   /// Sigma del desenfoque de fondo. Vive en el tema para poder calibrarlo en un
   /// solo sitio: es el parámetro que decide si el efecto se ve o si el frame
   /// time se dispara.
@@ -114,6 +147,8 @@ class GolfTheme {
     required this.glassBorderHi,
     required this.glassBorderLo,
     required this.glassShadow,
+    required this.danger,
+    required this.even,
     this.glassBlur = 20,
   });
 
@@ -128,6 +163,8 @@ class GolfTheme {
     glassBorderHi: _P.lGlassBordHi,
     glassBorderLo: _P.lGlassBordLo,
     glassShadow: _P.lGlassShadow,
+    danger: _P.lDanger,
+    even: _P.lEven,
   );
 
   static const dark = GolfTheme._(
@@ -141,6 +178,8 @@ class GolfTheme {
     glassBorderHi: _P.dGlassBordHi,
     glassBorderLo: _P.dGlassBordLo,
     glassShadow: _P.dGlassShadow,
+    danger: _P.dDanger,
+    even: _P.dEven,
   );
 
   static const classic = GolfTheme._(
@@ -154,6 +193,8 @@ class GolfTheme {
     glassBorderHi: _P.cGlassBordHi,
     glassBorderLo: _P.cGlassBordLo,
     glassShadow: _P.cGlassShadow,
+    danger: _P.cDanger,
+    even: _P.cEven,
   );
 
   ThemeData toMaterial() => ThemeData(

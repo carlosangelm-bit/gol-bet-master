@@ -69,16 +69,19 @@ class _ThemeGrad {
   Color amountRow(bool isPos)  => isPos ? t.profit : t.loss;
 
   // ── Chip balance duelo ────────────────────────────────────────────────────
+  // El chip del balance es dinero puro, así que sus tres estados salen del
+  // canal del dinero. Antes el "en ceros" usaba scoreUnder —el azul de bajo
+  // par— metiendo el canal del score dentro del del dinero.
   Color chipBg(double bal) {
-    if (bal == 0) return t.scoreUnder.withValues(alpha: 0.15);
+    if (bal == 0) return t.even.withValues(alpha: 0.15);
     return (bal > 0 ? t.profit : t.loss).withValues(alpha: 0.15);
   }
   Color chipBorder(double bal) {
-    if (bal == 0) return t.scoreUnder.withValues(alpha: 0.45);
+    if (bal == 0) return t.even.withValues(alpha: 0.45);
     return (bal > 0 ? t.profit : t.loss).withValues(alpha: 0.45);
   }
   Color chipText(double bal) {
-    if (bal == 0) return t.scoreUnder;
+    if (bal == 0) return t.even;
     return bal > 0 ? t.profit : t.loss;
   }
 
@@ -1460,13 +1463,13 @@ class _ResultsIntegrityBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: t.loss.withValues(alpha: 0.10),
+        color: t.danger.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: t.loss.withValues(alpha: 0.40)),
+        border: Border.all(color: t.danger.withValues(alpha: 0.40)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(Icons.warning_amber_rounded, color: t.loss, size: 20),
+          Icon(Icons.warning_amber_rounded, color: t.danger, size: 20),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -1474,7 +1477,7 @@ class _ResultsIntegrityBanner extends StatelessWidget {
                   ? '1 apuesta no se pudo liquidar'
                   : '${errors.length} apuestas no se pudieron liquidar',
               style: TextStyle(
-                  color: t.loss, fontWeight: FontWeight.w800, fontSize: 14),
+                  color: t.danger, fontWeight: FontWeight.w800, fontSize: 14),
             ),
           ),
         ]),
@@ -1491,7 +1494,7 @@ class _ResultsIntegrityBanner extends StatelessWidget {
                 Expanded(
                   child: Text(e,
                       style: TextStyle(
-                          color: t.loss, fontSize: 12, height: 1.35)),
+                          color: t.danger, fontSize: 12, height: 1.35)),
                 ),
               ]),
             )),
@@ -1645,7 +1648,7 @@ class _RoundBetsSummary extends StatelessWidget {
                           falta
                               ? Icons.error_outline
                               : Icons.check_circle_outline,
-                          color: falta ? t.loss : t.profit,
+                          color: falta ? t.danger : t.profit,
                           size: 13),
                       const SizedBox(width: 6),
                       Expanded(
@@ -1653,7 +1656,7 @@ class _RoundBetsSummary extends StatelessWidget {
                           '${m.type.label}: $completos de $total hoyos con '
                           'score de sus ${pids.length} jugadores',
                           style: TextStyle(
-                              color: falta ? t.loss : t.sub, fontSize: 11),
+                              color: falta ? t.danger : t.sub, fontSize: 11),
                         ),
                       ),
                     ]),

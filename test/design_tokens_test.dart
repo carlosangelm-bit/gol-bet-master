@@ -112,6 +112,27 @@ void main() {
   // fondo, quitarle el rojo lo deja indistinguible de un par. El token y la
   // forma tienen que cambiar juntos, o se pierde información en el intervalo.
   // ══════════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════════════
+  // Los tokens nuevos del sistema.
+  // ══════════════════════════════════════════════════════════════════════════
+  group('canal de sistema', () {
+    test('danger existe y es distinto de profit en los tres temas', () {
+      for (final t in [GolfTheme.light, GolfTheme.dark, GolfTheme.classic]) {
+        expect(t.danger, isNot(t.profit));
+      }
+    });
+
+    test('even no es sub ni ninguno de los dos colores del dinero', () {
+      // "En ceros" es un resultado del dinero, no un dato ausente: verlo en el
+      // gris de campo vacío lo degradaría a "no hay información".
+      for (final t in [GolfTheme.light, GolfTheme.dark, GolfTheme.classic]) {
+        expect(t.even, isNot(t.sub));
+        expect(t.even, isNot(t.profit));
+        expect(t.even, isNot(t.loss));
+      }
+    });
+  });
+
   group('canal del score', () {
     test('el score no reutiliza los tonos del dinero', () {
       for (final t in [GolfTheme.light, GolfTheme.dark, GolfTheme.classic]) {

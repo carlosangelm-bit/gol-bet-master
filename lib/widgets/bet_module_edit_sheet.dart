@@ -353,11 +353,11 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            color: t.loss.withValues(alpha: 0.12),
+            color: t.danger.withValues(alpha: 0.12),
             child: Row(children: [
-              Icon(Icons.warning_amber_rounded, color: t.loss, size: 16),
+              Icon(Icons.warning_amber_rounded, color: t.danger, size: 16),
               const SizedBox(width: 8),
-              Expanded(child: Text(error, style: TextStyle(color: t.loss, fontSize: 12, fontWeight: FontWeight.w600))),
+              Expanded(child: Text(error, style: TextStyle(color: t.danger, fontSize: 12, fontWeight: FontWeight.w600))),
             ]),
           ),
         // ── Botón Guardar ────────────────────────────────────────────────────
@@ -521,7 +521,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   }
 
   Widget _lhBanner(String text, GolfTheme t, {bool warning = false}) {
-    final color = warning ? t.loss : t.primary;
+    final color = warning ? t.danger : t.primary;
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -908,17 +908,17 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: t.loss.withValues(alpha: 0.08),
-        border: Border.all(color: t.loss.withValues(alpha: 0.3)),
+        color: t.danger.withValues(alpha: 0.08),
+        border: Border.all(color: t.danger.withValues(alpha: 0.3)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(children: [
-        Icon(Icons.group_off_rounded, color: t.loss, size: 20),
+        Icon(Icons.group_off_rounded, color: t.danger, size: 20),
         const SizedBox(width: 12),
         Expanded(
           child: Text(
             'Necesitas al menos 2 jugadores para configurar equipos. Agrega jugadores en el paso anterior.',
-            style: TextStyle(color: t.loss, fontSize: 13, fontWeight: FontWeight.w500),
+            style: TextStyle(color: t.danger, fontSize: 13, fontWeight: FontWeight.w500),
           ),
         ),
       ]),

@@ -2982,7 +2982,7 @@ class _SkinsMiniSummary extends StatelessWidget {
       Row(mainAxisSize: MainAxisSize.min, children: [
         Text('$n1 $skins1',
             style: TextStyle(
-              color: skins1 > skins2 ? t.profit : t.sub,
+              color: skins1 > skins2 ? t.primary : t.sub,
               fontSize: 11, fontWeight: FontWeight.w700)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -2990,7 +2990,7 @@ class _SkinsMiniSummary extends StatelessWidget {
         ),
         Text('$skins2 $n2',
             style: TextStyle(
-              color: skins2 > skins1 ? t.profit : t.sub,
+              color: skins2 > skins1 ? t.primary : t.sub,
               fontSize: 11, fontWeight: FontWeight.w700)),
       ]),
 
@@ -3263,7 +3263,7 @@ class _NassauLivePanel extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: t.profit.withValues(alpha: 0.15),
+                    color: t.accent.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
@@ -3802,15 +3802,15 @@ class _CarryPanelState extends State<_CarryPanel> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             decoration: BoxDecoration(
-              color: t.profit.withValues(alpha: 0.15),
+              color: t.accent.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: t.profit.withValues(alpha: 0.4)),
+              border: Border.all(color: t.accent.withValues(alpha: 0.4)),
             ),
-            child: Text('×2', style: TextStyle(color: t.profit, fontWeight: FontWeight.w900, fontSize: 14)),
+            child: Text('×2', style: TextStyle(color: t.accent, fontWeight: FontWeight.w900, fontSize: 14)),
           ),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('CARRY ACTIVO', style: TextStyle(color: t.profit, fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 0.8)),
+            Text('CARRY ACTIVO', style: TextStyle(color: t.accent, fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 0.8)),
             const SizedBox(height: 2),
             Text('Las apuestas de la 2ª vuelta están duplicadas', style: TextStyle(color: t.sub, fontSize: 11)),
           ])),
@@ -4840,7 +4840,7 @@ class _FinancialBreakdown extends StatelessWidget {
                     Text(
                       zapatoText,
                       style: TextStyle(
-                        color: zapatoText.contains('no aplica') ? t.sub : t.profit,
+                        color: zapatoText.contains('no aplica') ? t.sub : t.primary,
                         fontSize: 10,
                         fontWeight: FontWeight.w600,
                       ),

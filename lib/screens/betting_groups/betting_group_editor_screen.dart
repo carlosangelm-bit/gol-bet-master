@@ -1211,10 +1211,10 @@ class _PairRuleCardState extends State<_PairRuleCard> {
                   PopupMenuItem(
                     value: 'clear',
                     child: Row(children: [
-                      Icon(Icons.delete_sweep_outlined, size: 16, color: t.loss),
+                      Icon(Icons.delete_sweep_outlined, size: 16, color: t.danger),
                       const SizedBox(width: 8),
                       Text('Limpiar apuestas',
-                          style: TextStyle(color: t.loss, fontSize: 13)),
+                          style: TextStyle(color: t.danger, fontSize: 13)),
                     ]),
                   ),
               ],
@@ -1728,18 +1728,18 @@ class _ModeToggle extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
           color: replace
-              ? t.loss.withValues(alpha: 0.08) : t.card,
+              ? t.danger.withValues(alpha: 0.08) : t.card,
           borderRadius: const BorderRadius.horizontal(
               right: Radius.circular(8)),
-          border: Border.all(color: replace ? t.loss : t.divider),
+          border: Border.all(color: replace ? t.danger : t.divider),
         ),
         child: Column(children: [
           Icon(Icons.swap_horiz,
-              color: replace ? t.loss : t.sub, size: 18),
+              color: replace ? t.danger : t.sub, size: 18),
           const SizedBox(height: 2),
           Text('Reemplazar',
               style: TextStyle(
-                color: replace ? t.loss : t.sub,
+                color: replace ? t.danger : t.sub,
                 fontSize: 12, fontWeight: FontWeight.w700)),
           Text('borra apuestas previas',
               style: TextStyle(color: t.sub, fontSize: 10)),

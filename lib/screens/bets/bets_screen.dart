@@ -1038,13 +1038,13 @@ class _IntegrityBanner extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: t.loss.withValues(alpha: 0.10),
+        color: t.danger.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: t.loss.withValues(alpha: 0.40)),
+        border: Border.all(color: t.danger.withValues(alpha: 0.40)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(Icons.warning_amber_rounded, color: t.loss, size: 20),
+          Icon(Icons.warning_amber_rounded, color: t.danger, size: 20),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -1052,7 +1052,7 @@ class _IntegrityBanner extends StatelessWidget {
                   ? '1 apuesta sin liquidar'
                   : '${errors.length} apuestas sin liquidar',
               style: TextStyle(
-                  color: t.loss, fontWeight: FontWeight.w800, fontSize: 14),
+                  color: t.danger, fontWeight: FontWeight.w800, fontSize: 14),
             ),
           ),
         ]),
@@ -1469,8 +1469,8 @@ class _PendingProposalBanner extends StatelessWidget {
               child: OutlinedButton(
                 onPressed: () => prov.rejectBetChange(proposal.id),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: t.loss,
-                  side: BorderSide(color: t.loss.withValues(alpha: 0.5)),
+                  foregroundColor: t.danger,
+                  side: BorderSide(color: t.danger.withValues(alpha: 0.5)),
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   minimumSize: const Size(0, 32),
                   shape: RoundedRectangleBorder(
@@ -1775,7 +1775,7 @@ class _BetRow extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           _ActionBtn(
-            icon: Icons.delete_outline, color: t.loss,
+            icon: Icons.delete_outline, color: t.danger,
             onTap: () => _confirmDelete(context),
           ),
         ] else if (perm.canPropose) ...[
@@ -1919,7 +1919,7 @@ class _BetRow extends StatelessWidget {
               prov.removeBetModule(group.id, mod.id);
             },
             child: Text('Eliminar',
-                style: TextStyle(color: t.loss, fontWeight: FontWeight.w700)),
+                style: TextStyle(color: t.danger, fontWeight: FontWeight.w700)),
           ),
         ],
       ),

@@ -284,7 +284,7 @@ class _SettingsWithProfile extends StatelessWidget {
         TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancelar', style: TextStyle(color: t.sub))),
         TextButton(
           onPressed: () { Navigator.pop(ctx); context.read<AuthProvider>().signOut(); },
-          child: Text('Cerrar sesión', style: TextStyle(color: t.loss, fontWeight: FontWeight.w700)),
+          child: Text('Cerrar sesión', style: TextStyle(color: t.danger, fontWeight: FontWeight.w700)),
         ),
       ],
     ));

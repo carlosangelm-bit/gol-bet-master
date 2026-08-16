@@ -946,7 +946,7 @@ class _SetupScreenState extends State<SetupScreen> {
           ])),
           GestureDetector(onTap: () => _editPlayer(i, p, t), child: Icon(Icons.edit_outlined, color: t.sub, size: 18)),
           const SizedBox(width: 8),
-          GestureDetector(onTap: () => setState(() => _players.removeAt(i)), child: Icon(Icons.delete_outline, color: t.loss.withValues(alpha: 0.7), size: 18)),
+          GestureDetector(onTap: () => setState(() => _players.removeAt(i)), child: Icon(Icons.delete_outline, color: t.danger.withValues(alpha: 0.7), size: 18)),
         ]),
         // Selector de tee prominente (solo cuando hay campo con tees)
         if (hasTees) ...[
@@ -1490,7 +1490,7 @@ class _SetupScreenState extends State<SetupScreen> {
     final allPids = _players.map((p) => p.id).toList();
     if (allPids.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: t.loss,
+        backgroundColor: t.danger,
         content: const Text('Agrega jugadores primero'),
       ));
       return;
@@ -1536,7 +1536,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
     if (capture.groupRules.isEmpty && capture.pairAgreements.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: t.loss,
+        backgroundColor: t.danger,
         content: const Text('No hay apuestas que se puedan guardar'),
       ));
       return;
@@ -1721,7 +1721,7 @@ class _SetupScreenState extends State<SetupScreen> {
                     if (kDebugMode) debugPrint('[_saveGroupAsGame] $e');
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      backgroundColor: t.loss,
+                      backgroundColor: t.danger,
                       content: const Text('No se pudo guardar el juego'),
                     ));
                   }
@@ -3890,14 +3890,14 @@ class _SetupScreenState extends State<SetupScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: t.loss.withValues(alpha: 0.10),
+                  color: t.danger.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: t.loss.withValues(alpha: 0.3)),
+                  border: Border.all(color: t.danger.withValues(alpha: 0.3)),
                 ),
                 child: Row(children: [
-                  Icon(Icons.warning_amber_rounded, color: t.loss, size: 16),
+                  Icon(Icons.warning_amber_rounded, color: t.danger, size: 16),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(validErr, style: TextStyle(color: t.loss, fontSize: 12))),
+                  Expanded(child: Text(validErr, style: TextStyle(color: t.danger, fontSize: 12))),
                 ]),
               ),
             ],
@@ -4322,7 +4322,7 @@ class _SetupScreenState extends State<SetupScreen> {
         builder: (dctx) => AlertDialog(
           backgroundColor: t.card,
           title: Row(children: [
-            Icon(Icons.warning_amber_rounded, color: t.loss, size: 20),
+            Icon(Icons.warning_amber_rounded, color: t.danger, size: 20),
             const SizedBox(width: 8),
             Expanded(
               child: Text('Falta definir equipos',
@@ -5178,11 +5178,11 @@ class _HandicapMatrix extends StatelessWidget {
                   child: Container(
                     width: 32, height: 32,
                     decoration: BoxDecoration(
-                      color: t.loss.withValues(alpha: 0.1),
+                      color: t.sub.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: t.loss.withValues(alpha: 0.3)),
+                      border: Border.all(color: t.sub.withValues(alpha: 0.3)),
                     ),
-                    child: Icon(Icons.remove, color: t.loss, size: 16),
+                    child: Icon(Icons.remove, color: t.sub, size: 16),
                   ),
                 ),
                 // Valor central
@@ -5212,11 +5212,11 @@ class _HandicapMatrix extends StatelessWidget {
                   child: Container(
                     width: 32, height: 32,
                     decoration: BoxDecoration(
-                      color: t.profit.withValues(alpha: 0.1),
+                      color: t.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: t.profit.withValues(alpha: 0.3)),
+                      border: Border.all(color: t.primary.withValues(alpha: 0.3)),
                     ),
-                    child: Icon(Icons.add, color: t.profit, size: 16),
+                    child: Icon(Icons.add, color: t.primary, size: 16),
                   ),
                 ),
               ]),
@@ -5259,14 +5259,14 @@ class _HandicapMatrix extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: editVal == 0 ? t.surface : (editVal > 0 ? t.profit : t.loss).withValues(alpha: 0.08),
+                  color: editVal == 0 ? t.surface : (editVal > 0 ? t.primary : t.sub).withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: editVal == 0 ? t.divider : (editVal > 0 ? t.profit : t.loss).withValues(alpha: 0.3),
+                    color: editVal == 0 ? t.divider : (editVal > 0 ? t.primary : t.sub).withValues(alpha: 0.3),
                   ),
                 ),
                 child: Text(desc, style: TextStyle(
-                  color: editVal == 0 ? t.sub : (editVal > 0 ? t.profit : t.loss),
+                  color: editVal == 0 ? t.even : (editVal > 0 ? t.primary : t.sub),
                   fontSize: 13, fontWeight: FontWeight.w700,
                 ), textAlign: TextAlign.center),
               ),
@@ -5274,10 +5274,10 @@ class _HandicapMatrix extends StatelessWidget {
               // Controles grandes
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 // −5
-                _bigBtn('−5', t.loss, () => setSt(() => editVal -= 5)),
+                _bigBtn('−5', t.sub, () => setSt(() => editVal -= 5)),
                 const SizedBox(width: 6),
                 // −1
-                _bigBtn('−1', t.loss, () => setSt(() => editVal -= 1)),
+                _bigBtn('−1', t.sub, () => setSt(() => editVal -= 1)),
                 const SizedBox(width: 12),
                 // Valor
                 Container(
@@ -5294,10 +5294,10 @@ class _HandicapMatrix extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 // +1
-                _bigBtn('+1', t.profit, () => setSt(() => editVal += 1)),
+                _bigBtn('+1', t.primary, () => setSt(() => editVal += 1)),
                 const SizedBox(width: 6),
                 // +5
-                _bigBtn('+5', t.profit, () => setSt(() => editVal += 5)),
+                _bigBtn('+5', t.primary, () => setSt(() => editVal += 5)),
               ]),
               const SizedBox(height: 8),
               Text('(+) = ${pB.name.split(' ').first} da golpes a ${pA.name.split(' ').first}\n(−) = ${pA.name.split(' ').first} da golpes a ${pB.name.split(' ').first}',
@@ -5377,7 +5377,7 @@ class _LaunchSheetState extends State<_LaunchSheet> {
       final name = _nameCtrl.text.trim();
       if (name.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: widget.t.loss,
+          backgroundColor: widget.t.danger,
           content: const Text('Ingresa un nombre para la plantilla'),
         ));
         return;

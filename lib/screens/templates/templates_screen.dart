@@ -97,7 +97,7 @@ class _TemplateCard extends StatelessWidget {
             onSelected: (val) => _onAction(context, val),
             itemBuilder: (_) => [
               PopupMenuItem(value: 'edit',   child: Row(children: [Icon(Icons.edit, size: 16, color: t.text), const SizedBox(width: 8), Text('Editar', style: TextStyle(color: t.text))])),
-              PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete, size: 16, color: t.loss), const SizedBox(width: 8), Text('Eliminar', style: TextStyle(color: t.loss))])),
+              PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete, size: 16, color: t.danger), const SizedBox(width: 8), Text('Eliminar', style: TextStyle(color: t.danger))])),
             ],
           ),
         ]),
@@ -186,7 +186,7 @@ class _TemplateCard extends StatelessWidget {
             Navigator.pop(ctx);
             await FirestoreService.deleteTemplate(template.id);
           },
-          child: Text('Eliminar', style: TextStyle(color: t.loss, fontWeight: FontWeight.w700)),
+          child: Text('Eliminar', style: TextStyle(color: t.danger, fontWeight: FontWeight.w700)),
         ),
       ],
     ));

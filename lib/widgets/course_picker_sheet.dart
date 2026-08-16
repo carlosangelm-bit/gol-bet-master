@@ -443,7 +443,7 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
     if (_detailError != null) {
       return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.error_outline, color: t.loss, size: 40),
+          Icon(Icons.error_outline, color: t.danger, size: 40),
           const SizedBox(height: 12),
           Text(_detailError!, textAlign: TextAlign.center,
               style: TextStyle(color: t.sub, fontSize: 14)),

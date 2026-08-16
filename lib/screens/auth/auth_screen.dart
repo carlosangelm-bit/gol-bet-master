@@ -251,25 +251,25 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                                     margin: const EdgeInsets.only(top: 12),
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
-                                      color: t.loss.withValues(alpha: 0.08),
+                                      color: t.danger.withValues(alpha: 0.08),
                                       borderRadius: BorderRadius.circular(10),
                                       border: Border.all(
-                                          color: t.loss.withValues(alpha: 0.3)),
+                                          color: t.danger.withValues(alpha: 0.3)),
                                     ),
                                     child: Row(children: [
                                       Icon(Icons.error_outline,
-                                          color: t.loss, size: 16),
+                                          color: t.danger, size: 16),
                                       const SizedBox(width: 8),
                                       Expanded(
                                           child: Text(auth.error!,
                                               style: TextStyle(
-                                                  color: t.loss, fontSize: 13))),
+                                                  color: t.danger, fontSize: 13))),
                                       GestureDetector(
                                         onTap: () => context
                                             .read<AuthProvider>()
                                             .clearError(),
                                         child: Icon(Icons.close,
-                                            color: t.loss, size: 16),
+                                            color: t.danger, size: 16),
                                       ),
                                     ]),
                                   );
