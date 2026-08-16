@@ -1509,11 +1509,28 @@ class _ResultsIntegrityBanner extends StatelessWidget {
 // balance sale en ceros no hay forma de distinguir "nadie ganó nada" de "la
 // apuesta que configuré no llegó a la ronda" — que es un fallo real y frecuente,
 // porque al iniciar sin partidas configuradas la app crea una Nassau por defecto.
-class _RoundBetsSummary extends StatelessWidget {
+class _RoundBetsSummary extends StatefulWidget {
   final Round round;
   final GolfTheme t;
   final _ThemeGrad g;
   const _RoundBetsSummary({required this.round, required this.t, required this.g});
+
+  @override
+  State<_RoundBetsSummary> createState() => _RoundBetsSummaryState();
+}
+
+/// Arranca colapsada: es contexto, no la respuesta de la pantalla.
+///
+/// Con una excepción que no se puede plegar: si alguna apuesta no tiene score
+/// de todos sus jugadores, el balance de abajo está incompleto. Ese aviso sube
+/// a la cabecera, porque esconder un problema detrás de un "ver más" es
+/// exactamente cómo se pierde media sesión buscando por qué el balance da cero.
+class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
+  bool _abierto = false;
+
+  Round get round => widget.round;
+  GolfTheme get t => widget.t;
+  _ThemeGrad get g => widget.g;
 
   String _nombre(String id) => round.players
       .firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id))
@@ -1533,6 +1550,18 @@ class _RoundBetsSummary extends StatelessWidget {
         for (final m in grp.modules) (grp, m),
     ];
 
+    // Apuestas a las que les falta algún hoyo completo. Se calcula aquí y no
+    // dentro del desplegable porque el aviso tiene que verse esté abierto o no.
+    final incompletas = <String>[];
+    for (final e in mods) {
+      final (grp, m) = e;
+      final pids = _jugadoresDe(grp, m);
+      final completos = round.course.holes
+          .where((ch) => pids.every((pid) => round.getScore(pid, ch.hole).hasScore))
+          .length;
+      if (completos < round.course.holes.length) incompletas.add(m.type.label);
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -1542,16 +1571,56 @@ class _RoundBetsSummary extends StatelessWidget {
         border: Border.all(color: g.cardBorder),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Icon(Icons.receipt_long_outlined, color: g.sectionColor, size: 16),
-          const SizedBox(width: 8),
-          Text('APUESTAS DE ESTA RONDA',
-              style: TextStyle(
-                  color: g.sectionColor,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.6)),
-        ]),
+        // ── Cabecera tocable ────────────────────────────────────────────
+        InkWell(
+          onTap: () => setState(() => _abierto = !_abierto),
+          borderRadius: BorderRadius.circular(8),
+          child: Row(children: [
+            Icon(Icons.receipt_long_outlined, color: g.sectionColor, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('APUESTAS DE ESTA RONDA',
+                  style: TextStyle(
+                      color: g.sectionColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6)),
+            ),
+            Text(
+                mods.isEmpty
+                    ? 'ninguna'
+                    : '${mods.length} apuesta${mods.length == 1 ? "" : "s"}',
+                style: TextStyle(
+                    color: t.sub, fontSize: 11, fontWeight: FontWeight.w600)),
+            const SizedBox(width: 4),
+            Icon(_abierto ? Icons.expand_less : Icons.expand_more,
+                color: g.sectionColor, size: 18),
+          ]),
+        ),
+
+        // ── Aviso de cobertura: NO se pliega ────────────────────────────
+        // Si falta score de algún jugador, el balance de abajo está incompleto.
+        // Esconderlo detrás del desplegable es cómo se pierde media sesión
+        // buscando por qué el balance da cero.
+        if (incompletas.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(Icons.error_outline, color: t.danger, size: 13),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                incompletas.length == 1
+                    ? '${incompletas.first} no tiene score de todos sus '
+                        'jugadores en algún hoyo'
+                    : '${incompletas.length} apuestas no tienen score de todos '
+                        'sus jugadores en algún hoyo',
+                style: TextStyle(color: t.danger, fontSize: 11, height: 1.3),
+              ),
+            ),
+          ]),
+        ],
+
+        if (!_abierto) const SizedBox.shrink() else ...[
         const SizedBox(height: 10),
 
         if (mods.isEmpty)
@@ -1684,6 +1753,7 @@ class _RoundBetsSummary extends StatelessWidget {
                   ]),
             );
           }),
+        ],
         ],
       ]),
     );
