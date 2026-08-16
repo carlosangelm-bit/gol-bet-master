@@ -601,6 +601,7 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
                   fontWeight: FontWeight.w800, letterSpacing: 0.8)),
               const SizedBox(height: 8),
               ...[BetModuleType.nassau, BetModuleType.matchAutoPress]
+                  .where((bt) => bt.isCreatable)
                   .map((bt) => _betTypeTile(bt, selected, setSt, t)),
               const SizedBox(height: 16),
 

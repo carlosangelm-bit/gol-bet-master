@@ -3046,8 +3046,9 @@ class _ActiveRoundView extends StatelessWidget {
 
           Text('MATCH PLAY', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
           const SizedBox(height: 8),
-          ...[BetModuleType.nassau, BetModuleType.matchAutoPress].map((bt) =>
-            _betTypeTileHome(bt, selected, setSt, t, group)),
+          ...[BetModuleType.nassau, BetModuleType.matchAutoPress]
+              .where((bt) => bt.isCreatable)
+              .map((bt) => _betTypeTileHome(bt, selected, setSt, t, group)),
           const SizedBox(height: 16),
           Text('OTRAS APUESTAS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
           const SizedBox(height: 8),

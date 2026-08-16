@@ -965,7 +965,7 @@ class _PairRuleCardState extends State<_PairRuleCard> {
                   style: TextStyle(color: t.sub,
                       fontWeight: FontWeight.w700, fontSize: 12)),
               const SizedBox(height: 8),
-              ...BetModuleType.values.map((bt) => ListTile(
+              ...creatableBetTypes.map((bt) => ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Container(
                   width: 36, height: 36,

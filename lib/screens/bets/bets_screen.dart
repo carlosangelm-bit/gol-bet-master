@@ -1569,7 +1569,7 @@ class _DuelBetsSection extends StatelessWidget {
         .map((r) => r.module.type)
         .toSet();
     final hasAllTypes =
-        existingTypes.containsAll(BetModuleType.values.toSet());
+        existingTypes.containsAll(creatableBetTypes.toSet());
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
@@ -2711,7 +2711,7 @@ class _BetTypePickerSheetState extends State<_BetTypePickerSheet> {
 
   GolfTheme get t => widget.t;
 
-  static const _allTypes = BetModuleType.values;
+  static final _allTypes = creatableBetTypes;
 
   @override
   Widget build(BuildContext context) {
@@ -2958,7 +2958,7 @@ class _PickerViewState extends State<_PickerView> {
   /// salen atenuados y no seleccionables (ver [_BetTypeCard.alreadyConfigured]),
   /// en vez de desaparecer: ocultarlos hacía parecer que la app no permitía
   /// añadir esos tipos.
-  List<BetModuleType> get _availableTypes => BetModuleType.values.toList();
+  List<BetModuleType> get _availableTypes => creatableBetTypes;
 
   bool _isTaken(BetModuleType type) => widget.existingTypes.contains(type);
 

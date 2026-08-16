@@ -50,6 +50,31 @@ enum PointBetScope {
   all,
 }
 
+/// Tipos que se pueden crear hoy. **Toda hoja de selección debe usar esto.**
+///
+/// Un tipo retirado sigue existiendo en el enum, en la deserialización, en el
+/// motor y en las pantallas que lo pintan: las rondas guardadas que lo usan
+/// tienen que abrir y liquidar exactamente igual que antes. Lo único que
+/// desaparece es la posibilidad de crear uno nuevo.
+///
+/// Es una sola lista a propósito. Esta misma sesión costó tres bugs descubrir
+/// que el catálogo de tipos vivía duplicado en cinco pantallas: al añadir Bola
+/// Baja / Bola Alta quedó fuera del selector de Setup y de la sección de
+/// equipos, y en ambos casos el fallo fue silencioso.
+List<BetModuleType> get creatableBetTypes =>
+    BetModuleType.values.where((t) => t.isCreatable).toList();
+
+extension BetModuleAvailability on BetModuleType {
+  /// false = retirado. Ver [creatableBetTypes].
+  ///
+  /// matchAutoPress es redundante: NassauConfig ya trae todo el aparato de
+  /// presiones, así que un match a 18 con presses es un Nassau con
+  /// frontValue = 0, backValue = 0, totalValue = X y presiones activas.
+  /// Mantener dos motores para lo mismo obligaba además a elegir cuál
+  /// representa el duelo al ajustar ventajas — ver sliding_adjustment_engine.
+  bool get isCreatable => this != BetModuleType.matchAutoPress;
+}
+
 extension BetModuleTeamRules on BetModuleType {
   /// true si el formato no tiene definición sin dos equipos enfrentados.
   ///

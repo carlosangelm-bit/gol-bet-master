@@ -3805,14 +3805,16 @@ class _SetupScreenState extends State<SetupScreen> {
             // ── Tipo de apuesta ─────────────────────────────────────────────
             Text('MATCH PLAY', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
             const SizedBox(height: 8),
-            // La lista es explícita y no BetModuleType.values para controlar el
-            // orden y el agrupado. Al añadir un tipo nuevo hay que meterlo aquí
-            // o queda inalcanzable desde Setup.
+            // La lista es explícita para controlar orden y agrupado, pero pasa
+            // por isCreatable: así retirar un tipo se hace en un solo sitio
+            // —creatableBetTypes— y no hay que acordarse de cinco pantallas.
+            // Añadir uno nuevo sí sigue exigiendo meterlo aquí, o queda
+            // inalcanzable desde Setup.
             ...[
               BetModuleType.nassau,
-              BetModuleType.matchAutoPress,
               BetModuleType.nassauLowHigh,
-            ].map((bt) => _betTypeTile(bt, selected, setSt, t)),
+            ].where((bt) => bt.isCreatable)
+             .map((bt) => _betTypeTile(bt, selected, setSt, t)),
             const SizedBox(height: 16),
             Text('OTRAS APUESTAS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
             const SizedBox(height: 8),
