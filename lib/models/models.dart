@@ -1010,7 +1010,23 @@ class NassauConfig {
   final TieRule tieRule;
   // ── Carry ────────────────────────────────────────────────────────────────────
   final bool carryEnabled;      // el F9 empatado dobla el valor del B9
-  final bool carryApplied;      // carry ya fue aceptado para este par
+
+  /// Carry aceptado POR PAREJA: clave [carryPairKey], valor el factor.
+  ///
+  /// En un grupo de cuatro, A puede pedir carry contra B y no contra C.
+  /// [carryApplied] es un booleano de módulo entero y no puede expresarlo;
+  /// Match + Press ya resolvió este caso y aquí se replica, porque el carry
+  /// por pareja tiene el mismo sentido en Nassau.
+  ///
+  /// Usa el separador '|' a propósito, el mismo que MatchAutoPressConfig: así
+  /// migrar un módulo de un tipo al otro es copiar el mapa tal cual. Con
+  /// separadores distintos habría que traducir cada clave, y una traducción
+  /// fallida no da error — el carry simplemente dejaría de aplicarse.
+  final Map<String, double> carryByPair;
+
+  /// Legacy: carry de módulo entero. Se conserva para las rondas guardadas
+  /// antes de [carryByPair]; las nuevas ediciones escriben el mapa.
+  final bool carryApplied;
   final double carryFactor;     // multiplicador carry (default 2.0)
   // ── Presiones ────────────────────────────────────────────────────────────────
   // pressEnabled=false → Nassau clásico sin presiones
@@ -1037,12 +1053,36 @@ class NassauConfig {
     this.backPressValue       = 50,
     this.allowMultiplePresses = true,
     this.maxPresses,
+    this.carryByPair = const {},
   });
+
+  /// Clave canónica del par. Mismo formato que [MatchAutoPressConfig.pairKey].
+  static String carryPairKey(String id1, String id2) {
+    final sorted = [id1, id2]..sort();
+    return '${sorted[0]}|${sorted[1]}';
+  }
+
+  /// ¿Hay carry activo para esta pareja?
+  ///
+  /// Si el mapa está vacío se cae al booleano legacy, para que una ronda
+  /// guardada antes de [carryByPair] siga comportándose igual.
+  bool carryAppliedForPair(String id1, String id2) {
+    if (carryByPair.containsKey(carryPairKey(id1, id2))) return true;
+    return carryApplied && carryByPair.isEmpty;
+  }
+
+  /// Factor de carry de esta pareja. 1.0 = sin carry.
+  double carryFactorForPair(String id1, String id2) {
+    final key = carryPairKey(id1, id2);
+    return carryByPair[key] ??
+        (carryApplied && carryByPair.isEmpty ? carryFactor : 1.0);
+  }
 
   NassauConfig copyWith({
     double? frontValue, double? backValue, double? totalValue,
     GrossNetMode? mode, TieRule? tieRule,
-    bool? carryEnabled, bool? carryApplied, double? carryFactor,
+    bool? carryEnabled, Map<String, double>? carryByPair,
+    bool? carryApplied, double? carryFactor,
     bool? pressEnabled, int? autoPressTrigger,
     double? frontPressValue, double? backPressValue,
     bool? allowMultiplePresses, int? maxPresses,
@@ -1054,6 +1094,7 @@ class NassauConfig {
     tieRule:              tieRule              ?? this.tieRule,
     carryEnabled:         carryEnabled         ?? this.carryEnabled,
     carryApplied:         carryApplied         ?? this.carryApplied,
+    carryByPair:          carryByPair          ?? this.carryByPair,
     carryFactor:          carryFactor          ?? this.carryFactor,
     pressEnabled:         pressEnabled         ?? this.pressEnabled,
     autoPressTrigger:     autoPressTrigger     ?? this.autoPressTrigger,
@@ -1076,6 +1117,7 @@ class NassauConfig {
     'tieRule':              tieRule.name,
     'carryEnabled':         carryEnabled,
     'carryApplied':         carryApplied,
+    if (carryByPair.isNotEmpty) 'carryByPair': carryByPair,
     'carryFactor':          carryFactor,
     'pressEnabled':         pressEnabled,
     'autoPressTrigger':     autoPressTrigger,
@@ -1096,6 +1138,9 @@ class NassauConfig {
       tieRule:  TieRule.values.firstWhere((e) => e.name == (j['tieRule'] ?? 'push'), orElse: () => TieRule.push),
       carryEnabled:         j['carryEnabled']         as bool? ?? false,
       carryApplied:         j['carryApplied']         as bool? ?? false,
+      carryByPair: (j['carryByPair'] as Map?)?.map(
+              (k, v) => MapEntry(k.toString(), (v as num).toDouble())) ??
+          const {},
       carryFactor:          (j['carryFactor']         as num?)?.toDouble() ?? 2.0,
       pressEnabled:         j['pressEnabled']         as bool? ?? false,
       // retrocompat: autoPressTrigger también puede venir como pressTriggerValue
