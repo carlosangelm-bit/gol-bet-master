@@ -572,7 +572,10 @@ class _WinnerHeroCard extends StatelessWidget {
               border: Border.all(color: Colors.white.withValues(alpha: 0.40)),
             ),
             child: Text(
-              isPos ? 'LÍDER  ·  COBRA' : 'PAGA',
+              // Un saldo de exactamente cero no es cobrar ni pagar. Decir
+              // "COBRA" sobre un \$0 hacía leer como resultado lo que en
+              // realidad era una ronda sin liquidar.
+              balance == 0 ? 'SIN SALDO' : (isPos ? 'LÍDER  ·  COBRA' : 'PAGA'),
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2,
@@ -668,7 +671,7 @@ class _RankingRow extends StatelessWidget {
               ),
             ),
             Text(
-              isPos ? 'COBRA' : 'PAGA',
+              balance == 0 ? 'SIN SALDO' : (isPos ? 'COBRA' : 'PAGA'),
               style: TextStyle(
                 color: g.amountRow(isPos).withValues(alpha: 0.70),
                 fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.8,
