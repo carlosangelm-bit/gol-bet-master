@@ -1386,6 +1386,13 @@ class _ResultsBodyState extends State<ResultsBody> {
           _ResultsIntegrityBanner(errors: integrityErrors, t: t),
           const SizedBox(height: 16),
         ],
+        // Qué apuestas tiene la ronda. Va antes del balance porque un balance
+        // en ceros no dice si nadie ganó nada o si la apuesta que se creía
+        // configurada no llegó a la ronda — y no había ninguna pantalla donde
+        // consultarlo en una ronda ya terminada.
+        _RoundBetsSummary(round: round, t: t, g: g),
+        const SizedBox(height: 20),
+
         _PGASectionLabel(label: 'BALANCE FINAL', icon: Icons.emoji_events_rounded, g: g),
         const SizedBox(height: 10),
         _PGAPodium(players: sortedPlayers, round: round, balances: balances, t: t, g: g),
@@ -1469,6 +1476,108 @@ class _ResultsIntegrityBanner extends StatelessWidget {
                 ),
               ]),
             )),
+      ]),
+    );
+  }
+}
+
+// ── Qué apuestas tiene la ronda ──────────────────────────────────────────────
+//
+// Una ronda terminada no tenía ninguna pantalla que dijera qué se jugó. Si el
+// balance sale en ceros no hay forma de distinguir "nadie ganó nada" de "la
+// apuesta que configuré no llegó a la ronda" — que es un fallo real y frecuente,
+// porque al iniciar sin partidas configuradas la app crea una Nassau por defecto.
+class _RoundBetsSummary extends StatelessWidget {
+  final Round round;
+  final GolfTheme t;
+  final _ThemeGrad g;
+  const _RoundBetsSummary({required this.round, required this.t, required this.g});
+
+  @override
+  Widget build(BuildContext context) {
+    final mods = [
+      for (final grp in round.betGroups)
+        for (final m in grp.modules) (grp, m),
+    ];
+
+    String quien(BetGroup grp, BetModuleInstance m) {
+      String nombre(String id) => round.players
+          .firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id))
+          .name
+          .split(' ')
+          .first;
+      if (m.hasTeamSides) {
+        final a = m.sideA.playerIds.map(nombre).join(' + ');
+        final b = m.sideB.playerIds.map(nombre).join(' + ');
+        return '$a  vs  $b';
+      }
+      final pids = m.effectivePids(grp.playerIds);
+      if (pids.length == 2) return '${nombre(pids[0])} vs ${nombre(pids[1])}';
+      return '${pids.length} jugadores';
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: g.cardSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: g.cardBorder),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.receipt_long_outlined, color: g.sectionColor, size: 16),
+          const SizedBox(width: 8),
+          Text('APUESTAS DE ESTA RONDA',
+              style: TextStyle(
+                  color: g.sectionColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6)),
+        ]),
+        const SizedBox(height: 10),
+        if (mods.isEmpty)
+          Text('Esta ronda se jugó sin apuestas configuradas.',
+              style: TextStyle(color: t.sub, fontSize: 12))
+        else
+          ...mods.map((e) {
+            final (grp, m) = e;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(m.type.icon, style: const TextStyle(fontSize: 13)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(m.type.label,
+                            style: TextStyle(
+                                color: t.text,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 1),
+                        Text(quien(grp, m),
+                            style: TextStyle(color: t.sub, fontSize: 11)),
+                      ]),
+                ),
+                if (m.hasTeamSides)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: g.sectionColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    child: Text('EQUIPOS',
+                        style: TextStyle(
+                            color: g.sectionColor,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800)),
+                  ),
+              ]),
+            );
+          }),
       ]),
     );
   }
