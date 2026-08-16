@@ -2581,6 +2581,45 @@ Set<String> companerosDeLado(Round round) {
   return result;
 }
 
+/// true si la ronda tiene alguna apuesta con alcance de equipos.
+///
+/// Sirve de interruptor: los cruces 1v1 solo se filtran cuando hay un duelo por
+/// equipos que los vuelve engañosos. Una ronda sin equipos —incluida una sin
+/// apuestas— se comporta como siempre.
+bool tieneApuestaPorEquipos(Round round) {
+  for (final g in round.betGroups) {
+    for (final m in g.modules) {
+      if (m.effectiveScope.kind == BetScopeKind.teams) return true;
+    }
+  }
+  return false;
+}
+
+/// true si [p1Id] y [p2Id] comparten alguna apuesta que NO sea por equipos.
+///
+/// Decide si tiene sentido dibujar su cruce 1v1. Sin esto, la pestaña pintaba
+/// un marcador de match play entre dos jugadores que solo compartían una
+/// apuesta por equipos: un resultado que nadie pactó, calculado porque se
+/// puede. El importe sí era real —sale del reparto por cruces— pero el
+/// marcador de hoyos no correspondía a nada.
+///
+/// La condición va por ALCANCE y no por tipo de apuesta a propósito. Una lista
+/// de tipos ("si hay match play o skins") se queda corta: alguien puede pactar
+/// un duelo suelto con oyeses o units, y habría que mantener la lista cada vez
+/// que se añada un tipo nuevo.
+bool tieneApuestaIndividual(Round round, String p1Id, String p2Id) {
+  for (final g in round.betGroups) {
+    // containsPair da por buenos los alcances abiertos, así que el caller debe
+    // confirmar que ambos jugadores estén en la partida.
+    if (!g.playerIds.contains(p1Id) || !g.playerIds.contains(p2Id)) continue;
+    for (final m in g.modules) {
+      if (m.effectiveScope.kind == BetScopeKind.teams) continue;
+      if (m.containsPair(p1Id, p2Id)) return true;
+    }
+  }
+  return false;
+}
+
 // ── PairAgreement ─────────────────────────────────────────────────────────────
 //
 // Lo que dos jugadores apuestan habitualmente entre ellos. Existe para que

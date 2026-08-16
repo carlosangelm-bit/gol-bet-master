@@ -1276,7 +1276,38 @@ class _OneVOneViewState extends State<_OneVOneView> {
         ],
 
         // ── Tarjetas de duelo ─────────────────────────────────────────────
-        if (finalPairs.isEmpty)
+        //
+        // Sin cruces porque la ronda no tiene apuestas individuales es un caso
+        // distinto de "el filtro no encontró nada", y merece otra explicación:
+        // aquí no hay nada que buscar, el resultado real ya está arriba.
+        if (allPairs.isEmpty && tieneApuestaPorEquipos(round))
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: t.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.divider),
+            ),
+            child: Column(children: [
+              Icon(Icons.groups_2_outlined, color: t.sub, size: 28),
+              const SizedBox(height: 8),
+              Text('Esta ronda solo tiene apuestas por equipos',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: t.text,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 5),
+              Text(
+                'No hay duelos individuales que mostrar. El desglose de quién '
+                'le paga a quién está en Resultados.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: t.sub, fontSize: 11, height: 1.35),
+              ),
+            ]),
+          )
+        else if (finalPairs.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 32),
             child: Column(children: [
@@ -1332,12 +1363,19 @@ class _OneVOneViewState extends State<_OneVOneView> {
     // cascada pasan por aquí; hacerlo en cada rama dejaría alguna sin cubrir.
     final companeros = companerosDeLado(round);
 
+    // Con un duelo por equipos en juego, un cruce 1v1 sin apuesta individual
+    // detrás muestra un marcador de hoyos que nadie pactó. El filtro se activa
+    // SOLO cuando hay equipos: sin ellos —incluida una ronda sin apuestas— la
+    // pestaña se comporta como siempre.
+    final hayEquipos = tieneApuestaPorEquipos(round);
+
     void addPair(String id1, String id2) {
       // Se usa pairKey para las dos cosas a propósito. La clave local era
       // 'a|b' y la del filtro es 'a__b': con formatos distintos el contains
       // no habría casado nunca y el filtro no haría nada en silencio.
       final key = BetModuleInstance.pairKey(id1, id2);
       if (companeros.contains(key)) return;
+      if (hayEquipos && !tieneApuestaIndividual(round, id1, id2)) return;
       if (seen.contains(key)) return;
       try {
         final p1 = round.players.firstWhere((p) => p.id == id1);

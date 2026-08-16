@@ -708,6 +708,109 @@ void main() {
     });
   });
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // Qué cruces 1v1 tiene sentido dibujar. La condición va por ALCANCE, no por
+  // tipo de apuesta: una lista de tipos se queda corta en cuanto alguien pacta
+  // un duelo suelto con un tipo que no esté en ella.
+  // ══════════════════════════════════════════════════════════════════════════
+  group('cruces individuales', () {
+    Round conModulos(List<BetModuleInstance> mods) => Round(
+          id: 'r', name: 'R', course: _course(),
+          players: const [], roundPlayers: const [],
+          betGroups: [
+            BetGroup(
+              id: 'g', name: 'G', format: PartidaFormat.allInOnePot,
+              playerIds: const [a1, a2, b1, b2], modules: mods,
+            )
+          ],
+          scores: const {}, events: const {}, oyeseRankings: const {},
+          sliding: const [], createdAt: DateTime(2026, 1, 1), totalHoles: 18,
+        );
+
+    BetModuleInstance duelo(BetModuleType tipo, String p1, String p2) =>
+        BetModuleInstance(
+          id: 'd_${tipo.name}', type: tipo, name: tipo.label,
+          participantIds: [p1, p2],
+          scope: BetScope.pair(p1, p2),
+          skinsConfig: tipo == BetModuleType.skins ? const SkinsConfig() : null,
+          oyesesConfig: tipo == BetModuleType.oyeses ? const OyesesConfig() : null,
+          unitsConfig: tipo == BetModuleType.units ? const UnitsConfig() : null,
+        );
+
+    test('solo equipos: ningún cruce tiene apuesta individual', () {
+      final r = conModulos([_mod(soloSegmento)]);
+      expect(tieneApuestaPorEquipos(r), isTrue);
+      // Ni rivales ni compañeros: nadie pactó un duelo individual.
+      expect(tieneApuestaIndividual(r, a1, b1), isFalse);
+      expect(tieneApuestaIndividual(r, a1, a2), isFalse);
+    });
+
+    test('un módulo de alcance abierto hace reaparecer los cruces', () {
+      final grupal = BetModuleInstance(
+        id: 's', type: BetModuleType.skins, name: 'Skins',
+        participantIds: const [],
+        scope: const BetScope.everyone(),
+        skinsConfig: const SkinsConfig(valuePerSkin: 20),
+      );
+      final r = conModulos([_mod(soloSegmento), grupal]);
+      expect(tieneApuestaIndividual(r, a1, b1), isTrue);
+      expect(tieneApuestaIndividual(r, a2, b2), isTrue);
+    });
+
+    test('un duelo suelto solo habilita ESE cruce', () {
+      final r = conModulos([
+        _mod(soloSegmento),
+        duelo(BetModuleType.skins, a1, b1),
+      ]);
+      expect(tieneApuestaIndividual(r, a1, b1), isTrue);
+      expect(tieneApuestaIndividual(r, a2, b2), isFalse);
+    });
+
+    test('un duelo con oyeses también cuenta', () {
+      // El caso que una condición por TIPO habría dejado fuera.
+      final r = conModulos([
+        _mod(soloSegmento),
+        duelo(BetModuleType.oyeses, a1, b2),
+      ]);
+      expect(tieneApuestaIndividual(r, a1, b2), isTrue);
+    });
+
+    test('un duelo con units también cuenta', () {
+      final r = conModulos([
+        _mod(soloSegmento),
+        duelo(BetModuleType.units, a2, b1),
+      ]);
+      expect(tieneApuestaIndividual(r, a2, b1), isTrue);
+    });
+
+    test('una ronda sin apuestas por equipos no activa el filtro', () {
+      final grupal = BetModuleInstance(
+        id: 's', type: BetModuleType.skins, name: 'Skins',
+        participantIds: const [],
+        scope: const BetScope.everyone(),
+        skinsConfig: const SkinsConfig(valuePerSkin: 20),
+      );
+      expect(tieneApuestaPorEquipos(conModulos([grupal])), isFalse);
+    });
+
+    test('una ronda sin apuestas tampoco lo activa', () {
+      expect(tieneApuestaPorEquipos(conModulos([])), isFalse);
+    });
+
+    test('jugadores fuera de la partida no cuentan', () {
+      final grupal = BetModuleInstance(
+        id: 's', type: BetModuleType.skins, name: 'Skins',
+        participantIds: const [],
+        scope: const BetScope.everyone(),
+        skinsConfig: const SkinsConfig(valuePerSkin: 20),
+      );
+      final r = conModulos([grupal]);
+      // 'ww-willy' no está en playerIds del grupo: el alcance abierto no
+      // debe alcanzarlo.
+      expect(tieneApuestaIndividual(r, a1, 'ww-willy'), isFalse);
+    });
+  });
+
   group('etiquetas', () {
     test('summaryLabel interpola de verdad, no muestra la plantilla', () {
       // Regresión: la cadena estaba escrita con \$ (dólar escapado), así que

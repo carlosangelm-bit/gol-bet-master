@@ -1699,6 +1699,32 @@ class LowHighHoleBlock extends StatelessWidget {
       .split(' ')
       .first;
 
+  /// La apuesta existe pero este hoyo no cae en ningún segmento liquidable.
+  ///
+  /// Pasa con configuraciones de campo donde la segmentación no cubre el hoyo.
+  /// Se dice en vez de no dibujar nada: un bloque ausente parece "aquí no hay
+  /// apuesta", y el jugador no tendría forma de saber que sí la hay.
+  Widget _sinSegmento(int hole) => Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: t.divider),
+        ),
+        child: Row(children: [
+          Icon(Icons.help_outline, color: t.sub, size: 14),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${mod.type.label}: el hoyo $hole no entra en ningún segmento '
+              'de esta apuesta, así que no suma puntos.',
+              style: TextStyle(color: t.sub, fontSize: 11, height: 1.3),
+            ),
+          ),
+        ]),
+      );
+
   @override
   Widget build(BuildContext context) {
     final List<LowHighSegmentBreakdown> segs;
@@ -1718,10 +1744,11 @@ class LowHighHoleBlock extends StatelessWidget {
     }
     // Ronda de 9 hoyos: solo hay un segmento y sí es el bueno.
     seg ??= segs.where((s) => s.segment == 'nine' && s.holes.contains(hole)).firstOrNull;
-    if (seg == null) return const SizedBox.shrink();
 
-    final h = seg.resultForHole(hole);
-    if (h == null) return const SizedBox.shrink();
+    // Sin segmento resuelto para este hoyo, desaparecer sin más sería
+    // indistinguible de "no hay apuesta de este tipo". La ausencia se explica.
+    final h = seg?.resultForHole(hole);
+    if (seg == null || h == null) return _sinSegmento(hole);
 
     final sideA = mod.sideA;
     final sideB = mod.sideB;
