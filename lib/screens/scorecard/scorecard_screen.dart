@@ -11,6 +11,7 @@ import '../../models/models.dart';
 import '../../providers/round_provider.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/common_widgets.dart';
+import '../../widgets/glass_card.dart';
 
 class ScorecardScreen extends StatefulWidget {
   const ScorecardScreen({super.key});
@@ -1281,14 +1282,12 @@ class _OneVOneViewState extends State<_OneVOneView> {
         // distinto de "el filtro no encontró nada", y merece otra explicación:
         // aquí no hay nada que buscar, el resultado real ya está arriba.
         if (allPairs.isEmpty && tieneApuestaPorEquipos(round))
-          Container(
-            width: double.infinity,
+          // solid y no vidrio real: ya hay un BackdropFilter en pantalla (la
+          // tarjeta de equipo) y el presupuesto de desenfoques es ajustado.
+          GlassCard.solid(
+            t: t,
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: t.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: t.divider),
-            ),
+            radius: 18,
             child: Column(children: [
               Icon(Icons.groups_2_outlined, color: t.sub, size: 28),
               const SizedBox(height: 8),
@@ -5057,38 +5056,38 @@ class LowHighTeamCard extends StatelessWidget {
           ),
         );
 
-    return Container(
+    // Vidrio REAL solo aquí: es la superficie destacada de la pestaña y la
+    // única con desenfoque, para no gastar el presupuesto de saveLayer en una
+    // lista con scroll.
+    return GlassCard(
+      t: t,
       margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        // El fondo se inclina hacia quien va ganando: el gradiente cambia de
-        // color justo en la proporción del marcador, así que la mitad
-        // dominante se lee antes que los números.
-        gradient: LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [
-            colorA.withValues(alpha: 0.16),
-            colorA.withValues(alpha: 0.05),
-            colorB.withValues(alpha: 0.05),
-            colorB.withValues(alpha: 0.16),
-          ],
-          stops: [0, (share * 0.9).clamp(0.05, 0.95),
-                  (share * 1.1).clamp(0.05, 0.95), 1],
-        ),
-        border: Border.all(color: t.divider.withValues(alpha: 0.6)),
-        boxShadow: [
-          BoxShadow(
-            color: (ganaA ? colorA : ganaB ? colorB : Colors.black)
-                .withValues(alpha: 0.10),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
+      radius: 22,
+      // Sin padding: el gradiente proporcional tiene que llegar a los bordes,
+      // así que el espaciado va por dentro.
+      padding: EdgeInsets.zero,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          // El fondo se inclina hacia quien va ganando: el gradiente cambia de
+          // color justo en la proporción del marcador, así que la mitad
+          // dominante se lee antes que los números.
+          gradient: LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [
+              colorA.withValues(alpha: 0.20),
+              colorA.withValues(alpha: 0.06),
+              colorB.withValues(alpha: 0.06),
+              colorB.withValues(alpha: 0.20),
+            ],
+            stops: [0, (share * 0.9).clamp(0.05, 0.95),
+                    (share * 1.1).clamp(0.05, 0.95), 1],
           ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
-        child: Column(children: [
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
+          child: Column(children: [
           // ── Cabecera ──────────────────────────────────────────────────
           Row(children: [
             Text(mod.type.icon, style: const TextStyle(fontSize: 13)),
@@ -5227,7 +5226,8 @@ class LowHighTeamCard extends StatelessWidget {
               ),
             ),
           ],
-        ]),
+          ]),
+        ),
       ),
     );
   }

@@ -4,6 +4,29 @@ enum AppThemeMode { light, dark, classic }
 
 // ─── Paletas ──────────────────────────────────────────────────────────────────
 class _P {
+  // ── Vidrio (liquid glass) ──────────────────────────────────────────────────
+  //
+  // Cuatro capas hacen el efecto y las cuatro dependen del tema: relleno
+  // translúcido, borde especular (más luz arriba-izquierda que abajo-derecha),
+  // sombra difusa y el sigma del desenfoque.
+  //
+  // El relleno es más opaco en oscuro que en claro: sobre un fondo oscuro el
+  // texto necesita más base para no flotar sobre el ruido del desenfoque.
+  static const lGlassFill     = Color(0x26FFFFFF); // ~15% blanco
+  static const lGlassBordHi   = Color(0xB3FFFFFF); // borde iluminado
+  static const lGlassBordLo   = Color(0x1A9E9E9E); // borde en sombra
+  static const lGlassShadow   = Color(0x1A000000);
+
+  static const dGlassFill     = Color(0x40FFFFFF); // ~25% blanco
+  static const dGlassBordHi   = Color(0x59FFFFFF);
+  static const dGlassBordLo   = Color(0x0DFFFFFF);
+  static const dGlassShadow   = Color(0x40000000);
+
+  static const cGlassFill     = Color(0x3D66BB6A); // tinte verde del clásico
+  static const cGlassBordHi   = Color(0x66A5D6A7);
+  static const cGlassBordLo   = Color(0x0DFFFFFF);
+  static const cGlassShadow   = Color(0x40000000);
+
   // Light
   static const lBg      = Color(0xFFFFFFFF);
   static const lSurface = Color(0xFFF5F5F5);
@@ -56,6 +79,25 @@ class GolfTheme {
   final Color scoreUnder, scoreOver;
   final Brightness brightness;
 
+  // ── Vidrio ─────────────────────────────────────────────────────────────────
+  /// Relleno translúcido que va SOBRE el desenfoque. Sin él el texto flota
+  /// sobre el ruido del fondo y deja de leerse.
+  final Color glassFill;
+
+  /// Borde especular: [glassBorderHi] arriba-izquierda y [glassBorderLo]
+  /// abajo-derecha. Es el detalle que más aporta al efecto y el que más se
+  /// suele omitir; sin él la tarjeta parece plástico teñido.
+  final Color glassBorderHi;
+  final Color glassBorderLo;
+
+  /// Sombra amplia y suave: separa la tarjeta del fondo sin dibujarle un marco.
+  final Color glassShadow;
+
+  /// Sigma del desenfoque de fondo. Vive en el tema para poder calibrarlo en un
+  /// solo sitio: es el parámetro que decide si el efecto se ve o si el frame
+  /// time se dispara.
+  final double glassBlur;
+
   const GolfTheme._({
     required this.bg, required this.surface, required this.card,
     required this.primary, required this.onPrimary,
@@ -63,6 +105,11 @@ class GolfTheme {
     required this.profit, required this.loss, required this.accent,
     required this.scoreUnder, required this.scoreOver,
     required this.brightness,
+    required this.glassFill,
+    required this.glassBorderHi,
+    required this.glassBorderLo,
+    required this.glassShadow,
+    this.glassBlur = 20,
   });
 
   static const light = GolfTheme._(
@@ -72,6 +119,10 @@ class GolfTheme {
     profit: _P.lProfit, loss: _P.lLoss, accent: _P.lAccent,
     scoreUnder: _P.lUnder, scoreOver: _P.lOver,
     brightness: Brightness.light,
+    glassFill: _P.lGlassFill,
+    glassBorderHi: _P.lGlassBordHi,
+    glassBorderLo: _P.lGlassBordLo,
+    glassShadow: _P.lGlassShadow,
   );
 
   static const dark = GolfTheme._(
@@ -81,6 +132,10 @@ class GolfTheme {
     profit: _P.dProfit, loss: _P.dLoss, accent: _P.dAccent,
     scoreUnder: _P.dUnder, scoreOver: _P.dOver,
     brightness: Brightness.dark,
+    glassFill: _P.dGlassFill,
+    glassBorderHi: _P.dGlassBordHi,
+    glassBorderLo: _P.dGlassBordLo,
+    glassShadow: _P.dGlassShadow,
   );
 
   static const classic = GolfTheme._(
@@ -90,6 +145,10 @@ class GolfTheme {
     profit: _P.cProfit, loss: _P.cLoss, accent: _P.cAccent,
     scoreUnder: _P.cUnder, scoreOver: _P.cOver,
     brightness: Brightness.dark,
+    glassFill: _P.cGlassFill,
+    glassBorderHi: _P.cGlassBordHi,
+    glassBorderLo: _P.cGlassBordLo,
+    glassShadow: _P.cGlassShadow,
   );
 
   ThemeData toMaterial() => ThemeData(
