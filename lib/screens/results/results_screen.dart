@@ -185,6 +185,12 @@ class _ResultsScreenState extends State<ResultsScreen> {
                     const SizedBox(height: 20),
                   ],
 
+                  // Qué apuestas tiene la ronda y con qué cobertura de scores.
+                  // Estaba solo en el detalle del Historial, así que desde la
+                  // ronda en vivo no había forma de ver qué se está liquidando.
+                  _RoundBetsSummary(round: round, t: t, g: g),
+                  const SizedBox(height: 20),
+
                   // NIVEL 1: Podio PGA
                   _PGAPodium(players: sortedPlayers, round: round, balances: balances, t: t, g: g),
                   const SizedBox(height: 28),
