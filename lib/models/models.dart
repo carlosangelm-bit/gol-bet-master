@@ -2552,6 +2552,35 @@ class PlayerLink {
       : fallback;
 }
 
+/// Claves [BetModuleInstance.pairKey] de jugadores que son COMPAÑEROS en alguna
+/// apuesta por equipos de la ronda.
+///
+/// Pintarlos como duelo es ruido: sugiere un enfrentamiento que no existe, y el
+/// marcador que se les muestra es de match play individual, sin relación con
+/// cómo se calculó la apuesta que sí juegan juntos.
+///
+/// Vive aquí y no en una pantalla porque la consumen DOS vistas —la pestaña 1v1
+/// de la Tarjeta y la de Duelos en Apuestas— que construyen sus pares por
+/// caminos distintos. Con la regla duplicada, arreglar una dejaba la otra
+/// mostrando compañeros como rivales; que es justo como se descubrió.
+Set<String> companerosDeLado(Round round) {
+  final result = <String>{};
+  for (final g in round.betGroups) {
+    for (final m in g.modules) {
+      if (!m.hasTeamSides) continue;
+      for (final side in m.sides!) {
+        for (var i = 0; i < side.playerIds.length; i++) {
+          for (var k = i + 1; k < side.playerIds.length; k++) {
+            result.add(
+                BetModuleInstance.pairKey(side.playerIds[i], side.playerIds[k]));
+          }
+        }
+      }
+    }
+  }
+  return result;
+}
+
 // ── PairAgreement ─────────────────────────────────────────────────────────────
 //
 // Lo que dos jugadores apuestan habitualmente entre ellos. Existe para que

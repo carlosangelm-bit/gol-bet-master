@@ -530,6 +530,52 @@ void main() {
     });
   });
 
+  group('companerosDeLado', () {
+    Round conModulo(BetModuleInstance m) => Round(
+          id: 'r', name: 'R', course: _course(),
+          players: const [], roundPlayers: const [],
+          betGroups: [
+            BetGroup(
+              id: 'g', name: 'G', format: PartidaFormat.allInOnePot,
+              playerIds: const [a1, a2, b1, b2], modules: [m],
+            )
+          ],
+          scores: const {}, events: const {}, oyeseRankings: const {},
+          sliding: const [], createdAt: DateTime(2026, 1, 1), totalHoles: 18,
+        );
+
+    test('identifica a los compañeros de cada lado, no a los rivales', () {
+      final r = conModulo(_mod(soloSegmento));
+      final c = companerosDeLado(r);
+      // Compañeros: dentro del mismo lado.
+      expect(c, contains(BetModuleInstance.pairKey(a1, a2)));
+      expect(c, contains(BetModuleInstance.pairKey(b1, b2)));
+      // Rivales: cruces entre lados, que SÍ deben seguir mostrándose.
+      expect(c, isNot(contains(BetModuleInstance.pairKey(a1, b1))));
+      expect(c, isNot(contains(BetModuleInstance.pairKey(a1, b2))));
+      expect(c, isNot(contains(BetModuleInstance.pairKey(a2, b1))));
+      expect(c, isNot(contains(BetModuleInstance.pairKey(a2, b2))));
+      expect(c.length, 2);
+    });
+
+    test('una ronda sin apuestas por equipos no filtra nada', () {
+      final individual = BetModuleInstance(
+        id: 'n', type: BetModuleType.skins, name: 'Skins',
+        participantIds: const [a1, a2, b1, b2],
+        skinsConfig: const SkinsConfig(valuePerSkin: 20),
+      );
+      expect(companerosDeLado(conModulo(individual)), isEmpty);
+    });
+
+    test('usa el mismo formato de clave que BetModuleInstance.pairKey', () {
+      // Si el consumidor comparara con otra forma de clave —'a|b' en vez de
+      // 'a__b'— el contains no casaría nunca y el filtro no haría nada sin
+      // que ningún error lo delatara.
+      final c = companerosDeLado(conModulo(_mod(soloSegmento)));
+      expect(c.every((k) => k.contains('__')), isTrue);
+    });
+  });
+
   group('etiquetas', () {
     test('summaryLabel interpola de verdad, no muestra la plantilla', () {
       // Regresión: la cadena estaba escrita con \$ (dólar escapado), así que

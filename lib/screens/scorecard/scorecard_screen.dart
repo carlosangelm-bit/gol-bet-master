@@ -1316,8 +1316,17 @@ class _OneVOneViewState extends State<_OneVOneView> {
     final seen  = <String>{};
     final pairs = <(Player, Player)>[];
 
+    // Compañeros de un mismo lado: no son rivales, así que no se dibujan como
+    // duelo. Se filtra DENTRO de addPair porque las cuatro estrategias de la
+    // cascada pasan por aquí; hacerlo en cada rama dejaría alguna sin cubrir.
+    final companeros = companerosDeLado(round);
+
     void addPair(String id1, String id2) {
-      final key = ([id1, id2]..sort()).join('|');
+      // Se usa pairKey para las dos cosas a propósito. La clave local era
+      // 'a|b' y la del filtro es 'a__b': con formatos distintos el contains
+      // no habría casado nunca y el filtro no haría nada en silencio.
+      final key = BetModuleInstance.pairKey(id1, id2);
+      if (companeros.contains(key)) return;
       if (seen.contains(key)) return;
       try {
         final p1 = round.players.firstWhere((p) => p.id == id1);

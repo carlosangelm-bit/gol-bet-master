@@ -274,26 +274,9 @@ List<_DuelInfo> _buildDuels(Round round) {
       .where((p) => round.scores.containsKey(p.id))
       .toList();
 
-  // Parejas que son COMPAÑERAS en alguna apuesta por equipos.
-  //
-  // Pintarlas como duelo es ruido: sugiere un enfrentamiento que no existe y
-  // muestra un marcador de match play individual que no tiene nada que ver con
-  // cómo se calculó la apuesta. Se veía "A1 vs A2 · A2 +2 UP · $0" entre dos
-  // jugadores del mismo lado.
-  final companeros = <String>{};
-  for (final g in round.betGroups) {
-    for (final m in g.modules) {
-      if (!m.hasTeamSides) continue;
-      for (final side in m.sides!) {
-        for (int i = 0; i < side.playerIds.length; i++) {
-          for (int j = i + 1; j < side.playerIds.length; j++) {
-            companeros
-                .add(BetModuleInstance.pairKey(side.playerIds[i], side.playerIds[j]));
-          }
-        }
-      }
-    }
-  }
+  // Compañeros de un mismo lado: no son rivales. Misma regla que usa la
+  // pestaña 1v1 de la Tarjeta, desde una sola definición.
+  final companeros = companerosDeLado(round);
 
   final duels = <String, _DuelInfo>{};
   for (int i = 0; i < activePlayers.length; i++) {
