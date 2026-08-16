@@ -26,6 +26,15 @@ const _teamRequiredTypes = {
 class BetModuleEditSheet extends StatefulWidget {
   final BetGroup group;
   final BetModuleInstance mod;
+
+  /// true cuando el editor se pinta DENTRO de otro sheet que ya trae su
+  /// propio encabezado y controla la altura.
+  ///
+  /// Importa porque la raíz normal es un DraggableScrollableSheet, que se
+  /// dimensiona como fracción de la altura disponible: embebido en un
+  /// scroll esa altura es infinita, la fracción queda indefinida y el
+  /// contenido colapsa a cero — el modal salía vacío.
+  final bool embedded;
   final GolfTheme t;
   final CourseInfo? courseInfo;
   final void Function(BetModuleInstance) onSave;
@@ -49,6 +58,7 @@ class BetModuleEditSheet extends StatefulWidget {
     this.courseInfo,
     this.players,
     this.roundHandicaps,
+    this.embedded = false,
   });
   @override
   State<BetModuleEditSheet> createState() => _BetModuleEditSheetState();
@@ -262,12 +272,24 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     final error = _sidesError;
     final canSave = error == null;
 
+    // Embebido: el padre pone encabezado y acota la altura, así que se
+    // devuelve el contenido pelado. Suelto: se envuelve en el sheet.
+    if (widget.embedded) {
+      return _body(t, null, error, canSave, showHeader: false);
+    }
     return DraggableScrollableSheet(
       initialChildSize: 0.75,
       minChildSize: 0.4,
       maxChildSize: 0.95,
       expand: false,
-      builder: (_, ctrl) => Column(children: [
+      builder: (_, ctrl) => _body(t, ctrl, error, canSave),
+    );
+  }
+
+  Widget _body(GolfTheme t, ScrollController? ctrl, String? error,
+      bool canSave, {bool showHeader = true}) {
+    return Column(children: [
+      if (showHeader) ...[
         Container(
           margin: const EdgeInsets.only(top: 12, bottom: 8),
           width: 40, height: 4,
@@ -285,6 +307,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
           ]),
         ),
         Divider(height: 20, color: t.divider),
+      ],
         Expanded(
           child: SingleChildScrollView(
             controller: ctrl,
@@ -354,8 +377,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
             ),
           ),
         ),
-      ]),
-    );
+    ]);
   }
 
   List<Widget> _buildFields(GolfTheme t) {

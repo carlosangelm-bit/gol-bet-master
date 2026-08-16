@@ -3169,20 +3169,25 @@ class _EditorView extends StatelessWidget {
         ),
 
         // ── Editor del módulo (sin su propio header) ─────────────────────────
-        Flexible(
-          child: SingleChildScrollView(
-            child: BetModuleEditSheet(
-              group: group,
-              mod: newMod,
-              t: t,
-              courseInfo: round.course,
-              players: round.players,
-              roundHandicaps: {
-                for (final rp in round.roundPlayers)
-                  rp.playerId: rp.handicapEnRonda,
-              },
-              onSave: onSave,
-            ),
+        //
+        // Expanded y no Flexible+SingleChildScrollView: el editor trae dentro
+        // su propio scroll, y envolverlo en otro le daba altura infinita. Su
+        // raíz se dimensiona por fracción de la altura disponible, así que con
+        // altura infinita la fracción quedaba indefinida y el editor salía
+        // VACÍO — sin campos ni botón de guardar, con cualquier tipo de apuesta.
+        Expanded(
+          child: BetModuleEditSheet(
+            group: group,
+            mod: newMod,
+            t: t,
+            embedded: true, // este sheet ya puso su encabezado arriba
+            courseInfo: round.course,
+            players: round.players,
+            roundHandicaps: {
+              for (final rp in round.roundPlayers)
+                rp.playerId: rp.handicapEnRonda,
+            },
+            onSave: onSave,
           ),
         ),
       ],
