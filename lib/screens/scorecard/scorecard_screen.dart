@@ -5034,16 +5034,14 @@ class LowHighTeamCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: derecha ? TextAlign.right : TextAlign.left,
-                  style: TextStyle(color: t.sub, fontSize: 10)),
+                  style: GolfType.label(t.sub)),
               const SizedBox(height: 8),
+              // Cifra héroe de la pestaña: la que responde "cómo va la
+              // apuesta principal". Sale de la escala, no de un tamaño suelto.
               Text(fmt(total),
-                  style: TextStyle(
-                    color: gana ? color : t.text.withValues(alpha: 0.55),
-                    fontSize: 40,
-                    fontWeight: FontWeight.w900,
-                    height: 0.95,
-                    letterSpacing: -1.5,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+                  style: GolfType.hero(
+                    gana ? color : t.text.withValues(alpha: 0.55),
+                    size: 46,
                   )),
               const SizedBox(height: 3),
               Text('baja ${fmt(low)}   alta ${fmt(high)}',

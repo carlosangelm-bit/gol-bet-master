@@ -22,12 +22,17 @@ class _P {
   static const lGlassBordLo   = Color(0x14000000); // negro ~8%
   static const lGlassShadow   = Color(0x1A000000);
 
-  static const dGlassFill     = Color(0x40FFFFFF); // ~25% blanco
+  // Blanco al 10%, no al 25%. Con 25% la tarjeta se aclaraba tanto que el texto
+  // —que en oscuro es claro— quedaba compitiendo contra un fondo casi de su
+  // misma luminosidad y las cifras dejaban de leerse. En un tema oscuro el
+  // relleno tiene que oscurecer, no iluminar.
+  static const dGlassFill     = Color(0x1AFFFFFF); // ~10% blanco
   static const dGlassBordHi   = Color(0x59FFFFFF);
   static const dGlassBordLo   = Color(0x0DFFFFFF);
   static const dGlassShadow   = Color(0x40000000);
 
-  static const cGlassFill     = Color(0x3D66BB6A); // tinte verde del clásico
+  // Mismo motivo: clásico también es un tema oscuro.
+  static const cGlassFill     = Color(0x2166BB6A); // tinte verde, ~13%
   static const cGlassBordHi   = Color(0x66A5D6A7);
   static const cGlassBordLo   = Color(0x0DFFFFFF);
   static const cGlassShadow   = Color(0x40000000);

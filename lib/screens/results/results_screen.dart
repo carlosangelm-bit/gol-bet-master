@@ -1711,7 +1711,7 @@ List<BetModuleInstance> _lowHighModules(Round round) => [
 //
 // Los números salen de BetEngine.lowHighBreakdown, que consume el mismo
 // recorrido que la liquidación. No hay un segundo cálculo de puntos.
-class _LowHighTeamResult extends StatelessWidget {
+class _LowHighTeamResult extends StatefulWidget {
   final Round round;
   final BetModuleInstance mod;
   final GolfTheme t;
@@ -1719,6 +1719,25 @@ class _LowHighTeamResult extends StatelessWidget {
   const _LowHighTeamResult({
     required this.round, required this.mod, required this.t, required this.g,
   });
+
+  @override
+  State<_LowHighTeamResult> createState() => _LowHighTeamResultState();
+}
+
+/// Arranca COLAPSADO a propósito.
+///
+/// Resultados apilaba cuatro representaciones del mismo hecho —ranking,
+/// transferencias, detalle por jugador y tabla por segmento— sin que ninguna
+/// se declarara principal. La pantalla responde una pregunta: cuánto gano o
+/// pierdo. El desglose de cómo se llegó ahí es una segunda pregunta, y va bajo
+/// demanda.
+class _LowHighTeamResultState extends State<_LowHighTeamResult> {
+  bool _abierto = false;
+
+  Round get round => widget.round;
+  BetModuleInstance get mod => widget.mod;
+  GolfTheme get t => widget.t;
+  _ThemeGrad get g => widget.g;
 
   String _nombre(String id) => round.players
       .firstWhere((p) => p.id == id, orElse: () => Player(id: id, name: id))
@@ -1800,6 +1819,44 @@ class _LowHighTeamResult extends StatelessWidget {
           '   vs   ${sideB.name} · ${sideB.playerIds.map(_nombre).join(" + ")}',
           style: TextStyle(color: t.sub, fontSize: 11),
         ),
+
+        // ── Resultado, siempre visible ──────────────────────────────────
+        // Cerrada, la tarjeta ya responde: quién paga a quién y cuánto. Abrir
+        // es para ver CÓMO se llegó ahí, que es otra pregunta.
+        const SizedBox(height: 10),
+        InkWell(
+          onTap: () => setState(() => _abierto = !_abierto),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              Expanded(
+                child: Text(
+                  netoA == 0
+                      ? 'Sin saldo entre equipos'
+                      : '${netoA > 0 ? sideB.name : sideA.name} paga '
+                          '\$${netoA.abs().toStringAsFixed(0)} a '
+                          '${netoA > 0 ? sideA.name : sideB.name}',
+                  style: TextStyle(
+                      color: netoA == 0 ? t.even : t.text,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()]),
+                ),
+              ),
+              Text(_abierto ? 'Ocultar' : 'Ver desglose',
+                  style: TextStyle(
+                      color: g.sectionColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(width: 2),
+              Icon(_abierto ? Icons.expand_less : Icons.expand_more,
+                  color: g.sectionColor, size: 18),
+            ]),
+          ),
+        ),
+
+        if (!_abierto) const SizedBox.shrink() else ...[
         const SizedBox(height: 12),
 
         // ── Cabecera de la tabla ─────────────────────────────────────────
@@ -1859,32 +1916,13 @@ class _LowHighTeamResult extends StatelessWidget {
           );
         }),
 
-        Divider(height: 12, color: g.cardBorder),
-        // ── Total del duelo ──────────────────────────────────────────────
-        Row(children: [
-          Expanded(
-            child: Text('TOTAL',
-                style: TextStyle(
-                    color: t.sub, fontSize: 10, fontWeight: FontWeight.w800)),
-          ),
-          Text(
-            netoA == 0
-                ? 'Sin saldo entre equipos'
-                : '${netoA > 0 ? sideB.name : sideA.name} paga '
-                    '\$${netoA.abs().toStringAsFixed(0)} a '
-                    '${netoA > 0 ? sideA.name : sideB.name}',
-            style: TextStyle(
-                color: netoA == 0 ? t.sub : t.text,
-                fontSize: 12,
-                fontWeight: FontWeight.w800),
-          ),
-        ]),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Text(
           'El pago se reparte entre los cruces de ambos lados; el desglose por '
           'jugador está más abajo.',
           style: TextStyle(color: t.sub, fontSize: 10, height: 1.3),
         ),
+        ],
       ]),
     );
   }
