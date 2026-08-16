@@ -375,6 +375,27 @@ void main() {
   });
 
   // ════════════════════════════════════════════════════════════════════════
+  group('etiquetas', () {
+    test('summaryLabel interpola de verdad, no muestra la plantilla', () {
+      // Regresión: la cadena estaba escrita con \$ (dólar escapado), así que
+      // Dart imprimía '\${partes.join(...)}' literal en la tarjeta de la
+      // apuesta en vez del importe.
+      final mod = _mod(const NassauLowHighConfig(
+        mode: GrossNetMode.gross,
+        segmentBetEnabled: true,
+        segmentAmount: 100,
+        pointBetEnabled: true,
+        amountPerPoint: 20,
+      ));
+      final label = mod.summaryLabel;
+      expect(label, isNot(contains(r'${')));
+      expect(label, isNot(contains('partes.join')));
+      expect(label, contains('100'));
+      expect(label, contains('20'));
+      expect(label, contains('Gross'));
+    });
+  });
+
   group('validaciones', () {
     test('exige exactamente 2 jugadores por lado', () {
       final r = _round(gross: {

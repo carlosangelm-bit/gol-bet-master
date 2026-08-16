@@ -4670,6 +4670,14 @@ class _SetupScreenState extends State<SetupScreen> {
     for (final group in (_groups.isEmpty ? [] : _groups)) {
       for (final mod in group.modules) {
         if (mod.sides == null || mod.sides!.isEmpty) continue;
+
+        // Bola Baja / Bola Alta necesita los cuatro scores individuales para
+        // sacar la bola baja y la alta de cada equipo, así que un jugador
+        // virtual de equipo no representa nada: sería una fila más donde
+        // capturar un número que el formato no usa y que contradiría a los
+        // reales. Los otros formatos por equipos sí lo aprovechan.
+        if (mod.type == BetModuleType.nassauLowHigh) continue;
+
         for (final side in mod.sides!) {
           if (side.playerIds.length < 2) continue;
 

@@ -983,6 +983,10 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         const SizedBox(height: 16),
 
         // ── Selector de Modo de Juego (Best Ball vs Scramble) ─────────────────
+        //
+        // No aplica a Bola Baja / Bola Alta: ese formato usa las DOS bolas de
+        // cada equipo, así que no es ni mejor bola ni una bola compartida.
+        if (_current.type != BetModuleType.nassauLowHigh) ...[
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -1019,8 +1023,9 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
             ],
           ]),
         ),
-
         const SizedBox(height: 14),
+        ],
+
 
         // ── Instrucción ──────────────────────────────────────────────────────
         Container(

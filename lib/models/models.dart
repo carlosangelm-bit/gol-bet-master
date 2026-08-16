@@ -1722,7 +1722,8 @@ class BetModuleInstance {
         if (c.segmentBetEnabled) '\$${c.segmentAmount.toStringAsFixed(0)}/segmento',
         if (c.pointBetEnabled)   '\$${c.amountPerPoint.toStringAsFixed(0)}/punto',
       ];
-      return '\${partes.join(" + ")} · \${c.mode == GrossNetMode.net ? "Net" : "Gross"}';
+      final modo = c.mode == GrossNetMode.net ? 'Net' : 'Gross';
+      return '${partes.join(" + ")} · $modo';
     }(),
   };
 
