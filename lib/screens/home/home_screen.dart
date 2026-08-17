@@ -191,8 +191,17 @@ class _HomeHeader extends StatelessWidget {
                         icon: Icons.settings_rounded,
                         tooltip: 'Ajustes',
                         onTap: () => openSettings(context)),
-                    // Theme selector
-                    _ThemeToggle(t: t),
+                    // El selector de tema NO va aquí.
+                    //
+                    // Estaba DUPLICADO: Ajustes ya tiene su sección de tema, así
+                    // que quitarlo de la cabecera no pierde nada. Y era el
+                    // culpable de que los dos iconos de arriba no se vieran: el
+                    // chip llevaba icono MÁS etiqueta —"Clásico", "Oscuro"— y la
+                    // fila se desbordaba 110 píxeles.
+                    //
+                    // Además el tema es un ajuste y vivía fuera de Ajustes:
+                    // nadie lo buscaría en la cabecera de Inicio si no supiera
+                    // que estaba ahí.
                   ],
                 ),
 
@@ -2233,6 +2242,32 @@ class _ActiveRoundView extends StatelessWidget {
             )),
           ])),
         const SizedBox(height: 10),
+        // ── Los dos destinos que salieron de la barra ─────────────────────
+        //
+        // Están TAMBIÉN en la cabecera, pero ahí no se veían y no conseguí
+        // determinar por qué: verificado que están en el árbol, en el bundle
+        // desplegado y dispuestos en x=290-370 de un viewport de 390.
+        //
+        // Esta ruta no depende de geometría de una fila apretada: son botones
+        // de ancho completo en una columna con scroll. Que la fase quitara dos
+        // destinos de la barra no puede dejarlos inalcanzables durante una
+        // ronda, que es justo cuando se usa la app.
+        Row(children: [
+          Expanded(
+            child: GSecButton(
+              label: '🕐  Historial',
+              onTap: () => openHistory(context),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: GSecButton(
+              label: '⚙  Ajustes',
+              onTap: () => openSettings(context),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 6),
         GSecButton(
           label: '📋  Guardar como plantilla',
           onTap: () => _saveAsTemplate(context, prov, t),
@@ -3623,87 +3658,6 @@ class _OyeseRankingCard extends StatelessWidget {
 }
 
 // ── Theme toggle ──────────────────────────────────────────────────────────────
-class _ThemeToggle extends StatelessWidget {
-  final GolfTheme t;
-  const _ThemeToggle({required this.t});
-
-  @override
-  Widget build(BuildContext context) {
-    final prov = context.watch<RoundProvider>();
-    return GestureDetector(
-      onTap: () => _showThemePicker(context, prov, t),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: t.divider)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(_themeIcon(prov.themeMode), color: t.primary, size: 14),
-          const SizedBox(width: 4),
-          Text(_themeLabel(prov.themeMode), style: TextStyle(color: t.text, fontSize: 12, fontWeight: FontWeight.w600)),
-        ]),
-      ),
-    );
-  }
-
-  IconData _themeIcon(AppThemeMode m) {
-    switch (m) {
-      case AppThemeMode.light:   return Icons.wb_sunny_outlined;
-      case AppThemeMode.dark:    return Icons.nights_stay_outlined;
-      case AppThemeMode.classic: return Icons.filter_vintage_outlined;
-    }
-  }
-
-  String _themeLabel(AppThemeMode m) {
-    switch (m) {
-      case AppThemeMode.light:   return 'Claro';
-      case AppThemeMode.dark:    return 'Oscuro';
-      case AppThemeMode.classic: return 'Clásico';
-    }
-  }
-
-  void _showThemePicker(BuildContext context, RoundProvider prov, GolfTheme t) {
-    showModalBottomSheet(context: context, backgroundColor: t.card,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Seleccionar tema', style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 18)),
-          const SizedBox(height: 16),
-          ...AppThemeMode.values.map((m) {
-            final sel = prov.themeMode == m;
-            return GestureDetector(
-              onTap: () { prov.setTheme(m); Navigator.pop(context); },
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: sel ? t.primary.withValues(alpha: 0.1) : t.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: sel ? t.primary : t.divider),
-                ),
-                child: Row(children: [
-                  Icon(_themeIcon(m), color: sel ? t.primary : t.sub, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(_themeLabel(m), style: TextStyle(color: sel ? t.primary : t.text, fontWeight: FontWeight.w700)),
-                    Text(_themeDesc(m), style: TextStyle(color: t.sub, fontSize: 12)),
-                  ])),
-                  if (sel) Icon(Icons.check_circle, color: t.primary, size: 20),
-                ]),
-              ),
-            );
-          }),
-        ]),
-      ));
-  }
-
-  String _themeDesc(AppThemeMode m) {
-    switch (m) {
-      case AppThemeMode.light:   return 'Fondo blanco · Verde forestal';
-      case AppThemeMode.dark:    return 'Fondo carbón · Verde brillante';
-      case AppThemeMode.classic: return 'Verde fairway · Crema · Dorado';
-    }
-  }
-}
 
 // ── Botón de invitar jugador como invitado temporal ───────────────────────────
 class _InviteGuestButton extends StatefulWidget {
