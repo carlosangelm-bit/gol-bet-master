@@ -384,4 +384,104 @@ class BetRecipe {
       ],
     );
   }
+
+  /// Clave estable de un cruce. Ordenada, para que (a,b) y (b,a) sean el mismo.
+  ///
+  /// El separador es '|', el mismo que MatchAutoPressConfig.pairKey y
+  /// round_provider._pairKeyOf. Esta sesión ya costó un bug por tener tres
+  /// separadores distintos conviviendo —'|' y '__'— así que aquí no se inventa
+  /// uno nuevo.
+  static String cruceKey(String a, String b) {
+    final o = [a, b]..sort();
+    return '${o[0]}|${o[1]}';
+  }
+
+  /// Todos los cruces posibles entre [pids], en orden estable.
+  static List<(String, String)> crucesDe(List<String> pids) {
+    final out = <(String, String)>[];
+    for (var i = 0; i < pids.length; i++) {
+      for (var j = i + 1; j < pids.length; j++) {
+        out.add((pids[i], pids[j]));
+      }
+    }
+    return out;
+  }
+
+  /// Materializa una apuesta respetando los cruces que quedan FUERA.
+  ///
+  /// Excluir un cruce no es lo mismo que excluir un jugador. El caso que lo
+  /// motiva: cinco jugadores donde todos juegan Nassau salvo J4 contra J5.
+  /// Sacar a J4 y J5 como jugadores los quitaría del Nassau con los demás;
+  /// dejar fuera el cruce los deja jugando contra todos menos entre ellos.
+  ///
+  /// No hace falta tocar el motor. _nassau enumera TODAS las parejas de sus
+  /// participantes y no tiene mecanismo de exclusión, pero expandBetModules ya
+  /// sabe partir una apuesta en módulos 1v1 con BetScope.pair, compartiendo
+  /// betGroupId para que la UI los agrupe como una sola familia. Excluir es
+  /// omitir uno de esos módulos.
+  ///
+  /// Sin exclusiones se devuelve UN módulo con todos los participantes, no la
+  /// expansión: liquida igual y es más barato de guardar y de leer. Hay test de
+  /// que las dos formas pagan lo mismo.
+  static List<BetModuleInstance> conCrucesFuera(
+    BetModuleInstance base, {
+    required List<String> participantIds,
+    Set<String> fuera = const {},
+  }) {
+    if (participantIds.length < 2) return const [];
+
+    final vivos = crucesDe(participantIds)
+        .where((c) => !fuera.contains(cruceKey(c.$1, c.$2)))
+        .toList();
+    if (vivos.isEmpty) return const [];
+
+    // Nada excluido → un solo módulo, como siempre.
+    if (vivos.length == crucesDe(participantIds).length) {
+      return [base.copyWith(participantIds: participantIds)];
+    }
+
+    // Con exclusiones: un módulo por cruce vivo, todos de la misma familia.
+    //
+    // copyWith no puede cambiar el id, y cada módulo necesita el suyo: con uno
+    // compartido el segundo sobreescribiría al primero al guardarse. Se
+    // reconstruye con defaultFor y se le trasplanta la config del base, para no
+    // duplicar la lista de campos tipados y que un formato nuevo no se quede
+    // fuera en silencio.
+    final familia = '${base.id}_fam';
+    var i = 0;
+    return [
+      for (final (a, b) in vivos)
+        _mismoPero(base, id: '${base.id}_${i++}', a: a, b: b, familia: familia),
+    ];
+  }
+
+  /// El mismo módulo con otro id y limitado a un cruce.
+  static BetModuleInstance _mismoPero(
+    BetModuleInstance base, {
+    required String id,
+    required String a,
+    required String b,
+    required String familia,
+  }) {
+    return BetModuleInstance(
+      id: id,
+      type: base.type,
+      name: base.name,
+      participantIds: [a, b],
+      scope: BetScope.pair(a, b),
+      betGroupId: familia,
+      betGroupName: base.name,
+      formatMode: base.formatMode,
+      structure: BetStructure.headToHead,
+      teamHandicapConfig: base.teamHandicapConfig,
+      skinsConfig: base.skinsConfig,
+      nassauConfig: base.nassauConfig,
+      nassauLowHighConfig: base.nassauLowHighConfig,
+      matchAutoPressConfig: base.matchAutoPressConfig,
+      medalConfig: base.medalConfig,
+      puttsConfig: base.puttsConfig,
+      oyesesConfig: base.oyesesConfig,
+      unitsConfig: base.unitsConfig,
+    );
+  }
 }

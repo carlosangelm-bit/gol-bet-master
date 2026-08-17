@@ -43,8 +43,13 @@ class _SetupScreenState extends State<SetupScreen> {
 
   /// Los pasos de ESTA ronda. La lista la decide [setupSteps], que es lógica
   /// pura y testeable: qué pasos existen no debería depender de un widget.
-  List<SetupStep> get _steps =>
-      setupSteps(porEquipos: _porEquipos, conCuenta: true);
+  List<SetupStep> get _steps => setupSteps(
+        porEquipos: _porEquipos,
+        conCuenta: true,
+        conParticipantes: true,
+        apuestasElegidas: _conteos.length,
+        jugadores: _players.length,
+      );
 
   /// Índice del paso actual, resolviendo el caso de que haya dejado de existir
   /// —el usuario vuelve atrás y cambia a individual estando en "qué bola"—.
@@ -78,6 +83,25 @@ class _SetupScreenState extends State<SetupScreen> {
 
   /// Cómo se cobra. Solo se ofrece donde el motor lee formatMode.
   final Map<BetCount, BetFormatMode> _reparto = {};
+
+  // ── Participantes, dos niveles ─────────────────────────────────────────────
+  //
+  // Son preguntas distintas y el caso de los cinco jugadores necesita las dos:
+  // todos juegan Nassau salvo J4 contra J5. Sacarlos como JUGADORES los quita
+  // del Nassau con los demás; dejar fuera el CRUCE los deja jugando contra
+  // todos menos entre ellos.
+
+  /// Nivel 1 · qué jugadores entran en cada apuesta. Sin entrada, juegan todos.
+  final Map<BetCount, List<String>> _quienJuega = {};
+
+  /// Nivel 2 · qué cruces quedan fuera de cada apuesta, por [BetRecipe.cruceKey].
+  final Map<BetCount, Set<String>> _crucesFuera = {};
+
+  List<String> _participantesDe(BetCount c) {
+    final propios = _quienJuega[c];
+    if (propios != null && propios.isNotEmpty) return propios;
+    return _players.map((p) => p.id).toList();
+  }
 
   static String _defaultRoundName() {
     final now = DateTime.now();
@@ -336,7 +360,7 @@ class _SetupScreenState extends State<SetupScreen> {
         // construyen en los bloques siguientes. La rama está aquí para que el
         // switch siga siendo exhaustivo, que es lo que obliga a no olvidar
         // ninguno al añadirlo.
-        SetupStep.participantes ||
+        SetupStep.participantes => _stepParticipantes(t),
         SetupStep.montos ||
         SetupStep.ventaja =>
           const SizedBox.shrink(),
@@ -359,7 +383,10 @@ class _SetupScreenState extends State<SetupScreen> {
           label: isLast ? '⛳ Iniciar Ronda' : 'Siguiente →',
           onTap: () {
             // Validaciones por paso
-            if (_current == SetupStep.cuenta) _sincronizarModulos();
+            if (_current == SetupStep.cuenta ||
+                _current == SetupStep.participantes) {
+              _sincronizarModulos();
+            }
             if (_current == SetupStep.apuestas && _groups.isEmpty) {
               _addDefaultGroup();
             }
@@ -1634,8 +1661,9 @@ class _SetupScreenState extends State<SetupScreen> {
 
     final delFlujo = <BetModuleInstance>[];
     for (final cuenta in _conteos) {
+      final propios = _participantesDe(cuenta);
       final res = BetRecipe.build(
-        cuenta: cuenta, bola: _bola, participantIds: pids,
+        cuenta: cuenta, bola: _bola, participantIds: propios,
         holesInRound: _totalHoles, sides: lados,
         preferida: _particion[cuenta],
         id: 'flujo_${cuenta.name}',
@@ -1644,7 +1672,17 @@ class _SetupScreenState extends State<SetupScreen> {
       var m = res.module!;
       final rep = _reparto[cuenta];
       if (rep != null && cuenta.admiteBote) m = m.copyWith(formatMode: rep);
-      delFlujo.add(m);
+
+      // Los cruces excluidos solo aplican en individual: con equipos el único
+      // enfrentamiento es lado contra lado, y los cruces A1–B2 no son apuestas
+      // —son cómo pay() reparte un importe ya pactado—.
+      if (lados == null) {
+        delFlujo.addAll(BetRecipe.conCrucesFuera(m,
+            participantIds: propios,
+            fuera: _crucesFuera[cuenta] ?? const {}));
+      } else {
+        delFlujo.add(m);
+      }
     }
 
     if (_groups.isEmpty) {
@@ -1659,6 +1697,137 @@ class _SetupScreenState extends State<SetupScreen> {
     final ajenos =
         g.modules.where((m) => !m.id.startsWith('flujo_')).toList();
     _groups[0] = g.copyWith(modules: [...ajenos, ...delFlujo]);
+  }
+
+  // ── PASO · ¿Quiénes juegan cada apuesta? ──────────────────────────────────
+  //
+  // Dos niveles, y son preguntas distintas:
+  //   1. qué JUGADORES entran en cada apuesta
+  //   2. qué CRUCES entre ellos quedan fuera — solo con tres o más
+  //
+  // El caso que lo motiva: cinco jugadores donde todos juegan Nassau salvo J4
+  // contra J5. Sacarlos como jugadores los quita del Nassau con los demás;
+  // dejar fuera el cruce los deja jugando contra todos menos entre ellos.
+  Widget _stepParticipantes(GolfTheme t) {
+    return ListView(padding: const EdgeInsets.all(20), children: [
+      Text('¿Quiénes juegan cada apuesta?', style: GolfType.title(t.text)),
+      const SizedBox(height: 4),
+      // SEÑALIZACIÓN: anuncia el punto de escape del paso siguiente, para que
+      // nadie intente resolver aquí una diferencia de monto.
+      Text('No todos tienen que entrar a todo. Si alguien juega pero con otro '
+          'monto, eso se ajusta en el paso siguiente.',
+          style: GolfType.body(t.sub)),
+      const SizedBox(height: 16),
+      for (final cuenta in _conteos) _fichaParticipantes(t, cuenta),
+    ]);
+  }
+
+  Widget _fichaParticipantes(GolfTheme t, BetCount cuenta) {
+    final dentro = _participantesDe(cuenta);
+    final fuera = _crucesFuera[cuenta] ?? const <String>{};
+    final cruces = BetRecipe.crucesDe(dentro);
+    final vivos = cruces
+        .where((c) => !fuera.contains(BetRecipe.cruceKey(c.$1, c.$2)))
+        .length;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.divider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(cuenta.labelCon(_bola),
+            style: GolfType.body(t.text).copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 9),
+
+        // ── Nivel 1 · quién entra ────────────────────────────────────────────
+        Wrap(spacing: 5, runSpacing: 5, children: [
+          for (final p in _players)
+            GestureDetector(
+              onTap: () => setState(() {
+                final lista = List<String>.of(_participantesDe(cuenta));
+                if (!lista.remove(p.id)) lista.add(p.id);
+                _quienJuega[cuenta] = lista;
+                // Un cruce que ya no existe no puede seguir "excluido": si
+                // vuelve a entrar el jugador, reaparecería apagado sin que
+                // nadie lo haya apagado.
+                _crucesFuera[cuenta] = (fuera.where((k) {
+                  final ids = k.split('|');
+                  return lista.contains(ids[0]) && lista.contains(ids[1]);
+                })).toSet();
+              }),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: dentro.contains(p.id)
+                      ? t.primary.withValues(alpha: 0.10)
+                      : t.surface,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                      color: dentro.contains(p.id) ? t.primary : t.divider),
+                ),
+                child: Text(p.name,
+                    style: GolfType.label(
+                            dentro.contains(p.id) ? t.text : t.sub)
+                        .copyWith(
+                            decoration: dentro.contains(p.id)
+                                ? null
+                                : TextDecoration.lineThrough)),
+              ),
+            ),
+        ]),
+        const SizedBox(height: 6),
+        Text(
+            '${dentro.length} de ${_players.length} jugadores · '
+            '$vivos enfrentamiento${vivos == 1 ? '' : 's'}',
+            style: GolfType.label(t.sub)),
+
+        if (dentro.length < 2)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+                'Hacen falta al menos dos para que esta apuesta exista.',
+                style: GolfType.label(t.danger)),
+          ),
+
+        // ── Nivel 2 · qué cruces quedan fuera ────────────────────────────────
+        //
+        // Solo con tres o más: con dos, apagar el único cruce es lo mismo que
+        // quitar la apuesta, y ya hay una forma de hacerlo.
+        if (dentro.length > 2) ...[
+          const SizedBox(height: 10),
+          Text('¿ALGÚN CRUCE NO LA JUEGA?', style: GolfType.label(t.primary)),
+          for (final (a, b) in cruces)
+            _filaCruce(t, cuenta, a, b,
+                apagado: fuera.contains(BetRecipe.cruceKey(a, b))),
+        ],
+      ]),
+    );
+  }
+
+  Widget _filaCruce(GolfTheme t, BetCount cuenta, String a, String b,
+      {required bool apagado}) {
+    return Row(children: [
+      Expanded(
+        child: Text('${_playerName(a)} vs ${_playerName(b)}',
+            style: GolfType.label(apagado ? t.sub : t.text).copyWith(
+                decoration: apagado ? TextDecoration.lineThrough : null)),
+      ),
+      Switch(
+        value: !apagado,
+        activeThumbColor: t.primary,
+        onChanged: (_) => setState(() {
+          final set = Set<String>.of(_crucesFuera[cuenta] ?? const {});
+          final k = BetRecipe.cruceKey(a, b);
+          if (!set.remove(k)) set.add(k);
+          _crucesFuera[cuenta] = set;
+        }),
+      ),
+    ]);
   }
 
   // ── PASO · ¿Quiénes compiten? ─────────────────────────────────────────────
