@@ -3134,6 +3134,34 @@ class Round {
 
   OyeseRanking? getOyese(int hole) => oyeseRankings[hole];
 
+  /// Quién debe ANOTAR en esta ronda.
+  ///
+  /// No es `players`: en una ronda por equipos hay jugadores que aparecen para
+  /// que se les pueda nombrar pero que no llevan tarjeta. Y sobre todo NO es
+  /// `players.where((p) => scores.containsKey(p.id))`, que es lo que había
+  /// copiado en 19 sitios: ese predicado pasa a cualquiera que tenga
+  /// CONTENEDOR de scores, aunque esté vacío.
+  ///
+  /// Setup siembra un contenedor por jugador de la ronda, así que en cuanto
+  /// alguien tiene contenedor sin llegar a anotar nunca —el virtual de best
+  /// ball, por ejemplo— cualquier `every(...hasScore)` sobre esa lista es
+  /// falso para siempre. Así se quedaba el contador de captura en "0/18" con
+  /// hoyos capturados, y por eso el síntoma aparecía desde el primer hoyo.
+  ///
+  /// [roundPlayers] es la lista buena: es la declaración de quién juega, no una
+  /// consecuencia de qué mapas se hayan inicializado.
+  ///
+  /// Con roundPlayers vacío se cae al predicado viejo. Una ronda guardada sin
+  /// esa lista daría cero jugadores, y `every` sobre lista vacía es true: el
+  /// contador diría 18/18 desde el hoyo 1, que es peor que el bug.
+  List<Player> get scoringPlayers {
+    if (roundPlayers.isEmpty) {
+      return players.where((p) => scores.containsKey(p.id)).toList();
+    }
+    final anotan = roundPlayers.map((rp) => rp.playerId).toSet();
+    return players.where((p) => anotan.contains(p.id)).toList();
+  }
+
   /// Las personas de la ronda. Excluye los jugadores de equipo.
   ///
   /// [players] lleva los reales Y los virtuales, porque las apuestas por

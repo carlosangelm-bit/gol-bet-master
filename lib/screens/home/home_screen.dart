@@ -3203,7 +3203,7 @@ class _ActiveRoundView extends StatelessWidget {
 
   int _countCompletedHoles(Round round) {
     final maxHole = round.totalHoles;
-    final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
+    final activePlayers = round.scoringPlayers;
     for (int h = maxHole; h >= 1; h--) {
       if (activePlayers.every((p) => round.getScore(p.id, h).hasScore)) return h;
     }
@@ -3323,7 +3323,7 @@ class _ScoreEntryNavigatorState extends State<_ScoreEntryNavigator> {
             itemCount: 18,
             itemBuilder: (context, i) {
               final h = i + 1;
-              final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
+              final activePlayers = round.scoringPlayers;
               final allDone = activePlayers.every((p) => round.getScore(p.id, h).hasScore);
               final isSel = h == _selectedHole;
               return GestureDetector(

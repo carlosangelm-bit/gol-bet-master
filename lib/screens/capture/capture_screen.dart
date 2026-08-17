@@ -53,14 +53,14 @@ class _CaptureScreenState extends State<CaptureScreen> {
       final sn    = round.startingNine;
       final order = [..._firstSegment(sn), ..._secondSegment(sn)];
       for (final h in order) {
-        final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
+        final activePlayers = round.scoringPlayers;
         if (!activePlayers.every((p) => round.getScore(p.id, h).hasScore)) {
           _jumpToHole(h);
           break;
         }
       }
       // Activar el primer jugador por defecto
-      final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
+      final activePlayers = round.scoringPlayers;
       if (activePlayers.isNotEmpty) {
         setState(() => _activePlayerId = activePlayers.first.id);
       }
@@ -308,7 +308,7 @@ class _CaptureHeader extends StatelessWidget {
 
   int _countCompleted(Round round) {
     final total = _effectiveTotal(round);
-    final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
+    final activePlayers = round.scoringPlayers;
     int c = 0;
     for (int h = 1; h <= total; h++) {
       if (activePlayers.every((p) => round.getScore(p.id, h).hasScore)) c++;
@@ -361,7 +361,7 @@ class _HoleSelector extends StatelessWidget {
           }
           final h = order[i];
           final isSel   = h == currentHole;
-          final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
+          final activePlayers = round.scoringPlayers;
           final allDone = activePlayers.isNotEmpty &&
               activePlayers.every((p) => round.getScore(p.id, h).hasScore);
           final isPar3  = round.course.holes.firstWhere((c) => c.hole == h).isPar3;
