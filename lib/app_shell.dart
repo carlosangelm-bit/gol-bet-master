@@ -12,13 +12,45 @@ import 'providers/handicap_provider.dart';
 import 'providers/betting_group_provider.dart';
 import 'screens/capture/capture_screen.dart';
 import 'screens/home/home_screen.dart';
-import 'screens/results/results_screen.dart';
 import 'screens/scorecard/scorecard_screen.dart';
 import 'screens/settings/settings_screen.dart';
 import 'screens/auth/auth_screen.dart';
-import 'screens/history/history_screen.dart';
 import 'screens/templates/templates_screen.dart';
 import 'screens/bets/bets_screen.dart';
+
+/// Los destinos de la barra principal.
+enum MainDestination { inicio, score, apuestas, resultados }
+
+extension MainDestinationLabel on MainDestination {
+  String get label => switch (this) {
+        MainDestination.inicio => 'Inicio',
+        MainDestination.score => 'Score',
+        MainDestination.apuestas => 'Apuestas',
+        MainDestination.resultados => 'Resultados',
+      };
+}
+
+/// Qué destinos existen ahora mismo. **Única definición de la composición.**
+///
+/// La fase 5 los bajó de siete a cuatro. Esta función es la que consume el
+/// build para armar las pestañas Y la que comprueban los tests: una lista
+/// duplicada en el test no cazaría un cambio en la de verdad, que es
+/// exactamente el fallo del catálogo de Inicio.
+///
+/// [hideScore] es el caso del invitado en una ronda live con captura de admin:
+/// no ve Score, pero sí todo lo demás.
+List<MainDestination> mainDestinations({
+  required bool hasRound,
+  required bool hideScore,
+}) =>
+    [
+      MainDestination.inicio,
+      if (hasRound) ...[
+        if (!hideScore) MainDestination.score,
+        MainDestination.apuestas,
+        MainDestination.resultados,
+      ],
+    ];
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -122,17 +154,48 @@ class _AppShellState extends State<AppShell> {
         (round?.isAdminScoring ?? false) &&
         !prov.isLiveOwner;
 
-    final tabs = <_TabEntry>[
-      _TabEntry(label: 'Inicio',       icon: Icons.home_outlined,                   activeIcon: Icons.home,                      screen: const HomeScreen()),
-      if (hasRound) ...[
-        if (!hideScoreTab)
-          _TabEntry(label: 'Score',    icon: Icons.edit_outlined,                   activeIcon: Icons.edit,                      screen: const CaptureScreen()),
-        _TabEntry(label: 'Apuestas',   icon: Icons.paid_outlined,                   activeIcon: Icons.paid,                      screen: const BetsScreen()),
-        _TabEntry(label: 'Tarjeta',    icon: Icons.grid_on_outlined,                activeIcon: Icons.grid_on,                   screen: const ScorecardScreen()),
-        _TabEntry(label: 'Resultados', icon: Icons.account_balance_wallet_outlined, activeIcon: Icons.account_balance_wallet,    screen: const ResultsScreen()),
-      ],
-      _TabEntry(label: 'Historial',    icon: Icons.history_outlined,                activeIcon: Icons.history,                   screen: const HistoryScreen()),
-      _TabEntry(label: 'Ajustes',      icon: Icons.settings_outlined,               activeIcon: Icons.settings,                  screen: _SettingsWithProfile(auth: auth, t: t)),
+    // ── Cuatro destinos ───────────────────────────────────────────────────
+    //
+    // Eran siete, por encima del techo cómodo, y dos pares se solapaban:
+    //
+    //   · Tarjeta y Resultados responden la MISMA pregunta —"cómo va la cosa"—
+    //     así que se fusionan en un destino con pestañas. Tenerlas separadas
+    //     obligaba a elegir entre ellas sin saber cuál tenía el dato.
+    //   · Historial y Ajustes no compiten por atención DURANTE una ronda, así
+    //     que no merecen sitio en la barra: se llega a ellos desde Inicio.
+    //
+    // Con cuatro hay ancho para objetivos de toque más grandes, que importa con
+    // guante y a una mano.
+    // La composición la decide mainDestinations, que es lo que también
+    // comprueban los tests. Aquí solo se le pone cara a cada uno.
+    final tabs = [
+      for (final d in mainDestinations(
+          hasRound: hasRound, hideScore: hideScoreTab))
+        switch (d) {
+          MainDestination.inicio => _TabEntry(
+              label: d.label,
+              icon: Icons.home_outlined,
+              activeIcon: Icons.home,
+              screen: const HomeScreen()),
+          MainDestination.score => _TabEntry(
+              label: d.label,
+              icon: Icons.edit_outlined,
+              activeIcon: Icons.edit,
+              screen: const CaptureScreen()),
+          MainDestination.apuestas => _TabEntry(
+              label: d.label,
+              icon: Icons.paid_outlined,
+              activeIcon: Icons.paid,
+              screen: const BetsScreen()),
+          // La pantalla anfitriona es ScorecardScreen: ya tenía el
+          // TabController y las tres vistas, y Resumen entra como primera
+          // pestaña.
+          MainDestination.resultados => _TabEntry(
+              label: d.label,
+              icon: Icons.account_balance_wallet_outlined,
+              activeIcon: Icons.account_balance_wallet,
+              screen: const ScorecardScreen()),
+        },
     ];
 
     final maxTab = tabs.length - 1;
@@ -159,7 +222,11 @@ class _AppShellState extends State<AppShell> {
           ),
         ),
       ]),
-      bottomNavigationBar: _GolfNavBar(tabs: tabs, selectedIndex: idx, t: t),
+      // Con una sola pestaña la barra no decide nada: sin ronda solo queda
+      // Inicio, y una barra de un elemento es ruido que además roba alto.
+      bottomNavigationBar: tabs.length > 1
+          ? _GolfNavBar(tabs: tabs, selectedIndex: idx, t: t)
+          : null,
     );
   }
 }
@@ -223,10 +290,15 @@ class _BlockerWarningBannerState extends State<_BlockerWarningBanner> {
 }
 
 // ── Wrapper de Settings que agrega perfil del usuario ─────────────────────────
-class _SettingsWithProfile extends StatelessWidget {
+/// Ajustes con la ficha del usuario encima.
+///
+/// Público desde la fase 5: Ajustes dejó de ser un destino de la barra —no
+/// compite por atención durante una ronda— y se abre desde Inicio, así que
+/// tiene que ser alcanzable desde fuera de este archivo.
+class SettingsWithProfile extends StatelessWidget {
   final AuthProvider auth;
   final GolfTheme t;
-  const _SettingsWithProfile({required this.auth, required this.t});
+  const SettingsWithProfile({super.key, required this.auth, required this.t});
 
   @override
   Widget build(BuildContext context) {

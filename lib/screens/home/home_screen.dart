@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/app_destinations.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -176,6 +177,20 @@ class _HomeHeader extends StatelessWidget {
                     ),
                     // Live indicator
                     if (prov.isLiveRound) ...[_LiveIndicator(t: t), const SizedBox(width: 8)],
+                    // ── Los dos destinos que salieron de la barra ──────────
+                    //
+                    // Historial y Ajustes no compiten por atención durante una
+                    // ronda, así que la fase 5 les quitó el sitio permanente.
+                    // Viven aquí, en la cabecera de Inicio: siguen a un toque
+                    // de distancia y dejan la barra en cuatro.
+                    _HeaderAction(
+                        icon: Icons.history_rounded,
+                        tooltip: 'Historial',
+                        onTap: () => openHistory(context)),
+                    _HeaderAction(
+                        icon: Icons.settings_rounded,
+                        tooltip: 'Ajustes',
+                        onTap: () => openSettings(context)),
                     // Theme selector
                     _ThemeToggle(t: t),
                   ],
@@ -4093,3 +4108,38 @@ class _CaddieAccessButtonState extends State<_CaddieAccessButton> {
   }
 }
 
+
+/// Acción de la cabecera de Inicio.
+///
+/// Área de toque de 40×40 y no solo el icono: la app se usa con guante y a una
+/// mano, y un objetivo del tamaño del glifo se falla.
+class _HeaderAction extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  const _HeaderAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        // El icono va sobre la cabecera con gradiente, así que el blanco es
+        // deliberado y no un color de tema: la cabecera no cambia con el tema.
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: Center(
+            child: Icon(icon,
+                color: Colors.white.withValues(alpha: 0.85), size: 20),
+          ),
+        ),
+      ),
+    );
+  }
+}

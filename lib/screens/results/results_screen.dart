@@ -149,7 +149,14 @@ List<Color> transferAmountBgForTest(GolfTheme t) => _ThemeGrad(t).amountPillBg;
 Color transferAmountTextForTest(GolfTheme t) => _ThemeGrad(t).amountPillText;
 
 class ResultsScreen extends StatefulWidget {
-  const ResultsScreen({super.key});
+  /// Sin Scaffold ni SafeArea, para vivir dentro de una pestaña.
+  ///
+  /// La fase 5 fusiona Tarjeta y Resultados —las dos responden "cómo va la
+  /// cosa"— en un solo destino con pestañas. Anidar dos Scaffold daría dos
+  /// cabeceras, así que la pantalla necesita saber que está embebida.
+  final bool embedded;
+
+  const ResultsScreen({super.key, this.embedded = false});
   @override State<ResultsScreen> createState() => _ResultsScreenState();
 }
 
@@ -186,10 +193,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
     final iAmRegistered = myLinkedPlayer != null;
     final adminFinished = prov.roundFinishedByAdmin;
 
-    return Scaffold(
-      backgroundColor: t.bg,
-      body: SafeArea(
-        child: Column(children: [
+    final cuerpo = Column(children: [
           // Banner: ronda finalizada por el admin (solo para invitados)
           if (adminFinished && !prov.isLiveOwner)
             _AdminFinishedBanner(
@@ -260,8 +264,14 @@ class _ResultsScreenState extends State<ResultsScreen> {
               ),
             ),
           ),
-        ]),
-      ),
+        ]);
+
+    // Embebida en una pestaña: sin Scaffold ni SafeArea, que los pone el
+    // anfitrión. Anidarlos daría dos cabeceras y un doble recorte de notch.
+    if (widget.embedded) return cuerpo;
+    return Scaffold(
+      backgroundColor: t.bg,
+      body: SafeArea(child: cuerpo),
     );
   }
 

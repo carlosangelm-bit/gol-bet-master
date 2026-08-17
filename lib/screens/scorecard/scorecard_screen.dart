@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../results/results_screen.dart';
 import '../../widgets/score_shape.dart';
 import '../../engines/bet_engine.dart';
 import '../../engines/game_engine.dart';
@@ -25,7 +26,11 @@ class _ScorecardScreenState extends State<ScorecardScreen> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 3, vsync: this);
+    // Cuatro: Resumen —lo que era la pantalla Resultados— más las tres vistas
+    // de la tarjeta. La fase 5 las fusiona porque las dos responden la MISMA
+    // pregunta, "cómo va la cosa", y tenerlas en dos destinos obligaba a
+    // elegir entre ellas sin saber cuál tenía el dato.
+    _tabCtrl = TabController(length: 4, vsync: this);
     // Sincronizar desde Firestore al abrir la tarjeta para reflejar
     // cualquier cambio remoto (ej: ventajas editadas externamente).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -60,6 +65,9 @@ class _ScorecardScreenState extends State<ScorecardScreen> with SingleTickerProv
         Expanded(child: TabBarView(
           controller: _tabCtrl,
           children: [
+            // Resumen primero: es la respuesta corta —quién va ganando y
+            // cuánto—. Las tres vistas de detalle vienen después.
+            const ResultsScreen(embedded: true),
             _GrossView(round: round, t: t),
             _NetView(round: round, t: t),
             _OneVOneView(round: round, t: t),
@@ -74,13 +82,16 @@ class _ScorecardScreenState extends State<ScorecardScreen> with SingleTickerProv
       backgroundColor: t.bg,
       elevation: 0,
       title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Tarjeta', style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 18)),
+        Text('Resultados', style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 18)),
         Text(round.name, style: TextStyle(color: t.sub, fontSize: 12)),
       ]),
       bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: t.divider)),
     );
   }
 }
+
+/// Las pestañas de Resultados, para test. Tarjeta se fusionó aquí en la fase 5.
+List<String> resultsTabsForTest() => const ['Resumen', 'Bruto', 'Neto', '1v1'];
 
 class _TabBar extends StatelessWidget {
   final TabController ctrl;
@@ -102,6 +113,7 @@ class _TabBar extends StatelessWidget {
         unselectedLabelColor: t.sub,
         dividerColor: Colors.transparent,
         tabs: const [
+          Tab(text: 'Resumen'),
           Tab(text: 'Bruto'),
           Tab(text: 'Neto'),
           Tab(text: '1v1'),
