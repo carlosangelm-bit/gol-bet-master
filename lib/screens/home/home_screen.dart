@@ -2070,7 +2070,8 @@ class _ActiveRoundView extends StatelessWidget {
           Row(children: [
             Icon(Icons.sports_golf, color: t.sub, size: 14),
             const SizedBox(width: 4),
-            Text('${round.players.where((p) => round.scores.containsKey(p.id)).length} jugadores', style: TextStyle(color: t.sub, fontSize: 12)),
+            // Personas. Con los virtuales de equipo decía 6 en una 2v2.
+            Text('${round.realPlayers.length} jugadores', style: TextStyle(color: t.sub, fontSize: 12)),
             const SizedBox(width: 16),
             Icon(Icons.flag, color: t.sub, size: 14),
             const SizedBox(width: 4),
@@ -2100,8 +2101,10 @@ class _ActiveRoundView extends StatelessWidget {
         const SizedBox(height: 20),
         GSectionHeader(title: 'BALANCE ACTUAL'),
 
-        // Player balances (solo jugadores activos - excluir miembros de equipos Scramble)
-        ...round.players.where((p) => round.scores.containsKey(p.id)).map((p) {
+        // El dinero es de PERSONAS: el libro se lleva entre ellas incluso en
+        // scramble, donde el virtual anota la tarjeta pero no cobra. Un virtual
+        // aquí sería una fila a cero.
+        ...round.realPlayers.map((p) {
           final bal = balances[p.id] ?? 0.0;
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -2140,9 +2143,9 @@ class _ActiveRoundView extends StatelessWidget {
         ]),
         const SizedBox(height: 6),
         ...(() {
-          // Generar pares únicos de jugadores (solo activos)
+          // Pares de PERSONAS: un duelo contra "Equipo A" no existe.
           final pairs = <Widget>[];
-          final players = round.players.where((p) => round.scores.containsKey(p.id)).toList();
+          final players = round.realPlayers;
           for (int i = 0; i < players.length; i++) {
             for (int j = i + 1; j < players.length; j++) {
               final pA = players[i];
@@ -3438,8 +3441,9 @@ class _HoleEntryPanel extends StatelessWidget {
         ])),
         const SizedBox(height: 16),
 
-        // Per player entry (solo jugadores activos)
-        ...round.players.where((p) => round.scores.containsKey(p.id)).map((p) => _PlayerEntry(player: p, hole: hole, ch: ch, t: t)),
+        // Quién lleva tarjeta en este hoyo. En best ball anotan los cuatro
+        // reales; en scramble, los dos virtuales.
+        ...round.scoringPlayers.map((p) => _PlayerEntry(player: p, hole: hole, ch: ch, t: t)),
 
         // Oyese ranking (only for par 3s)
         if (ch.isPar3) ...[

@@ -107,4 +107,89 @@ void main() {
       expect(p.exceptions.length, 1);
     });
   });
+
+  _avisos();
+}
+
+// ── Los avisos de score incompleto colapsan ─────────────────────────────────
+//
+// Una apuesta expandida en módulos 1v1 daba seis líneas casi idénticas:
+// "Nassau · falta CAM, CAV", "Nassau · falta CAM, AAM"… Seis avisos del mismo
+// problema no informan seis veces mejor: entierran el resto de la pantalla.
+//
+// Mismo colapso que la ficha de la regla, en otra superficie.
+void _avisos() {
+  group('los avisos se agrupan por tipo', () {
+    /// Réplica del cálculo de results_screen: una línea por TIPO, no por módulo.
+    List<String> avisos(Round r, List<BetModuleInstance> mods) {
+      final porTipo = <BetModuleType, ({int duelos, Set<String> faltan})>{};
+      for (final m in mods) {
+        final pids = r.scoreCarriersOfModule(m, r.betGroups.first.playerIds);
+        final faltan = <String>{};
+        var completos = 0;
+        for (final ch in r.course.holes) {
+          var lleno = true;
+          for (final pid in pids) {
+            if (!r.getScore(pid, ch.hole).hasScore) {
+              lleno = false;
+              faltan.add(pid);
+            }
+          }
+          if (lleno) completos++;
+        }
+        if (completos >= r.course.holes.length) continue;
+        final previo = porTipo[m.type];
+        porTipo[m.type] = (
+          duelos: (previo?.duelos ?? 0) + 1,
+          faltan: {...?previo?.faltan, ...faltan},
+        );
+      }
+      return [
+        for (final e in porTipo.entries)
+          e.value.duelos > 1
+              ? '${e.key.label} · sin score en ${e.value.duelos} duelos'
+              : '${e.key.label} · falta ${e.value.faltan.join(', ')}',
+      ];
+    }
+
+    test('seis módulos sin score dan UNA línea, no seis', () {
+      final mods = BetRecipe.conCrucesFuera(_base(), participantIds: cuatro,
+          importes: {
+            BetRecipe.cruceKey('j1', 'j2'): const MontoPorCruce(front: 100),
+          });
+      expect(mods.length, 6);
+      final r = _round(mods); // sin scores: todos incompletos
+      final a = avisos(r, mods);
+      expect(a.length, 1);
+      expect(a.single, 'Nassau · sin score en 6 duelos');
+    });
+
+    test('con un solo módulo se sigue nombrando a quién falta', () {
+      // Colapsar no puede costar el dato útil cuando hay UN duelo: ahí el nombre
+      // es lo que distingue "sigue capturando" de "está mal armada".
+      final mods = [_base()];
+      final a = avisos(_round(mods), mods);
+      expect(a.single, contains('falta'));
+      expect(a.single, contains('j1'));
+    });
+
+    test('tipos distintos siguen dando líneas distintas', () {
+      // Agrupar por tipo no es agrupar todo: dos apuestas distintas incompletas
+      // son dos problemas distintos.
+      final skins = BetModuleInstance.defaultFor(
+          BetModuleType.skins, cuatro, id: 'flujo_skins');
+      final mods = [_base(), skins];
+      expect(avisos(_round(mods), mods).length, 2);
+    });
+
+    test('lo completo no genera aviso', () {
+      final mods = [_base()];
+      final r = _round(mods).copyWith(scores: {
+        for (final i in cuatro)
+          i: {for (var h = 1; h <= 18; h++)
+            h: HoleScore(playerId: i, hole: h, grossScore: 4)},
+      });
+      expect(avisos(r, mods), isEmpty);
+    });
+  });
 }

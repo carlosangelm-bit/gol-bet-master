@@ -3229,6 +3229,45 @@ class Round {
   }
 
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LOS TRES PREDICADOS DE JUGADORES, Y QUÉ SUPERFICIE USA CADA UNO
+  //
+  // Cuatro veces en una sola sesión un jugador virtual de equipo se filtró a una
+  // superficie que solo tiene sentido entre personas: el ranking de Oyes, la
+  // pestaña Duelos, su contador, y la tabla de captura. Las cuatro veces el
+  // arreglo fue el mismo y las cuatro quedó algún consumidor fuera, porque el
+  // barrido se hacía buscando la GRAFÍA del predicado.
+  //
+  // La auditoría útil es al revés: listar las superficies que enumeran gente y
+  // comprobar una a una qué preguntan. La lista es corta y no depende de
+  // acertar el grep.
+  //
+  //   [players]         todos, reales y virtuales. Para BUSCAR por id —resolver
+  //                     un nombre— y para agrupar por virtual/real a propósito.
+  //   [realPlayers]     personas. Lo que solo hace una persona: pegar un tiro
+  //                     de aproximación, cobrar, aparecer en un duelo.
+  //   [scoringPlayers]  quién lleva TARJETA. Best ball → los reales; scramble →
+  //                     los virtuales. Para capturar y para "¿está el hoyo
+  //                     completo?".
+  //
+  // Superficie                      predicado        por qué
+  // ─────────────────────────────── ──────────────── ─────────────────────────
+  // captura · filas de la tabla     scoringPlayers   quién anota
+  // captura · jugador seleccionado  scoringPlayers   ídem
+  // captura · hoyo completo         scoringPlayers   ídem
+  // captura · ranking de Oyes       realPlayers      un equipo no pega un tiro
+  // inicio · "N jugadores"          realPlayers      cuenta de personas
+  // inicio · balances               realPlayers      el dinero es de personas
+  // inicio · pares de jugadores     realPlayers      un duelo es entre dos
+  // apuestas · pestaña Duelos       realPlayers      ídem
+  // apuestas · contador de duelos   —                sale de la MISMA lista
+  // tarjeta · vista 1v1             realPlayers      ídem
+  // resultados · reparto visual     players          separa virtual/real a
+  //                                                  propósito
+  // apuestas · jugadores sueltos    players          necesita ver los virtuales
+  //                                                  para leer teamMemberIds
+  // ═══════════════════════════════════════════════════════════════════════════
+
   /// Las personas de la ronda. Excluye los jugadores de equipo.
   ///
   /// [players] lleva los reales Y los virtuales, porque las apuestas por

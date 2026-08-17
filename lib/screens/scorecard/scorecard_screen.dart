@@ -1223,9 +1223,10 @@ class _OneVOneViewState extends State<_OneVOneView> {
   Widget build(BuildContext context) {
     final t     = widget.t;
     final round = widget.round;
-    final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
-
-    if (activePlayers.length < 2) {
+    // La vista 1v1 es de PERSONAS: los duelos salen de _buildPairs, que ya
+    // descarta compañeros de lado. Con los virtuales de equipo el umbral de
+    // "al menos 2" se cumplía por razones equivocadas.
+    if (round.realPlayers.length < 2) {
       return Center(child: Text('Necesitas al menos 2 jugadores', style: TextStyle(color: t.sub)));
     }
 

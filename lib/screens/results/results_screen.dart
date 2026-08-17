@@ -1605,7 +1605,16 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
     // jugador virtual del equipo es la diferencia entre "sigue capturando" y
     // "la apuesta está mal armada". Sin el nombre hay que salir a buscarlo por
     // fuera de la app.
-    final incompletas = <String>[];
+    // Se agrupan por TIPO, no una línea por módulo.
+    //
+    // Una apuesta expandida en módulos 1v1 —porque un cruce quedó fuera o pactó
+    // otro importe— daba seis líneas casi idénticas: "Nassau · falta CAM, CAV",
+    // "Nassau · falta CAM, AAM"… Seis avisos del mismo problema no informan seis
+    // veces mejor; entierran el resto de la pantalla.
+    //
+    // Es el mismo colapso que la ficha de la regla, en otra superficie: los N
+    // módulos son UNA apuesta.
+    final porTipo = <BetModuleType, ({int duelos, Set<String> faltan})>{};
     for (final e in mods) {
       final (grp, m) = e;
       final pids = _jugadoresDe(grp, m);
@@ -1621,10 +1630,22 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
         }
         if (lleno) completos++;
       }
-      if (completos < round.course.holes.length) {
-        incompletas.add('${m.type.label} · falta ${faltan.join(', ')}');
-      }
+      if (completos >= round.course.holes.length) continue;
+      final previo = porTipo[m.type];
+      porTipo[m.type] = (
+        duelos: (previo?.duelos ?? 0) + 1,
+        faltan: {...?previo?.faltan, ...faltan},
+      );
     }
+
+    final incompletas = [
+      for (final e in porTipo.entries)
+        e.value.duelos > 1
+            // Con varios módulos del mismo tipo, quién falta se repite en todos:
+            // lo que informa es CUÁNTOS duelos están sin cerrar.
+            ? '${e.key.label} · sin score en ${e.value.duelos} duelos'
+            : '${e.key.label} · falta ${e.value.faltan.join(', ')}',
+    ];
 
     return Container(
       width: double.infinity,

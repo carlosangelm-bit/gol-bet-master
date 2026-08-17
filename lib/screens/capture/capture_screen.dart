@@ -141,7 +141,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
         orElse: () => round.course.holes.first);
 
     // Asegurar que siempre hay un jugador activo válido
-    final activePlayers = round.players.where((p) => round.scores.containsKey(p.id)).toList();
+    final activePlayers = round.scoringPlayers;
     final activeId = (_activePlayerId != null &&
             activePlayers.any((p) => p.id == _activePlayerId))
         ? _activePlayerId!
@@ -517,7 +517,7 @@ class _PlayerTable extends StatelessWidget {
       ),
       clipBehavior: Clip.hardEdge,
       child: Column(
-        children: round.players.where((p) => round.scores.containsKey(p.id)).toList().asMap().entries.map((entry) {
+        children: round.scoringPlayers.asMap().entries.map((entry) {
           final idx    = entry.key;
           final player = entry.value;
           final isActive = player.id == activePlayerId;

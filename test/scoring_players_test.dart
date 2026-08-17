@@ -287,4 +287,79 @@ void main() {
       expect(r.realPlayers.map((p) => p.id), reales);
     });
   });
+
+  _bestBallCaptura();
+}
+
+// ── Best ball: los reales anotan, el virtual no ──────────────────────────────
+//
+// La tabla de captura listaba SEIS filas en una 2v2 a mejor bola: los cuatro
+// reales más Equipo A y Equipo B. En best ball el score del lado se DERIVA de la
+// mejor bola, así que el virtual no debe pedir captura. En scramble sí.
+//
+// Cuarta superficie donde un virtual se filtró donde no toca. La lista de qué
+// predicado usa cada una está en models.dart, junto a los tres.
+void _bestBallCaptura() {
+  group('quién lleva tarjeta según el modo', () {
+    /// 2v2 a mejor bola como la produce Setup: los cuatro reales anotan y hay un
+    /// virtual por equipo para nombrarlo.
+    Round bestBall() => Round(
+          id: 'r', name: 'R', course: _course(),
+          players: [
+            for (final i in reales) Player(id: i, name: i.toUpperCase()),
+            Player(id: 'bb_A', name: 'Equipo A', isVirtual: true,
+                teamMemberIds: const ['cam', 'aam']),
+            Player(id: 'bb_B', name: 'Equipo B', isVirtual: true,
+                teamMemberIds: const ['cav', 'rafa']),
+          ],
+          roundPlayers: [
+            for (final i in [...reales, 'bb_A', 'bb_B'])
+              RoundPlayer(playerId: i, handicapEnRonda: 0),
+          ],
+          betGroups: [BetGroup(id: 'g', name: 'G',
+              format: PartidaFormat.teams2v2, playerIds: reales, modules: [
+            BetModuleInstance(
+              id: 'eq', type: BetModuleType.nassau, name: 'Nassau',
+              participantIds: reales, nassauConfig: NassauConfig.def,
+              sides: const [
+                // playMode bestBall: los reales conservan su id en el lado.
+                BetSide(id: 'A', name: 'Equipo A', playerIds: ['cam', 'aam']),
+                BetSide(id: 'B', name: 'Equipo B', playerIds: ['cav', 'rafa']),
+              ],
+            ),
+          ])],
+          scores: {
+            for (final i in reales) i: _hoyos(i, 3, 4),
+            'bb_A': <int, HoleScore>{},
+            'bb_B': <int, HoleScore>{},
+          },
+          events: const {}, oyeseRankings: const {}, sliding: const [],
+          createdAt: DateTime(2026, 1, 1), totalHoles: 18,
+        );
+
+    test('en best ball anotan los CUATRO reales, no seis', () {
+      final r = bestBall();
+      expect(r.players.length, 6, reason: 'el montaje tiene dos virtuales');
+      expect(r.scoringPlayers.map((p) => p.id), reales);
+    });
+
+    test('el virtual de best ball no lleva tarjeta', () {
+      // Tiene contenedor de scores sembrado por Setup, y nunca se llena: el
+      // score del lado se deriva de la mejor bola.
+      final ids = bestBall().scoringPlayers.map((p) => p.id);
+      expect(ids, isNot(contains('bb_A')));
+      expect(ids, isNot(contains('bb_B')));
+    });
+
+    test('en scramble es al revés: anotan los virtuales', () {
+      // Misma pregunta, respuesta opuesta según el playMode del lado. Es lo que
+      // hace que un solo predicado sirva para los dos modos.
+      final r = _ronda(scores: {va: _hoyos(va, 3, 4), vb: _hoyos(vb, 3, 5)});
+      expect(r.scoringPlayers.map((p) => p.id), [va, vb]);
+    });
+
+    test('y el contador cuenta los tres hoyos en best ball', () {
+      expect(_contador(bestBall()), 3);
+    });
+  });
 }

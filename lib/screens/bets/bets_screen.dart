@@ -1201,7 +1201,8 @@ class _BetsHeader extends StatelessWidget {
         Row(children: [
           _QuickStat(
             icon: Icons.people_outline,
-            label: '${round.players.where((p) => round.scores.containsKey(p.id)).length} jugadores',
+            // Personas: es la otra mitad del "6 jugadores · 15 duelos".
+            label: '${round.realPlayers.length} jugadores',
             t: t,
           ),
           const SizedBox(width: 12),
@@ -1215,10 +1216,13 @@ class _BetsHeader extends StatelessWidget {
     );
   }
 
-  int _countDuels(Round r) {
-    final active = r.players.where((p) => r.scores.containsKey(p.id)).toList();
-    return active.length * (active.length - 1) ~/ 2;
-  }
+  /// Cuántos duelos hay. Sale de la MISMA lista que la tabla.
+  ///
+  /// Antes calculaba n·(n−1)/2 sobre su propio recuento de jugadores, y de ahí
+  /// venía el "6 jugadores · 15 duelos" en una 2v2: contaba los virtuales de
+  /// equipo Y no descontaba a los compañeros del mismo lado, que no se
+  /// enfrentan. Dos formas de contar lo mismo son dos formas de contradecirse.
+  int _countDuels(Round r) => _buildDuels(r).length;
   int _countModules(Round r) => r.betGroups.fold(0, (s, g) => s + g.modules.length);
 }
 
