@@ -342,8 +342,29 @@ class _ModuleRef {
 // ─────────────────────────────────────────────────────────────────────────────
 // Lógica de agrupación
 // ─────────────────────────────────────────────────────────────────────────────
+/// Expuesto para test: los duelos que la pestaña muestra.
+///
+/// Se testea porque la lista incluía a los jugadores virtuales de equipo y
+/// ofrecía "CAM vs Equipo A", que no es un duelo que nadie pacte.
+List<dynamic> buildDuelsForTest(Round round) => _buildDuels(round);
+
+/// Expuesto para test: los dos jugadores de un duelo.
+List<String> duelIdsForTest(dynamic d) =>
+    [(d as _DuelInfo).p1.id, d.p2.id];
+
 List<_DuelInfo> _buildDuels(Round round) {
-  final activePlayers = round.players
+  // Solo PERSONAS. round.players lleva reales y virtuales porque las apuestas
+  // por equipos necesitan ambos, pero "CAM vs Equipo A" no es un duelo que
+  // nadie pacte: con 4 personas y 2 virtuales salían 6 jugadores y sus 15
+  // combinaciones.
+  //
+  // Es la tercera superficie con el mismo fallo —el ranking de Oyes fue la
+  // anterior— y la respuesta es la misma: realPlayers.
+  //
+  // El filtro de contenedor se mantiene porque un duelo 1v1 necesita scores
+  // individuales. En una ronda de scramble los reales no anotan, así que no
+  // quedan duelos posibles: eso es correcto, no un efecto del filtro.
+  final activePlayers = round.realPlayers
       .where((p) => round.scores.containsKey(p.id))
       .toList();
 

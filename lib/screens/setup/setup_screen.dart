@@ -140,15 +140,38 @@ class _SetupScreenState extends State<SetupScreen> {
   // pasos normales.
   final List<_DueloPactado> _duelos = [];
 
+  /// Los dos lados de esta ronda, de donde estén definidos.
+  ///
+  /// _teamA y _teamB solo se llenan al pasar por el paso Compiten. Pero los
+  /// lados TAMBIÉN se configuran en la hoja de cada apuesta —bet_module_edit_
+  /// sheet los inyecta— así que atar el bloque de duelos a _porEquipos lo dejaba
+  /// invisible en una ronda 2v2 configurada por ese otro camino.
+  ///
+  /// Es el mismo error que ya cometí con los equipos: condicionar la UI a un
+  /// flag de la pantalla en vez de al estado real del modelo.
+  (List<String>, List<String>)? _ladosDeLaRonda() {
+    if (_teamA.isNotEmpty && _teamB.isNotEmpty) return (_teamA, _teamB);
+    for (final g in _groups) {
+      for (final m in g.modules) {
+        if (m.hasTeamSides) return (m.sideA.playerIds, m.sideB.playerIds);
+      }
+    }
+    return null;
+  }
+
   /// Cruces entre lados OPUESTOS que aún no tienen duelo. Los compañeros no se
   /// enfrentan, así que no aparecen.
-  List<(String, String)> _crucesDisponibles() => [
-        for (final a in _teamA)
-          for (final b in _teamB)
-            if (!_duelos.any((d) =>
-                (d.a == a && d.b == b) || (d.a == b && d.b == a)))
-              (a, b),
-      ];
+  List<(String, String)> _crucesDisponibles() {
+    final lados = _ladosDeLaRonda();
+    if (lados == null) return const [];
+    return [
+      for (final a in lados.$1)
+        for (final b in lados.$2)
+          if (!_duelos.any(
+              (d) => (d.a == a && d.b == b) || (d.a == b && d.b == a)))
+            (a, b),
+    ];
+  }
 
   double _hcpDe(String pid) =>
       _hcpRonda[pid] ??
@@ -5704,10 +5727,10 @@ class _SetupScreenState extends State<SetupScreen> {
                     : 'Ventaja · Sin ventaja, todos brutos',
             style: GolfType.label(t.sub)),
         const SizedBox(height: 12),
-        // Solo con equipos: en individual todo son duelos y ya se configuran
-        // en los pasos normales.
-        if (_porEquipos && _teamA.isNotEmpty && _teamB.isNotEmpty)
-          _bloqueDuelos(t),
+        // Solo cuando la ronda tiene DOS LADOS de verdad, vengan del paso
+        // Compiten o de la hoja de una apuesta. En individual todo son duelos y
+        // ya se configuran en los pasos normales, así que el bloque no aparece.
+        if (_ladosDeLaRonda() != null) _bloqueDuelos(t),
         // ── Selector de duración de ronda ──────────────────────────────────
         GSectionHeader(title: 'DURACIÓN DE LA RONDA'),
         GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

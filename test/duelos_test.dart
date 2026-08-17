@@ -19,6 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/models.dart';
 import 'package:golf_bet_master/models/bet_recipe.dart';
 import 'package:golf_bet_master/engines/bet_engine.dart';
+import 'package:golf_bet_master/screens/bets/bets_screen.dart';
 
 const a1 = 'a1', a2 = 'a2', b1 = 'b1', b2 = 'b2';
 const todos = [a1, a2, b1, b2];
@@ -217,6 +218,84 @@ void main() {
           a.compareTo(b) <= 0 ? delta : -delta;
       expect(signo(a1, b1, 3), 3);
       expect(signo(b1, a1, 3), -3);
+    });
+  });
+
+  _duelosSonDePersonas();
+}
+
+// ── La pestaña Duelos es de personas ────────────────────────────────────────
+//
+// La pestaña decía "6 jugadores · 15 duelos" en una ronda 2v2 y listaba
+// "CAM vs Equipo". round.players lleva reales y virtuales porque las apuestas
+// por equipos necesitan ambos, pero un duelo contra un equipo no existe.
+//
+// Tercera superficie con el mismo fallo. La anterior fue el ranking de Oyes.
+void _duelosSonDePersonas() {
+  group('los duelos solo entre personas', () {
+    /// Ronda 2v2 a best ball: los reales anotan y hay un virtual por equipo
+    /// para nombrarlo, igual que la produce Setup.
+    Round bestBall() => Round(
+          id: 'r', name: 'R', course: _course(),
+          players: [
+            for (final i in todos) Player(id: i, name: i.toUpperCase()),
+            Player(id: 'bb_team_A', name: 'Equipo A', isVirtual: true,
+                teamMemberIds: const [a1, a2]),
+            Player(id: 'bb_team_B', name: 'Equipo B', isVirtual: true,
+                teamMemberIds: const [b1, b2]),
+          ],
+          roundPlayers: [
+            for (final i in [...todos, 'bb_team_A', 'bb_team_B'])
+              RoundPlayer(playerId: i, handicapEnRonda: 0),
+          ],
+          betGroups: [BetGroup(id: 'g', name: 'G',
+              format: PartidaFormat.teams2v2, playerIds: todos, modules: [
+            BetModuleInstance(
+              id: 'eq', type: BetModuleType.nassau, name: 'Nassau',
+              participantIds: todos, nassauConfig: NassauConfig.def,
+              sides: const [
+                BetSide(id: 'A', name: 'Equipo A', playerIds: [a1, a2]),
+                BetSide(id: 'B', name: 'Equipo B', playerIds: [b1, b2]),
+              ],
+            ),
+          ])],
+          scores: {
+            for (final i in [...todos, 'bb_team_A', 'bb_team_B'])
+              i: {for (var h = 1; h <= 18; h++)
+                h: HoleScore(playerId: i, hole: h, grossScore: 4)},
+          },
+          events: const {}, oyeseRankings: const {}, sliding: const [],
+          createdAt: DateTime(2026, 1, 1), totalHoles: 18,
+        );
+
+    test('realPlayers deja fuera los virtuales del equipo', () {
+      final r = bestBall();
+      expect(r.players.length, 6);
+      expect(r.realPlayers.map((p) => p.id), todos);
+    });
+
+    test('con 2v2 salen CUATRO cruces, no quince', () {
+      // Cuatro personas dan 6 combinaciones; companerosDeLado quita las 2 de
+      // compañeros y quedan 4 entre lados opuestos. Los 15 venían de contar 6
+      // jugadores incluyendo los virtuales.
+      final r = bestBall();
+      final duelos = buildDuelsForTest(r);
+      expect(duelos.length, 4);
+    });
+
+    test('ningún duelo incluye a un virtual', () {
+      for (final d in buildDuelsForTest(bestBall())) {
+        expect(duelIdsForTest(d).any((id) => id.startsWith('bb_team_')), isFalse,
+            reason: 'un equipo no pacta un duelo');
+      }
+    });
+
+    test('y ninguno enfrenta a compañeros', () {
+      for (final d in buildDuelsForTest(bestBall())) {
+        final ids = duelIdsForTest(d).toSet();
+        expect(ids, isNot({a1, a2}));
+        expect(ids, isNot({b1, b2}));
+      }
     });
   });
 }
