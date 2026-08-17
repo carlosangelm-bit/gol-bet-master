@@ -47,6 +47,7 @@ class _SetupScreenState extends State<SetupScreen> {
         porEquipos: _porEquipos,
         conCuenta: true,
         conParticipantes: true,
+        conMontos: _conteos.isNotEmpty,
         apuestasElegidas: _conteos.length,
         jugadores: _players.length,
       );
@@ -96,6 +97,19 @@ class _SetupScreenState extends State<SetupScreen> {
 
   /// Nivel 2 · qué cruces quedan fuera de cada apuesta, por [BetRecipe.cruceKey].
   final Map<BetCount, Set<String>> _crucesFuera = {};
+
+  // ── Montos ─────────────────────────────────────────────────────────────────
+  //
+  // El importe vive en la celda enfrentamiento × apuesta × segmento.
+
+  /// Importe base por apuesta.
+  final Map<BetCount, double> _montoBase = {};
+
+  /// Excepciones: importe propio de un enfrentamiento concreto.
+  final Map<BetCount, Map<String, MontoPorCruce>> _montoCruce = {};
+
+  /// Qué apuesta tiene el panel de ajuste abierto.
+  BetCount? _ajusteAbierto;
 
   List<String> _participantesDe(BetCount c) {
     final propios = _quienJuega[c];
@@ -361,9 +375,8 @@ class _SetupScreenState extends State<SetupScreen> {
         // switch siga siendo exhaustivo, que es lo que obliga a no olvidar
         // ninguno al añadirlo.
         SetupStep.participantes => _stepParticipantes(t),
-        SetupStep.montos ||
-        SetupStep.ventaja =>
-          const SizedBox.shrink(),
+        SetupStep.montos => _stepMontos(t),
+        SetupStep.ventaja => const SizedBox.shrink(),
       };
 
   Widget _bottomBar(BuildContext ctx, GolfTheme t) {
@@ -384,7 +397,8 @@ class _SetupScreenState extends State<SetupScreen> {
           onTap: () {
             // Validaciones por paso
             if (_current == SetupStep.cuenta ||
-                _current == SetupStep.participantes) {
+                _current == SetupStep.participantes ||
+                _current == SetupStep.montos) {
               _sincronizarModulos();
             }
             if (_current == SetupStep.apuestas && _groups.isEmpty) {
@@ -1676,10 +1690,17 @@ class _SetupScreenState extends State<SetupScreen> {
       // Los cruces excluidos solo aplican en individual: con equipos el único
       // enfrentamiento es lado contra lado, y los cruces A1–B2 no son apuestas
       // —son cómo pay() reparte un importe ya pactado—.
+      // El importe base, si se cambió en el paso de montos.
+      final base = _montoBase[cuenta];
+      if (base != null && base > 0) {
+        m = BetRecipe.aplicarBase(m, base);
+      }
+
       if (lados == null) {
         delFlujo.addAll(BetRecipe.conCrucesFuera(m,
             participantIds: propios,
-            fuera: _crucesFuera[cuenta] ?? const {}));
+            fuera: _crucesFuera[cuenta] ?? const {},
+            importes: _montoCruce[cuenta] ?? const {}));
       } else {
         delFlujo.add(m);
       }
@@ -1697,6 +1718,222 @@ class _SetupScreenState extends State<SetupScreen> {
     final ajenos =
         g.modules.where((m) => !m.id.startsWith('flujo_')).toList();
     _groups[0] = g.copyWith(modules: [...ajenos, ...delFlujo]);
+  }
+
+  // ── PASO · Montos ─────────────────────────────────────────────────────────
+  //
+  // El importe vive en la celda enfrentamiento × apuesta × segmento.
+  //
+  // Un LADO es un jugador o un equipo, así que individual y equipos no son dos
+  // casos: son el mismo con distinto número de lados. Cuatro jugadores dan 4
+  // lados y 6 enfrentamientos; dos equipos dan 2 lados y 1 enfrentamiento.
+  Widget _stepMontos(GolfTheme t) {
+    return ListView(padding: const EdgeInsets.all(20), children: [
+      Text('Montos', style: GolfType.title(t.text)),
+      const SizedBox(height: 4),
+      Text(
+          _porEquipos
+              ? 'Un enfrentamiento: Equipo A contra Equipo B.'
+              : 'Cada apuesta tiene sus propios enfrentamientos.',
+          style: GolfType.body(t.sub)),
+      const SizedBox(height: 16),
+      for (final cuenta in _conteos) _fichaMonto(t, cuenta),
+    ]);
+  }
+
+  double _baseDe(BetCount cuenta) {
+    final propio = _montoBase[cuenta];
+    if (propio != null) return propio;
+    final m = BetRecipe.build(
+      cuenta: cuenta, bola: _bola,
+      participantIds: _participantesDe(cuenta),
+      holesInRound: _totalHoles, sides: _ladosProvisionales(),
+      preferida: _particion[cuenta],
+    );
+    return m.ok ? m.module!.baseValue : 0;
+  }
+
+  Widget _fichaMonto(GolfTheme t, BetCount cuenta) {
+    final dentro = _participantesDe(cuenta);
+    final fuera = _crucesFuera[cuenta] ?? const <String>{};
+    final cruces = BetRecipe.crucesDe(dentro)
+        .where((c) => !fuera.contains(BetRecipe.cruceKey(c.$1, c.$2)))
+        .toList();
+    final excepciones = (_montoCruce[cuenta] ?? const {})
+        .entries
+        .where((e) => !e.value.vacio)
+        .length;
+    final abierto = _ajusteAbierto == cuenta;
+    final partida = BetRecipe.divisionDe(cuenta,
+                bola: _bola,
+                holesInRound: _totalHoles,
+                preferida: _particion[cuenta])
+            .elegida ==
+        BetDivision.frontBackTotal;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.divider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+              child: Text(cuenta.labelCon(_bola),
+                  style: GolfType.body(t.text)
+                      .copyWith(fontWeight: FontWeight.w600))),
+          SizedBox(
+            width: 96,
+            child: TextField(
+              controller: _ctrlMonto('base_${cuenta.name}', _baseDe(cuenta)),
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.right,
+              style: GolfType.bodyNum(t.text),
+              decoration: InputDecoration(
+                prefixText: '\$',
+                isDense: true,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              onChanged: (v) =>
+                  setState(() => _montoBase[cuenta] = double.tryParse(v) ?? 0),
+            ),
+          ),
+        ]),
+
+        if (_porEquipos)
+          // Con equipos NO hay ajuste por pareja. Los cruces A1–B2 no son
+          // apuestas: son cómo pay() reparte internamente un importe ya
+          // pactado. Ofrecer ajustarlos era un error del diseño anterior.
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+                'El pago se reparte después entre los jugadores de cada lado, '
+                'pero el importe pactado es este.',
+                style: GolfType.label(t.sub)),
+          )
+        else ...[
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(
+              child: Text(
+                  excepciones > 0
+                      ? '$excepciones con monto distinto'
+                      // SEÑALIZACIÓN: dice dónde se resuelve la excepción, en
+                      // vez de haberla preguntado antes de que exista.
+                      : 'Los ${cruces.length} juegan \$${_baseDe(cuenta).toStringAsFixed(0)}'
+                          ' · si alguien pactó otra cosa, cámbialo aquí',
+                  style: GolfType.label(t.sub)),
+            ),
+            GestureDetector(
+              onTap: () =>
+                  setState(() => _ajusteAbierto = abierto ? null : cuenta),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: excepciones > 0
+                      ? t.accent.withValues(alpha: 0.15)
+                      : t.surface,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(abierto ? 'CERRAR' : 'AJUSTAR',
+                    style: GolfType.label(
+                        excepciones > 0 ? t.accent : t.sub)),
+              ),
+            ),
+          ]),
+          if (abierto)
+            for (final (a, b) in cruces)
+              _filaMonto(t, cuenta, a, b, partida: partida),
+        ],
+      ]),
+    );
+  }
+
+  /// Fila de ajuste de un enfrentamiento.
+  ///
+  /// Cuando la apuesta está partida son TRES campos, no uno: el ajuste de un
+  /// enfrentamiento no cabe en un solo importe. El base de cada segmento va de
+  /// placeholder, para que se vea de qué se está desviando.
+  Widget _filaMonto(GolfTheme t, BetCount cuenta, String a, String b,
+      {required bool partida}) {
+    final k = BetRecipe.cruceKey(a, b);
+    final actual = (_montoCruce[cuenta] ?? const {})[k] ?? const MontoPorCruce();
+    final base = _baseDe(cuenta);
+
+    void set(MontoPorCruce m) => setState(() {
+          final mapa = Map<String, MontoPorCruce>.of(_montoCruce[cuenta] ?? {});
+          if (m.vacio) {
+            mapa.remove(k);
+          } else {
+            mapa[k] = m;
+          }
+          _montoCruce[cuenta] = mapa;
+        });
+
+    Widget campo(String etiqueta, double? valor, void Function(double?) onSet,
+            {double ancho = 72}) =>
+        SizedBox(
+          width: ancho,
+          child: TextField(
+            controller: _ctrlMonto('${cuenta.name}_${k}_$etiqueta', valor),
+            keyboardType: TextInputType.number,
+            textAlign: TextAlign.right,
+            style: GolfType.bodyNum(t.text),
+            decoration: InputDecoration(
+              hintText: base.toStringAsFixed(0),
+              labelText: etiqueta,
+              labelStyle: GolfType.label(t.sub),
+              isDense: true,
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(9)),
+            ),
+            onChanged: (v) => onSet(double.tryParse(v)),
+          ),
+        );
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('${_playerName(a)} vs ${_playerName(b)}',
+            style: GolfType.label(t.text)),
+        const SizedBox(height: 5),
+        if (partida)
+          Row(children: [
+            campo('F9', actual.front,
+                (v) => set(MontoPorCruce(
+                    front: v, back: actual.back, total: actual.total))),
+            const SizedBox(width: 6),
+            campo('B9', actual.back,
+                (v) => set(MontoPorCruce(
+                    front: actual.front, back: v, total: actual.total))),
+            const SizedBox(width: 6),
+            campo('T18', actual.total,
+                (v) => set(MontoPorCruce(
+                    front: actual.front, back: actual.back, total: v))),
+          ])
+        else
+          campo('Monto', actual.unico, (v) => set(MontoPorCruce(unico: v)),
+              ancho: 110),
+      ]),
+    );
+  }
+
+  /// Controller estable por campo.
+  ///
+  /// Tienen que sobrevivir al rebuild: creados dentro del builder, el TextField
+  /// perdía el controller mientras tenía el foco, el IME se desconectaba y el
+  /// campo resultaba imposible de enfocar. Ya pasó con los sheets de apuesta.
+  TextEditingController _ctrlMonto(String clave, double? valor) {
+    final c = _cfgCtrls.putIfAbsent(
+        'monto_$clave',
+        () => TextEditingController(
+            text: valor == null ? '' : valor.toStringAsFixed(0)));
+    return c;
   }
 
   // ── PASO · ¿Quiénes juegan cada apuesta? ──────────────────────────────────

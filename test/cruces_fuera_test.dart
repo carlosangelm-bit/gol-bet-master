@@ -177,4 +177,159 @@ void main() {
       expect(BetRecipe.cruceKey('a', 'b'), 'a|b');
     });
   });
+
+  _montos();
+  _base_();
+}
+
+// ── Montos por enfrentamiento y por segmento ────────────────────────────────
+//
+// El monto vive en la celda enfrentamiento × apuesta × segmento. Una apuesta
+// sin partición tiene un segmento y la celda es un número; Nassau tiene tres y
+// son tres campos.
+//
+// pairConfigOverrides NO sirve para las partidas: effectiveValueForDuel
+// devuelve un único double. Por eso se expande en módulos 1v1 con su propia
+// config, la misma máquina que las exclusiones.
+void _montos() {
+  group('montos por enfrentamiento', () {
+    test('sin ajustes no se expande', () {
+      final m = BetRecipe.conCrucesFuera(_base(), participantIds: cinco,
+          importes: const {'j1|j2': MontoPorCruce()});
+      expect(m.length, 1, reason: 'un importe vacío no debe forzar expansión');
+    });
+
+    test('un ajuste fuerza la expansión', () {
+      final m = BetRecipe.conCrucesFuera(_base(), participantIds: cinco,
+          importes: {
+            BetRecipe.cruceKey('j1', 'j2'):
+                const MontoPorCruce(front: 100, back: 100, total: 200),
+          });
+      expect(m.length, 10, reason: 'los 10 cruces, uno con importe propio');
+    });
+
+    test('los tres segmentos del cruce ajustado, y solo de ese', () {
+      // El caso del encargo: J1 contra J2 juegan F$100 · B$100 · T$200 mientras
+      // el resto va a 50/50/100.
+      final base = _base().copyWith(
+          nassauConfig: const NassauConfig(
+              frontValue: 50, backValue: 50, totalValue: 100));
+      final mods = BetRecipe.conCrucesFuera(base, participantIds: cinco,
+          importes: {
+            BetRecipe.cruceKey('j1', 'j2'):
+                const MontoPorCruce(front: 100, back: 100, total: 200),
+          });
+
+      final ajustado = mods.firstWhere((m) =>
+          m.participantIds.contains('j1') && m.participantIds.contains('j2'));
+      expect(ajustado.nassau.frontValue, 100);
+      expect(ajustado.nassau.backValue, 100);
+      expect(ajustado.nassau.totalValue, 200);
+
+      for (final m in mods.where((x) => x.id != ajustado.id)) {
+        expect(m.nassau.frontValue, 50, reason: m.id);
+        expect(m.nassau.totalValue, 100, reason: m.id);
+      }
+    });
+
+    test('el dinero del libro refleja el ajuste', () {
+      // No basta con que la config lo guarde: tiene que llegar al importe.
+      final base = _base().copyWith(
+          nassauConfig: const NassauConfig(
+              frontValue: 50, backValue: 50, totalValue: 100));
+      final normal = BetRecipe.conCrucesFuera(base, participantIds: cinco);
+      final conAjuste = BetRecipe.conCrucesFuera(base, participantIds: cinco,
+          importes: {
+            BetRecipe.cruceKey('j1', 'j2'):
+                const MontoPorCruce(front: 100, back: 100, total: 200),
+          });
+
+      final a = _total(BetEngine.computeAll(_round(normal, cinco)));
+      final b = _total(BetEngine.computeAll(_round(conAjuste, cinco)));
+      // El cruce j1–j2 pasa de 200 a 400: 200 más en total.
+      expect(b - a, 200);
+    });
+
+    test('un ajuste y una exclusión conviven', () {
+      final mods = BetRecipe.conCrucesFuera(_base(), participantIds: cinco,
+          fuera: {BetRecipe.cruceKey('j4', 'j5')},
+          importes: {
+            BetRecipe.cruceKey('j1', 'j2'): const MontoPorCruce(front: 999),
+          });
+      expect(mods.length, 9);
+      final pagados = _crucesPagados(BetEngine.computeAll(_round(mods, cinco)));
+      expect(pagados, isNot(contains(BetRecipe.cruceKey('j4', 'j5'))));
+      expect(pagados, contains(BetRecipe.cruceKey('j1', 'j2')));
+    });
+  });
+
+  group('el importe único, en los tipos de un solo segmento', () {
+    test('Skins toma el valor del cruce', () {
+      final base = BetModuleInstance.defaultFor(
+          BetModuleType.skins, cinco, id: 'flujo_skins');
+      final mods = BetRecipe.conCrucesFuera(base, participantIds: cinco,
+          importes: {
+            BetRecipe.cruceKey('j1', 'j2'): const MontoPorCruce(unico: 777),
+          });
+      final ajustado = mods.firstWhere((m) =>
+          m.participantIds.contains('j1') && m.participantIds.contains('j2'));
+      expect(ajustado.baseValue, 777);
+      for (final m in mods.where((x) => x.id != ajustado.id)) {
+        expect(m.baseValue, base.baseValue, reason: m.id);
+      }
+    });
+
+    test('en Nassau un importe único se ignora en vez de escribir uno de tres', () {
+      // withBaseValue devuelve null en los tipos con más de un importe: forzarlo
+      // escribiría solo el Front y dejaría la apuesta a medias.
+      final mods = BetRecipe.conCrucesFuera(_base(), participantIds: cinco,
+          importes: {
+            BetRecipe.cruceKey('j1', 'j2'): const MontoPorCruce(unico: 777),
+          });
+      final ajustado = mods.firstWhere((m) =>
+          m.participantIds.contains('j1') && m.participantIds.contains('j2'));
+      expect(ajustado.nassau.frontValue, _base().nassau.frontValue);
+    });
+  });
+}
+
+// ── El importe base ─────────────────────────────────────────────────────────
+void _base_() {
+  group('aplicarBase', () {
+    test('en Nassau pone los dos nueves iguales y el total al doble', () {
+      // Convención del Nassau: los dos nueves valen lo mismo y el total vale
+      // por los dos. Se puede cambiar en el detalle.
+      final m = BetRecipe.aplicarBase(_base(), 50);
+      expect(m.nassau.frontValue, 50);
+      expect(m.nassau.backValue, 50);
+      expect(m.nassau.totalValue, 100);
+    });
+
+    test('en los tipos de un solo importe fija ese', () {
+      for (final t in [BetModuleType.skins, BetModuleType.medal,
+                       BetModuleType.putts, BetModuleType.oyeses]) {
+        final m = BetRecipe.aplicarBase(
+            BetModuleInstance.defaultFor(t, cinco, id: 'x'), 123);
+        expect(m.baseValue, 123, reason: t.label);
+      }
+    });
+
+    test('un tipo que no sabe fijarlo se devuelve intacto', () {
+      // Mejor sin cambiar que a medias: escribir uno de tres importes dejaría
+      // la apuesta en un estado que nadie pidió.
+      final lh = BetModuleInstance.defaultFor(
+          BetModuleType.nassauLowHigh, cinco, id: 'x');
+      expect(BetRecipe.aplicarBase(lh, 999).configSignature,
+          lh.configSignature);
+    });
+
+    test('el importe base llega al libro', () {
+      final normal = BetRecipe.conCrucesFuera(
+          BetRecipe.aplicarBase(_base(), 50), participantIds: cinco);
+      final doble = BetRecipe.conCrucesFuera(
+          BetRecipe.aplicarBase(_base(), 100), participantIds: cinco);
+      expect(_total(BetEngine.computeAll(_round(doble, cinco))),
+          _total(BetEngine.computeAll(_round(normal, cinco))) * 2);
+    });
+  });
 }

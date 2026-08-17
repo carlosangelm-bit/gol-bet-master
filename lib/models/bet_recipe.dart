@@ -167,6 +167,30 @@ extension BetCountLabel on BetCount {
       : null;
 }
 
+/// Importe pactado en una celda `enfrentamiento × apuesta × segmento`.
+///
+/// Una apuesta sin partición tiene UN segmento y la celda es un número. Una
+/// partida en Front · Back · Total tiene tres, y son tres campos: el ajuste de
+/// un enfrentamiento no cabe en un solo importe.
+///
+/// Eso es lo que hace que pairConfigOverrides no sirva aquí:
+/// effectiveValueForDuel devuelve un único double, así que el mecanismo de
+/// override por pareja solo puede llevar el importe de una apuesta de un
+/// segmento. Para las partidas hace falta un módulo por cruce con su propia
+/// config, que es lo que hace [BetRecipe.conCrucesFuera].
+class MontoPorCruce {
+  /// Importe único, para los tipos que solo tienen uno.
+  final double? unico;
+
+  /// Importes por segmento, para las apuestas partidas.
+  final double? front, back, total;
+
+  const MontoPorCruce({this.unico, this.front, this.back, this.total});
+
+  bool get vacio =>
+      unico == null && front == null && back == null && total == null;
+}
+
 /// Particiones que existen para una celda concreta, y cuál queda elegida.
 ///
 /// Salida derivada, no entrada del usuario. Cuando [hayEleccion] es false la
@@ -427,6 +451,7 @@ class BetRecipe {
     BetModuleInstance base, {
     required List<String> participantIds,
     Set<String> fuera = const {},
+    Map<String, MontoPorCruce> importes = const {},
   }) {
     if (participantIds.length < 2) return const [];
 
@@ -435,8 +460,14 @@ class BetRecipe {
         .toList();
     if (vivos.isEmpty) return const [];
 
-    // Nada excluido → un solo módulo, como siempre.
-    if (vivos.length == crucesDe(participantIds).length) {
+    final conImportePropio = importes.entries
+        .where((e) => !e.value.vacio)
+        .map((e) => e.key)
+        .toSet();
+
+    // Nada excluido y nada ajustado → un solo módulo, como siempre.
+    if (vivos.length == crucesDe(participantIds).length &&
+        conImportePropio.isEmpty) {
       return [base.copyWith(participantIds: participantIds)];
     }
 
@@ -447,12 +478,60 @@ class BetRecipe {
     // reconstruye con defaultFor y se le trasplanta la config del base, para no
     // duplicar la lista de campos tipados y que un formato nuevo no se quede
     // fuera en silencio.
+    //
+    // Ajustar un importe por enfrentamiento FUERZA uno contra uno. Con un solo
+    // bote no hay importes distintos que repartir: el bote es uno. Expandir un
+    // onePot en cruces cambiaría el cálculo, no lo recortaría.
     final familia = '${base.id}_fam';
     var i = 0;
     return [
       for (final (a, b) in vivos)
-        _mismoPero(base, id: '${base.id}_${i++}', a: a, b: b, familia: familia),
+        _conImporte(
+          _mismoPero(base,
+              id: '${base.id}_${i++}', a: a, b: b, familia: familia),
+          importes[cruceKey(a, b)],
+        ),
     ];
+  }
+
+  /// Fija el importe base de un módulo, sea de uno o de tres segmentos.
+  ///
+  /// En las apuestas partidas el Total sube al doble del segmento, que es la
+  /// convención del Nassau: los dos nueves valen lo mismo y el total vale por
+  /// los dos. Se puede cambiar después en el detalle.
+  static BetModuleInstance aplicarBase(BetModuleInstance m, double base) {
+    if (m.type == BetModuleType.nassau) {
+      return m.copyWith(
+        nassauConfig: m.nassau.copyWith(
+            frontValue: base, backValue: base, totalValue: base * 2),
+      );
+    }
+    return m.withBaseValue(base) ?? m;
+  }
+
+  /// Aplica el importe pactado para este cruce, si hay uno.
+  ///
+  /// Los tipos partidos llevan tres valores; los demás, uno. Un importe que el
+  /// tipo no sabe guardar se ignora en vez de perderse a medias.
+  static BetModuleInstance _conImporte(
+      BetModuleInstance m, MontoPorCruce? monto) {
+    if (monto == null || monto.vacio) return m;
+
+    if (m.type == BetModuleType.nassau) {
+      return m.copyWith(
+        nassauConfig: m.nassau.copyWith(
+          frontValue: monto.front,
+          backValue: monto.back,
+          totalValue: monto.total,
+        ),
+      );
+    }
+    if (monto.unico != null) {
+      // withBaseValue devuelve null en los tipos con más de un importe: ahí no
+      // hay "el" monto que fijar, y forzarlo escribiría uno de los tres.
+      return m.withBaseValue(monto.unico!) ?? m;
+    }
+    return m;
   }
 
   /// El mismo módulo con otro id y limitado a un cruce.
