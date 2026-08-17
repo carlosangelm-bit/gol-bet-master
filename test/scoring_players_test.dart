@@ -30,6 +30,7 @@ CourseInfo _course() => CourseInfo(name: 'T',
 Round _ronda({
   required Map<String, Map<int, HoleScore>> scores,
   bool conRoundPlayers = true,
+  List<String>? roundPlayerIds,
 }) =>
     Round(
       id: 'r', name: 'R', course: _course(),
@@ -40,12 +41,11 @@ Round _ronda({
         Player(id: vb, name: 'Equipo B', isVirtual: true,
             teamMemberIds: const ['cav', 'rafa']),
       ],
-      roundPlayers: conRoundPlayers
-          ? [
-              RoundPlayer(playerId: va, handicapEnRonda: 12),
-              RoundPlayer(playerId: vb, handicapEnRonda: 15),
-            ]
-          : const [],
+      roundPlayers: !conRoundPlayers
+          ? const []
+          : (roundPlayerIds ?? const [va, vb])
+              .map((i) => RoundPlayer(playerId: i, handicapEnRonda: 12))
+              .toList(),
       betGroups: const [],
       scores: scores, events: const {}, oyeseRankings: const {},
       sliding: const [],
@@ -104,8 +104,65 @@ void main() {
     });
   });
 
+  group('resiste que roundPlayers esté mal', () {
+    // Los tests que valen no son los que confirman lo que crees. Estos montan
+    // las dos hipótesis de por qué el arreglo anterior seguía fallando, COMO SI
+    // fueran ciertas, y exigen que el contador acierte igual.
+
+    test('aunque roundPlayers incluya a los cuatro reales', () {
+      // Hipótesis A: la exclusión de Setup no se aplicó y los reales siguen
+      // declarados. Con la versión basada en roundPlayers esto daba 0.
+      final r = _ronda(
+        scores: {
+          va: _hoyos(va, 3, 4), vb: _hoyos(vb, 3, 5),
+          for (final i in reales) i: <int, HoleScore>{},
+        },
+        roundPlayerIds: [...reales, va, vb],
+      );
+      expect(r.roundPlayers.length, 6);
+      expect(_contador(r), 3, reason: 'los reales no están anotando');
+      expect(r.scoringPlayers.map((p) => p.id), [va, vb]);
+    });
+
+    test('aunque los virtuales NO estén en roundPlayers', () {
+      // Hipótesis B: los que anotan quedaron fuera de la declaración, así que
+      // la lista contenía cuatro personas sin score.
+      final r = _ronda(
+        scores: {va: _hoyos(va, 3, 4), vb: _hoyos(vb, 3, 5)},
+        roundPlayerIds: reales,
+      );
+      expect(r.roundPlayers.map((rp) => rp.playerId), reales);
+      expect(_contador(r), 3);
+      expect(r.scoringPlayers.map((p) => p.id), [va, vb]);
+    });
+
+    test('aunque roundPlayers esté completamente vacío', () {
+      final r = _ronda(
+        scores: {va: _hoyos(va, 3, 4), vb: _hoyos(vb, 3, 5)},
+        conRoundPlayers: false,
+      );
+      expect(_contador(r), 3);
+    });
+
+    test('best ball: el virtual del equipo no bloquea el contador', () {
+      // Caso que estaba roto en silencio y nadie había mirado: en best ball
+      // anotan los reales y el virtual bb_team_X tiene contenedor sembrado que
+      // no se llena nunca. Con containsKey o con roundPlayers, 0/18 SIEMPRE.
+      final r = _ronda(
+        scores: {
+          for (final i in reales) i: _hoyos(i, 3, 4),
+          'bb_team_A': <int, HoleScore>{},
+          'bb_team_B': <int, HoleScore>{},
+        },
+        roundPlayerIds: [...reales, 'bb_team_A', 'bb_team_B'],
+      );
+      expect(_contador(r), 3);
+      expect(r.scoringPlayers.map((p) => p.id), reales);
+    });
+  });
+
   group('scoringPlayers', () {
-    test('son los de roundPlayers, no los que tienen clave', () {
+    test('son quienes anotan de hecho, no los que tienen clave', () {
       final r = _ronda(scores: {
         va: _hoyos(va, 1, 4), vb: _hoyos(vb, 1, 5),
         for (final i in reales) i: <int, HoleScore>{},
@@ -114,15 +171,22 @@ void main() {
       expect(r.scoringPlayers.map((p) => p.id), [va, vb]);
     });
 
-    test('con roundPlayers vacío se cae al predicado viejo', () {
-      // Una ronda guardada sin esa lista daría cero anotadores, y el contador
-      // diría 18/18 desde el hoyo 1: peor que el bug.
-      final r = _ronda(
-        scores: {for (final i in reales) i: _hoyos(i, 3, 4)},
-        conRoundPlayers: false,
-      );
-      expect(r.scoringPlayers.map((p) => p.id), reales);
-      expect(_contador(r), 3);
+    test('sin empezar la ronda se cae a la declaración', () {
+      // Nadie ha anotado todavía, así que la observación no sirve. Hay que
+      // devolver a alguien: every sobre lista vacía es true y los 18 hoyos
+      // saldrían completos desde el principio.
+      final r = _ronda(scores: {va: {}, vb: {}});
+      expect(r.scoringPlayers.map((p) => p.id), [va, vb]);
+      expect(_contador(r), 0);
+    });
+
+    test('un hoyo a medias no cuenta como completo', () {
+      // Que el contador sea robusto no debe volverlo optimista.
+      final r = _ronda(scores: {
+        va: _hoyos(va, 3, 4),
+        vb: _hoyos(vb, 2, 5), // le falta el 3
+      });
+      expect(_contador(r), 2);
     });
 
     test('nunca devuelve a alguien que no esté en players', () {
@@ -135,7 +199,7 @@ void main() {
     test('no se confunde con realPlayers: son preguntas distintas', () {
       // scoringPlayers = quién lleva tarjeta. realPlayers = quién es persona.
       // En scramble son conjuntos disjuntos.
-      final r = _ronda(scores: {va: {}, vb: {}});
+      final r = _ronda(scores: {va: _hoyos(va, 1, 4), vb: _hoyos(vb, 1, 5)});
       expect(r.scoringPlayers.map((p) => p.id), [va, vb]);
       expect(r.realPlayers.map((p) => p.id), reales);
     });
