@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/score_shape.dart';
 import '../../engines/bet_engine.dart';
 import '../../engines/game_engine.dart';
 import '../../engines/ledger_engine.dart';
@@ -992,55 +993,51 @@ class _ScoreGridCell extends StatelessWidget {
 
     final rel = relPar ?? (score! - par);
 
-    // ── Paleta según resultado vs par ──────────────────────────────────────
-    // Birdie / Eagle → color scoreUnder del tema
-    // Bogey / Doble+ → color scoreOver del tema
-    // Par             → neutro (sin color especial)
-    Color bg;
-    Color fg;
-    Color? borderColor;
-    double borderW = 0;
-    BoxShape shape = BoxShape.rectangle;
-    double sz = 26;
-    double rad = 4;
+    // ── El score se codifica por FORMA, no por color ────────────────────────
+    //
+    // La convención de la tarjeta de papel:
+    //   ◎ eagle o mejor · ○ birdie · par sin adorno · □ bogey · ▣ doble o peor
+    //
+    // Antes eagle y doble bogey se pintaban con RELLENO sólido y texto blanco,
+    // y birdie y bogey con fondo teñido. Eso obligaba al color a llevar la
+    // información: quitarle el rojo al bogey lo dejaba indistinguible de un par.
+    //
+    // Con la forma cargando el significado el trazo solo TIÑE, y el rojo
+    // saturado queda libre para el dinero. Consecuencia comprobable: la tabla
+    // se lee en escala de grises.
+    final forma = scoreShapeFor(score!, par);
+    final tinte = forma.esCirculo
+        ? cUnder
+        : forma.esCuadro
+            ? cOver
+            : cSub;
+    const sz = 26.0;
 
-    if (rel <= -2) {
-      // Eagle o mejor — círculo, color under sólido
-      bg = cUnder; fg = Colors.white;
-      shape = BoxShape.circle; sz = 27;
-    } else if (rel == -1) {
-      // Birdie — círculo, color under con borde
-      bg = cUnder.withValues(alpha: 0.15); fg = cUnder;
-      borderColor = cUnder; borderW = 1.5;
-      shape = BoxShape.circle;
-    } else if (rel == 0) {
-      // Par — cuadrado sin color destacado
-      bg = Colors.transparent; fg = cSub;
-    } else if (rel == 1) {
-      // Bogey — cuadrado con borde over
-      bg = cOver.withValues(alpha: 0.12); fg = cOver;
-      borderColor = cOver; borderW = 1.5;
-    } else {
-      // Doble bogey o peor — cuadrado, color over sólido
-      bg = cOver; fg = Colors.white;
-    }
+    Widget trazo(double lado, double grosor) => Container(
+          width: lado,
+          height: lado,
+          decoration: BoxDecoration(
+            border: Border.all(color: tinte, width: grosor),
+            borderRadius: BorderRadius.circular(forma.esCirculo ? lado : 4),
+          ),
+        );
 
-    final cell = Container(
+    final cell = SizedBox(
+      // El par ocupa lo mismo aunque no lleve adorno: sin eso la columna baila
+      // entre hoyos y la tabla deja de leerse en vertical.
       width: sz, height: sz,
-      decoration: BoxDecoration(
-        color: bg,
-        shape: shape,
-        borderRadius: shape == BoxShape.rectangle
-            ? BorderRadius.circular(rad) : null,
-        border: borderColor != null
-            ? Border.all(color: borderColor, width: borderW) : null,
-      ),
-      alignment: Alignment.center,
-      child: Text('$score',
-          style: TextStyle(
-              color: fg,
-              fontWeight: FontWeight.w900,
-              fontSize: rel <= -2 ? 12 : 11)),
+      child: Stack(alignment: Alignment.center, children: [
+        if (forma != ScoreShape.none) trazo(sz, 1.5),
+        // La segunda capa es lo que separa eagle de birdie y doble de bogey sin
+        // recurrir a otro color ni a un relleno.
+        if (forma.esDoble) trazo(sz - 6, 1.1),
+        Text('$score',
+            style: TextStyle(
+                color: tinte,
+                fontWeight: FontWeight.w900,
+                fontSize: 11,
+                fontFeatures: const [FontFeature.tabularFigures()])),
+      ]),
     );
 
     // ── Indicador de putts (solo si se registraron) ──────────────────────

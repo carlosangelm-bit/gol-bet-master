@@ -68,8 +68,16 @@ class _P {
   static const lProfit  = Color(0xFF2E7D32);
   static const lLoss    = Color(0xFFC62828);
   static const lAccent  = Color(0xFF43A047);
-  static const lUnder   = Color(0xFF1565C0);
-  static const lOver    = Color(0xFFC62828);
+  // ── Canal del SCORE ────────────────────────────────────────────────────────
+  // Baja saturación a propósito: la información la lleva la FORMA —círculo,
+  // cuadro— y estos tonos solo tiñen el trazo. Quitarlos entero dejaría el
+  // score igual de legible.
+  //
+  // Antes lOver era EXACTAMENTE lLoss y en clásico cUnder era cProfit y cOver
+  // era cLoss: el mismo rojo decía "bogey" y "pagas", y el mismo dorado decía
+  // "birdie" y "cobras". Un canal, un significado.
+  static const lUnder   = Color(0xFF37474F);  // blueGrey 800
+  static const lOver    = Color(0xFF5D4037);  // brown 700
 
   // Dark
   static const dBg      = Color(0xFF111111);
@@ -83,8 +91,8 @@ class _P {
   static const dProfit  = Color(0xFF66BB6A);
   static const dLoss    = Color(0xFFEF5350);
   static const dAccent  = Color(0xFF81C784);
-  static const dUnder   = Color(0xFF64B5F6);
-  static const dOver    = Color(0xFFEF9A9A);
+  static const dUnder   = Color(0xFF90A4AE);  // blueGrey 300
+  static const dOver    = Color(0xFFBCAAA4);  // brown 200
 
   // Classic (Verde premium · Crema · Oro) — mismo tono que hero screens
   static const cBg      = Color(0xFF0D2B0F);
@@ -98,8 +106,8 @@ class _P {
   static const cProfit  = Color(0xFFF9A825);
   static const cLoss    = Color(0xFFFFCDD2);
   static const cAccent  = Color(0xFFFBC02D);
-  static const cUnder   = Color(0xFFF9A825);
-  static const cOver    = Color(0xFFFFCDD2);
+  static const cUnder   = Color(0xFFCFD8DC);  // blueGrey 100
+  static const cOver    = Color(0xFFD7CCC8);  // brown 100
 }
 
 class GolfTheme {

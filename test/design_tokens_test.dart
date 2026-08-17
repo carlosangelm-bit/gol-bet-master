@@ -141,7 +141,7 @@ void main() {
         expect(t.scoreOver, isNot(t.profit));
         expect(t.scoreOver, isNot(t.loss));
       }
-    }, skip: 'Se activa con la fase de formas de score — ver comentario arriba.');
+      });
   });
 
   _vidrio();

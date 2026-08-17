@@ -98,11 +98,25 @@ class _ThemeGrad {
       ? const Color(0xFFD0D5E8)
       : const Color(0xFF2A2A3E);
 
-  List<Color> get amountPillBg => isLight
-      ? [t.primary, t.primary.withValues(alpha: 0.80)]
-      : [const Color(0xFF3D5AFE), const Color(0xFF1A237E)];
+  /// El importe se pinta del color de QUIEN COBRA.
+  ///
+  /// Antes era indigo —#3D5AFE— en oscuro y clásico, y el primary en claro. Ese
+  /// azul no pertenecía a ningún canal del sistema: ni dinero, ni identidad, ni
+  /// estado. En clásico cantaba especialmente, con el resto de la pantalla en
+  /// dorado y verde.
+  ///
+  /// Ahora el mismo elemento dice cuánto Y hacia dónde. Antes la dirección solo
+  /// la daban la posición y las etiquetas PAGA/COBRA.
+  List<Color> get amountPillBg =>
+      [t.profit, t.profit.withValues(alpha: 0.80)];
 
-  Color get amountPillText => Colors.white;
+  /// Blanco o casi negro según lo claro que sea el fondo del chip.
+  ///
+  /// Es una decisión de CONTRASTE, no de paleta: en clásico el profit es dorado
+  /// y el texto blanco encima no se leería.
+  Color get amountPillText => t.profit.computeLuminance() > 0.5
+      ? const Color(0xFF1A1A1A)
+      : Colors.white;
 
   // ── Duelo card ────────────────────────────────────────────────────────────
   Color get duelBg     => isLight ? const Color(0xFFF4F5F9) : const Color(0xFF1E1E24);
@@ -124,6 +138,16 @@ class _ThemeGrad {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+/// Expuesto para el barrido de color: el fondo del chip de importe en
+/// Transferencias.
+///
+/// Se testea porque llevaba un indigo —#3D5AFE— que no pertenecía a ningún canal
+/// del sistema, y un color fuera de paleta no lo detecta ningún grep: hay que
+/// compararlo contra los canales.
+List<Color> transferAmountBgForTest(GolfTheme t) => _ThemeGrad(t).amountPillBg;
+
+Color transferAmountTextForTest(GolfTheme t) => _ThemeGrad(t).amountPillText;
+
 class ResultsScreen extends StatefulWidget {
   const ResultsScreen({super.key});
   @override State<ResultsScreen> createState() => _ResultsScreenState();
