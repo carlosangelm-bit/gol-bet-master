@@ -134,6 +134,22 @@ class _SetupScreenState extends State<SetupScreen> {
   /// Si la ronda alimenta el historial del grupo al cerrarse.
   bool _slidingRecalcula = true;
 
+  // ── Duelos pactados aparte ─────────────────────────────────────────────────
+  //
+  // Solo con equipos: en individual todo son duelos y ya se configuran en los
+  // pasos normales.
+  final List<_DueloPactado> _duelos = [];
+
+  /// Cruces entre lados OPUESTOS que aún no tienen duelo. Los compañeros no se
+  /// enfrentan, así que no aparecen.
+  List<(String, String)> _crucesDisponibles() => [
+        for (final a in _teamA)
+          for (final b in _teamB)
+            if (!_duelos.any((d) =>
+                (d.a == a && d.b == b) || (d.a == b && d.b == a)))
+              (a, b),
+      ];
+
   double _hcpDe(String pid) =>
       _hcpRonda[pid] ??
       _players.firstWhere((p) => p.id == pid,
@@ -1734,6 +1750,31 @@ class _SetupScreenState extends State<SetupScreen> {
       }
     }
 
+    // ── Los duelos pactados aparte ────────────────────────────────────────
+    //
+    // Cada uno es un módulo de alcance pair. No se expanden ni se agrupan en
+    // familia: son apuestas que existen ÚNICAMENTE para ese cruce, así que la
+    // proyección de Apuestas los lee como excepción, que es lo que son.
+    for (var i = 0; i < _duelos.length; i++) {
+      final d = _duelos[i];
+      for (final cuenta in d.conteos) {
+        // La bola no aplica: los lados son estos dos jugadores.
+        final res = BetRecipe.build(
+          cuenta: cuenta, participantIds: [d.a, d.b],
+          holesInRound: _totalHoles,
+          preferida: d.particion[cuenta],
+          id: 'duelo_${i}_${cuenta.name}',
+        );
+        if (!res.ok) continue;
+        var m = res.module!.copyWith(scope: BetScope.pair(d.a, d.b));
+        final monto = d.montos[cuenta];
+        if (monto != null && !monto.vacio) {
+          m = BetRecipe.conMontoDeCruce(m, monto);
+        }
+        delFlujo.add(m);
+      }
+    }
+
     if (_groups.isEmpty) {
       _groups.add(BetGroup(
         id: _uuid.v4(), name: 'Partida Principal',
@@ -1746,6 +1787,386 @@ class _SetupScreenState extends State<SetupScreen> {
     final ajenos =
         g.modules.where((m) => !m.id.startsWith('flujo_')).toList();
     _groups[0] = g.copyWith(modules: [...ajenos, ...delFlujo]);
+  }
+
+  // ── Traspaso: ¿alguien pactó algo aparte? ─────────────────────────────────
+  //
+  // Solo con equipos. En individual todo son duelos y ya se configuran en los
+  // pasos normales, así que este bloque no aparece.
+  Widget _bloqueDuelos(GolfTheme t) {
+    final disponibles = _crucesDisponibles();
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: t.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.primary.withValues(alpha: 0.5)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('La apuesta de equipos está lista',
+            style: GolfType.body(t.text).copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 3),
+        Text(
+            disponibles.isEmpty
+                // Decirlo en vez de mostrar una lista vacía: hace visible que
+                // ya no queda nada por pactar.
+                ? 'Ya configuraste todos los cruces posibles.'
+                : '¿Alguien pactó algo aparte? Cada duelo se configura por '
+                    'separado.',
+            style: GolfType.label(t.sub)),
+        if (disponibles.isNotEmpty) ...[
+          const SizedBox(height: 9),
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            for (final (a, b) in disponibles)
+              GestureDetector(
+                onTap: () => _abrirHojaDuelo(t, _DueloPactado(a, b)),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: t.card,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: t.divider),
+                  ),
+                  child: Text('+ ${_playerName(a)} vs ${_playerName(b)}',
+                      style: GolfType.label(t.sub)),
+                ),
+              ),
+          ]),
+        ],
+        for (final d in _duelos) _fichaDuelo(t, d),
+      ]),
+    );
+  }
+
+  Widget _fichaDuelo(GolfTheme t, _DueloPactado d) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.divider),
+      ),
+      child: Row(children: [
+        Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Text('${_playerName(d.a)} vs ${_playerName(d.b)}',
+                  style: GolfType.body(t.text)
+                      .copyWith(fontWeight: FontWeight.w600)),
+              Text(
+                  '${d.conteos.map((c) => c.labelCon(null)).join(' · ')}'
+                  '${d.ventajaPropia ? ' · ventaja propia' : ''}',
+                  style: GolfType.label(t.sub)),
+            ])),
+        // El duelo pactado NO es de solo lectura.
+        GestureDetector(
+          onTap: () => _abrirHojaDuelo(t, d, editando: true),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Text('EDITAR', style: GolfType.label(t.primary)),
+          ),
+        ),
+        GestureDetector(
+          onTap: () => setState(() => _duelos.remove(d)),
+          child: Icon(Icons.close, size: 16, color: t.sub),
+        ),
+      ]),
+    );
+  }
+
+  /// Hoja del duelo. Mismo motor de configuración, sin los ejes resueltos.
+  void _abrirHojaDuelo(GolfTheme t, _DueloPactado d, {bool editando = false}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: t.bg,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.85,
+          maxChildSize: 0.95,
+          builder: (ctx, scroll) => Column(children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('${_playerName(d.a)} vs ${_playerName(d.b)}',
+                    style: GolfType.title(t.text)),
+                Text(
+                    editando
+                        ? 'Editar duelo pactado'
+                        : 'Duelo aparte de la apuesta de equipos',
+                    style: GolfType.label(t.sub)),
+              ]),
+            ),
+            Expanded(
+              child: ListView(
+                controller: scroll,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  Text('¿QUÉ SE CUENTA?', style: GolfType.label(t.sub)),
+                  const SizedBox(height: 6),
+                  for (final c in BetCount.values)
+                    ..._fichaConteoDuelo(t, d, c, setSt),
+                  const SizedBox(height: 14),
+                  Text('VENTAJA EN ESTE DUELO', style: GolfType.label(t.sub)),
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 6, children: [
+                    for (final propia in [false, true])
+                      GestureDetector(
+                        onTap: () => setSt(() => d.ventajaPropia = propia),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: d.ventajaPropia == propia
+                                ? t.primary.withValues(alpha: 0.12)
+                                : t.card,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                                color: d.ventajaPropia == propia
+                                    ? t.primary
+                                    : t.divider),
+                          ),
+                          child: Text(
+                              propia ? 'Pactada aparte' : 'La de la ronda',
+                              style: GolfType.label(t.text)),
+                        ),
+                      ),
+                  ]),
+                  if (d.ventajaPropia) ...[
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      Expanded(
+                          child: Text(
+                              '${_playerName(d.a)} recibe de '
+                              '${_playerName(d.b)}',
+                              style: GolfType.body(t.text))),
+                      SizedBox(
+                        width: 76,
+                        child: TextField(
+                          controller: _ctrlMonto(
+                              'duelo_${d.a}_${d.b}_delta', d.delta),
+                          keyboardType:
+                              const TextInputType.numberWithOptions(
+                                  decimal: true, signed: true),
+                          textAlign: TextAlign.right,
+                          style: GolfType.bodyNum(t.text),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(9)),
+                          ),
+                          onChanged: (v) =>
+                              setSt(() => d.delta = double.tryParse(v) ?? 0),
+                        ),
+                      ),
+                    ]),
+                    Text(
+                        'Negativo si es al revés. Cero = ambos scratch, el '
+                        'clásico «entre tú y yo sin handicap».',
+                        style: GolfType.label(t.sub)),
+                  ] else
+                    Text(
+                        _ventaja == _Ventaja.handicap
+                            ? 'Handicap al ${(_allowance * 100).round()}%'
+                            : _ventaja == _Ventaja.sliding
+                                ? 'Sliding del grupo'
+                                : 'Sin ventaja',
+                        style: GolfType.label(t.sub)),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                  16, 8, 16, MediaQuery.of(ctx).padding.bottom + 12),
+              child: Row(children: [
+                Expanded(
+                    child: GSecButton(
+                        label: 'Cancelar',
+                        onTap: () => Navigator.pop(ctx))),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: GPrimaryButton(
+                    label: editando ? 'Guardar' : 'Agregar duelo',
+                    onTap: d.vacio
+                        ? null
+                        : () {
+                            setState(() {
+                              if (!editando) _duelos.add(d);
+                            });
+                            Navigator.pop(ctx);
+                          },
+                  ),
+                ),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    ).then((_) => setState(() {}));
+  }
+
+  List<Widget> _fichaConteoDuelo(
+      GolfTheme t, _DueloPactado d, BetCount c, void Function(void Function()) setSt) {
+    // Oyes y Unidades son de grupo: no se pactan en un duelo suelto.
+    if (c.esDeGrupo) {
+      return [
+        Opacity(
+          opacity: 0.55,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: t.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.divider),
+            ),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Text(c.label, style: GolfType.body(t.text)),
+              const SizedBox(height: 2),
+              Text('No aplica a un duelo · ${c.soloDeGrupo}',
+                  style: GolfType.label(t.danger)),
+            ]),
+          ),
+        ),
+      ];
+    }
+
+    final marcado = d.conteos.contains(c);
+    final div = BetRecipe.divisionDe(c,
+        holesInRound: _totalHoles, preferida: d.particion[c]);
+
+    return [
+      GestureDetector(
+        onTap: () => setSt(() {
+          if (!d.conteos.remove(c)) d.conteos.add(c);
+        }),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.all(11),
+          decoration: BoxDecoration(
+            color: marcado ? t.primary.withValues(alpha: 0.08) : t.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: marcado ? t.primary : t.divider,
+                width: marcado ? 1.5 : 1),
+          ),
+          child: Row(children: [
+            // En un duelo 1v1 siempre es Match: el hoyo reparte un punto.
+            Expanded(child: Text(c.labelCon(null), style: GolfType.body(t.text))),
+            Icon(
+                marcado
+                    ? Icons.check_box_rounded
+                    : Icons.check_box_outline_blank_rounded,
+                color: marcado ? t.primary : t.divider,
+                size: 20),
+          ]),
+        ),
+      ),
+      if (marcado)
+        Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(11),
+          decoration: BoxDecoration(
+            color: t.primary.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: t.primary.withValues(alpha: 0.3)),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (div.hayEleccion)
+              Wrap(spacing: 6, children: [
+                for (final x in div.disponibles)
+                  GestureDetector(
+                    onTap: () => setSt(() => d.particion[c] = x),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: div.elegida == x
+                            ? t.primary.withValues(alpha: 0.12)
+                            : t.card,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                            color: div.elegida == x ? t.primary : t.divider),
+                      ),
+                      child: Text(_labelDivision(x), style: GolfType.label(t.text)),
+                    ),
+                  ),
+              ])
+            else
+              Text(div.explicacion!, style: GolfType.label(t.sub)),
+            const SizedBox(height: 8),
+            // Los tres campos si la apuesta está partida: el ajuste de un
+            // enfrentamiento no cabe en un solo importe.
+            if (div.elegida == BetDivision.frontBackTotal)
+              Row(children: [
+                for (final (etiqueta, leer, escribir) in [
+                  ('F9', d.montos[c]?.front, (double? v) => d.montos[c] =
+                      MontoPorCruce(front: v, back: d.montos[c]?.back,
+                          total: d.montos[c]?.total)),
+                  ('B9', d.montos[c]?.back, (double? v) => d.montos[c] =
+                      MontoPorCruce(front: d.montos[c]?.front, back: v,
+                          total: d.montos[c]?.total)),
+                  ('T18', d.montos[c]?.total, (double? v) => d.montos[c] =
+                      MontoPorCruce(front: d.montos[c]?.front,
+                          back: d.montos[c]?.back, total: v)),
+                ]) ...[
+                  Expanded(
+                    child: TextField(
+                      controller: _ctrlMonto(
+                          'duelo_${d.a}_${d.b}_${c.name}_$etiqueta', leer),
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.right,
+                      style: GolfType.bodyNum(t.text),
+                      decoration: InputDecoration(
+                        labelText: etiqueta,
+                        labelStyle: GolfType.label(t.sub),
+                        isDense: true,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(9)),
+                      ),
+                      onChanged: (v) =>
+                          setSt(() => escribir(double.tryParse(v))),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+              ])
+            else
+              SizedBox(
+                width: 110,
+                child: TextField(
+                  controller: _ctrlMonto(
+                      'duelo_${d.a}_${d.b}_${c.name}_u', d.montos[c]?.unico),
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.right,
+                  style: GolfType.bodyNum(t.text),
+                  decoration: InputDecoration(
+                    labelText: 'Monto',
+                    labelStyle: GolfType.label(t.sub),
+                    isDense: true,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(9)),
+                  ),
+                  onChanged: (v) => setSt(
+                      () => d.montos[c] = MontoPorCruce(unico: double.tryParse(v))),
+                ),
+              ),
+          ]),
+        ),
+    ];
   }
 
   // ── PASO · ¿Cómo se igualan los jugadores? ────────────────────────────────
@@ -5283,6 +5704,10 @@ class _SetupScreenState extends State<SetupScreen> {
                     : 'Ventaja · Sin ventaja, todos brutos',
             style: GolfType.label(t.sub)),
         const SizedBox(height: 12),
+        // Solo con equipos: en individual todo son duelos y ya se configuran
+        // en los pasos normales.
+        if (_porEquipos && _teamA.isNotEmpty && _teamB.isNotEmpty)
+          _bloqueDuelos(t),
         // ── Selector de duración de ronda ──────────────────────────────────
         GSectionHeader(title: 'DURACIÓN DE LA RONDA'),
         GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -6281,14 +6706,28 @@ class _SetupScreenState extends State<SetupScreen> {
     // solo se escribe si se ELIGIÓ sliding: el motor prioriza pairSliding sobre
     // el handicap, así que dejarlo puesto con handicap elegido aplicaría una
     // ventaja que nadie pidió.
-    final fuenteSliding = _ventaja == _Ventaja.sliding
-        ? <String, double>{
-            ..._pairSliding,
-            for (final (a, b)
-                in BetRecipe.crucesDe(_players.map((p) => p.id).toList()))
-              BetEngine.pairKey(a, b): _slidingDe(a, b),
-          }
-        : const <String, double>{};
+    final fuenteSliding = <String, double>{
+      if (_ventaja == _Ventaja.sliding) ...{
+        ..._pairSliding,
+        for (final (a, b)
+            in BetRecipe.crucesDe(_players.map((p) => p.id).toList()))
+          BetEngine.pairKey(a, b): _slidingDe(a, b),
+      },
+      // La ventaja propia de un duelo entra SIEMPRE, sea cual sea la de la
+      // ronda: es justo el caso que no se podía expresar —la ronda va con
+      // handicap y dos jugadores acuerdan lo suyo a scratch—.
+      //
+      // Verificado ejecutando: pairSliding SUSTITUYE al handicap y un 0
+      // explícito se honra, así que delta 0 es scratch de verdad. No hizo falta
+      // modelo nuevo.
+      //
+      // El signo del mapa es recv(idMenor, idMayor), y d.delta es lo que recibe
+      // d.a de d.b: si a no es el menor, se invierte.
+      for (final d in _duelos)
+        if (d.ventajaPropia)
+          BetEngine.pairKey(d.a, d.b):
+              d.a.compareTo(d.b) <= 0 ? d.delta : -d.delta,
+    };
 
     final pairSlidingMap = Map<String, double>.fromEntries(
       fuenteSliding.entries.where((e) {
@@ -7493,3 +7932,35 @@ class _StatChip extends StatelessWidget {
 /// declarado y sliding por historial del grupo, así que sumarlos aplicaría la
 /// ventaja dos veces.
 enum _Ventaja { handicap, sliding, ninguna }
+
+/// Un duelo pactado aparte de la apuesta de equipos.
+///
+/// Usa el mismo motor de configuración que la ronda pero sin los ejes ya
+/// resueltos: los lados son estos dos jugadores y la bola no aplica.
+class _DueloPactado {
+  final String a;
+  final String b;
+
+  /// Qué se cuenta. Múltiple, como en la ronda.
+  final Set<BetCount> conteos = {};
+
+  /// Partición preferida por conteo, cuando divisionDe da opción.
+  final Map<BetCount, BetDivision> particion = {};
+
+  /// Importe por conteo. Con la apuesta partida, los tres segmentos.
+  final Map<BetCount, MontoPorCruce> montos = {};
+
+  /// Si pacta su propia ventaja en vez de heredar la de la ronda.
+  bool ventajaPropia = false;
+
+  /// Golpes que recibe [a] de [b] en este duelo.
+  ///
+  /// 0 = ambos scratch, el clásico "entre tú y yo sin handicap". Verificado
+  /// ejecutando: pairSliding SUSTITUYE al handicap y un 0 explícito se honra,
+  /// así que el caso se expresa sin modelo nuevo.
+  double delta = 0;
+
+  _DueloPactado(this.a, this.b);
+
+  bool get vacio => conteos.isEmpty;
+}

@@ -509,6 +509,14 @@ class BetRecipe {
     return m.withBaseValue(base) ?? m;
   }
 
+  /// Público: aplica el importe pactado de un cruce a un módulo suelto.
+  ///
+  /// Lo usan los duelos pactados aparte, que no pasan por la expansión porque
+  /// son un módulo por cruce desde el principio.
+  static BetModuleInstance conMontoDeCruce(
+          BetModuleInstance m, MontoPorCruce monto) =>
+      _conImporte(m, monto);
+
   /// Aplica el importe pactado para este cruce, si hay uno.
   ///
   /// Los tipos partidos llevan tres valores; los demás, uno. Un importe que el
