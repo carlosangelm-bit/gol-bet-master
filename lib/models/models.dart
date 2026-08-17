@@ -1551,6 +1551,15 @@ class TeamHandicapConfig {
   static const scramble   = TeamHandicapConfig(
       method: TeamHcpMethod.combined, allowance: 0.50, lowWeight: 0.70);
 
+  /// Bola alterna (foursomes): 50% de la SUMA de los dos handicaps.
+  ///
+  /// lowWeight 0.5 reparte a partes iguales —0.5·bajo + 0.5·alto— y allowance
+  /// 1.0 deja el resultado tal cual. No es el 35/15 del scramble: en alterna
+  /// los dos jugadores pegan golpes de verdad, así que el equipo no es tan
+  /// mejor que sus miembros como en un scramble.
+  static const alterna    = TeamHandicapConfig(
+      method: TeamHcpMethod.combined, allowance: 1.0, lowWeight: 0.50);
+
   /// Preset por defecto según el modo de juego elegido en Setup.
   static TeamHandicapConfig defaultFor(TeamPlayMode mode) =>
       mode == TeamPlayMode.scramble ? scramble : fourBall;
@@ -3124,6 +3133,55 @@ class Round {
       events[playerId]?[hole] ?? [];
 
   OyeseRanking? getOyese(int hole) => oyeseRankings[hole];
+
+  /// Las personas de la ronda. Excluye los jugadores de equipo.
+  ///
+  /// [players] lleva los reales Y los virtuales, porque las apuestas por
+  /// equipos necesitan ambos. Pero hay cosas que solo hace una persona: pegar
+  /// un tiro de aproximación, embocar un putt, hacer un birdie. Ofrecer
+  /// "Equipo A" en el ranking de Oyes no es una opción rara, es una imposible.
+  List<Player> get realPlayers => players.where((p) => !p.isVirtual).toList();
+
+  /// Quién ANOTA por este lado.
+  ///
+  /// No es lo mismo que quién juega. En scramble el equipo entrega UNA
+  /// tarjeta: el score lo lleva el jugador virtual y los reales ni siquiera
+  /// entran en la ronda —Setup los excluye vía realPlayersNotInScramble—. En
+  /// best ball anotan los reales, cada uno la suya.
+  ///
+  /// Preguntar por [BetSide.playerIds] daba lo segundo siempre, y por eso una
+  /// ronda en scramble se quedaba a cero: GameEngine.holeDeltaVs buscaba el
+  /// score de CAM y AAM, que no existe, concluía que el hoyo no se había
+  /// jugado, y repetía el diagnóstico en los 18.
+  ///
+  /// Si el virtual no aparece se devuelven los reales: es lo que había antes,
+  /// y una lectura de best ball vale más que reventar.
+  List<String> scoreCarriersOf(BetSide side) {
+    if (side.playMode != TeamPlayMode.scramble) return side.playerIds;
+    final miembros = side.playerIds.toSet();
+    for (final p in players) {
+      if (!p.isVirtual || p.teamMemberIds.isEmpty) continue;
+      // Se empareja por composición, no por el patrón del id: el nombre del
+      // virtual es una convención de Setup y el motor no debería depender de
+      // cómo la escriba.
+      if (p.teamMemberIds.toSet().length == miembros.length &&
+          p.teamMemberIds.toSet().containsAll(miembros)) {
+        return [p.id];
+      }
+    }
+    return side.playerIds;
+  }
+
+  /// Quién debe tener score para que esta apuesta pueda liquidar.
+  ///
+  /// Única respuesta a esa pregunta: la usan el motor y la validación de
+  /// completitud. Que cada uno la dedujera por su cuenta es lo que dejaba el
+  /// aviso "no tiene score de todos sus jugadores" encendido para siempre.
+  List<String> scoreCarriersOfModule(
+          BetModuleInstance mod, List<String> groupPlayerIds) =>
+      mod.hasTeamSides
+          ? [...scoreCarriersOf(mod.sideA), ...scoreCarriersOf(mod.sideB)]
+          : mod.effectivePids(groupPlayerIds);
 
   double getHandicap(String playerId) =>
       roundPlayers.firstWhere((rp) => rp.playerId == playerId,

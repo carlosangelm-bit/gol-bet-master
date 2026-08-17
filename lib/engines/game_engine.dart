@@ -518,7 +518,10 @@ class GameEngine {
     // null solo si NINGÚN jugador del lado anotó → el hoyo no se ha jugado.
     int? bestBall(BetSide side) {
       int? best;
-      for (final pid in side.playerIds) {
+      // Quién ANOTA, no quién juega: en scramble es el virtual del equipo.
+      // Con side.playerIds este bucle no encontraba ningún score y el hoyo se
+      // daba por no jugado en los 18.
+      for (final pid in round.scoreCarriersOf(side)) {
         final sc = playerScore(pid);
         if (sc == null) continue; // ese jugador levantó la bola
         if (best == null || sc < best) best = sc;

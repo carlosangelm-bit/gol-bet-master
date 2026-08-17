@@ -1092,7 +1092,9 @@ class _OyesRankingSection extends StatelessWidget {
     final round    = prov.round!;
     final ranking  = round.getOyese(hole);
     final ranked   = ranking?.ranking ?? [];
-    final unranked = round.players.map((p) => p.id)
+    // Solo personas: un equipo no pega un tiro de aproximación. En scramble
+    // los virtuales estaban en la lista y se podía rankear a "Equipo A".
+    final unranked = round.realPlayers.map((p) => p.id)
         .where((id) => !ranked.contains(id)).toList();
 
     return Container(

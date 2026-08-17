@@ -158,4 +158,68 @@ void main() {
       expect(entreCompaneros, isFalse, reason: 'cobró entre compañeros');
     });
   });
+
+  _submodos();
+}
+
+// ── Submodo de bola única ────────────────────────────────────────────────────
+//
+// Scramble y bola alterna registran IGUAL —una tarjeta por equipo— así que
+// comparten TeamPlayMode.scramble y no hizo falta un modo nuevo en el enum.
+// Lo único que cambia es el handicap del equipo.
+void _submodos() {
+  group('bola alterna se distingue de scramble por el handicap', () {
+    test('50% de la suma, no el 35/15 del scramble', () {
+      // Convención de foursomes. Con 10 y 20: 15, no 13.5.
+      final alterna = TeamHandicapConfig.alterna.combinedHandicap([10, 20]);
+      expect(alterna, 15);
+
+      final scr = TeamHandicapConfig.scramble.combinedHandicap([10, 20]);
+      expect(scr, isNot(15), reason: 'si coincidieran, el submodo no haría nada');
+    });
+
+    test('alterna no reduce después: allowance 1.0', () {
+      // El motor aplica allowance una sola vez sobre el resultado. Scramble lo
+      // usa para llegar al 35/15; alterna ya está en su valor final.
+      expect(TeamHandicapConfig.alterna.allowance, 1.0);
+    });
+
+    test('el módulo se lleva el handicap del submodo elegido', () {
+      for (final m in SingleBallMode.values) {
+        final mod = BetRecipe.conEquiposDeRonda(_mod(BetModuleType.nassau),
+            porEquipos: true, equipoA: a, equipoB: b,
+            bola: TeamBall.unaSola, submodo: m);
+        expect(mod.teamHandicapConfig, m.handicap, reason: m.label);
+      }
+    });
+
+    test('los dos siguen siendo scramble para la captura', () {
+      // Es lo que hace que la tarjeta pida un score por equipo en ambos.
+      for (final m in SingleBallMode.values) {
+        final mod = BetRecipe.conEquiposDeRonda(_mod(BetModuleType.nassau),
+            porEquipos: true, equipoA: a, equipoB: b,
+            bola: TeamBall.unaSola, submodo: m);
+        expect(mod.sides!.every((s) => s.playMode == TeamPlayMode.scramble),
+            isTrue, reason: m.label);
+      }
+    });
+
+    test('el submodo no afecta a las bolas que no son única', () {
+      for (final bola in [TeamBall.mejor, TeamBall.mejorYPeor]) {
+        final mod = BetRecipe.conEquiposDeRonda(_mod(BetModuleType.nassau),
+            porEquipos: true, equipoA: a, equipoB: b,
+            bola: bola, submodo: SingleBallMode.alterna);
+        expect(mod.teamHandicapConfig,
+            TeamHandicapConfig.defaultFor(TeamPlayMode.bestBall),
+            reason: 'la alterna se coló en $bola');
+      }
+    });
+
+    test('cada submodo se explica', () {
+      for (final m in SingleBallMode.values) {
+        expect(m.label, isNotEmpty);
+        expect(m.description, isNotEmpty);
+      }
+    });
+  });
 }

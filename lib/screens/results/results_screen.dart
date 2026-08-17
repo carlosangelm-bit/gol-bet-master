@@ -1539,9 +1539,12 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
       .first;
 
   /// Jugadores cuyos scores necesita esta apuesta para liquidar.
-  List<String> _jugadoresDe(BetGroup grp, BetModuleInstance m) => m.hasTeamSides
-      ? [...m.sideA.playerIds, ...m.sideB.playerIds]
-      : m.effectivePids(grp.playerIds);
+  ///
+  /// Delega en Round.scoreCarriersOfModule en vez de re-derivarlo: preguntar
+  /// por sideX.playerIds daba los reales, que en scramble no anotan, y el
+  /// aviso de apuesta incompleta quedaba encendido para siempre.
+  List<String> _jugadoresDe(BetGroup grp, BetModuleInstance m) =>
+      round.scoreCarriersOfModule(m, grp.playerIds);
 
   @override
   Widget build(BuildContext context) {

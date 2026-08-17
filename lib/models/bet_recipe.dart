@@ -57,6 +57,33 @@ enum TeamBall {
   unaSola,
 }
 
+/// Cómo se juega esa única bola.
+///
+/// Solo aplica con [TeamBall.unaSola]. Ambos registran UN score por equipo
+/// —por eso los dos son TeamPlayMode.scramble y no hace falta un modo nuevo—:
+/// lo que cambia es el handicap. En alterna los dos pegan golpes de verdad,
+/// así que el equipo no queda tan por debajo de sus miembros como en scramble.
+enum SingleBallMode { scramble, alterna }
+
+extension SingleBallModeInfo on SingleBallMode {
+  String get label => switch (this) {
+        SingleBallMode.scramble => 'Scramble',
+        SingleBallMode.alterna => 'Bola alterna',
+      };
+
+  String get description => switch (this) {
+        SingleBallMode.scramble =>
+          'Ambos pegan y se juega desde la mejor posición.',
+        SingleBallMode.alterna =>
+          'Se turnan los golpes. Handicap: 50% de la suma.',
+      };
+
+  TeamHandicapConfig get handicap => switch (this) {
+        SingleBallMode.scramble => TeamHandicapConfig.scramble,
+        SingleBallMode.alterna => TeamHandicapConfig.alterna,
+      };
+}
+
 extension TeamBallPoints on TeamBall? {
   /// Puntos que reparte cada hoyo. Con uno solo, el marcador se lee "2 UP".
   int get puntosPorHoyo => this == TeamBall.mejorYPeor ? 2 : 1;
@@ -327,6 +354,7 @@ class BetRecipe {
     required List<String> equipoA,
     required List<String> equipoB,
     TeamBall? bola,
+    SingleBallMode submodo = SingleBallMode.scramble,
   }) {
     if (!porEquipos) return mod;
     if (mod.sides != null && mod.sides!.isNotEmpty) return mod;
@@ -334,8 +362,14 @@ class BetRecipe {
     if (equipoA.isEmpty || equipoB.isEmpty) return mod;
 
     final modo = playModeDe(bola ?? TeamBall.mejor);
+    // El submodo solo cambia el handicap del equipo: scramble y bola alterna
+    // registran igual —una tarjeta— y por eso comparten TeamPlayMode.
+    final hcp = modo == TeamPlayMode.scramble
+        ? submodo.handicap
+        : TeamHandicapConfig.defaultFor(modo);
     return mod.copyWith(
       participantIds: [...equipoA, ...equipoB],
+      teamHandicapConfig: hcp,
       sides: [
         BetSide(
             id: '${mod.id}_A',

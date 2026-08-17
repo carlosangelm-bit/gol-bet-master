@@ -62,6 +62,9 @@ class _SetupScreenState extends State<SetupScreen> {
   /// Qué bola cuenta. null mientras no se elija; solo aplica con equipos.
   TeamBall? _bola;
 
+  /// Cómo se juega esa única bola. Solo aplica con [TeamBall.unaSola].
+  SingleBallMode _submodo = SingleBallMode.scramble;
+
   static String _defaultRoundName() {
     final now = DateTime.now();
     final months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -1518,13 +1521,58 @@ class _SetupScreenState extends State<SetupScreen> {
       Text('Cómo se decide el score del lado en cada hoyo.',
           style: GolfType.body(t.sub)),
       const SizedBox(height: 16),
-      for (final (bola, icon, titulo, detalle) in opciones)
+      for (final (bola, icon, titulo, detalle) in opciones) ...[
         _opcionCompiten(t,
             icon: icon,
             titulo: titulo,
             detalle: detalle,
             activa: _bola == bola,
             onTap: () => setState(() => _bola = bola)),
+        // La configuración se despliega DEBAJO de la opción que la abre, no en
+        // un cajón de avanzados al final: es una pregunta que hay que hacerle
+        // al grupo antes de salir al tee, no un default que sirve el 90%.
+        if (bola == TeamBall.unaSola && _bola == TeamBall.unaSola)
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: t.primary.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: t.primary.withValues(alpha: 0.4)),
+            ),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('CÓMO SE JUEGA LA BOLA', style: GolfType.label(t.primary)),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 6, children: [
+                    for (final m in SingleBallMode.values)
+                      GestureDetector(
+                        onTap: () => setState(() => _submodo = m),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: _submodo == m
+                                ? t.primary.withValues(alpha: 0.12)
+                                : t.card,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                                color: _submodo == m ? t.primary : t.divider,
+                                width: _submodo == m ? 1.5 : 1),
+                          ),
+                          child: Text(m.label,
+                              style: GolfType.body(
+                                      _submodo == m ? t.primary : t.text)
+                                  .copyWith(fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                  ]),
+                  const SizedBox(height: 8),
+                  Text(_submodo.description, style: GolfType.label(t.sub)),
+                ]),
+          ),
+      ],
       const SizedBox(height: 8),
       Text(
           'Cada hoyo reparte ${_bola.puntosPorHoyo} '
@@ -4970,7 +5018,8 @@ class _SetupScreenState extends State<SetupScreen> {
                   porEquipos: true,
                   equipoA: _teamA,
                   equipoB: _teamB,
-                  bola: _bola))
+                  bola: _bola,
+                  submodo: _submodo))
               .toList(),
         );
       }
