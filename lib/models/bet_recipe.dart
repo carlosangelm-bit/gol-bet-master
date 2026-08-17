@@ -1,14 +1,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // BET RECIPE — de los ejes del flujo rápido a un módulo de apuesta
 //
-// El flujo rápido no pregunta "¿qué tipo de apuesta?", pregunta dos cosas
-// independientes: QUÉ SE CUENTA y SI LA APUESTA SE PARTE. Con equipos añade una
-// tercera, QUÉ BOLA CUENTA. "Nassau" deja de ser un tipo y pasa a ser
+// El flujo rápido no pregunta "¿qué tipo de apuesta?". Pregunta QUÉ SE CUENTA
+// y, con equipos, QUÉ BOLA CUENTA. "Nassau" deja de ser un tipo y pasa a ser
 // puntos × Front·Back·Total, que es como lo describe un jugador.
 //
-// La LONGITUD de la ronda —9 o 18 hoyos— NO es uno de estos ejes: se decide en
-// el paso Campo y todos los motores la respetan vía playOrder. Pero sí cambia
-// qué particiones tienen sentido, así que entra como dato, no como pregunta.
+// La PARTICIÓN no se pregunta: se deriva de (conteo, bola, longitud). De las
+// 36 celdas posibles solo UNA admite dos caminos —Puntos con bola baja y alta
+// a 18 hoyos—; en las otras 35 la respuesta ya está determinada. Preguntar lo
+// que el sistema sabe enseña a pulsar Continuar sin leer, y entonces tampoco
+// se lee la celda que sí importaba. Cuando no hay elección se explica; cuando
+// la hay, se ofrece.
+//
+// La LONGITUD de la ronda —9 o 18 hoyos— se decide en el paso Campo y todos
+// los motores la respetan vía playOrder. Entra aquí como dato porque determina
+// qué particiones existen.
 //
 // Es una función pura: sin UI, sin estado, sin tocar el cálculo. Si una
 // combinación no se puede expresar, [BetRecipeResult] la rechaza CON MOTIVO en
@@ -134,6 +140,31 @@ extension BetCountLabel on BetCount {
       : null;
 }
 
+/// Particiones que existen para una celda concreta, y cuál queda elegida.
+///
+/// Salida derivada, no entrada del usuario. Cuando [hayEleccion] es false la
+/// UI muestra [explicacion] como constatación —"a 9 hoyos esta apuesta solo
+/// puede jugarse entera"— y no como opción.
+class DivisionOptions {
+  /// Las que el motor sabe liquidar en esta celda. Nunca vacía.
+  final List<BetDivision> disponibles;
+
+  /// La que queda puesta: la preferida si es válida, si no la única posible.
+  final BetDivision elegida;
+
+  /// Por qué no hay alternativa. null cuando sí la hay.
+  final String? explicacion;
+
+  const DivisionOptions({
+    required this.disponibles,
+    required this.elegida,
+    this.explicacion,
+  });
+
+  /// true solo donde el usuario tiene algo que decidir.
+  bool get hayEleccion => disponibles.length > 1;
+}
+
 /// Resultado de traducir una combinación de ejes.
 ///
 /// O sale un módulo, o sale el motivo por el que esa combinación no existe.
@@ -156,21 +187,78 @@ class BetRecipeResult {
 class BetRecipe {
   const BetRecipe._();
 
+  /// Qué particiones existen en esta celda, y cuál queda elegida.
+  ///
+  /// **Derivación, no pregunta.** El resultado sale de tres datos que el
+  /// usuario ya dio antes: el conteo, la bola y la longitud de la ronda.
+  ///
+  ///   · el conteo no segmenta        → una sola apuesta, siempre
+  ///   · ronda de 9 hoyos             → una sola apuesta (singleNine ya emite
+  ///                                    un asiento único; no hay dos vueltas)
+  ///   · 18 hoyos + bola baja y alta  → las dos (tiene flags de segmento)
+  ///   · 18 hoyos + Match liso        → solo partido (entero exigiría dos
+  ///                                    segmentos a cero)
+  ///
+  /// [preferida] solo se honra si está entre las disponibles. Sirve para
+  /// conservar la elección del usuario en la única celda donde la hay, sin que
+  /// una elección vieja sobreviva a un cambio de bola o de longitud.
+  static DivisionOptions divisionDe(
+    BetCount cuenta, {
+    TeamBall? bola,
+    int holesInRound = 18,
+    BetDivision? preferida,
+  }) {
+    final tipo = cuenta.tipoCon(bola);
+
+    DivisionOptions unica(BetDivision d, String porQue) => DivisionOptions(
+        disponibles: [d], elegida: d, explicacion: porQue);
+
+    if (!tipo.rules.segments) {
+      return unica(BetDivision.unaSolaApuesta, tipo.rules.sinSegmentos!);
+    }
+
+    if (holesInRound <= 9) {
+      return unica(
+          BetDivision.unaSolaApuesta,
+          'La ronda es de 9 hoyos: no hay un Front y un Back que separar, así '
+          'que se juega entera.');
+    }
+
+    // Bola baja y alta: la única config con interruptores de segmento, y por
+    // tanto la única celda con dos caminos reales.
+    if (tipo == BetModuleType.nassauLowHigh) {
+      const todas = [BetDivision.unaSolaApuesta, BetDivision.frontBackTotal];
+      return DivisionOptions(
+        disponibles: todas,
+        elegida: todas.contains(preferida)
+            ? preferida!
+            : BetDivision.frontBackTotal,
+      );
+    }
+
+    return unica(
+        BetDivision.frontBackTotal,
+        'A 18 hoyos un Match entero tendría que ser un Front y un Back a cero, '
+        'y eso deja apuntes de \$0 en el resultado. Se juega partido.');
+  }
+
   /// Construye el módulo para una combinación de ejes.
   ///
+  /// La partición NO es parámetro: se deriva con [divisionDe]. [preferida] solo
+  /// se honra en la celda donde hay elección real.
+  ///
   /// [bola] es null en individual. [sides] solo con equipos. [holesInRound] es
-  /// la longitud elegida en el paso Campo: cambia qué particiones existen.
+  /// la longitud elegida en el paso Campo.
   static BetRecipeResult build({
     required BetCount cuenta,
-    required BetDivision division,
     TeamBall? bola,
     required List<String> participantIds,
     int holesInRound = 18,
     List<BetSide>? sides,
+    BetDivision? preferida,
     String? id,
   }) {
     final tipo = cuenta.tipoCon(bola);
-    final nueveHoyos = holesInRound <= 9;
 
     // ── El conteo, ¿admite equipos? ────────────────────────────────────────
     if (sides != null && !tipo.rules.teams) {
@@ -181,104 +269,26 @@ class BetRecipe {
           '${cuenta.labelCon(bola)} se juega 2 vs 2: hacen falta dos lados.');
     }
 
-    // ── Partir en Front · Back · Total ─────────────────────────────────────
-    if (division == BetDivision.frontBackTotal) {
-      if (!tipo.rules.segments) {
-        return BetRecipeResult.no(tipo.rules.sinSegmentos!);
-      }
-      // Una ronda de 9 hoyos no tiene dos vueltas que separar.
-      if (nueveHoyos) {
-        return BetRecipeResult.no(
-            'La ronda es de 9 hoyos: no hay un Front y un Back que separar.');
-      }
-    }
+    final div = divisionDe(cuenta,
+        bola: bola, holesInRound: holesInRound, preferida: preferida);
 
     var mod = BetModuleInstance.defaultFor(tipo, participantIds,
         id: id, sides: sides);
 
-    // ── Una sola apuesta ───────────────────────────────────────────────────
-    if (division == BetDivision.unaSolaApuesta) {
-      final r = _colapsarAUnaApuesta(mod, tipo, nueveHoyos);
-      if (!r.ok) return r;
-      mod = r.module!;
-    }
-
-    return BetRecipeResult.ok(mod);
-  }
-
-  /// Deja el módulo como una sola apuesta sobre la ronda completa.
-  ///
-  /// Los conteos que no segmentan ya son una sola apuesta y no hay nada que
-  /// hacer. Los dos que sí segmentan se comportan distinto, y la asimetría es
-  /// del modelo, no un capricho:
-  ///
-  ///   · Bola Baja / Bola Alta tiene front9Enabled / back9Enabled /
-  ///     overallEnabled, así que basta con dejar solo el Total.
-  ///
-  ///   · Nassau NO tiene esos interruptores. Habría que poner Front y Back a
-  ///     cero, y _addNassauSegment no comprueba si el valor es cero: emitiría
-  ///     dos asientos de $0 por pareja, visibles como filas vacías en
-  ///     Resultados. Añadir los flags es modelo; hacer que
-  ///     _addNassauSegment los respete es tocar el cálculo.
-  ///
-  /// En una ronda de 9 hoyos el problema no existe: _nassauPair ya colapsa a
-  /// un único asiento 'Nassau 9 hoyos' cuando segmentsOf marca singleNine.
-  static BetRecipeResult _colapsarAUnaApuesta(
-      BetModuleInstance mod, BetModuleType tipo, bool nueveHoyos) {
-    if (tipo == BetModuleType.nassauLowHigh) {
-      return BetRecipeResult.ok(mod.copyWith(
+    // Solo Bola Baja / Bola Alta necesita ajuste: es la única con flags de
+    // segmento. Nassau y los conteos que no segmentan ya salen bien de
+    // defaultFor, porque su partición es la única que sabían hacer.
+    if (tipo == BetModuleType.nassauLowHigh &&
+        div.elegida == BetDivision.unaSolaApuesta) {
+      mod = mod.copyWith(
         nassauLowHighConfig: mod.lowHigh.copyWith(
           front9Enabled: false,
           back9Enabled: false,
           overallEnabled: true,
         ),
-      ));
-    }
-
-    if (tipo == BetModuleType.nassau && !nueveHoyos) {
-      return BetRecipeResult.no(
-          'Un Match a los 18 hoyos tendría que ser un Front y un Back a cero, '
-          'y eso deja apuntes de \$0 en el resultado. Pártelo en '
-          'Front · Back · Total, o juega una ronda de 9.');
+      );
     }
 
     return BetRecipeResult.ok(mod);
-  }
-
-  /// Divisiones ofrecibles para un conteo, con el motivo de las que no.
-  ///
-  /// Lo consume la UI para atenuar en vez de validar: una opción en gris que
-  /// dice por qué enseña el modelo; un error después de elegirla, no.
-  static Map<BetDivision, String?> divisionesPara(
-    BetCount cuenta, {
-    TeamBall? bola,
-    int holesInRound = 18,
-  }) {
-    final r = <BetDivision, String?>{};
-    for (final d in BetDivision.values) {
-      final res = build(
-        cuenta: cuenta, division: d, bola: bola,
-        participantIds: const ['a', 'b'],
-        holesInRound: holesInRound,
-        sides: bola == null
-            ? null
-            : const [
-                BetSide(id: 'A', name: 'A', playerIds: ['a']),
-                BetSide(id: 'B', name: 'B', playerIds: ['b']),
-              ],
-      );
-      r[d] = res.ok ? null : res.rechazo;
-    }
-    return r;
-  }
-
-  /// true si este conteo tiene más de una división posible.
-  ///
-  /// El paso "¿se parte en varias apuestas?" solo existe si alguna apuesta
-  /// elegida admite partirse. Con una sola opción no hay nada que preguntar.
-  static bool admiteParticion(BetCount cuenta,
-      {TeamBall? bola, int holesInRound = 18}) {
-    final d = divisionesPara(cuenta, bola: bola, holesInRound: holesInRound);
-    return d.values.where((motivo) => motivo == null).length > 1;
   }
 }
