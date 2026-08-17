@@ -5993,6 +5993,25 @@ class _SetupScreenState extends State<SetupScreen> {
       ));
     }
 
+    // ── Bruto o neto, una vez para toda la ronda ─────────────────────────────
+    //
+    // GrossNetMode estaba repetido por módulo y un grupo no juega skins en bruto
+    // y nassau en neto. Se fija aquí y se propaga; el detalle de cada apuesta
+    // sigue pudiendo desviarse.
+    //
+    // La respuesta no se pregunta aparte porque ya está dada: neto significa
+    // "con handicap aplicado", así que la elección de ventaja la determina.
+    final modo =
+        _ventaja == _Ventaja.ninguna ? GrossNetMode.gross : GrossNetMode.net;
+    for (var g = 0; g < _groups.length; g++) {
+      _groups[g] = _groups[g].copyWith(
+        modules: _groups[g]
+            .modules
+            .map((m) => BetRecipe.conModo(m, modo))
+            .toList(),
+      );
+    }
+
     // Con equipos el allowance vive en TeamHandicapConfig y lo aplica el motor
     // una sola vez, en GameEngine.buildTeamHcpMap. Aquí solo se guarda.
     if (_porEquipos && _ventaja == _Ventaja.handicap && _allowance < 1) {

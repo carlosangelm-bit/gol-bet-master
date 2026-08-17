@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/models.dart';
 import 'package:golf_bet_master/engines/bet_engine.dart';
 import 'package:golf_bet_master/providers/round_provider.dart';
+import 'package:golf_bet_master/models/bet_recipe.dart';
 
 CourseInfo _course() => CourseInfo(name: 'T',
     holes: List.generate(18,
@@ -108,6 +109,72 @@ void main() {
       // invertiría el número en pantalla sin que nada falle.
       final r = _round(pairSliding: const {'a|b': 3});
       expect(r.pairSliding[BetEngine.pairKey('b', 'a')], 3);
+    });
+  });
+
+  _modo();
+}
+
+// ── Bruto o neto, una sola vez para la ronda ─────────────────────────────────
+//
+// GrossNetMode estaba repetido en Skins, Nassau, Medal, Match y Bola Baja/Alta,
+// y un grupo no juega skins en bruto y nassau en neto. Se fija una vez.
+//
+// Y no se pregunta aparte: neto significa "con handicap aplicado", así que la
+// respuesta ya está en el paso de ventaja. Preguntarlo otra vez sería pedir dos
+// veces la misma decisión y permitir contradecirla.
+void _modo() {
+  group('conModo', () {
+    const conModo = BetRecipe.conModo;
+
+    test('lo aplica en los cinco tipos que lo leen', () {
+      for (final t in [BetModuleType.skins, BetModuleType.nassau,
+                       BetModuleType.medal, BetModuleType.nassauLowHigh,
+                       BetModuleType.matchAutoPress]) {
+        final m = BetModuleInstance.defaultFor(t, const ['a', 'b'], id: 'x');
+        expect(conModo(m, GrossNetMode.gross).useHandicap, isFalse,
+            reason: '${t.label} en bruto');
+        expect(conModo(m, GrossNetMode.net).useHandicap, isTrue,
+            reason: '${t.label} en neto');
+      }
+    });
+
+    test('los tipos que no lo leen quedan intactos', () {
+      // Putts, Oyes y Unidades no dependen del score neto: escribirles un modo
+      // dejaría una config que no significa nada.
+      for (final t in [BetModuleType.putts, BetModuleType.oyeses,
+                       BetModuleType.units]) {
+        final m = BetModuleInstance.defaultFor(t, const ['a', 'b'], id: 'x');
+        expect(conModo(m, GrossNetMode.gross).configSignature,
+            m.configSignature, reason: t.label);
+      }
+    });
+
+    test('propagar a varias apuestas las deja todas igual', () {
+      // Es el punto: que no convivan skins en bruto con nassau en neto.
+      final mods = [
+        for (final t in [BetModuleType.skins, BetModuleType.nassau,
+                         BetModuleType.medal])
+          conModo(
+              BetModuleInstance.defaultFor(t, const ['a', 'b'], id: t.name),
+              GrossNetMode.gross),
+      ];
+      expect(mods.every((m) => !m.useHandicap), isTrue);
+    });
+
+    test('bruto y neto dan importes distintos con handicaps distintos', () {
+      // Si no, el modo no estaría llegando al cálculo.
+      final base = BetModuleInstance.defaultFor(
+          BetModuleType.nassau, const ['a', 'b'], id: 'm');
+      double total(GrossNetMode modo) {
+        final r = _round(hcpA: 0, hcpB: 18).copyWith(betGroups: [
+          BetGroup(id: 'g', name: 'G', format: PartidaFormat.oneVsOne,
+              playerIds: const ['a', 'b'],
+              modules: [BetRecipe.conModo(base, modo)]),
+        ]);
+        return BetEngine.computeAll(r).fold<double>(0, (x, e) => x + e.amount);
+      }
+      expect(total(GrossNetMode.gross), isNot(total(GrossNetMode.net)));
     });
   });
 }

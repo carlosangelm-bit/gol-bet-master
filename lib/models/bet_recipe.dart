@@ -563,4 +563,35 @@ class BetRecipe {
       unitsConfig: base.unitsConfig,
     );
   }
+
+  /// Fija bruto o neto en un módulo.
+  ///
+  /// GrossNetMode aparece repetido en Skins, Nassau, Medal, Match y Bola
+  /// Baja/Alta, y un grupo no juega skins en bruto y nassau en neto. Es una
+  /// pregunta de RONDA con override por apuesta en el detalle.
+  ///
+  /// El campo por módulo se conserva para no romper la serialización: lo que
+  /// cambia es que el flujo lo fija una vez y lo propaga.
+  ///
+  /// No hace falta preguntarlo aparte, y esa es la parte que importa: neto
+  /// significa "con handicap aplicado", así que la respuesta ya está en el paso
+  /// de ventaja. Sin ventaja → bruto. Con handicap o sliding → neto. Preguntarlo
+  /// otra vez sería pedir dos veces la misma decisión, y permitir contradecirla.
+  ///
+  /// Los tipos que no leen el modo —Putts, Oyes, Unidades— se devuelven
+  /// intactos: sus reglas no dependen del score neto.
+  static BetModuleInstance conModo(BetModuleInstance m, GrossNetMode modo) =>
+      switch (m.type) {
+        BetModuleType.skins =>
+          m.copyWith(skinsConfig: m.skins.copyWith(mode: modo)),
+        BetModuleType.nassau =>
+          m.copyWith(nassauConfig: m.nassau.copyWith(mode: modo)),
+        BetModuleType.nassauLowHigh =>
+          m.copyWith(nassauLowHighConfig: m.lowHigh.copyWith(mode: modo)),
+        BetModuleType.medal =>
+          m.copyWith(medalConfig: m.medal.copyWith(mode: modo)),
+        BetModuleType.matchAutoPress => m.copyWith(
+            matchAutoPressConfig: m.matchAutoPress.copyWith(mode: modo)),
+        _ => m,
+      };
 }

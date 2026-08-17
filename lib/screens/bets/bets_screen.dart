@@ -115,7 +115,20 @@ class BetsScreen extends StatelessWidget {
 class _BetRule {
   final BetGroup group;
   final BetModuleInstance module;
-  const _BetRule({required this.group, required this.module});
+
+  /// Cuántos módulos componen esta regla.
+  ///
+  /// >1 cuando la apuesta se expandió en módulos 1v1 —porque un cruce quedó
+  /// fuera o pactó otro importe—. Los N siguen siendo UNA apuesta: mostrarlos
+  /// como N excepciones dice lo contrario de la verdad, porque la mayoría juega
+  /// el importe base y no es excepción de nada.
+  final int miembros;
+
+  const _BetRule({
+    required this.group,
+    required this.module,
+    this.miembros = 1,
+  });
 
   BetScope get scope => module.effectiveScope;
 
@@ -126,7 +139,10 @@ class _BetRule {
         BetScopeKind.everyone => 'Toda la partida ($playerCount)',
         BetScopeKind.subset   => '$playerCount jugadores',
         BetScopeKind.teams    => '${module.sideA.name} vs ${module.sideB.name}',
-        BetScopeKind.pair     => 'Duelo',
+        // Una familia expandida se lee por cuántos enfrentamientos cubre, no
+        // como "Duelo": son varios.
+        BetScopeKind.pair =>
+          miembros > 1 ? '$miembros enfrentamientos' : 'Duelo',
       };
 
   String get formatLabel =>
@@ -181,13 +197,70 @@ class _BetException {
   );
 }
 
+/// Expuesto para test: la proyección de reglas y excepciones.
+///
+/// Se testea porque N módulos expandidos son UNA apuesta, y leerlos como N
+/// excepciones decía lo contrario de la verdad en pantalla.
+({List<dynamic> rules, List<dynamic> exceptions}) projectRulesForTest(
+        Round round) =>
+    _projectRules(round);
+
+/// Expuesto para test: cuántos módulos componen una regla.
+int ruleMembersForTest(dynamic rule) => (rule as _BetRule).miembros;
+
 ({List<_BetRule> rules, List<_BetException> exceptions}) _projectRules(
     Round round) {
   final rules      = <_BetRule>[];
   final exceptions = <_BetException>[];
 
   for (final g in round.betGroups) {
+    // ── Familias de módulos expandidos ────────────────────────────────────
+    //
+    // Una apuesta que se partió en módulos 1v1 —porque un cruce quedó fuera o
+    // pactó otro importe— comparte betGroupId. Los N son UNA apuesta.
+    //
+    // Sin esto la pantalla decía "APUESTAS DE LA RONDA · 0" y "EXCEPCIONES · 6"
+    // para un Nassau con un solo ajuste: cinco de esos seis juegan el importe
+    // base y no son excepción de nada. La lectura verdadera es "un Nassau para
+    // todos, con una excepción".
+    final familias = <String, List<BetModuleInstance>>{};
     for (final m in g.modules) {
+      final fam = m.betGroupId;
+      if (fam == null || m.effectiveScope.kind != BetScopeKind.pair) continue;
+      familias.putIfAbsent(fam, () => []).add(m);
+    }
+    final yaVistos = <String>{};
+
+    for (final entrada in familias.entries) {
+      final miembros = entrada.value;
+      if (miembros.length < 2) continue; // uno solo es un duelo suelto de verdad
+      yaVistos.addAll(miembros.map((m) => m.id));
+
+      // El importe de la MAYORÍA es la regla; lo que se desvía, la excepción.
+      final porFirma = <String, List<BetModuleInstance>>{};
+      for (final m in miembros) {
+        porFirma.putIfAbsent(m.configSignature, () => []).add(m);
+      }
+      final mayoria = porFirma.values.reduce((a, b) => a.length >= b.length ? a : b);
+
+      rules.add(_BetRule(
+          group: g, module: mayoria.first, miembros: miembros.length));
+
+      for (final m in miembros) {
+        if (m.configSignature == mayoria.first.configSignature) continue;
+        exceptions.add(_BetException(
+          kind: _ExceptionKind.differentValue,
+          group: g, module: m,
+          p1Id: m.participantIds[0],
+          p2Id: m.participantIds[1],
+          pairValue: m.baseValue,
+          baseValue: mayoria.first.baseValue,
+        ));
+      }
+    }
+
+    for (final m in g.modules) {
+      if (yaVistos.contains(m.id)) continue;
       final scope = m.effectiveScope;
 
       // a) Módulo de duelo suelto → excepción "apuesta extra"
@@ -565,6 +638,13 @@ class _RuleCard extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               _ScopeChip(icon: Icons.swap_horiz, label: rule.formatLabel, t: t),
+              // El ×N hace visible que la apuesta se partió en módulos 1v1, que
+              // es lo que la leyenda de Detalle ya prometía.
+              if (rule.miembros > 1) ...[
+                const SizedBox(width: 6),
+                _ScopeChip(
+                    icon: Icons.call_split, label: '×${rule.miembros}', t: t),
+              ],
             ]),
           ]),
         ),
