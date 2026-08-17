@@ -1440,38 +1440,70 @@ class _QuickInfoCards extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        ..._BetInfo.all.map((info) => _BetExpandableCard(t: t, info: info)),
+        ..._BetInfo.visibles.map((info) => _BetExpandableCard(t: t, info: info)),
       ],
     );
   }
 }
 
+/// Los tipos que el catálogo de Inicio muestra HOY. Expuesto para que un test
+/// pueda comprobar que coincide con [creatableBetTypes]: la lista vivía
+/// desconectada del enum y derivó en las dos direcciones.
+///
+/// Es la lista filtrada, no la cruda: lo que importa es lo que el usuario ve.
+List<BetModuleType> get betCatalogTypes =>
+    _BetInfo.visibles.map((i) => i.type).toList();
+
+/// Nombre con el que el catálogo muestra un tipo.
+String betCatalogNameOf(BetModuleType t) =>
+    _BetInfo.all.firstWhere((i) => i.type == t).name;
+
 // ── Modelo de datos para cada apuesta ───────────────────────────────────────
 class _BetInfo {
+  /// El tipo del modelo al que corresponde esta ficha.
+  ///
+  /// Sin esto el catálogo era una lista de texto plano que NO mencionaba
+  /// BetModuleType ni una vez, y por eso derivó en las dos direcciones a la
+  /// vez: seguía anunciando Match + Press después de retirarlo, y nunca llegó
+  /// a mencionar Bola Baja / Bola Alta. Atarlo al enum es lo que impide que
+  /// vuelva a pasar.
+  final BetModuleType type;
   final IconData icon;
   final Color color;
-  final String name;
   final String tagline;
   final String howItWorks;
   final List<String> rules;
   final String example;
 
+  /// El nombre lo pone el enum: dos sitios con el mismo nombre a mano son dos
+  /// sitios que se pueden contradecir.
+  String get name => type.label;
+
   const _BetInfo({
+    required this.type,
     required this.icon,
     required this.color,
-    required this.name,
     required this.tagline,
     required this.howItWorks,
     required this.rules,
     required this.example,
   });
 
+  /// Las fichas que se muestran. Un tipo retirado bajo el título "APUESTAS
+  /// DISPONIBLES" es una promesa que la app no cumple: el usuario lo ve, lo
+  /// quiere y no lo encuentra en ningún selector.
+  ///
+  /// El texto del tipo retirado se conserva —una ronda vieja que lo use sigue
+  /// siendo explicable— pero no se anuncia.
+  static List<_BetInfo> get visibles =>
+      all.where((i) => i.type.isCreatable).toList();
+
   static const List<_BetInfo> all = [
     // ── Nassau ────────────────────────────────────────────────────────────────
     _BetInfo(
+      type: BetModuleType.nassau,
       icon: Icons.attach_money_rounded,
       color: Color(0xFF2E7D32),
-      name: 'Nassau',
       tagline: 'La apuesta clásica del golf — F9, B9 y Total 18',
       howItWorks:
           'Tres apuestas independientes en una: Front 9 (hoyos 1-9), '
@@ -1502,9 +1534,9 @@ class _BetInfo {
     ),
     // ── Match + Press ─────────────────────────────────────────────────────────
     _BetInfo(
+      type: BetModuleType.matchAutoPress,
       icon: Icons.compare_arrows_rounded,
       color: Color(0xFF1565C0),
-      name: 'Match + Press',
       tagline: 'Match play de 18 hoyos con presiones en cadena',
       howItWorks:
           'Match play puro de 18 hoyos. El jugador que va N-down activa '
@@ -1532,9 +1564,9 @@ class _BetInfo {
     ),
     // ── Skins ─────────────────────────────────────────────────────────────────
     _BetInfo(
+      type: BetModuleType.skins,
       icon: Icons.star_rounded,
       color: Color(0xFFAD1457),
-      name: 'Skins',
       tagline: 'Cada hoyo es una apuesta independiente',
       howItWorks:
           'Cada hoyo tiene su propio premio (skin). El jugador con el score '
@@ -1561,9 +1593,9 @@ class _BetInfo {
     ),
     // ── Medal ─────────────────────────────────────────────────────────────────
     _BetInfo(
+      type: BetModuleType.medal,
       icon: Icons.emoji_events_rounded,
       color: Color(0xFF4527A0),
-      name: 'Medal',
       tagline: 'Score neto total más bajo de la ronda',
       howItWorks:
           'Apuesta al score total neto (o bruto) acumulado durante la ronda. '
@@ -1587,9 +1619,9 @@ class _BetInfo {
     ),
     // ── Skins Oyeses (par 3) ─────────────────────────────────────────────────
     _BetInfo(
+      type: BetModuleType.oyeses,
       icon: Icons.sports_golf_rounded,
       color: Color(0xFF00695C),
-      name: 'Oyeses',
       tagline: 'El más cercano en cada par 3 cobra',
       howItWorks:
           'Apuesta exclusiva de los hoyos par 3. En cada par 3 el jugador '
@@ -1616,9 +1648,9 @@ class _BetInfo {
     ),
     // ── Units ─────────────────────────────────────────────────────────────────
     _BetInfo(
+      type: BetModuleType.units,
       icon: Icons.touch_app_rounded,
       color: Color(0xFF6A1B9A),
-      name: 'Units',
       tagline: 'Puntos por logros especiales hoyo a hoyo',
       howItWorks:
           'Cada logro especial tiene un valor en unidades (puntos). '
@@ -1645,9 +1677,9 @@ class _BetInfo {
     ),
     // ── Putts ─────────────────────────────────────────────────────────────────
     _BetInfo(
+      type: BetModuleType.putts,
       icon: Icons.track_changes_rounded,
       color: Color(0xFF00838F),
-      name: 'Putts',
       tagline: 'El que menos putts hace en la ronda, cobra',
       howItWorks:
           'Apuesta al número total de putts registrados hoyo a hoyo. '
@@ -1670,6 +1702,30 @@ class _BetInfo {
           'Rich: 33 putts totales\n'
           'Rafa gana → cobra \$50 de Carlos y \$50 de Rich\n'
           'Rafa cobra \$100 en total',
+    ),
+    // ── Bola Baja / Bola Alta ────────────────────────────────────────────────
+    _BetInfo(
+      type: BetModuleType.nassauLowHigh,
+      icon: Icons.balance_rounded,
+      color: Color(0xFF5E35B1),
+      tagline: 'Dos puntos por hoyo: la mejor bola y la peor',
+      howItWorks:
+          'Se juega 2 vs 2. En cada hoyo se comparan dos cosas por separado: '
+          'la mejor bola de un equipo contra la mejor del otro, y la peor '
+          'contra la peor. Cada comparación reparte un punto, así que un hoyo '
+          'puede acabar 2-0, 1-1 o 1-0 con un empate. Gana el segmento quien '
+          'más puntos acumule.',
+      rules: [
+        'Cada hoyo reparte hasta 2 puntos: uno por la baja y otro por la alta',
+        'Front 9, Back 9 y Total 18 se pagan por separado',
+        'Un empate en una bola puede dividir el punto, perderlo o acumularlo',
+        'Opcional: además del monto fijo, un valor por punto de diferencia',
+        'El importe se pacta entre los dos equipos, no entre jugadores',
+      ],
+      example:
+          'Hoyo 4 · A hace 4 y 6, B hace 4 y 5\n'
+          'Bola baja 4-4 empata · bola alta 6 vs 5 la gana B\n'
+          'El hoyo acaba 0-1 para B',
     ),
   ];
 }

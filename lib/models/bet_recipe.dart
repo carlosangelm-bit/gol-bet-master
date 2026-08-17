@@ -291,4 +291,63 @@ class BetRecipe {
 
     return BetRecipeResult.ok(mod);
   }
+
+  /// Traduce la bola elegida al modo de juego del lado.
+  ///
+  /// Con la mejor y la peor cada jugador juega SU bola —hacen falta las dos
+  /// para sacar la baja y la alta—, así que es best ball igual que "la mejor".
+  /// Lo que cambia entre ambas es cuántos puntos reparte el hoyo, no cómo se
+  /// juega. Una sola bola sí es scramble: el equipo entrega un score.
+  static TeamPlayMode playModeDe(TeamBall bola) => switch (bola) {
+        TeamBall.mejor || TeamBall.mejorYPeor => TeamPlayMode.bestBall,
+        TeamBall.unaSola => TeamPlayMode.scramble,
+      };
+
+  /// Escribe en el módulo la decisión de ronda: quiénes compiten y qué bola.
+  ///
+  /// Sin esto, elegir "Por equipos" solo cambiaba qué pantallas se veían: el
+  /// módulo salía sin lados y la ronda se creaba individual. La parte visible
+  /// funcionando y la que resuelve el problema sin conectar.
+  ///
+  /// Tres cosas que NO hace, a propósito:
+  ///
+  ///   · No toca un módulo que ya trae lados. Si el usuario los configuró a
+  ///     mano en la hoja de la apuesta, esa decisión es más específica que la
+  ///     de la ronda y pisarla sería perder trabajo suyo.
+  ///   · No pone lados en un conteo sin motor de equipo. Medal, Putts, Oyes y
+  ///     Unidades caen al fallback individual: darles lados no los haría de
+  ///     equipo, solo dejaría una configuración que miente.
+  ///   · No cambia el TIPO del módulo. Que "la mejor y la peor" implique Bola
+  ///     Baja / Bola Alta es cosa del paso de qué se cuenta, no de aquí.
+  ///
+  /// Devuelve el módulo tal cual si no hay nada que aplicar.
+  static BetModuleInstance conEquiposDeRonda(
+    BetModuleInstance mod, {
+    required bool porEquipos,
+    required List<String> equipoA,
+    required List<String> equipoB,
+    TeamBall? bola,
+  }) {
+    if (!porEquipos) return mod;
+    if (mod.sides != null && mod.sides!.isNotEmpty) return mod;
+    if (!mod.type.rules.teams) return mod;
+    if (equipoA.isEmpty || equipoB.isEmpty) return mod;
+
+    final modo = playModeDe(bola ?? TeamBall.mejor);
+    return mod.copyWith(
+      participantIds: [...equipoA, ...equipoB],
+      sides: [
+        BetSide(
+            id: '${mod.id}_A',
+            name: 'Equipo A',
+            playerIds: List.of(equipoA),
+            playMode: modo),
+        BetSide(
+            id: '${mod.id}_B',
+            name: 'Equipo B',
+            playerIds: List.of(equipoB),
+            playMode: modo),
+      ],
+    );
+  }
 }

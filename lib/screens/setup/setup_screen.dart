@@ -4948,6 +4948,35 @@ class _SetupScreenState extends State<SetupScreen> {
     final allPidsLaunch = _players.map((p) => p.id).toList();
 
     // ─────────────────────────────────────────────────────────────────────────
+    // PASO 0: bajar al modelo la decisión de ronda —quiénes compiten y qué bola—
+    //
+    // _porEquipos y _bola solo decidían qué PANTALLAS se veían. El paso "Bola"
+    // aparecía en la barra, se elegía una, y la ronda se creaba individual
+    // igualmente: el módulo salía sin lados y sin playMode. La parte visible
+    // funcionando y la que resuelve el problema sin conectar.
+    //
+    // Se aplica aquí, en un único sitio por el que pasa toda ronda, en vez de
+    // en cada punto donde se crea o edita un módulo: esos son varios y basta
+    // olvidar uno para reproducir el mismo fallo.
+    //
+    // conEquiposDeRonda respeta los lados configurados a mano, así que aplicar
+    // siempre no pisa nada.
+    // ─────────────────────────────────────────────────────────────────────────
+    if (_porEquipos) {
+      for (var g = 0; g < _groups.length; g++) {
+        _groups[g] = _groups[g].copyWith(
+          modules: _groups[g].modules
+              .map((m) => BetRecipe.conEquiposDeRonda(m,
+                  porEquipos: true,
+                  equipoA: _teamA,
+                  equipoB: _teamB,
+                  bola: _bola))
+              .toList(),
+        );
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // PASO 1: Escanear módulos con sides → crear virtuales para Scramble y Best Ball
     // ─────────────────────────────────────────────────────────────────────────
     final virtualPlayers    = <Player>[];

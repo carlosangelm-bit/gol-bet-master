@@ -413,8 +413,8 @@ extension BetModuleLabel on BetModuleType {
     BetModuleType.matchAutoPress:'Match + Press',
     BetModuleType.medal:         'Medal',
     BetModuleType.putts:         'Putts',
-    BetModuleType.oyeses:        'Oyeses',
-    BetModuleType.units:         'Units',
+    BetModuleType.oyeses:        'Oyes',
+    BetModuleType.units:         'Unidades',
     BetModuleType.nassauLowHigh: 'Bola Baja / Bola Alta',
   }[this]!;
 
