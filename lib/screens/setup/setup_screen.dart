@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/app_theme.dart';
 import '../../engines/bet_engine.dart';
+import '../../models/bet_recipe.dart';
+import 'setup_flow.dart';
 import '../../engines/pair_agreement_engine.dart';
 import '../../providers/user_profile_provider.dart';
 import '../../models/models.dart';
@@ -31,8 +33,34 @@ class SetupScreen extends StatefulWidget {
 
 class _SetupScreenState extends State<SetupScreen> {
   final _uuid = const Uuid();
-  // 4 pasos: 0=Campo  1=Jugadores  2=Apuestas  3=Resumen
-  int _step = 0;
+
+  /// El paso actual se guarda por IDENTIDAD, no por índice.
+  ///
+  /// Con pasos condicionales un índice es una bomba: al pasar de equipos a
+  /// individual la lista se acorta y el mismo número apunta a otra pantalla.
+  /// Guardando el enum, quitar un paso no mueve al usuario de sitio.
+  SetupStep _current = SetupStep.campo;
+
+  /// Los pasos de ESTA ronda. La lista la decide [setupSteps], que es lógica
+  /// pura y testeable: qué pasos existen no debería depender de un widget.
+  List<SetupStep> get _steps => setupSteps(porEquipos: _porEquipos);
+
+  /// Índice del paso actual, resolviendo el caso de que haya dejado de existir
+  /// —el usuario vuelve atrás y cambia a individual estando en "qué bola"—.
+  int get _stepIndex => _steps.indexOf(resolveStep(_current, _steps));
+
+  // ── Quiénes compiten ───────────────────────────────────────────────────────
+  //
+  // Antes esto vivía dentro de la hoja de cada apuesta. Sube a la ronda porque
+  // es la respuesta que determina cuántos LADOS hay, y de los lados salen los
+  // enfrentamientos y de ahí los montos. Preguntarlo por apuesta obligaba a
+  // repetir la misma respuesta tantas veces como apuestas hubiera.
+  bool _porEquipos = false;
+  final List<String> _teamA = [];
+  final List<String> _teamB = [];
+
+  /// Qué bola cuenta. null mientras no se elija; solo aplica con equipos.
+  TeamBall? _bola;
 
   static String _defaultRoundName() {
     final now = DateTime.now();
@@ -268,10 +296,10 @@ class _SetupScreenState extends State<SetupScreen> {
       backgroundColor: t.bg,
       appBar: gAppBar('Nueva Ronda', t, showBack: true, ctx: context),
       body: Column(children: [
-        _StepBar(step: _step, t: t),
+        _StepBar(steps: _steps, index: _stepIndex, t: t),
         Expanded(child: IndexedStack(
-          index: _step,
-          children: [_stepCourse(t), _stepPlayers(t), _stepGroups(t), _stepReview(t)],
+          index: _stepIndex,
+          children: [for (final s in _steps) _widgetFor(s, t)],
         )),
         _bottomBar(context, t),
       ]),
@@ -279,26 +307,47 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   // ── Bottom navigation bar ─────────────────────────────────────────────────
+  Widget _widgetFor(SetupStep s, GolfTheme t) => switch (s) {
+        SetupStep.campo => _stepCourse(t),
+        SetupStep.jugadores => _stepPlayers(t),
+        SetupStep.compiten => _stepCompiten(t),
+        SetupStep.bola => _stepBola(t),
+        SetupStep.apuestas => _stepGroups(t),
+        SetupStep.revisar => _stepReview(t),
+        // Existen en el enum pero setupSteps todavía no los emite: se
+        // construyen en los bloques siguientes. La rama está aquí para que el
+        // switch siga siendo exhaustivo, que es lo que obliga a no olvidar
+        // ninguno al añadirlo.
+        SetupStep.participantes ||
+        SetupStep.montos ||
+        SetupStep.ventaja =>
+          const SizedBox.shrink(),
+      };
+
   Widget _bottomBar(BuildContext ctx, GolfTheme t) {
-    final isLast = _step == 3;
+    final idx = _stepIndex;
+    final isLast = idx == _steps.length - 1;
     return Container(
       padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(ctx).padding.bottom + 12),
       decoration: BoxDecoration(color: t.bg, border: Border(top: BorderSide(color: t.divider))),
       child: Row(children: [
-        if (_step > 0) ...[
-          Expanded(child: GSecButton(label: 'Atrás', onTap: () => setState(() => _step--))),
+        if (idx > 0) ...[
+          Expanded(child: GSecButton(
+              label: 'Atrás',
+              onTap: () => setState(() => _current = _steps[idx - 1]))),
           const SizedBox(width: 12),
         ],
         Expanded(flex: 2, child: GPrimaryButton(
           label: isLast ? '⛳ Iniciar Ronda' : 'Siguiente →',
           onTap: () {
             // Validaciones por paso
-            if (_step == 0) {
-              // Campo es opcional — cualquier cosa está bien
-            } else if (_step == 2 && _groups.isEmpty) {
+            if (_current == SetupStep.apuestas && _groups.isEmpty) {
               _addDefaultGroup();
             }
-            if (!isLast) { setState(() => _step++); return; }
+            if (!isLast) {
+              setState(() => _current = _steps[idx + 1]);
+              return;
+            }
             _launchRound(ctx);
           },
         )),
@@ -1319,6 +1368,171 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   // ── STEP 2: Partidas y módulos (nuevo) ───────────────────────────────────
+  // ── PASO · ¿Quiénes compiten? ─────────────────────────────────────────────
+  //
+  // Define cuántos LADOS hay. Un lado es un jugador o un equipo, así que
+  // individual y equipos no son dos casos: son el mismo con distinto número de
+  // lados. De ahí salen los enfrentamientos, y de los enfrentamientos los
+  // montos.
+  Widget _stepCompiten(GolfTheme t) {
+    final n = _players.length;
+    final cruces = n * (n - 1) ~/ 2;
+    return ListView(padding: const EdgeInsets.all(20), children: [
+      Text('¿Quiénes compiten?', style: GolfType.title(t.text)),
+      const SizedBox(height: 4),
+      Text('Define cuántos lados hay, y con ellos cuántos enfrentamientos.',
+          style: GolfType.body(t.sub)),
+      const SizedBox(height: 16),
+      _opcionCompiten(t,
+          icon: '👤',
+          titulo: 'Cada quien por su cuenta',
+          detalle: '$n lados · $cruces enfrentamiento${cruces == 1 ? '' : 's'}.',
+          activa: !_porEquipos,
+          onTap: () => setState(() {
+                _porEquipos = false;
+                _bola = null; // la bola no aplica sin equipos
+              })),
+      _opcionCompiten(t,
+          icon: '👥',
+          titulo: 'Por equipos',
+          detalle: '2 lados · 1 enfrentamiento.',
+          activa: _porEquipos,
+          onTap: () => setState(() {
+                _porEquipos = true;
+                if (_teamA.isEmpty && _teamB.isEmpty) _repartirEquipos();
+              })),
+      if (_porEquipos) ...[
+        const SizedBox(height: 12),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: _panelEquipo(t, 'Equipo A', _teamA, 0)),
+          const SizedBox(width: 10),
+          Expanded(child: _panelEquipo(t, 'Equipo B', _teamB, 1)),
+        ]),
+        const SizedBox(height: 8),
+        Text('Toca un jugador para cambiarlo de lado.',
+            style: GolfType.label(t.sub)),
+      ],
+    ]);
+  }
+
+  /// Reparto inicial alternando, para que dos jugadores del mismo nivel no
+  /// caigan siempre juntos por el orden en que se capturaron.
+  void _repartirEquipos() {
+    _teamA.clear();
+    _teamB.clear();
+    for (var i = 0; i < _players.length; i++) {
+      (i.isEven ? _teamA : _teamB).add(_players[i].id);
+    }
+  }
+
+  Widget _opcionCompiten(GolfTheme t,
+      {required String icon,
+      required String titulo,
+      required String detalle,
+      required bool activa,
+      required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: activa ? t.primary.withValues(alpha: 0.08) : t.card,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: activa ? t.primary : t.divider, width: activa ? 1.5 : 1),
+        ),
+        child: Row(children: [
+          Text(icon, style: const TextStyle(fontSize: 20)),
+          const SizedBox(width: 11),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(titulo,
+                    style: GolfType.body(t.text)
+                        .copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(detalle, style: GolfType.label(t.sub)),
+              ])),
+          if (activa) Icon(Icons.check_circle, color: t.primary, size: 20),
+        ]),
+      ),
+    );
+  }
+
+  Widget _panelEquipo(GolfTheme t, String nombre, List<String> ids, int lado) {
+    final color = GAvatar.colorFor(lado == 0 ? 0 : 4);
+    return Container(
+      constraints: const BoxConstraints(minHeight: 86),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.divider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(nombre.toUpperCase(), style: GolfType.label(color)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 5, runSpacing: 5, children: [
+          for (final id in ids)
+            GestureDetector(
+              onTap: () => setState(() {
+                (lado == 0 ? _teamA : _teamB).remove(id);
+                (lado == 0 ? _teamB : _teamA).add(id);
+              }),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: color.withValues(alpha: 0.35)),
+                ),
+                child: Text(_playerName(id),
+                    style: GolfType.label(color)
+                        .copyWith(fontWeight: FontWeight.w700)),
+              ),
+            ),
+        ]),
+      ]),
+    );
+  }
+
+  // ── PASO · ¿Qué bola cuenta? (solo con equipos) ───────────────────────────
+  //
+  // Determina cuántos puntos reparte cada hoyo, y con ello cómo se llama el
+  // conteo: con uno es Match —el marcador se lee "2 UP"—, con dos son Puntos.
+  Widget _stepBola(GolfTheme t) {
+    final opciones = [
+      (TeamBall.mejor, '🏌️', 'La mejor bola',
+          'Cuenta el mejor score del equipo en el hoyo.'),
+      (TeamBall.mejorYPeor, '⚖️', 'La mejor y la peor',
+          'Dos puntos por hoyo: uno por la mejor bola y otro por la peor.'),
+      (TeamBall.unaSola, '🎯', 'Una sola bola',
+          'El equipo juega un balón y registra un score por hoyo.'),
+    ];
+    return ListView(padding: const EdgeInsets.all(20), children: [
+      Text('¿Qué bola cuenta?', style: GolfType.title(t.text)),
+      const SizedBox(height: 4),
+      Text('Cómo se decide el score del lado en cada hoyo.',
+          style: GolfType.body(t.sub)),
+      const SizedBox(height: 16),
+      for (final (bola, icon, titulo, detalle) in opciones)
+        _opcionCompiten(t,
+            icon: icon,
+            titulo: titulo,
+            detalle: detalle,
+            activa: _bola == bola,
+            onTap: () => setState(() => _bola = bola)),
+      const SizedBox(height: 8),
+      Text(
+          'Cada hoyo reparte ${_bola.puntosPorHoyo} '
+          'punto${_bola.puntosPorHoyo == 1 ? '' : 's'}.',
+          style: GolfType.label(t.sub)),
+    ]);
+  }
+
   Widget _stepGroups(GolfTheme t) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -4232,7 +4446,7 @@ class _SetupScreenState extends State<SetupScreen> {
           Row(children: [
             Expanded(child: GSectionHeader(title: 'VENTAJAS')),
             GestureDetector(
-              onTap: () => setState(() => _step = 1), // Ir al paso jugadores
+              onTap: () => setState(() => _current = SetupStep.jugadores),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
@@ -5011,13 +5225,18 @@ class _SetupScreenState extends State<SetupScreen> {
 
 // ── Barra de pasos ────────────────────────────────────────────────────────────
 class _StepBar extends StatelessWidget {
-  final int step;
+  /// Los pasos que existen en ESTA ronda. La barra se dibuja a partir de la
+  /// lista real, no de una constante: si el flujo se acorta, la barra también.
+  /// Con una lista fija el usuario vería un punto que nunca se ilumina.
+  final List<SetupStep> steps;
+  final int index;
   final GolfTheme t;
-  const _StepBar({required this.step, required this.t});
+  const _StepBar({required this.steps, required this.index, required this.t});
 
   @override
   Widget build(BuildContext context) {
-    final labels = ['Campo', 'Jugadores', 'Apuestas', 'Revisar'];
+    final labels = steps.map(setupStepLabel).toList();
+    final step = index;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
