@@ -43,7 +43,8 @@ class _SetupScreenState extends State<SetupScreen> {
 
   /// Los pasos de ESTA ronda. La lista la decide [setupSteps], que es lógica
   /// pura y testeable: qué pasos existen no debería depender de un widget.
-  List<SetupStep> get _steps => setupSteps(porEquipos: _porEquipos);
+  List<SetupStep> get _steps =>
+      setupSteps(porEquipos: _porEquipos, conCuenta: true);
 
   /// Índice del paso actual, resolviendo el caso de que haya dejado de existir
   /// —el usuario vuelve atrás y cambia a individual estando en "qué bola"—.
@@ -64,6 +65,19 @@ class _SetupScreenState extends State<SetupScreen> {
 
   /// Cómo se juega esa única bola. Solo aplica con [TeamBall.unaSola].
   SingleBallMode _submodo = SingleBallMode.scramble;
+
+  // ── Qué se cuenta ──────────────────────────────────────────────────────────
+  //
+  // Multi-select: una ronda puede llevar skins, match y unidades a la vez, cada
+  // una con su configuración. Antes se creaban de una en una.
+  final Set<BetCount> _conteos = {};
+
+  /// Partición preferida por conteo. Solo se honra donde divisionDe da opción,
+  /// así que una preferencia vieja no sobrevive a un cambio de bola o longitud.
+  final Map<BetCount, BetDivision> _particion = {};
+
+  /// Cómo se cobra. Solo se ofrece donde el motor lee formatMode.
+  final Map<BetCount, BetFormatMode> _reparto = {};
 
   static String _defaultRoundName() {
     final now = DateTime.now();
@@ -315,6 +329,7 @@ class _SetupScreenState extends State<SetupScreen> {
         SetupStep.jugadores => _stepPlayers(t),
         SetupStep.compiten => _stepCompiten(t),
         SetupStep.bola => _stepBola(t),
+        SetupStep.cuenta => _stepCuenta(t),
         SetupStep.apuestas => _stepGroups(t),
         SetupStep.revisar => _stepReview(t),
         // Existen en el enum pero setupSteps todavía no los emite: se
@@ -344,6 +359,7 @@ class _SetupScreenState extends State<SetupScreen> {
           label: isLast ? '⛳ Iniciar Ronda' : 'Siguiente →',
           onTap: () {
             // Validaciones por paso
+            if (_current == SetupStep.cuenta) _sincronizarModulos();
             if (_current == SetupStep.apuestas && _groups.isEmpty) {
               _addDefaultGroup();
             }
@@ -1371,6 +1387,280 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   // ── STEP 2: Partidas y módulos (nuevo) ───────────────────────────────────
+  // ── PASO · ¿Qué se cuenta? ────────────────────────────────────────────────
+  //
+  // Multi-select. Al marcar una apuesta su configuración se despliega DEBAJO,
+  // en este paso, no en un cajón de avanzados al final.
+  //
+  // Criterio de reparto: si hay que preguntárselo al grupo antes de salir al
+  // tee, va aquí; si el default sirve el 90% de las veces, va en el detalle.
+  // Presiones, carry, penaltis, hoyos elegibles y la tabla de unidades son
+  // detalle y NO aparecen aquí.
+  Widget _stepCuenta(GolfTheme t) {
+    final lados = _ladosProvisionales();
+    return ListView(padding: const EdgeInsets.all(20), children: [
+      Text('¿Qué se cuenta?', style: GolfType.title(t.text)),
+      const SizedBox(height: 4),
+      // SEÑALIZACIÓN. No es adorno: sustituye un cuestionario previo del tipo
+      // "¿algún duelo juega distinto?", que obligaba a anticipar una estructura
+      // que el usuario aún no ha visto. Quien no lo necesita lee una línea;
+      // quien sí, ya sabe dónde ir y no pierde tiempo forzándolo antes.
+      Text('Al elegir una, se abre su configuración debajo. '
+          'Los montos y quién juega qué vienen después.',
+          style: GolfType.body(t.sub)),
+      const SizedBox(height: 16),
+
+      // Atajos: rellenan conteo y partición de golpe. Son un preselector DENTRO
+      // del paso, no un modo aparte: después se puede cambiar cualquier cosa.
+      Text('ATAJOS', style: GolfType.label(t.sub)),
+      const SizedBox(height: 6),
+      Wrap(spacing: 6, runSpacing: 6, children: [
+        for (final atajo in _atajos)
+          GestureDetector(
+            onTap: () => setState(() {
+              _conteos
+                ..clear()
+                ..add(atajo.$2);
+              _particion.clear();
+              if (atajo.$3 != null) _particion[atajo.$2] = atajo.$3!;
+            }),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: t.card,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: t.divider, style: BorderStyle.solid),
+              ),
+              child: Text(atajo.$1, style: GolfType.body(t.sub)),
+            ),
+          ),
+      ]),
+      const SizedBox(height: 16),
+
+      for (final cuenta in BetCount.values) ..._fichaConteo(t, cuenta, lados),
+      const SizedBox(height: 8),
+      if (_conteos.isEmpty)
+        Text('Elige al menos una para continuar.', style: GolfType.label(t.sub)),
+    ]);
+  }
+
+  /// Atajos del paso: (etiqueta, conteo, partición que fijan).
+  static const _atajos = <(String, BetCount, BetDivision?)>[
+    ('Nassau', BetCount.puntos, BetDivision.frontBackTotal),
+    ('Skins', BetCount.skins, null),
+    ('Medal', BetCount.scoreTotal, null),
+    ('Unidades', BetCount.unidades, null),
+  ];
+
+  /// Lados provisionales para consultar el traductor y para que el módulo nazca
+  /// ya con equipos. null en individual.
+  List<BetSide>? _ladosProvisionales() {
+    if (!_porEquipos || _teamA.isEmpty || _teamB.isEmpty) return null;
+    final modo = BetRecipe.playModeDe(_bola ?? TeamBall.mejor);
+    return [
+      BetSide(id: 'lado_A', name: 'Equipo A',
+          playerIds: List.of(_teamA), playMode: modo),
+      BetSide(id: 'lado_B', name: 'Equipo B',
+          playerIds: List.of(_teamB), playMode: modo),
+    ];
+  }
+
+  List<Widget> _fichaConteo(GolfTheme t, BetCount cuenta, List<BetSide>? lados) {
+    final pids = _players.map((p) => p.id).toList();
+    final res = BetRecipe.build(
+      cuenta: cuenta, bola: _bola, participantIds: pids,
+      holesInRound: _totalHoles, sides: lados,
+      preferida: _particion[cuenta],
+    );
+    // Las combinaciones incoherentes no se prohíben con un error: no se
+    // ofrecen, y la opción atenuada dice el motivo.
+    final ofrecible = res.ok;
+    final marcada = _conteos.contains(cuenta);
+
+    return [
+      GestureDetector(
+        onTap: ofrecible
+            ? () => setState(() {
+                  if (!_conteos.remove(cuenta)) _conteos.add(cuenta);
+                })
+            : null,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(13),
+          decoration: BoxDecoration(
+            color: !ofrecible
+                ? t.surface
+                : marcada
+                    ? t.primary.withValues(alpha: 0.08)
+                    : t.card,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+                color: marcada && ofrecible ? t.primary : t.divider,
+                width: marcada && ofrecible ? 1.5 : 1),
+          ),
+          child: Opacity(
+            opacity: ofrecible ? 1 : 0.55,
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(cuenta.labelCon(_bola),
+                        style: GolfType.body(t.text)
+                            .copyWith(fontWeight: FontWeight.w600)),
+                    if (!ofrecible) ...[
+                      const SizedBox(height: 3),
+                      Text('No aplica · ${res.rechazo}',
+                          style: GolfType.label(t.danger)),
+                    ],
+                  ])),
+              if (ofrecible)
+                Icon(
+                    marcada
+                        ? Icons.check_box_rounded
+                        : Icons.check_box_outline_blank_rounded,
+                    color: marcada ? t.primary : t.divider,
+                    size: 22),
+            ]),
+          ),
+        ),
+      ),
+      if (marcada && ofrecible) _configDeConteo(t, cuenta, lados),
+    ];
+  }
+
+  /// Lo que hay que pactar con el grupo antes del primer tee. Nada más.
+  Widget _configDeConteo(GolfTheme t, BetCount cuenta, List<BetSide>? lados) {
+    final div = BetRecipe.divisionDe(cuenta,
+        bola: _bola, holesInRound: _totalHoles, preferida: _particion[cuenta]);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.primary.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // ── Partición ────────────────────────────────────────────────────────
+        //
+        // Solo cuando hay dos caminos reales. Cuando el sistema ya sabe la
+        // respuesta se ENUNCIA, no se ofrece: un control con una sola opción
+        // enseña a pulsar sin leer.
+        if (div.hayEleccion) ...[
+          Text('¿SE PARTE EN VARIAS APUESTAS?', style: GolfType.label(t.primary)),
+          const SizedBox(height: 6),
+          Wrap(spacing: 6, children: [
+            for (final d in div.disponibles)
+              GestureDetector(
+                onTap: () => setState(() => _particion[cuenta] = d),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: div.elegida == d
+                        ? t.primary.withValues(alpha: 0.12)
+                        : t.card,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                        color: div.elegida == d ? t.primary : t.divider,
+                        width: div.elegida == d ? 1.5 : 1),
+                  ),
+                  child: Text(_labelDivision(d),
+                      style: GolfType.label(
+                          div.elegida == d ? t.primary : t.text)),
+                ),
+              ),
+          ]),
+        ] else
+          Text(div.explicacion!, style: GolfType.label(t.sub)),
+
+        // ── Cómo se cobra ────────────────────────────────────────────────────
+        //
+        // Solo donde el motor lee formatMode. En Unidades se dice que no aplica
+        // en vez de ofrecer un control que no haría nada.
+        const SizedBox(height: 10),
+        Text('CÓMO SE COBRA', style: GolfType.label(t.primary)),
+        const SizedBox(height: 6),
+        if (cuenta.admiteBote)
+          Wrap(spacing: 6, children: [
+            for (final m in BetFormatMode.values)
+              GestureDetector(
+                onTap: () => setState(() => _reparto[cuenta] = m),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: (_reparto[cuenta] ?? BetFormatMode.allVsAll) == m
+                        ? t.primary.withValues(alpha: 0.12)
+                        : t.card,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                        color: (_reparto[cuenta] ?? BetFormatMode.allVsAll) == m
+                            ? t.primary
+                            : t.divider),
+                  ),
+                  child: Text(
+                      m == BetFormatMode.onePot
+                          ? 'Un solo bote'
+                          : 'Uno contra uno',
+                      style: GolfType.label(t.text)),
+                ),
+              ),
+          ])
+        else
+          Text('Uno contra uno · ${cuenta.sinBote}',
+              style: GolfType.label(t.sub)),
+      ]),
+    );
+  }
+
+  String _labelDivision(BetDivision d) => switch (d) {
+        BetDivision.unaSolaApuesta => 'Una sola apuesta',
+        BetDivision.frontBackTotal => 'Front · Back · Total',
+      };
+
+  /// Materializa los conteos elegidos como módulos de apuesta.
+  ///
+  /// Los módulos del flujo llevan un id con prefijo para poder reemplazarlos
+  /// sin tocar los que el usuario haya creado a mano en el paso de detalle: si
+  /// se borrara todo y se reconstruyera, volver atrás a cambiar una casilla
+  /// perdería su trabajo.
+  void _sincronizarModulos() {
+    final pids = _players.map((p) => p.id).toList();
+    if (pids.length < 2) return;
+    final lados = _ladosProvisionales();
+
+    final delFlujo = <BetModuleInstance>[];
+    for (final cuenta in _conteos) {
+      final res = BetRecipe.build(
+        cuenta: cuenta, bola: _bola, participantIds: pids,
+        holesInRound: _totalHoles, sides: lados,
+        preferida: _particion[cuenta],
+        id: 'flujo_${cuenta.name}',
+      );
+      if (!res.ok) continue; // se rechazó: no se ofrecía, no hay nada que crear
+      var m = res.module!;
+      final rep = _reparto[cuenta];
+      if (rep != null && cuenta.admiteBote) m = m.copyWith(formatMode: rep);
+      delFlujo.add(m);
+    }
+
+    if (_groups.isEmpty) {
+      _groups.add(BetGroup(
+        id: _uuid.v4(), name: 'Partida Principal',
+        format: PartidaFormat.allInOnePot,
+        playerIds: pids, modules: delFlujo,
+      ));
+      return;
+    }
+    final g = _groups.first;
+    final ajenos =
+        g.modules.where((m) => !m.id.startsWith('flujo_')).toList();
+    _groups[0] = g.copyWith(modules: [...ajenos, ...delFlujo]);
+  }
+
   // ── PASO · ¿Quiénes compiten? ─────────────────────────────────────────────
   //
   // Define cuántos LADOS hay. Un lado es un jugador o un equipo, así que

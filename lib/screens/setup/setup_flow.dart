@@ -18,6 +18,9 @@ enum SetupStep {
   compiten,
   /// Solo con equipos: sin dos lados no hay "bola del equipo" que elegir.
   bola,
+  /// Multi-select de qué se cuenta, con la configuración de cada apuesta
+  /// desplegada debajo en el mismo paso.
+  cuenta,
   apuestas,
   /// Solo con más de una apuesta o más de dos jugadores.
   participantes,
@@ -38,12 +41,14 @@ List<SetupStep> setupSteps({
   bool conMontos = false,
   bool conVentaja = false,
   bool conParticipantes = false,
+  bool conCuenta = false,
 }) =>
     [
       SetupStep.campo,
       SetupStep.jugadores,
       SetupStep.compiten,
       if (porEquipos) SetupStep.bola,
+      if (conCuenta) SetupStep.cuenta,
       SetupStep.apuestas,
       if (conParticipantes && (apuestasElegidas > 1 || jugadores > 2))
         SetupStep.participantes,
@@ -74,7 +79,8 @@ String setupStepLabel(SetupStep s) => switch (s) {
       SetupStep.jugadores => 'Jugadores',
       SetupStep.compiten => 'Compiten',
       SetupStep.bola => 'Bola',
-      SetupStep.apuestas => 'Apuestas',
+      SetupStep.cuenta => 'Qué se juega',
+      SetupStep.apuestas => 'Detalle',
       SetupStep.participantes => 'Quién juega',
       SetupStep.montos => 'Montos',
       SetupStep.ventaja => 'Ventaja',

@@ -99,9 +99,34 @@ void main() {
     });
   });
 
+  _cuenta();
+
   test('todo paso tiene etiqueta', () {
     for (final s in SetupStep.values) {
       expect(setupStepLabel(s), isNotEmpty, reason: '$s sin etiqueta');
     }
+  });
+}
+
+// ── El paso de qué se cuenta ─────────────────────────────────────────────────
+void _cuenta() {
+  group('el paso de qué se cuenta', () {
+    test('va después de la bola y antes del detalle', () {
+      final p = setupSteps(porEquipos: true, conCuenta: true);
+      expect(p.indexOf(SetupStep.cuenta), p.indexOf(SetupStep.bola) + 1);
+      expect(p.indexOf(SetupStep.cuenta),
+          lessThan(p.indexOf(SetupStep.apuestas)));
+    });
+
+    test('en individual va justo después de "quiénes compiten"', () {
+      final p = setupSteps(porEquipos: false, conCuenta: true);
+      expect(p.indexOf(SetupStep.cuenta), p.indexOf(SetupStep.compiten) + 1);
+    });
+
+    test('resolveStep no deja al usuario en cuenta si desaparece', () {
+      final sin = setupSteps(porEquipos: false);
+      expect(sin, isNot(contains(SetupStep.cuenta)));
+      expect(sin, contains(resolveStep(SetupStep.cuenta, sin)));
+    });
   });
 }
