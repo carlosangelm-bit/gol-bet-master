@@ -86,3 +86,54 @@ String setupStepLabel(SetupStep s) => switch (s) {
       SetupStep.ventaja => 'Ventaja',
       SetupStep.revisar => 'Revisar',
     };
+
+/// Qué pasos deja resueltos un punto de partida guardado.
+///
+/// Un grupo de apuesta guardado responde media configuración por adelantado.
+/// Pedirla igual y ofrecer el grupo al FINAL —como hacía el paso 5— es
+/// preguntarla dos veces: hay que recorrer Campo, Jugadores, Compiten, Bola y
+/// Qué se juega para luego seleccionar el grupo que evitaría todo eso.
+///
+/// Qué responde un BettingGroup, y por qué:
+///
+///   · Jugadores      → playerIds, los habituales
+///   · Compiten       → INDIVIDUAL. pairRules son reglas por duelo, así que el
+///                      grupo solo puede describir juego uno contra uno
+///   · Qué se juega   → los tipos de pairRules[].modules
+///   · Participantes  → las reglas dicen qué pareja juega qué
+///   · Montos         → cada BetModuleTemplate lleva su config tipada, y con
+///                      ella los importes
+///
+/// Y qué NO responde:
+///
+///   · Campo   → el modelo no guarda campo. Es el PRIMER paso, así que hoy el
+///               aterrizaje es siempre ahí y el ahorro está en que los pasos de
+///               en medio vienen rellenos, no en saltárselos.
+///   · Ventaja → tampoco está en el modelo. Es el segundo sin responder.
+///
+/// Si algún día el grupo guardara un campo, esta función haría aterrizar en
+/// Ventaja sin tocar nada más. Por eso se calcula en vez de fijarse.
+Set<SetupStep> resueltosPorGrupo() => const {
+      SetupStep.jugadores,
+      SetupStep.compiten,
+      SetupStep.bola,
+      SetupStep.cuenta,
+      // El paso Detalle muestra los módulos, y el grupo es justo lo que los
+      // pone. Olvidarlo hacía aterrizar ahí en vez de en Ventaja.
+      SetupStep.apuestas,
+      SetupStep.participantes,
+      SetupStep.montos,
+    };
+
+/// El primer paso que [resueltos] no cubre.
+///
+/// Precargar no es bloquear: se aterriza aquí, pero se puede retroceder a
+/// cambiar cualquier cosa.
+SetupStep primerPasoSinResolver(
+    List<SetupStep> pasos, Set<SetupStep> resueltos) {
+  for (final p in pasos) {
+    if (!resueltos.contains(p)) return p;
+  }
+  // Todo resuelto: se va a revisar, que es donde se confirma.
+  return pasos.last;
+}

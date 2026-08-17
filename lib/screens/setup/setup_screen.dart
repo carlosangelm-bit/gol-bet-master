@@ -27,7 +27,18 @@ import '../../providers/betting_group_provider.dart';
 import '../betting_groups/betting_groups_screen.dart';
 
 class SetupScreen extends StatefulWidget {
-  const SetupScreen({super.key});
+  /// Grupo de apuesta con el que arrancar, si se entró desde Plantillas.
+  ///
+  /// Un grupo guardado responde media configuración por adelantado: los
+  /// jugadores habituales y las apuestas con sus montos por duelo. Ofrecerlo
+  /// solo en el paso Detalle obligaba a recorrer todo el wizard para luego
+  /// seleccionar lo que habría evitado recorrerlo.
+  ///
+  /// Precargar no es bloquear: se aterriza en el primer paso que el grupo NO
+  /// responde y se puede retroceder a cambiar cualquier cosa.
+  final BettingGroup? grupoInicial;
+
+  const SetupScreen({super.key, this.grupoInicial});
   @override State<SetupScreen> createState() => _SetupScreenState();
 }
 
@@ -359,6 +370,10 @@ class _SetupScreenState extends State<SetupScreen> {
       _autoAddMyself();
       _loadPresetsCache();
       _checkCorrectionsForFavCourses();
+      // El precargado va DESPUÉS del auto-add: así el usuario ya está en la
+      // lista y _precargarDesdeGrupo no lo duplica al recorrer playerIds.
+      final bg = widget.grupoInicial;
+      if (bg != null && mounted) _precargarDesdeGrupo(bg);
     });
   }
 
@@ -408,6 +423,34 @@ class _SetupScreenState extends State<SetupScreen> {
       final slide = pwl.link?.defaultSlidingAdjustment ?? 0;
       _applyDefaultSliding(player.id, slide);
     });
+  }
+
+  @override
+  /// Deja el wizard con lo que el grupo ya sabe, y aterriza donde no llega.
+  void _precargarDesdeGrupo(BettingGroup bg) {
+    final dir = context.read<PlayerProvider>().directory;
+    setState(() {
+      for (final id in bg.playerIds) {
+        if (_players.any((p) => p.id == id)) continue;
+        final pw = dir.where((x) => x.player.id == id).firstOrNull;
+        if (pw == null) continue; // ya no está en el directorio: se omite
+        var player = pw.player.copyWith(name: pw.displayName);
+        final ov = pw.link?.defaultHandicapOverride;
+        if (ov != null) player = player.copyWith(handicapBase: ov);
+        _players.add(player);
+        _assignDefaultTeeToPlayer(player.id);
+      }
+    });
+    if (_players.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Los jugadores del grupo ya no están en tu directorio'),
+      ));
+      return;
+    }
+    _applyBettingGroup(bg);
+    // El aterrizaje se CALCULA de lo que el grupo resuelve, no se fija: el día
+    // que un grupo guarde campo, esto lleva a Ventaja sin tocar nada.
+    setState(() => _current = primerPasoSinResolver(_steps, resueltosPorGrupo()));
   }
 
   @override

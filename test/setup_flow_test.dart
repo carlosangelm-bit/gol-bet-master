@@ -100,6 +100,7 @@ void main() {
   });
 
   _cuenta();
+  _desdeGrupo();
 
   test('todo paso tiene etiqueta', () {
     for (final s in SetupStep.values) {
@@ -127,6 +128,84 @@ void _cuenta() {
       final sin = setupSteps(porEquipos: false);
       expect(sin, isNot(contains(SetupStep.cuenta)));
       expect(sin, contains(resolveStep(SetupStep.cuenta, sin)));
+    });
+  });
+}
+
+// ── Arrancar desde un grupo de apuesta guardado ──────────────────────────────
+//
+// Un grupo responde media configuración por adelantado. Pedirla igual y ofrecer
+// el grupo al final —como hacía el paso 5— es preguntarla dos veces.
+//
+// Mismo principio que la señalización y la partición derivada: no preguntar lo
+// que ya está respondido.
+void _desdeGrupo() {
+  group('el wizard aterriza donde el grupo no llega', () {
+    test('en Campo, porque el grupo no guarda campo', () {
+      // Hoy es el primer paso, así que el ahorro está en que los de en medio
+      // vienen rellenos, no en saltárselos. Conviene que quede dicho.
+      final pasos = setupSteps(porEquipos: false, conCuenta: true,
+          conParticipantes: true, conMontos: true, conVentaja: true,
+          apuestasElegidas: 2, jugadores: 4);
+      expect(primerPasoSinResolver(pasos, resueltosPorGrupo()),
+          SetupStep.campo);
+    });
+
+    test('si el campo estuviera resuelto, aterrizaría en Ventaja', () {
+      // Se calcula en vez de fijarse: el día que el grupo guarde un campo, esto
+      // funciona sin tocar nada más.
+      final pasos = setupSteps(porEquipos: false, conCuenta: true,
+          conParticipantes: true, conMontos: true, conVentaja: true,
+          apuestasElegidas: 2, jugadores: 4);
+      expect(
+          primerPasoSinResolver(
+              pasos, {...resueltosPorGrupo(), SetupStep.campo}),
+          SetupStep.ventaja);
+    });
+
+    test('un grupo no responde la ventaja', () {
+      // No está en el modelo, y aplicarla por defecto sería inventarse un
+      // acuerdo que nadie pactó.
+      expect(resueltosPorGrupo(), isNot(contains(SetupStep.ventaja)));
+    });
+
+    test('ni el campo', () {
+      expect(resueltosPorGrupo(), isNot(contains(SetupStep.campo)));
+    });
+
+    test('sí responde jugadores, qué se juega y montos', () {
+      for (final p in [SetupStep.jugadores, SetupStep.cuenta,
+                       SetupStep.montos, SetupStep.participantes,
+                       SetupStep.apuestas]) {
+        expect(resueltosPorGrupo(), contains(p), reason: '$p');
+      }
+    });
+
+    test('el paso resuelto sigue EXISTIENDO en la lista', () {
+      // Resolverlo no es quitarlo: hay que poder retroceder a cambiarlo.
+      // Precargar no es bloquear.
+      final pasos = setupSteps(porEquipos: false, conCuenta: true,
+          conParticipantes: true, conMontos: true, conVentaja: true,
+          apuestasElegidas: 2, jugadores: 4);
+      for (final p in resueltosPorGrupo()) {
+        if (p == SetupStep.bola) continue; // solo con equipos
+        expect(pasos, contains(p), reason: '$p desapareció');
+      }
+    });
+
+    test('con todo resuelto se aterriza en revisar, no fuera de rango', () {
+      final pasos = setupSteps(porEquipos: false);
+      expect(primerPasoSinResolver(pasos, SetupStep.values.toSet()),
+          pasos.last);
+    });
+
+    test('el aterrizaje siempre es un paso de la lista', () {
+      // Si devolviera algo fuera, el IndexedStack reventaría.
+      for (final eq in [true, false]) {
+        final pasos = setupSteps(porEquipos: eq, conCuenta: true);
+        expect(pasos,
+            contains(primerPasoSinResolver(pasos, resueltosPorGrupo())));
+      }
     });
   });
 }

@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../models/models.dart';
 import '../../providers/round_provider.dart';
+import '../../providers/betting_group_provider.dart';
+import '../setup/setup_screen.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/common_widgets.dart';
 
@@ -23,6 +25,15 @@ class TemplatesScreen extends StatelessWidget {
         title: Text('Mis Plantillas', style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
         iconTheme: IconThemeData(color: t.text),
       ),
+      // ── Dos clases de punto de partida, COUBICADAS ─────────────────────
+      //
+      // RoundTemplate y BettingGroup son objetos distintos en el modelo, pero el
+      // usuario los percibe igual: "lo de siempre". La distinción es de
+      // implementación, no de intención.
+      //
+      // Se coubican antes de unificar: si al usarlas resulta que la etiqueta no
+      // le dice nada a nadie, esa es la señal para fundirlas en un solo concepto
+      // —y entonces con motivo, no por intuición.
       body: StreamBuilder<List<RoundTemplate>>(
         stream: FirestoreService.templatesStream(),
         builder: (context, snap) {
@@ -30,13 +41,37 @@ class TemplatesScreen extends StatelessWidget {
             return Center(child: CircularProgressIndicator(color: t.primary));
           }
           final templates = snap.data ?? [];
-          if (templates.isEmpty) {
+          final grupos = context.watch<BettingGroupProvider>().groups;
+
+          if (templates.isEmpty && grupos.isEmpty) {
             return _EmptyTemplates(t: t);
           }
-          return ListView.builder(
+
+          return ListView(
             padding: const EdgeInsets.all(16),
-            itemCount: templates.length,
-            itemBuilder: (_, i) => _TemplateCard(template: templates[i], t: t),
+            children: [
+              if (grupos.isNotEmpty) ...[
+                _Seccion(
+                  titulo: 'GRUPOS DE APUESTA',
+                  // Dice qué precarga y qué no, para que nadie espere que el
+                  // grupo elija también el campo.
+                  detalle: 'Arrancan con los jugadores y las apuestas puestas. '
+                      'El campo y la ventaja se eligen al empezar.',
+                  t: t,
+                ),
+                for (final bg in grupos) _GrupoCard(grupo: bg, t: t),
+                const SizedBox(height: 20),
+              ],
+              if (templates.isNotEmpty) ...[
+                _Seccion(
+                  titulo: 'PLANTILLAS DE RONDA',
+                  detalle: 'Guardan la ronda completa, campo incluido.',
+                  t: t,
+                ),
+                for (final tpl in templates)
+                  _TemplateCard(template: tpl, t: t),
+              ],
+            ],
           );
         },
       ),
@@ -390,5 +425,79 @@ class _SaveTemplateDialogState extends State<SaveTemplateDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('✅ Plantilla "${template.name}" guardada'), backgroundColor: Colors.green));
     }
+  }
+}
+
+/// Encabezado de sección con lo que la sección hace.
+class _Seccion extends StatelessWidget {
+  final String titulo;
+  final String detalle;
+  final GolfTheme t;
+  const _Seccion(
+      {required this.titulo, required this.detalle, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(titulo,
+            style: TextStyle(
+                color: t.sub,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.8)),
+        const SizedBox(height: 3),
+        Text(detalle, style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
+      ]),
+    );
+  }
+}
+
+/// Un grupo de apuesta como punto de entrada a una ronda nueva.
+class _GrupoCard extends StatelessWidget {
+  final BettingGroup grupo;
+  final GolfTheme t;
+  const _GrupoCard({required this.grupo, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+        // El wizard aterriza en el primer paso que el grupo no responde, y se
+        // puede retroceder a cambiar lo precargado.
+        builder: (_) => SetupScreen(grupoInicial: grupo),
+      )),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: t.divider),
+        ),
+        child: Row(children: [
+          Text(grupo.emoji, style: const TextStyle(fontSize: 24)),
+          const SizedBox(width: 12),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(grupo.name,
+                    style: TextStyle(
+                        color: t.text,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15)),
+                const SizedBox(height: 2),
+                Text(
+                    '${grupo.playerIds.length} jugadores · '
+                    '${grupo.activeRulesCount} duelos · '
+                    '${grupo.totalModules} apuestas',
+                    style: TextStyle(color: t.sub, fontSize: 12)),
+              ])),
+          Icon(Icons.chevron_right, color: t.sub, size: 20),
+        ]),
+      ),
+    );
   }
 }
