@@ -48,6 +48,7 @@ class _SetupScreenState extends State<SetupScreen> {
         conCuenta: true,
         conParticipantes: true,
         conMontos: _conteos.isNotEmpty,
+        conVentaja: true,
         apuestasElegidas: _conteos.length,
         jugadores: _players.length,
       );
@@ -110,6 +111,33 @@ class _SetupScreenState extends State<SetupScreen> {
 
   /// Qué apuesta tiene el panel de ajuste abierto.
   BetCount? _ajusteAbierto;
+
+  // ── Ventaja ────────────────────────────────────────────────────────────────
+  //
+  // Handicap y Sliding son EXCLUYENTES: el primero iguala por nivel declarado,
+  // el segundo por historial del grupo. Sumarlos aplicaría la ventaja dos
+  // veces.
+  //
+  // Los dos siguen el mismo patrón: valor registrado visible, editable solo
+  // para esta ronda, ficha del grupo intacta hasta cerrar.
+  _Ventaja _ventaja = _Ventaja.handicap;
+
+  /// Handicap con el que se juega esta ronda. Default: el registrado.
+  final Map<String, double> _hcpRonda = {};
+
+  /// Porcentaje aplicado. El 50% está porque es la convención de bola alterna.
+  double _allowance = 1.0;
+
+  /// Ventaja por cruce, editada para esta ronda.
+  final Map<String, double> _slidingRonda = {};
+
+  /// Si la ronda alimenta el historial del grupo al cerrarse.
+  bool _slidingRecalcula = true;
+
+  double _hcpDe(String pid) =>
+      _hcpRonda[pid] ??
+      _players.firstWhere((p) => p.id == pid,
+          orElse: () => Player(id: pid, name: pid)).handicapBase;
 
   List<String> _participantesDe(BetCount c) {
     final propios = _quienJuega[c];
@@ -376,7 +404,7 @@ class _SetupScreenState extends State<SetupScreen> {
         // ninguno al añadirlo.
         SetupStep.participantes => _stepParticipantes(t),
         SetupStep.montos => _stepMontos(t),
-        SetupStep.ventaja => const SizedBox.shrink(),
+        SetupStep.ventaja => _stepVentaja(t),
       };
 
   Widget _bottomBar(BuildContext ctx, GolfTheme t) {
@@ -1718,6 +1746,227 @@ class _SetupScreenState extends State<SetupScreen> {
     final ajenos =
         g.modules.where((m) => !m.id.startsWith('flujo_')).toList();
     _groups[0] = g.copyWith(modules: [...ajenos, ...delFlujo]);
+  }
+
+  // ── PASO · ¿Cómo se igualan los jugadores? ────────────────────────────────
+  //
+  // Tres opciones EXCLUYENTES. Handicap iguala por nivel declarado, Sliding por
+  // historial del grupo; sumarlos aplicaría la ventaja dos veces.
+  Widget _stepVentaja(GolfTheme t) {
+    return ListView(padding: const EdgeInsets.all(20), children: [
+      Text('¿Cómo se igualan los jugadores?', style: GolfType.title(t.text)),
+      const SizedBox(height: 4),
+      Text('Elige un sistema. Aplica a todas las apuestas de la ronda.',
+          style: GolfType.body(t.sub)),
+      const SizedBox(height: 16),
+
+      _opcionCompiten(t,
+          icon: '📊',
+          titulo: 'Handicap',
+          detalle: 'Cada quien recibe golpes según su handicap registrado.',
+          activa: _ventaja == _Ventaja.handicap,
+          onTap: () => setState(() => _ventaja = _Ventaja.handicap)),
+      if (_ventaja == _Ventaja.handicap) _panelHandicap(t),
+
+      _opcionCompiten(t,
+          icon: '📈',
+          titulo: 'Sliding',
+          detalle: 'La ventaja se ajusta sola según cómo terminó la anterior.',
+          activa: _ventaja == _Ventaja.sliding,
+          onTap: () => setState(() => _ventaja = _Ventaja.sliding)),
+      if (_ventaja == _Ventaja.sliding) _panelSliding(t),
+
+      _opcionCompiten(t,
+          icon: '⚖️',
+          titulo: 'Sin ventaja',
+          detalle: 'Todos juegan bruto, nadie recibe golpes.',
+          activa: _ventaja == _Ventaja.ninguna,
+          onTap: () => setState(() => _ventaja = _Ventaja.ninguna)),
+    ]);
+  }
+
+  Widget _panelVentaja(GolfTheme t, List<Widget> hijos) => Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: t.primary.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+        ),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, children: hijos),
+      );
+
+  Widget _panelHandicap(GolfTheme t) {
+    return _panelVentaja(t, [
+      Text('HANDICAP DE LA RONDA', style: GolfType.label(t.primary)),
+      const SizedBox(height: 6),
+      for (final p in _players)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(children: [
+            Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(p.name, style: GolfType.body(t.text)),
+                  // El valor registrado queda VISIBLE. La ficha del grupo no se
+                  // toca: lo que se edita vale solo para esta ronda.
+                  Text(
+                      'registrado ${p.handicapBase.toStringAsFixed(1)}'
+                      '${_hcpDe(p.id) != p.handicapBase ? ' · modificado' : ''}'
+                      '${_allowance < 1 ? ' · juega ${(_hcpDe(p.id) * _allowance).toStringAsFixed(1)}' : ''}',
+                      style: GolfType.label(t.sub)),
+                ])),
+            SizedBox(
+              width: 76,
+              child: TextField(
+                controller: _ctrlMonto('hcp_${p.id}', _hcpDe(p.id)),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                textAlign: TextAlign.right,
+                style: GolfType.bodyNum(t.text),
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(9)),
+                ),
+                onChanged: (v) => setState(() =>
+                    _hcpRonda[p.id] = double.tryParse(v) ?? p.handicapBase),
+              ),
+            ),
+          ]),
+        ),
+      const Divider(height: 16),
+      Text('PORCENTAJE APLICADO', style: GolfType.label(t.primary)),
+      const SizedBox(height: 2),
+      Text('90% por equipos · 50% en bola alterna',
+          style: GolfType.label(t.sub)),
+      const SizedBox(height: 6),
+      Wrap(spacing: 6, children: [
+        // El 50% está porque bola alterna lo usa: la convención es el 50% de la
+        // suma de los dos handicaps.
+        for (final pct in [1.0, 0.90, 0.85, 0.75, 0.50])
+          GestureDetector(
+            onTap: () => setState(() => _allowance = pct),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+              decoration: BoxDecoration(
+                color: _allowance == pct
+                    ? t.primary.withValues(alpha: 0.12)
+                    : t.card,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                    color: _allowance == pct ? t.primary : t.divider),
+              ),
+              child: Text('${(pct * 100).round()}%',
+                  style: GolfType.label(
+                      _allowance == pct ? t.primary : t.text)),
+            ),
+          ),
+      ]),
+    ]);
+  }
+
+  Widget _panelSliding(GolfTheme t) {
+    // Orden canónico —id menor primero— para que el signo del acumulado
+    // coincida con lo que se lee: "A recibe de B".
+    final cruces = BetRecipe.crucesDe(_players.map((p) => p.id).toList())
+        .map((c) => c.$1.compareTo(c.$2) <= 0 ? c : (c.$2, c.$1))
+        .toList();
+    return _panelVentaja(t, [
+      Text('VENTAJA DEL GRUPO', style: GolfType.label(t.primary)),
+      const SizedBox(height: 2),
+      // Antes el modo automático no enseñaba ningún número: había que confiar
+      // en un valor invisible justo en el sistema donde menos obvio es.
+      Text('Golpes que recibe el primero del segundo. Viene del historial y '
+          'puedes cambiarla solo para esta ronda.',
+          style: GolfType.label(t.sub)),
+      const SizedBox(height: 8),
+      for (final (a, b) in cruces)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(children: [
+            Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text('${_playerName(a)} vs ${_playerName(b)}',
+                      style: GolfType.body(t.text)),
+                  Text(_etiquetaAcumulado(a, b),
+                      style: GolfType.label(t.sub)),
+                ])),
+            SizedBox(
+              width: 76,
+              child: TextField(
+                controller: _ctrlMonto(
+                    'sli_${BetEngine.pairKey(a, b)}', _slidingDe(a, b)),
+                keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true, signed: true),
+                textAlign: TextAlign.right,
+                style: GolfType.bodyNum(t.text),
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(9)),
+                ),
+                onChanged: (v) => setState(() =>
+                    _slidingRonda[BetEngine.pairKey(a, b)] =
+                        double.tryParse(v) ?? 0),
+              ),
+            ),
+          ]),
+        ),
+      const Divider(height: 16),
+      Row(children: [
+        Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Text('Recalcular al cerrar la ronda',
+                  style: GolfType.body(t.text)),
+              // El interruptor decide si la ronda ALIMENTA el historial, no si
+              // los números se ven. Apagado permite jugar con sliding sin que
+              // la ronda cuente: caso que antes no se podía expresar.
+              Text(
+                  _slidingRecalcula
+                      ? 'El resultado de hoy actualiza el acumulado del grupo.'
+                      : 'La ventaja queda congelada: esta ronda no cambia el '
+                          'acumulado.',
+                  style: GolfType.label(t.sub)),
+            ])),
+        Switch(
+          value: _slidingRecalcula,
+          activeThumbColor: t.primary,
+          onChanged: (v) => setState(() => _slidingRecalcula = v),
+        ),
+      ]),
+    ]);
+  }
+
+  /// Ventaja acumulada del grupo para este cruce.
+  ///
+  /// Sale de _pairSliding, que es donde ya vive el historial. Devolver 0 dejaría
+  /// los números invisibles, que es justo lo que este paso viene a arreglar:
+  /// antes el modo automático no enseñaba ninguno y había que confiar en un
+  /// valor oculto en el sistema donde menos obvio es.
+  ///
+  /// SIGNO: el mapa guarda recv(idMenor, idMayor) —golpes que recibe el jugador
+  /// de id menor del de id mayor—. La UI tiene que pintar la pareja en ese
+  /// mismo orden o el número sale invertido, que es el tipo de fallo silencioso
+  /// que ya nos costó tres iteraciones esta sesión.
+  double _acumuladoDe(String a, String b) =>
+      _pairSliding[BetEngine.pairKey(a, b)] ?? 0;
+
+  double _slidingDe(String a, String b) =>
+      _slidingRonda[BetEngine.pairKey(a, b)] ?? _acumuladoDe(a, b);
+
+  String _etiquetaAcumulado(String a, String b) {
+    final acum = _acumuladoDe(a, b);
+    final actual = _slidingDe(a, b);
+    final signo = acum > 0 ? '+' : '';
+    return 'acumulado $signo${acum.toStringAsFixed(1)}'
+        '${actual != acum ? ' · modificado' : ''}';
   }
 
   // ── PASO · Montos ─────────────────────────────────────────────────────────
@@ -5016,6 +5265,24 @@ class _SetupScreenState extends State<SetupScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // SEÑALIZACIÓN de Revisión, la cuarta y última.
+        //
+        // No es adorno: sustituye preguntas que se han quitado del flujo. Sin
+        // esta línea nadie sabe que las tarjetas de apuesta se pueden abrir para
+        // cambiar reglas o montos, y se vuelve atrás a rehacer pasos que ya
+        // estaban bien.
+        Text('Toca una apuesta para cambiar sus reglas o sus montos.',
+            style: GolfType.body(t.sub)),
+        const SizedBox(height: 4),
+        Text(
+            _ventaja == _Ventaja.handicap
+                ? 'Ventaja · Handicap al ${(_allowance * 100).round()}%'
+                : _ventaja == _Ventaja.sliding
+                    ? 'Ventaja · Sliding · '
+                        '${_slidingRecalcula ? "recalcula al cerrar" : "congelado"}'
+                    : 'Ventaja · Sin ventaja, todos brutos',
+            style: GolfType.label(t.sub)),
+        const SizedBox(height: 12),
         // ── Selector de duración de ronda ──────────────────────────────────
         GSectionHeader(title: 'DURACIÓN DE LA RONDA'),
         GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -5726,6 +5993,21 @@ class _SetupScreenState extends State<SetupScreen> {
       ));
     }
 
+    // Con equipos el allowance vive en TeamHandicapConfig y lo aplica el motor
+    // una sola vez, en GameEngine.buildTeamHcpMap. Aquí solo se guarda.
+    if (_porEquipos && _ventaja == _Ventaja.handicap && _allowance < 1) {
+      for (var g = 0; g < _groups.length; g++) {
+        _groups[g] = _groups[g].copyWith(
+          modules: _groups[g].modules.map((m) {
+            final base = m.teamHandicapConfig;
+            if (base == null) return m;
+            return m.copyWith(
+                teamHandicapConfig: base.copyWith(allowance: _allowance));
+          }).toList(),
+        );
+      }
+    }
+
     if (_porEquipos) {
       for (var g = 0; g < _groups.length; g++) {
         _groups[g] = _groups[g].copyWith(
@@ -5922,7 +6204,31 @@ class _SetupScreenState extends State<SetupScreen> {
     final roundPlayers = allPlayersForRound.map((p) {
       // Para jugadores virtuales, usar el tee guardado; para reales, _teeOf(p.id)
       final tee = p.isVirtual ? (virtualPlayerTees[p.id] ?? TeeInfo.standard) : _teeOf(p.id);
-      final phcp = p.isVirtual ? p.handicapBase : tee.playingHandicap(p.handicapBase);
+      // La VENTAJA elegida en su paso tiene que llegar aquí. Que un paso decida
+      // solo qué pantallas se ven ya nos costó una ronda entera creada como
+      // individual con "por equipos" seleccionado.
+      //
+      //   · sin ventaja → 0 golpes para todos
+      //   · handicap    → el editado para esta ronda, por el porcentaje
+      //   · sliding     → el handicap se deja como está y manda pairSliding,
+      //                   que el motor prioriza. Aplicar los dos sería aplicar
+      //                   la ventaja dos veces.
+      //
+      // El allowance solo se aplica aquí en individual. Con equipos lo aplica
+      // el motor una sola vez desde TeamHandicapConfig, y hacerlo también aquí
+      // lo multiplicaría dos veces.
+      final double phcp;
+      if (_ventaja == _Ventaja.ninguna) {
+        phcp = 0;
+      } else if (p.isVirtual) {
+        phcp = p.handicapBase;
+      } else {
+        final propio = _hcpDe(p.id);
+        final conAllowance = (_ventaja == _Ventaja.handicap && !_porEquipos)
+            ? propio * _allowance
+            : propio;
+        phcp = tee.playingHandicap(conAllowance);
+      }
       final manual = Map<String, double>.from(_manualHandicaps[p.id] ?? {});
       return RoundPlayer(
         playerId: p.id,
@@ -5952,8 +6258,21 @@ class _SetupScreenState extends State<SetupScreen> {
     // con clave '$lowId|$highId' (IDs ordenados lexicográficamente).
     // Filtrar solo pares donde ambos jugadores están en la ronda.
     final roundPlayerIds = allPlayersForRound.map((p) => p.id).toSet();
+    // Lo editado en el paso de Ventaja manda sobre lo que trajera el grupo. Y
+    // solo se escribe si se ELIGIÓ sliding: el motor prioriza pairSliding sobre
+    // el handicap, así que dejarlo puesto con handicap elegido aplicaría una
+    // ventaja que nadie pidió.
+    final fuenteSliding = _ventaja == _Ventaja.sliding
+        ? <String, double>{
+            ..._pairSliding,
+            for (final (a, b)
+                in BetRecipe.crucesDe(_players.map((p) => p.id).toList()))
+              BetEngine.pairKey(a, b): _slidingDe(a, b),
+          }
+        : const <String, double>{};
+
     final pairSlidingMap = Map<String, double>.fromEntries(
-      _pairSliding.entries.where((e) {
+      fuenteSliding.entries.where((e) {
         final parts = e.key.split('|');
         return parts.length == 2 &&
             roundPlayerIds.contains(parts[0]) &&
@@ -5967,6 +6286,8 @@ class _SetupScreenState extends State<SetupScreen> {
       course: _selectedCourse ?? CourseInfo.standard,
       players: linkedPlayers,
       roundPlayers: roundPlayers,
+      slidingRecalcula:
+          _ventaja == _Ventaja.sliding ? _slidingRecalcula : true,
       betGroups: effectiveGroups,
       // Inicializar scores para todos los jugadores que necesitan capturar scores:
       // - Jugadores reales no-Scramble
@@ -7148,3 +7469,8 @@ class _StatChip extends StatelessWidget {
   );
 }
 
+
+/// Sistema de ventaja de la ronda. Excluyentes: handicap iguala por nivel
+/// declarado y sliding por historial del grupo, así que sumarlos aplicaría la
+/// ventaja dos veces.
+enum _Ventaja { handicap, sliding, ninguna }

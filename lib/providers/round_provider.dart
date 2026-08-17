@@ -45,6 +45,9 @@ Map<String, dynamic> roundToJson(Round r) {
   'sliding': r.sliding.map((s) => s.toJson()).toList(),
   // pairSliding: fuente canónica de acuerdos bilaterales (solo si hay valores)
   if (r.pairSliding.isNotEmpty) 'pairSliding': r.pairSliding,
+  // Solo se escribe cuando está APAGADO: el default es true, así que las
+  // rondas guardadas antes de que existiera el campo se comportan igual.
+  if (!r.slidingRecalcula) 'slidingRecalcula': false,
   // pendingProposals: propuestas colaborativas de cambio de apuestas
   if (r.pendingProposals.isNotEmpty)
     'pendingProposals': r.pendingProposals.map((p) => p.toJson()).toList(),
@@ -144,6 +147,7 @@ Round roundFromJson(Map<String, dynamic> j) {
     scores: scores, events: events, oyeseRankings: oyeses, sliding: sliding,
     // ── pairSliding: leer campo canónico y aplicar migración legacy ──────────
     pairSliding: _buildPairSliding(j, roundPlayers),
+    slidingRecalcula: j['slidingRecalcula'] as bool? ?? true,
     // ── pendingProposals: propuestas colaborativas ───────────────────────────
     pendingProposals: asList(j['pendingProposals'])
         .map((p) {

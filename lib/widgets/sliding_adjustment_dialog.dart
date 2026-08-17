@@ -1159,6 +1159,15 @@ class SlidingSummaryCard extends StatelessWidget {
 
 /// Muestra el diálogo de ajuste de sliding y retorna true si se aplicaron cambios.
 Future<bool> showSlidingAdjustmentDialog(BuildContext context, Round round) async {
+  // Un solo guard para los CUATRO puntos que abren este diálogo —Inicio,
+  // Captura y dos en Resultados—. Ponerlo en cada llamada es el patrón que ya
+  // costó bugs esta sesión: basta olvidar uno.
+  //
+  // El interruptor decide si la ronda ALIMENTA el historial, no si la ventaja
+  // se ve: los números están siempre visibles y editables en Setup.
+  // false = no se aplicó ningún cambio, que es exactamente el caso.
+  if (!round.slidingRecalcula) return false;
+
   final result = await showDialog<bool>(
     context: context,
     barrierDismissible: false,

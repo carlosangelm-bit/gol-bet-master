@@ -3089,6 +3089,18 @@ class Round {
   // Este campo reemplaza progresivamente a manualHandicaps (que queda como
   // compatibilidad legacy). El engine prioriza pairSliding cuando existe.
   final Map<String, double> pairSliding;
+
+  /// Si esta ronda ALIMENTA el historial de sliding del grupo al cerrarse.
+  ///
+  /// Decide si la ronda cuenta, no si los números se ven: la ventaja acumulada
+  /// está siempre visible y siempre editable en Setup. Apagado permite jugar
+  /// con sliding sin que la ronda altere el acumulado —útil cuando falta gente
+  /// o es una ronda suelta—, caso que antes no se podía expresar.
+  ///
+  /// Default true: las rondas guardadas antes de que existiera el campo se
+  /// comportan como siempre.
+  final bool slidingRecalcula;
+
   /// Vuelta de inicio: determina qué mitad lleva el stroke extra (diff impar).
   final StartingNine startingNine;
   /// Total de hoyos de la ronda: 9 o 18 (por defecto 18).
@@ -3122,6 +3134,7 @@ class Round {
     this.liveCode,
     this.scoringMode = 'open',
     Map<String, double>? pairSliding,
+    this.slidingRecalcula = true,
     List<BetChangeProposal>? pendingProposals,
   }) : pairSliding = pairSliding ?? const {},
        pendingProposals = pendingProposals ?? const [];
@@ -3304,6 +3317,7 @@ class Round {
   }
 
   Round copyWith({
+    bool? slidingRecalcula,
     Map<String, Map<int, HoleScore>>? scores,
     Map<String, Map<int, List<HoleEvent>>>? events,
     Map<int, OyeseRanking>? oyeseRankings,
@@ -3337,6 +3351,7 @@ class Round {
     liveCode: liveCode ?? this.liveCode,
     scoringMode: scoringMode ?? this.scoringMode,
     pairSliding: pairSliding ?? this.pairSliding,
+    slidingRecalcula: slidingRecalcula ?? this.slidingRecalcula,
     pendingProposals: pendingProposals ?? this.pendingProposals,
   );
 }
