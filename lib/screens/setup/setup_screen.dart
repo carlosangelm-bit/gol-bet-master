@@ -5010,6 +5010,26 @@ class _SetupScreenState extends State<SetupScreen> {
     // conEquiposDeRonda respeta los lados configurados a mano, así que aplicar
     // siempre no pisa nada.
     // ─────────────────────────────────────────────────────────────────────────
+    // El grupo por defecto se materializa AQUÍ, no en PASO 3.
+    //
+    // Estaba creado dentro de effectiveGroups, o sea después de aplicar los
+    // equipos y después de escanear los lados para crear los virtuales. Un
+    // grupo nacido ahí no podía recibir ninguna de las dos cosas: salía sin
+    // lados, sin playMode y sin jugador virtual, en silencio.
+    //
+    // Es la misma pregunta de siempre —¿pasan todos por el mismo sitio?—
+    // aplicada a quién CREA módulos, no a quién los lee.
+    if (_groups.isEmpty) {
+      _groups.add(BetGroup(
+        id: _uuid.v4(), name: 'Partida Principal',
+        format: PartidaFormat.allInOnePot,
+        playerIds: allPidsLaunch,
+        modules: allPidsLaunch.length >= 2
+            ? [BetModuleInstance.defaultFor(BetModuleType.nassau, allPidsLaunch)]
+            : <BetModuleInstance>[],
+      ));
+    }
+
     if (_porEquipos) {
       for (var g = 0; g < _groups.length; g++) {
         _groups[g] = _groups[g].copyWith(
@@ -5108,14 +5128,9 @@ class _SetupScreenState extends State<SetupScreen> {
     // ─────────────────────────────────────────────────────────────────────────
     // PASO 3: Actualizar grupos — participantIds usan IDs virtuales
     // ─────────────────────────────────────────────────────────────────────────
-    final effectiveGroups = (_groups.isEmpty
-        ? [BetGroup(
-            id: _uuid.v4(), name: 'Partida Principal',
-            format: PartidaFormat.allInOnePot,
-            playerIds: allPidsLaunch,
-            modules: [BetModuleInstance.defaultFor(BetModuleType.nassau, allPidsLaunch)],
-          )]
-        : _groups).map((group) {
+    // _groups ya no puede estar vacío: el grupo por defecto se materializa en
+    // PASO 0, para que reciba equipos y virtuales como cualquier otro.
+    final effectiveGroups = _groups.map((group) {
 
       // playerIds del grupo: quitar reales de Scramble, agregar todos los virtuales
       final updatedGroupPlayerIds = group.playerIds
