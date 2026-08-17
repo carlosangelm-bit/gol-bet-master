@@ -16,9 +16,18 @@
 // desenfoques recomputándose en cada frame, justo mientras se hace scroll.
 //
 // Por eso el desenfoque es OPCIONAL y no el default: [GlassCard.solid] da las
-// otras tres capas sin coste de saveLayer y es lo que deben usar las tarjetas
-// de lista. El vidrio real se reserva para superficies destacadas —una por
-// pantalla, dos a lo sumo—.
+// otras tres capas sin coste de saveLayer.
+//
+// HOY NO SE USA EL DESENFOQUE EN NINGÚN SITIO, y no es un descuido. Se probó en
+// pantalla en la única superficie que lo llevaba —la tarjeta del duelo por
+// equipos— y no aportaba nada: la tarjeta hace scroll CON el contenido, así que
+// nunca tiene nada detrás que desenfocar. Sigma 20 y sigma 2 daban el mismo
+// resultado, y el desenfoque reduce contraste justo en una app que se usa a
+// pleno sol.
+//
+// La variante se conserva por si alguna superficie llega a FLOTAR sobre
+// contenido en scroll —una barra inferior fija sería el caso—. Ahí sí habría
+// algo detrás y el desenfoque significaría algo. Si se activa, medirlo.
 // ─────────────────────────────────────────────────────────────────────────────
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';

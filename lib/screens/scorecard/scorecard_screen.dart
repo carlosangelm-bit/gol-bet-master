@@ -5054,10 +5054,17 @@ class LowHighTeamCard extends StatelessWidget {
           ),
         );
 
-    // Vidrio REAL solo aquí: es la superficie destacada de la pestaña y la
-    // única con desenfoque, para no gastar el presupuesto de saveLayer en una
-    // lista con scroll.
-    return GlassCard(
+    // Sin desenfoque, y el motivo se verificó en pantalla: esta tarjeta hace
+    // SCROLL con el contenido y nunca tiene nada detrás que desenfocar. Sigma
+    // 20 y sigma 2 daban el mismo resultado.
+    //
+    // Además el desenfoque reduce contraste, que es lo contrario de lo que pide
+    // el uso a pleno sol.
+    //
+    // Se conservan las otras tres capas —relleno, borde especular y sombra— y
+    // toda la estructura de GlassCard con sus tokens: lo que deja de usarse es
+    // la variante con BackdropFilter, no el acabado.
+    return GlassCard.solid(
       t: t,
       margin: const EdgeInsets.only(bottom: 14),
       radius: 22,

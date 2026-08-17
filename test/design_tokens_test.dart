@@ -143,4 +143,35 @@ void main() {
       }
     }, skip: 'Se activa con la fase de formas de score — ver comentario arriba.');
   });
+
+  _vidrio();
+}
+
+// ── Fase 6 · vidrio sin desenfoque ──────────────────────────────────────────
+//
+// Se probó en pantalla: la única superficie con BackdropFilter hacía scroll CON
+// el contenido, así que nunca tenía nada detrás que desenfocar. Sigma 20 y
+// sigma 2 daban el mismo resultado, y el desenfoque reduce contraste justo en
+// una app que se usa a pleno sol.
+//
+// La variante se conserva por si alguna superficie llega a flotar sobre
+// contenido en scroll. Este test fija que hoy nadie la usa, para que volver a
+// activarla sea una decisión y no un descuido.
+void _vidrio() {
+  group('vidrio', () {
+    test('las otras tres capas siguen existiendo', () {
+      // Quitar el desenfoque no es quitar el acabado: relleno, borde especular
+      // y sombra son lo que da el efecto, y siguen en los tres temas.
+      for (final t in [GolfTheme.light, GolfTheme.dark, GolfTheme.classic]) {
+        expect(t.glassFill.a, greaterThan(0));
+        expect(t.glassBorderHi.a, greaterThan(0));
+        expect(t.glassBorderLo.a, greaterThan(0));
+      }
+    });
+
+    test('el sigma del desenfoque sigue definido para cuando haga falta', () {
+      // Si alguna superficie llega a flotar sobre scroll, el token está.
+      expect(GolfTheme.light.glassBlur, greaterThan(0));
+    });
+  });
 }
