@@ -66,8 +66,33 @@ Round _round({
       createdAt: DateTime(2026, 1, 1), totalHoles: 18,
     );
 
-/// Montaje scramble: los reales NO están en la ronda —Setup los excluye— y
-/// anotan los virtuales, uno por equipo.
+/// Montaje TAL COMO LO PRODUCE SETUP.
+///
+/// Es la forma que hay que probar, y la que este archivo NO probaba: Setup
+/// reescribe los lados en scramble —PASO 3, setup_screen.dart— para que
+/// playerIds contenga el VIRTUAL y no los reales. El comentario de ahí ya
+/// avisaba: "si el side conservara los IDs reales, el motor buscaría scores
+/// que no existen".
+///
+/// Mi montaje original dejaba los ids reales en el lado. Pasaba, pero probaba
+/// un escenario que la app no genera — dando por bueno el arreglo sobre datos
+/// que nunca ocurren.
+Round _setupShape({int hasta = 18}) => _round(
+      jugadores: [
+        for (final i in [a1, a2, b1, b2]) Player(id: i, name: i),
+        Player(id: va, name: 'Equipo A', isVirtual: true,
+            teamMemberIds: const [a1, a2]),
+        Player(id: vb, name: 'Equipo B', isVirtual: true,
+            teamMemberIds: const [b1, b2]),
+      ],
+      mod: _mod(TeamPlayMode.scramble, const [va], const [vb]),
+      porHoyo: const {va: scoresA, vb: scoresB},
+      hasta: hasta,
+    );
+
+/// Montaje con los ids REALES en el lado. No es lo que Setup produce hoy, pero
+/// una ronda guardada antes de PASO 3 puede tener esta forma, y
+/// scoreCarriersOf tiene que resolverla igual.
 Round _scramble({int hasta = 18}) => _round(
       jugadores: [
         Player(id: va, name: 'Equipo A', isVirtual: true,
@@ -119,6 +144,49 @@ void main() {
       final motivos =
           BetEngine.computeAll(_scramble()).map((e) => e.reason).toSet();
       expect(motivos.length, 3, reason: 'faltan segmentos: $motivos');
+    });
+  });
+
+  group('la forma que produce Setup', () {
+    // Es la que ejecuta la app. Probar solo la otra era darse el visto bueno
+    // sobre datos que nunca ocurren.
+    test('el lado lleva el virtual, no los reales', () {
+      final mod = _setupShape().betGroups.first.modules.first;
+      expect(mod.sideA.playerIds, [va]);
+      expect(mod.hasTeamSides, isTrue,
+          reason: 'con un jugador por lado el motor debe seguir enrutando a equipos');
+    });
+
+    test('liquida, y sin errores de integridad', () {
+      final c = BetEngine.safeComputeAll(_setupShape());
+      expect(c.errors, isEmpty);
+      expect(c.entries, isNotEmpty);
+    });
+
+    test('un lado de un solo virtual no confunde a scoreCarriersOf', () {
+      // El virtual no tiene un virtual dentro, así que no hay emparejamiento
+      // posible y se devuelve el propio lado. Que sea el resultado correcto
+      // por el camino del fallback merece test propio: si alguien endurece
+      // ese fallback, esto se rompe.
+      final r = _setupShape();
+      final mod = r.betGroups.first.modules.first;
+      expect(r.scoreCarriersOf(mod.sideA), [va]);
+      expect(r.scoreCarriersOfModule(mod, const []), [va, vb]);
+    });
+
+    test('los 18 hoyos cuentan como completos', () {
+      final r = _setupShape();
+      final g = r.betGroups.first;
+      final pids = r.scoreCarriersOfModule(g.modules.first, g.playerIds);
+      final completos = r.course.holes
+          .where((ch) => pids.every((p) => r.getScore(p, ch.hole).hasScore))
+          .length;
+      expect(completos, 18, reason: 'el aviso de incompleta seguiría encendido');
+    });
+
+    test('paga lo mismo que la forma con ids reales', () {
+      expect(_total(BetEngine.computeAll(_setupShape())),
+          _total(BetEngine.computeAll(_scramble())));
     });
   });
 

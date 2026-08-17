@@ -1538,6 +1538,15 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
       .split(' ')
       .first;
 
+  /// Nombre legible de un jugador, incluidos los virtuales de equipo. Cae al
+  /// id si no se encuentra: un id feo en pantalla dice más que un hueco.
+  String _nombreCorto(String pid) {
+    for (final p in round.players) {
+      if (p.id == pid) return p.name;
+    }
+    return pid;
+  }
+
   /// Jugadores cuyos scores necesita esta apuesta para liquidar.
   ///
   /// Delega en Round.scoreCarriersOfModule en vez de re-derivarlo: preguntar
@@ -1555,14 +1564,32 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
 
     // Apuestas a las que les falta algún hoyo completo. Se calcula aquí y no
     // dentro del desplegable porque el aviso tiene que verse esté abierto o no.
+    //
+    // El aviso NOMBRA a quién le falta. "No tiene score de todos sus
+    // jugadores" describe el síntoma y esconde el dato: en una ronda por
+    // equipos la diferencia entre que falte una persona real y que falte el
+    // jugador virtual del equipo es la diferencia entre "sigue capturando" y
+    // "la apuesta está mal armada". Sin el nombre hay que salir a buscarlo por
+    // fuera de la app.
     final incompletas = <String>[];
     for (final e in mods) {
       final (grp, m) = e;
       final pids = _jugadoresDe(grp, m);
-      final completos = round.course.holes
-          .where((ch) => pids.every((pid) => round.getScore(pid, ch.hole).hasScore))
-          .length;
-      if (completos < round.course.holes.length) incompletas.add(m.type.label);
+      final faltan = <String>{};
+      var completos = 0;
+      for (final ch in round.course.holes) {
+        var lleno = true;
+        for (final pid in pids) {
+          if (!round.getScore(pid, ch.hole).hasScore) {
+            lleno = false;
+            faltan.add(_nombreCorto(pid));
+          }
+        }
+        if (lleno) completos++;
+      }
+      if (completos < round.course.holes.length) {
+        incompletas.add('${m.type.label} · falta ${faltan.join(', ')}');
+      }
     }
 
     return Container(
@@ -1613,10 +1640,8 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
             Expanded(
               child: Text(
                 incompletas.length == 1
-                    ? '${incompletas.first} no tiene score de todos sus '
-                        'jugadores en algún hoyo'
-                    : '${incompletas.length} apuestas no tienen score de todos '
-                        'sus jugadores en algún hoyo',
+                    ? 'Sin score completo en ${incompletas.first}'
+                    : 'Sin score completo:\n${incompletas.join('\n')}',
                 style: TextStyle(color: t.danger, fontSize: 11, height: 1.3),
               ),
             ),
