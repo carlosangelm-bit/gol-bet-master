@@ -136,7 +136,72 @@ class SlidingAdjustmentSuggestion {
   }
 }
 
+/// Por qué una ronda no produjo ningún ajuste de sliding.
+///
+/// Sin esto el diálogo decía "Sin apuestas registradas" en los tres casos, que
+/// solo es cierto en uno. Y la diferencia importa: si la ronda tenía unidades
+/// pero no match, el usuario ve movimiento de dinero y ningún ajuste, y sin
+/// explicación eso parece un fallo.
+enum SinAjusteMotivo {
+  /// No había ninguna apuesta.
+  sinApuestas,
+
+  /// Había apuestas, pero de tipos que no equilibran un enfrentamiento:
+  /// medal, putts, oyes, unidades.
+  sinMatchNiSkins,
+
+  /// Todo lo jugado era por equipos, donde el resultado es del lado.
+  soloEquipos,
+}
+
+extension SinAjusteMotivoTexto on SinAjusteMotivo {
+  String get titulo => switch (this) {
+        SinAjusteMotivo.sinApuestas => 'Sin apuestas registradas',
+        SinAjusteMotivo.sinMatchNiSkins => 'Sin apuesta de match',
+        SinAjusteMotivo.soloEquipos => 'Ronda por equipos',
+      };
+
+  String get detalle => switch (this) {
+        SinAjusteMotivo.sinApuestas =>
+          'No hay duelos para calcular el ajuste de sliding.',
+        SinAjusteMotivo.sinMatchNiSkins =>
+          'Esta ronda no tenía apuesta de match: la ventaja no cambia. '
+              'Ganar en unidades u oyes no es ganar el duelo.',
+        SinAjusteMotivo.soloEquipos =>
+          'En juego por equipos el resultado es del lado, no de la persona, '
+              'así que la ventaja personal no cambia.',
+      };
+}
+
 class SlidingAdjustmentEngine {
+  /// Por qué esta ronda no da ajustes. null si sí los da.
+  ///
+  /// Se calcula desde los MÓDULOS y no desde el ledger: lo que decide es qué se
+  /// jugó, no cuánto dinero se movió.
+  static SinAjusteMotivo? motivoSinAjuste(Round round) {
+    var hubieraApuestas = false;
+    var hubieraIndividual = false;
+    var hubieraAjustable = false;
+
+    for (final g in round.betGroups) {
+      for (final m in g.modules) {
+        hubieraApuestas = true;
+        if (m.hasTeamSides) continue;
+        hubieraIndividual = true;
+        if (m.type == BetModuleType.matchAutoPress ||
+            m.type == BetModuleType.nassau ||
+            m.type == BetModuleType.skins) {
+          hubieraAjustable = true;
+        }
+      }
+    }
+
+    if (!hubieraApuestas) return SinAjusteMotivo.sinApuestas;
+    if (!hubieraIndividual) return SinAjusteMotivo.soloEquipos;
+    if (!hubieraAjustable) return SinAjusteMotivo.sinMatchNiSkins;
+    return null;
+  }
+
 
   /// Calcula las sugerencias de ajuste de sliding.
   ///
@@ -253,6 +318,20 @@ class SlidingAdjustmentEngine {
     return round.players.isNotEmpty ? round.players.first : null;
   }
 
+  /// Expuesto para test: el duelo que representa a esta pareja.
+  ///
+  /// Se testea directamente porque computeSuggestions necesita un uid ligado y
+  /// PlayerLinks, y lo que hay que fijar es la REGLA —qué apuesta representa el
+  /// duelo y cuáles no cuentan—, no el arnés de autenticación.
+  static DuelResult? computeDuelForTest({
+    required String p1Id,
+    required String p2Id,
+    required Round round,
+    required List<LedgerEntry> allEntries,
+  }) =>
+      _computeDuel(
+          p1Id: p1Id, p2Id: p2Id, round: round, allEntries: allEntries);
+
   // ── Calcular el duelo entre p1 y p2 usando prioridad de apuesta ────────────
   static DuelResult? _computeDuel({
     required String p1Id,
@@ -268,10 +347,26 @@ class SlidingAdjustmentEngine {
 
     if (pairEntries.isEmpty) return null;
 
-    // Agrupar por tipo
-    final matchEntries  = pairEntries.where((e) => e.betType == BetModuleType.matchAutoPress).toList();
-    final nassauEntries = pairEntries.where((e) => e.betType == BetModuleType.nassau).toList();
-    final skinsEntries  = pairEntries.where((e) => e.betType == BetModuleType.skins).toList();
+    // ── Qué tipos pueden mover la ventaja ─────────────────────────────────
+    //
+    // Ganar DINERO no es ganar el duelo. Medal, Putts, Oyes y Unidades reparten
+    // importes sin que haya un enfrentamiento directo que equilibrar: cobrar
+    // $500 en unidades no dice que uno juegue mejor que el otro, dice que hizo
+    // birdies. El sliding equilibra el match, así que solo el match lo mueve.
+    //
+    // Bola Baja / Bola Alta NO está, y no por omisión: es siempre por equipos,
+    // así que la regla de abajo lo excluiría igualmente. Se deja fuera de la
+    // lista para que quede dicho.
+    final ajustables = _tiposIndividualesDe(round, p1Id, p2Id);
+
+    // Agrupar por tipo, y SOLO si esta pareja juega ese tipo uno contra uno.
+    List<LedgerEntry> de(BetModuleType t) => ajustables.contains(t)
+        ? pairEntries.where((e) => e.betType == t).toList()
+        : const [];
+
+    final matchEntries  = de(BetModuleType.matchAutoPress);
+    final nassauEntries = de(BetModuleType.nassau);
+    final skinsEntries  = de(BetModuleType.skins);
 
     DuelResult? matchResult;
     DuelResult? nassauResult;
@@ -313,6 +408,44 @@ class SlidingAdjustmentEngine {
       return _ordenDesempate(a.betType).compareTo(_ordenDesempate(b.betType));
     });
     return candidatos.first;
+  }
+
+  /// Los tipos que esta pareja juega DE VERDAD uno contra uno.
+  ///
+  /// El problema que resuelve: los motores de equipo emiten con el MISMO
+  /// betType que los individuales —_nassauTeam emite `nassau`, _skinsTeam emite
+  /// `skins`— y teamCrossAmount reparte el importe del lado entre los cruces.
+  /// Así que en una ronda 2v2 aparecen asientos `nassau` entre A1 y B2, y el
+  /// sliding los leía como un duelo que esos dos habrían jugado.
+  ///
+  /// No lo jugaron. En juego por equipos el resultado es del LADO: ganaste
+  /// porque tu compañero jugó bien, y ajustar tu ventaja personal por eso mide
+  /// algo que no controlaste. El cruce A1–B2 ni siquiera es un duelo — es
+  /// contabilidad interna de pay() repartiendo un importe pactado entre lados.
+  ///
+  /// Se resuelve desde el MÓDULO y no desde el asiento, así que no hace falta
+  /// campo nuevo en LedgerEntry ni deducirlo del texto del `reason`. Deducirlo
+  /// del reason —que dice "Nassau Front 9 (Equipo A vs Equipo B)"— habría atado
+  /// el filtro a una etiqueta: alguien la cambia, el filtro deja de casar y nada
+  /// falla.
+  ///
+  /// Límite conocido: si una pareja tuviera a la vez un Nassau de equipos Y un
+  /// Nassau individual, los asientos de los dos comparten tipo y no se pueden
+  /// separar sin marcar el asiento. Se incluyen, que es el lado seguro —perder
+  /// un duelo individual real es peor que colar algo de equipo— y hace falta un
+  /// campo en LedgerEntry para resolverlo bien.
+  static Set<BetModuleType> _tiposIndividualesDe(
+      Round round, String p1Id, String p2Id) {
+    final out = <BetModuleType>{};
+    for (final g in round.betGroups) {
+      for (final m in g.modules) {
+        // El resultado de una apuesta por equipos es del lado, no de la persona.
+        if (m.hasTeamSides) continue;
+        if (!m.containsPair(p1Id, p2Id)) continue;
+        out.add(m.type);
+      }
+    }
+    return out;
   }
 
   /// Precedencia cuando dos apuestas ponen el mismo dinero en juego.

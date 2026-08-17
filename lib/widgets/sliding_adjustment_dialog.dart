@@ -381,15 +381,20 @@ class _SlidingAdjustmentDialogState extends State<SlidingAdjustmentDialog> {
 
   Widget _buildEmpty(_Palette p) {
     final t = GolfThemeExt.current;
+    // Decir POR QUÉ, no solo que no hay. "Sin apuestas registradas" era falso
+    // en dos de los tres casos: con unidades sí hubo apuestas y sí se movió
+    // dinero, y sin explicación la falta de ajuste parece un fallo.
+    final motivo = SlidingAdjustmentEngine.motivoSinAjuste(widget.round) ??
+        SinAjusteMotivo.sinApuestas;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 28),
       child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.sports_golf_rounded, color: t.sub.withValues(alpha: 0.45), size: 44),
         const SizedBox(height: 14),
-        Text('Sin apuestas registradas',
+        Text(motivo.titulo,
           style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 15)),
         const SizedBox(height: 6),
-        Text('No hay duelos para calcular el ajuste de sliding.',
+        Text(motivo.detalle,
           style: TextStyle(color: t.sub, fontSize: 12), textAlign: TextAlign.center),
       ])),
     );
