@@ -3155,34 +3155,66 @@ class Round {
   /// esa lista daría cero jugadores, y `every` sobre lista vacía es true: el
   /// contador diría 18/18 desde el hoyo 1, que es peor que el bug.
   List<Player> get scoringPlayers {
-    // OBSERVACIÓN, no declaración: quien ya escribió al menos un score real es,
-    // por definición, quien lleva tarjeta en esta ronda.
+    // Se DERIVA de los lados de las apuestas. Ni declarada ni observada.
     //
-    // Los dos intentos anteriores preguntaban quién JUEGA —primero
-    // scores.containsKey, después roundPlayers— y eso no es lo mismo que quién
-    // ANOTA. En scramble el equipo entrega una tarjeta y los reales no; en best
-    // ball es al revés y el virtual del equipo nunca anota. Cualquier lista
-    // declarada puede contener a alguien que no vaya a escribir nunca, y basta
-    // uno para que every(...hasScore) sea falso en los 18 hoyos.
+    // Los tres intentos anteriores preguntaban mal:
     //
-    // Esta versión no depende de que roundPlayers, los contenedores o el
-    // playMode del lado estén bien: mira quién está anotando de hecho. Si la
-    // clasificación del lado falla en Setup, el contador sigue contando.
-    final llevanTarjeta = players
-        .where((p) => (scores[p.id] ?? const <int, HoleScore>{})
-            .values
-            .any((s) => s.hasScore))
-        .toList();
-    if (llevanTarjeta.isNotEmpty) return llevanTarjeta;
-
-    // Ronda sin empezar: nadie ha anotado y hay que devolver a ALGUIEN, porque
-    // every sobre lista vacía es true y los 18 hoyos saldrían completos.
-    if (roundPlayers.isNotEmpty) {
-      final declarados = roundPlayers.map((rp) => rp.playerId).toSet();
-      return players.where((p) => declarados.contains(p.id)).toList();
+    //   · scores.containsKey → pasa a quien tiene CONTENEDOR aunque esté
+    //     vacío. El virtual de best ball tiene uno sembrado que no se llena
+    //     nunca: 0/18 en toda ronda por equipos.
+    //   · roundPlayers → es la DECLARACIÓN de quién juega, y también incluye a
+    //     ese virtual. Mismo 0/18 por otra puerta.
+    //   · "quien ya escribió un score" → observación. Correcto sobre lo
+    //     capturado, pero el conjunto CRECE durante la ronda: mientras un lado
+    //     no había anotado nunca, no se le exigía, y los hoyos a medias pasaban
+    //     por completos. Al escribir su primer score el contador RETROCEDÍA
+    //     —17/18 → 1/18— porque de golpe se le exigía en los 18.
+    //
+    // Quien lleva tarjeta lo dicen los LADOS: scoreCarriersOf ya distingue el
+    // virtual del equipo en scramble de los reales en best ball. Eso no cambia
+    // al capturar, así que el contador es monótono: añadir un score nunca puede
+    // bajarlo.
+    final llevanTarjeta = <String>{};
+    final enAlgunLado = <String>{};
+    for (final g in betGroups) {
+      for (final m in g.modules) {
+        if (!m.hasTeamSides) continue;
+        for (final lado in m.sides!) {
+          enAlgunLado.addAll(lado.playerIds);
+          final portadores = scoreCarriersOf(lado);
+          llevanTarjeta.addAll(portadores);
+          // Si el portador es un virtual —scramble— sus miembros quedan
+          // cubiertos por él y NO llevan tarjeta propia. Hay que decirlo
+          // explícitamente porque en scramble los reales no aparecen en
+          // lado.playerIds: Setup los sustituye por el id del virtual.
+          for (final id in portadores) {
+            final p = players.where((x) => x.id == id).firstOrNull;
+            if (p != null && p.isVirtual) enAlgunLado.addAll(p.teamMemberIds);
+          }
+        }
+      }
     }
+
+    // Quien no está en ningún lado lleva su propia tarjeta. Salvo los
+    // virtuales: uno que no sea portador —el bb_team_X de best ball— existe
+    // para nombrar al equipo en pantalla, no para anotar.
+    for (final rp in roundPlayers) {
+      if (enAlgunLado.contains(rp.playerId)) continue;
+      if (llevanTarjeta.contains(rp.playerId)) continue;
+      final p = players.where((x) => x.id == rp.playerId).firstOrNull;
+      if (p != null && p.isVirtual) continue;
+      llevanTarjeta.add(rp.playerId);
+    }
+
+    final resultado =
+        players.where((p) => llevanTarjeta.contains(p.id)).toList();
+    if (resultado.isNotEmpty) return resultado;
+
+    // Sin apuestas ni roundPlayers hay que devolver a ALGUIEN: every sobre
+    // lista vacía es true y los 18 hoyos saldrían completos.
     return players.where((p) => scores.containsKey(p.id)).toList();
   }
+
 
   /// Las personas de la ronda. Excluye los jugadores de equipo.
   ///

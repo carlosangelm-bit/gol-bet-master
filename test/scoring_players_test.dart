@@ -46,7 +46,21 @@ Round _ronda({
           : (roundPlayerIds ?? const [va, vb])
               .map((i) => RoundPlayer(playerId: i, handicapEnRonda: 12))
               .toList(),
-      betGroups: const [],
+      betGroups: [
+        BetGroup(id: 'g', name: 'G', format: PartidaFormat.teams2v2,
+            playerIds: [va, vb], modules: [
+          BetModuleInstance(
+            id: 'm', type: BetModuleType.nassau, name: 'Nassau',
+            participantIds: [va, vb], nassauConfig: NassauConfig.def,
+            sides: const [
+              BetSide(id: 'A', name: 'Equipo A', playerIds: [va],
+                  playMode: TeamPlayMode.scramble),
+              BetSide(id: 'B', name: 'Equipo B', playerIds: [vb],
+                  playMode: TeamPlayMode.scramble),
+            ],
+          ),
+        ]),
+      ],
       scores: scores, events: const {}, oyeseRankings: const {},
       sliding: const [],
       createdAt: DateTime(2026, 1, 1), totalHoles: 18,
@@ -104,6 +118,52 @@ void main() {
     });
   });
 
+  group('el contador es monótono', () {
+    // El caso que lo destapó: Carlos pulsó el + de Equipo B en los 18 hoyos y
+    // el de Equipo A solo en el 12. Con la versión que OBSERVABA, mientras A no
+    // había anotado nunca no se le exigía, los 17 hoyos con solo B pasaban por
+    // completos, y al escribir A su primer score el contador caía a 1/18.
+    //
+    // Añadir un dato no puede reducir la cuenta. El 1/18 era el número bueno;
+    // el 17/18 era el malo.
+
+    test('un lado en los 18 y el otro solo en el 12 da 1, no 17', () {
+      final r = _ronda(scores: {
+        vb: _hoyos(vb, 18, 5),
+        va: {12: HoleScore(playerId: va, hole: 12, grossScore: 4)},
+      });
+      expect(_contador(r), 1);
+    });
+
+    test('y da 1 TAMBIÉN antes de que A escriba nada', () {
+      // Aquí estaba el 17/18. A no ha anotado, pero es portador de tarjeta
+      // porque lo dice su lado, así que se le exige desde el hoyo 1.
+      final r = _ronda(scores: {vb: _hoyos(vb, 18, 5), va: <int, HoleScore>{}});
+      expect(_contador(r), 0);
+      expect(r.scoringPlayers.map((p) => p.id), [va, vb]);
+    });
+
+    test('añadir scores nunca baja la cuenta', () {
+      // Propiedad, no ejemplo: se recorre la captura hoyo a hoyo de un lado y
+      // luego del otro, comprobando que la cuenta no retrocede nunca.
+      var scores = <String, Map<int, HoleScore>>{va: {}, vb: {}};
+      var previo = _contador(_ronda(scores: scores));
+      for (final pid in [vb, va]) {
+        for (var h = 1; h <= 18; h++) {
+          scores = {
+            for (final e in scores.entries) e.key: {...e.value},
+          };
+          scores[pid]![h] = HoleScore(playerId: pid, hole: h, grossScore: 4);
+          final ahora = _contador(_ronda(scores: scores));
+          expect(ahora, greaterThanOrEqualTo(previo),
+              reason: 'bajó de $previo a $ahora al anotar $pid en el hoyo $h');
+          previo = ahora;
+        }
+      }
+      expect(previo, 18);
+    });
+  });
+
   group('resiste que roundPlayers esté mal', () {
     // Los tests que valen no son los que confirman lo que crees. Estos montan
     // las dos hipótesis de por qué el arreglo anterior seguía fallando, COMO SI
@@ -145,20 +205,43 @@ void main() {
     });
 
     test('best ball: el virtual del equipo no bloquea el contador', () {
-      // Caso que estaba roto en silencio y nadie había mirado: en best ball
-      // anotan los reales y el virtual bb_team_X tiene contenedor sembrado que
-      // no se llena nunca. Con containsKey o con roundPlayers, 0/18 SIEMPRE.
-      final r = _ronda(
+      final course = _course();
+      final mod = BetModuleInstance(
+        id: 'm', type: BetModuleType.nassau, name: 'Nassau',
+        participantIds: reales, nassauConfig: NassauConfig.def,
+        sides: const [
+          BetSide(id: 'A', name: 'Equipo A', playerIds: ['cam', 'aam']),
+          BetSide(id: 'B', name: 'Equipo B', playerIds: ['cav', 'rafa']),
+        ],
+      );
+      final bb = Round(
+        id: 'r', name: 'R', course: course,
+        players: [
+          for (final i in reales) Player(id: i, name: i.toUpperCase()),
+          Player(id: 'bb_team_A', name: 'Equipo A', isVirtual: true,
+              teamMemberIds: const ['cam', 'aam']),
+          Player(id: 'bb_team_B', name: 'Equipo B', isVirtual: true,
+              teamMemberIds: const ['cav', 'rafa']),
+        ],
+        roundPlayers: [
+          for (final i in [...reales, 'bb_team_A', 'bb_team_B'])
+            RoundPlayer(playerId: i, handicapEnRonda: 0),
+        ],
+        betGroups: [BetGroup(id: 'g', name: 'G',
+            format: PartidaFormat.teams2v2, playerIds: reales, modules: [mod])],
         scores: {
           for (final i in reales) i: _hoyos(i, 3, 4),
           'bb_team_A': <int, HoleScore>{},
           'bb_team_B': <int, HoleScore>{},
         },
-        roundPlayerIds: [...reales, 'bb_team_A', 'bb_team_B'],
+        events: const {}, oyeseRankings: const {}, sliding: const [],
+        createdAt: DateTime(2026, 1, 1), totalHoles: 18,
       );
-      expect(_contador(r), 3);
-      expect(r.scoringPlayers.map((p) => p.id), reales);
+      // El virtual existe para nombrar al equipo en pantalla, no para anotar.
+      expect(bb.scoringPlayers.map((p) => p.id), reales);
+      expect(_contador(bb), 3);
     });
+
   });
 
   group('scoringPlayers', () {
