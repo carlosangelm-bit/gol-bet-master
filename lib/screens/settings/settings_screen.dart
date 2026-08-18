@@ -272,6 +272,8 @@ class _ProfileCard extends StatelessWidget {
                     )),
           ),
           GestureDetector(
+            // Toda la fila, no solo donde hay un hijo.
+            behavior: HitTestBehavior.opaque,
             onTap: () => _showLinkPlayerSheet(context, t, profile, playerProv),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -383,6 +385,8 @@ class _HandicapIndexCard extends StatelessWidget {
     final n      = result.totalRounds;
 
     return GestureDetector(
+      // Toda la fila, no solo donde hay un hijo.
+      behavior: HitTestBehavior.opaque,
       onTap: () => _showHandicapSheet(context),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -805,6 +809,8 @@ class _LinkPlayerSheet extends StatelessWidget {
                     color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
               const Spacer(),
               GestureDetector(
+                // Toda la fila, no solo donde hay un hijo.
+                behavior: HitTestBehavior.opaque,
                 onTap: () => Navigator.pop(context),
                 child: Icon(Icons.close, color: t.sub),
               ),
@@ -843,6 +849,8 @@ class _LinkPlayerSheet extends StatelessWidget {
                       return Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: GestureDetector(
+                          // Toda la fila, no solo donde hay un hijo.
+                          behavior: HitTestBehavior.opaque,
                           onTap: () async {
                             await ctx.read<UserProfileProvider>()
                                 .updateFields({'myPlayerId': null});
@@ -991,6 +999,8 @@ class _ProfileFormSheetState extends State<_ProfileFormSheet> {
                 color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
             const Spacer(),
             GestureDetector(
+              // Toda la fila, no solo donde hay un hijo.
+              behavior: HitTestBehavior.opaque,
               onTap: () => Navigator.pop(context),
               child: Icon(Icons.close, color: t.sub),
             ),
@@ -1005,6 +1015,8 @@ class _ProfileFormSheetState extends State<_ProfileFormSheet> {
               fontWeight: FontWeight.w700, letterSpacing: 0.8)),
           const SizedBox(height: 8),
           Row(children: List.generate(_colors.length, (i) => GestureDetector(
+            // Toda la fila, no solo donde hay un hijo.
+            behavior: HitTestBehavior.opaque,
             onTap: () => setState(() => _colorIdx = i),
             child: Container(
               margin: const EdgeInsets.only(right: 8),
@@ -1047,6 +1059,8 @@ class _ProfileFormSheetState extends State<_ProfileFormSheet> {
           Wrap(spacing: 8, runSpacing: 8, children: _currencies.map((c) {
             final sel = c == _currency;
             return GestureDetector(
+              // Toda la fila, no solo donde hay un hijo.
+              behavior: HitTestBehavior.opaque,
               onTap: () => setState(() => _currency = c),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 120),
@@ -1313,6 +1327,8 @@ class _FavCoursesSectionState extends State<_FavCoursesSection> {
                   ])),
                   // Botón refresh (actualizar datos)
                   GestureDetector(
+                    // Toda la fila, no solo donde hay un hijo.
+                    behavior: HitTestBehavior.opaque,
                     onTap: isRefreshing ? null : () => _refreshCourseData(context, fav),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -1331,6 +1347,8 @@ class _FavCoursesSectionState extends State<_FavCoursesSection> {
                   ),
                   // Botón quitar favorito
                   GestureDetector(
+                    // Toda la fila, no solo donde hay un hijo.
+                    behavior: HitTestBehavior.opaque,
                     onTap: () => profProv.removeFavCourse(fav.courseId),
                     child: const Padding(
                       padding: EdgeInsets.only(left: 4),
@@ -1375,6 +1393,8 @@ class _FavCoursesSectionState extends State<_FavCoursesSection> {
       // Botón agregar campo
       const SizedBox(height: 8),
       GestureDetector(
+        // Toda la fila, no solo donde hay un hijo.
+        behavior: HitTestBehavior.opaque,
         onTap: () => _addCourse(context),
         child: Container(
           height: 48, width: double.infinity,
@@ -1422,6 +1442,8 @@ class _FavCoursesSectionState extends State<_FavCoursesSection> {
           final isSelected = picked == tee.teeName;
           final color = female ? t.accent : t.primary;
           return GestureDetector(
+            // Toda la fila, no solo donde hay un hijo.
+            behavior: HitTestBehavior.opaque,
             onTap: () => saveTee(tee.teeName),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 120),
@@ -1456,7 +1478,7 @@ class _FavCoursesSectionState extends State<_FavCoursesSection> {
                 Text('Salida favorita', style: TextStyle(color: t.text, fontSize: 17, fontWeight: FontWeight.w800)),
                 Text(fav.displayName, style: TextStyle(color: t.sub, fontSize: 12)),
               ])),
-              GestureDetector(onTap: () => Navigator.pop(ctx2), child: Icon(Icons.close, color: t.sub)),
+              GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => Navigator.pop(ctx2), child: Icon(Icons.close, color: t.sub)),
             ]),
             const SizedBox(height: 6),
             Text('Se usará como salida por defecto al elegir este campo en una ronda.',
@@ -1542,6 +1564,8 @@ class _FavCoursePickerSheetState extends State<_FavCoursePickerSheet> {
                     fontWeight: FontWeight.w800)),
             const Spacer(),
             GestureDetector(
+              // Toda la fila, no solo donde hay un hijo.
+              behavior: HitTestBehavior.opaque,
               onTap: () => Navigator.pop(context),
               child: Icon(Icons.close, color: t.sub),
             ),
@@ -1767,6 +1791,8 @@ class _ThemeOption extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
+        // Toda la fila, no solo donde hay un hijo.
+        behavior: HitTestBehavior.opaque,
         onTap: () => prov.setTheme(mode),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1924,6 +1950,8 @@ class _GamePresetsCardState extends State<_GamePresetsCard> {
   Widget build(BuildContext context) {
     final t = widget.t;
     return GestureDetector(
+      // Toda la fila, no solo donde hay un hijo.
+      behavior: HitTestBehavior.opaque,
       onTap: () async {
         await Navigator.push(
           context,
@@ -1974,6 +2002,8 @@ class _CompanionsCard extends StatelessWidget {
     final count = playerProv.directory.length;
 
     return GestureDetector(
+      // Toda la fila, no solo donde hay un hijo.
+      behavior: HitTestBehavior.opaque,
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const PlayersScreen()),
@@ -2017,6 +2047,8 @@ class _BettingGroupsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GCard(
       child: GestureDetector(
+        // Toda la fila, no solo donde hay un hijo.
+        behavior: HitTestBehavior.opaque,
         // Redirige a LA puerta única.
         //
         // Los grupos de apuesta se ven donde se empieza una ronda, no en
