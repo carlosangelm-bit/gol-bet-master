@@ -236,6 +236,17 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       teamHandicapConfig: _sidesEnabled ? _teamHcp : _current.teamHandicapConfig,
     );
     widget.onSave(saved);
+    // ── CONVENCIÓN: EL SHEET CIERRA ─────────────────────────────────────────
+    //
+    // El pop lo hace aquí y NINGÚN onSave lo repite. Popear en los dos sitios
+    // cerraba el sheet Y la pantalla de debajo: la pila quedaba vacía y Flutter
+    // pintaba blanco sobre un árbol sin nada. Sin excepción en consola, porque
+    // no hay error — la lógica de guardado es correcta y el módulo se actualiza
+    // bien. Falla la navegación, que es estado de UI.
+    //
+    // Ocho llamadores y seis ya lo asumían; los dos que popeaban eran el bug.
+    // Si algún llamador nuevo necesita cerrar algo MÁS que el sheet, que lo haga
+    // después de este pop y sabiendo que este ya ocurrió.
     Navigator.pop(context);
   }
 

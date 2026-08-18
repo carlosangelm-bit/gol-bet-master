@@ -1771,8 +1771,16 @@ class _DuelBetsSection extends StatelessWidget {
         round: round,
         isNewGroup: existingGroup == null,
         existingTypes: existingTypes,
+        // NO se hace pop aquí: BetModuleEditSheet._save ya cierra.
+        //
+        // Popear también cerraba el sheet Y la pantalla que había debajo, lo que
+        // vaciaba la pila y dejaba Flutter pintando blanco sobre un árbol sin
+        // nada. Sin excepción, así que ningún test de lógica lo veía.
+        //
+        // La convención elegida: EL SHEET CIERRA. Seis de los ocho llamadores ya
+        // la asumían, y para un showModalBottomSheet cerrarse al guardar es su
+        // propia navegación, no la de otro.
         onSave: (saved) {
-          Navigator.pop(sheetCtx);
           if (existingGroup == null) {
             prov.updateBetGroups(
                 [...round.betGroups, group.copyWith(modules: [saved])]);
@@ -1981,10 +1989,8 @@ class _BetRow extends StatelessWidget {
         roundHandicaps: {
           for (final rp in round.roundPlayers) rp.playerId: rp.handicapEnRonda,
         },
-        onSave: (saved) {
-          Navigator.pop(ctx);
-          prov.updateBetModule(group.id, saved);
-        },
+        // Sin pop: lo hace el sheet. Ver la convención arriba.
+        onSave: (saved) => prov.updateBetModule(group.id, saved),
       ),
     );
   }
