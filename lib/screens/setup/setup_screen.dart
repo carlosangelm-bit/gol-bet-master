@@ -14,6 +14,7 @@ import '../../providers/round_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../services/golf_course_service.dart';
 import '../../widgets/common_widgets.dart';
+import '../../widgets/app_navigation.dart';
 import '../../widgets/player_edit_sheet.dart';
 import '../../widgets/course_picker_sheet.dart';
 import '../../widgets/bet_module_edit_sheet.dart';
@@ -6787,7 +6788,9 @@ class _SetupScreenState extends State<SetupScreen> {
       // Primero iniciar la ronda localmente, luego publicar en vivo
       final prov = context.read<RoundProvider>();
       prov.startRound(round);
-      Navigator.of(context).pop();
+      // Al shell, no un pop. Desde una plantilla hay dos pantallas encima y un
+      // solo pop dejaba "Mis Plantillas": ver volverAlShell.
+      volverAlShell(context);
       // Publicar como ronda en vivo (async, sin bloquear UI)
       prov.publishAsLive().then((_) {
         if (mounted) {
@@ -6806,7 +6809,7 @@ class _SetupScreenState extends State<SetupScreen> {
       });
     } else {
       context.read<RoundProvider>().startRound(round);
-      Navigator.of(context).pop();
+      volverAlShell(context);
     }
   }
 }
