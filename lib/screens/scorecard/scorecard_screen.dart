@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/player_filter_bar.dart';
 import '../results/results_screen.dart';
 import '../../widgets/score_shape.dart';
 import '../../engines/bet_engine.dart';
@@ -1520,54 +1521,8 @@ class _FiltersBar extends StatelessWidget {
     required this.onFilterChange,
   });
 
-  void _showPicker(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: t.card,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) {
-        final bottomPad = MediaQuery.of(ctx).viewPadding.bottom;
-        return SafeArea(
-          top: false,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(20, 20, 20, bottomPad > 0 ? bottomPad : 20),
-            child: Column(mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('¿Cuál jugador eres tú?',
-                  style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
-              const SizedBox(height: 4),
-              Text('Filtrará solo los duelos donde participas.',
-                  style: TextStyle(color: t.sub, fontSize: 12)),
-              const SizedBox(height: 14),
-              ...allPlayers.map((p) => ListTile(
-                leading: GAvatar(name: p.name, colorIndex: p.colorIndex, size: 36),
-                title: Text(p.name,
-                    style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
-                subtitle: Text('HCP ${p.handicapBase.toStringAsFixed(0)}',
-                    style: TextStyle(color: t.sub)),
-                trailing: myPlayer?.id == p.id
-                    ? Icon(Icons.check_circle, color: t.primary, size: 20)
-                    : null,
-                onTap: () {
-                  onPickPlayer(p.id);
-                  Navigator.pop(ctx);
-                },
-              )),
-            ]),
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final myName   = myPlayer?.shortName;
-    final hasPlayer = myPlayer != null;
-
-    // Chips: (filtro, icono, color, tooltip)
     final chips = [
       (_DuelFilter.todos,      Icons.apps_rounded,            Colors.white70,             'Todos'),
       (_DuelFilter.ganados,    Icons.trending_up_rounded,     const Color(0xFF35C759),    'Ganados'),
@@ -1576,82 +1531,20 @@ class _FiltersBar extends StatelessWidget {
     ];
 
     return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-      // ── Toggle "Mis duelos" — ocupa el espacio disponible ─────────────
+      // EL selector de jugador, compartido con la pestaña Duelos de Apuestas.
+      // Antes vivía aquí dentro, mezclado con los chips de estado.
       Expanded(
-        child: GestureDetector(
-          onTap: hasPlayer ? onToggleMine : () => _showPicker(context),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeInOut,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              gradient: (onlyMine && hasPlayer)
-                  ? const LinearGradient(
-                      colors: [Color(0xFF1F8F3A), Color(0xFF0D5020)])
-                  : null,
-              color: (onlyMine && hasPlayer) ? null : const Color(0xFF2C2C2E),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: (onlyMine && hasPlayer)
-                    ? const Color(0xFF35C759).withValues(alpha: 0.50)
-                    : Colors.white.withValues(alpha: 0.08),
-                width: 1.2,
-              ),
-            ),
-            child: Row(children: [
-              Icon(
-                (onlyMine && hasPlayer) ? Icons.person : Icons.people_outline,
-                color: (onlyMine && hasPlayer) ? Colors.white : t.sub,
-                size: 15,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  (onlyMine && hasPlayer)
-                      ? 'Mis duelos ($myName)'
-                      : 'Todos',
-                  style: TextStyle(
-                    color: (onlyMine && hasPlayer) ? Colors.white : t.sub,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              _MiniSwitch(active: onlyMine && hasPlayer),
-            ]),
-          ),
+        child: PlayerFilterBar(
+          onlyMine: onlyMine,
+          myPlayer: myPlayer,
+          allPlayers: allPlayers,
+          t: t,
+          onToggleMine: onToggleMine,
+          onPickPlayer: onPickPlayer,
         ),
       ),
 
       const SizedBox(width: 6),
-
-      // ── Botón elegir jugador ──────────────────────────────────────────
-      GestureDetector(
-        onTap: () => _showPicker(context),
-        child: Container(
-          width: 36, height: 36,
-          decoration: BoxDecoration(
-            color: hasPlayer
-                ? t.primary.withValues(alpha: 0.15)
-                : const Color(0xFF2C2C2E),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-                color: hasPlayer
-                    ? t.primary.withValues(alpha: 0.35)
-                    : Colors.white.withValues(alpha: 0.08)),
-          ),
-          child: Icon(
-            hasPlayer ? Icons.edit_outlined : Icons.person_search_outlined,
-            color: hasPlayer ? t.primary : t.sub,
-            size: 16,
-          ),
-        ),
-      ),
-
-      const SizedBox(width: 6),
-
-      // ── Separador vertical ────────────────────────────────────────────
       Container(
         width: 1, height: 28,
         color: Colors.white.withValues(alpha: 0.10),
@@ -1697,40 +1590,6 @@ class _FiltersBar extends StatelessWidget {
 }
 
 // Mini switch visual reutilizable
-class _MiniSwitch extends StatelessWidget {
-  final bool active;
-  const _MiniSwitch({required this.active});
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 220),
-      width: 36, height: 20,
-      decoration: BoxDecoration(
-        color: active
-            ? Colors.white.withValues(alpha: 0.25)
-            : Colors.white.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-            color: Colors.white.withValues(alpha: active ? 0.40 : 0.12)),
-      ),
-      child: Stack(children: [
-        AnimatedPositioned(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeInOut,
-          left: active ? 17 : 2,
-          top: 2,
-          child: Container(
-            width: 16, height: 16,
-            decoration: BoxDecoration(
-              color: active ? Colors.white : Colors.white38,
-              shape: BoxShape.circle,
-            ),
-          ),
-        ),
-      ]),
-    );
-  }
-}
 
 // ── Toggle "Solo mis duelos" (DEPRECATED — mantenido para compatibilidad) ─────
 class _MyMatchesToggle extends StatelessWidget {

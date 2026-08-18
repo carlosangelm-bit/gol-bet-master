@@ -21,6 +21,7 @@ import '../../providers/round_provider.dart';
 import '../../engines/bet_engine.dart';
 import '../../engines/ledger_engine.dart';
 import '../../widgets/common_widgets.dart';
+import '../../widgets/player_filter_bar.dart';
 import '../../widgets/bet_module_edit_sheet.dart';
 import '../../services/auth_service.dart';
 
@@ -506,9 +507,44 @@ class _BetsBodyState extends State<_BetsBody> {
     );
   }
 
+  /// Jugador por el que se filtran los duelos. null = todos.
+  String? _filtroPid;
+
+  /// El último elegido, para que apagar y encender el filtro no lo olvide.
+  String? _ultimoFiltro;
+
   // ── Vista REGLAS ──────────────────────────────────────────────────────────
+  //
+  // Dos modelos conviven y la pantalla sirve a los dos:
+  //
+  //   apuesta de partida + excepciones → arriba lo que juega el grupo entero,
+  //                                      abajo quien se sale de la norma
+  //   todo son duelos                  → resumen por TIPO
+  //
+  // El segundo es el de una ronda creada desde un grupo de apuesta, donde
+  // pairRules son por pareja y NO hay ninguna apuesta de partida. Ahí la mitad
+  // de arriba quedaba vacía y la de abajo tenía 30 líneas planas que no son
+  // excepciones de nada: son las apuestas normales de la ronda.
+  //
+  // La proyección de familias que arregló el "0 apuestas · 6 excepciones" no
+  // sirve para esto, y conviene saber por qué: agrupa por betGroupId, que en un
+  // grupo es único por DUELO y por TIPO, así que cada familia tiene un solo
+  // miembro. Esas familias agrupan "una apuesta partida en parejas"; aquí hace
+  // falta agrupar por tipo ENTRE duelos, que es otro eje.
   List<Widget> _rulesSlivers(Round round) {
     final p = _projectRules(round);
+
+    // Sin apuestas de partida, el resumen por tipo. Con ellas, la vista de
+    // siempre: rediseñarla para el caso del grupo dejaría peor el original.
+    if (p.rules.isEmpty && p.exceptions.isNotEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: _TypeSummarySection(round: round, t: t),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 24)),
+      ];
+    }
+
     return [
       SliverToBoxAdapter(
         child: _RulesSection(
@@ -526,8 +562,55 @@ class _BetsBodyState extends State<_BetsBody> {
 
   // ── Vista DUELOS (la de siempre) ──────────────────────────────────────────
   List<Widget> _duelSlivers(Round round) {
-    final duels = _buildDuels(round);
+    final todos = _buildDuels(round);
+
+    // Filtro por jugador. Con 6 jugadores hay 15 duelos y con 9 llegan a 36:
+    // encontrar los tuyos obligaba a recorrer la lista entera.
+    final duels = _filtroPid == null
+        ? todos
+        : todos
+            .where((d) => d.p1.id == _filtroPid || d.p2.id == _filtroPid)
+            .toList();
+
+    final elegido = _filtroPid == null
+        ? null
+        : round.realPlayers
+            .where((x) => x.id == _filtroPid)
+            .firstOrNull;
+
     return [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // EL selector, el mismo de la pestaña 1v1 de la Tarjeta.
+            PlayerFilterBar(
+              onlyMine: _filtroPid != null,
+              myPlayer: elegido,
+              allPlayers: round.realPlayers,
+              t: t,
+              onToggleMine: () => setState(() =>
+                  _filtroPid = _filtroPid == null ? _ultimoFiltro : null),
+              onPickPlayer: (pid) => setState(() {
+                _filtroPid = pid;
+                _ultimoFiltro = pid;
+              }),
+            ),
+            // La cabecera no puede engañar: "6 duelos" con tres tarjetas abajo
+            // se lee como un fallo.
+            if (_filtroPid != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                  '${duels.length} de ${todos.length} duelos · '
+                  'solo los de ${elegido?.name.split(' ').first ?? ''}',
+                  style: TextStyle(
+                      color: t.primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ]),
+        ),
+      ),
         if (duels.isEmpty)
           SliverFillRemaining(
             child: Center(
@@ -3451,6 +3534,95 @@ class _BetTypeCard extends StatelessWidget {
           ),
         ]),
       ),
+    );
+  }
+}
+
+
+// ── Resumen por tipo: "qué se juega en esta ronda" ──────────────────────────
+//
+// Para las rondas donde todo son duelos. Cinco líneas responden lo que en la
+// pestaña Duelos exige abrir seis desplegables, así que las dos vistas no
+// compiten: Duelos responde "¿qué juega CAV contra RAFA?" y esta responde "¿qué
+// se juega hoy y cuánto hay en total?".
+class _TypeSummarySection extends StatelessWidget {
+  final Round round;
+  final GolfTheme t;
+  const _TypeSummarySection({required this.round, required this.t});
+
+  /// Los módulos de duelo agrupados por tipo.
+  Map<BetModuleType, List<BetModuleInstance>> get _porTipo {
+    final out = <BetModuleType, List<BetModuleInstance>>{};
+    for (final g in round.betGroups) {
+      for (final m in g.modules) {
+        out.putIfAbsent(m.type, () => []).add(m);
+      }
+    }
+    return out;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final grupos = _porTipo;
+    if (grupos.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        GSectionHeader(title: 'SE JUEGA EN ESTA RONDA'),
+        const SizedBox(height: 4),
+        Text(
+            'Todas las apuestas de esta ronda son por duelo. Abre '
+            '«Duelos» para verlas una a una o editarlas.',
+            style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
+        const SizedBox(height: 10),
+        for (final e in grupos.entries) _fila(e.key, e.value),
+      ]),
+    );
+  }
+
+  Widget _fila(BetModuleType tipo, List<BetModuleInstance> mods) {
+    // Si dentro de un tipo hay importes distintos se DICE, en vez de mostrar uno
+    // y dejar creer que todos juegan lo mismo. Mismo criterio que el ×N de la
+    // ficha de familia.
+    final porImporte = <String, int>{};
+    for (final m in mods) {
+      porImporte[m.summaryLabel] = (porImporte[m.summaryLabel] ?? 0) + 1;
+    }
+    final uniforme = porImporte.length == 1;
+    final detalle = uniforme
+        ? porImporte.keys.first
+        : (porImporte.entries.toList()
+              ..sort((a, b) => b.value.compareTo(a.value)))
+            .map((x) => '${x.value} a ${x.key}')
+            .join(' · ');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.divider),
+      ),
+      child: Row(children: [
+        Text(tipo.icon, style: const TextStyle(fontSize: 18)),
+        const SizedBox(width: 11),
+        Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Text(tipo.label,
+                  style: TextStyle(
+                      color: t.text,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14.5)),
+              const SizedBox(height: 2),
+              Text(
+                  '${mods.length} duelo${mods.length == 1 ? '' : 's'} · $detalle',
+                  style: TextStyle(color: t.sub, fontSize: 12)),
+            ])),
+      ]),
     );
   }
 }
