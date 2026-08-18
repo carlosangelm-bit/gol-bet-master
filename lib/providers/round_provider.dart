@@ -254,6 +254,33 @@ class RoundProvider extends ChangeNotifier {
   AppThemeMode _themeMode = AppThemeMode.light;
   int _tabIndex = 0;
 
+  // ── Cifra héroe: de quién ──────────────────────────────────────────────────
+  //
+  // Cada pantalla debe responder UNA pregunta con una cifra grande arriba, y en
+  // Resultados esa pregunta es "¿cuánto gano o pierdo YO?". Para eso hay que
+  // saber quién es "yo".
+  //
+  // Orden de resolución:
+  //   1. el jugador vinculado a la cuenta, si existe
+  //   2. si no, se PREGUNTA una vez y se recuerda
+  //   3. nunca una pantalla sin héroe
+  //
+  // Vive en el provider y no en Round a propósito: es estado de SESIÓN, como
+  // _tabIndex. Meterlo en el modelo lo escribiría en Firestore y lo compartiría
+  // con los demás participantes, cuando es una preferencia de este teléfono.
+  //
+  // Y es lo que resuelve el caso real de pasarse el móvil entre el grupo para
+  // que cada uno vea lo suyo: se toca el héroe y se cambia.
+  String? _heroPlayerId;
+
+  /// De quién es la cifra héroe, si ya se sabe.
+  String? get heroPlayerId => _heroPlayerId;
+
+  void setHeroPlayer(String pid) {
+    _heroPlayerId = pid;
+    notifyListeners();
+  }
+
   // Stream de ronda en vivo
   StreamSubscription<Round?>? _liveRoundSub;
   // Flag para ignorar el próximo evento del stream (evitar eco)
@@ -296,6 +323,9 @@ class RoundProvider extends ChangeNotifier {
   // ── Round lifecycle ────────────────────────────────────────────────────────
   void startRound(Round r) {
     _round = r;
+    // Otra ronda, otros jugadores: arrastrar la elección mostraría el neto de
+    // alguien que no juega hoy.
+    _heroPlayerId = null;
     _tabIndex = 1;
     notifyListeners();
     _persist();

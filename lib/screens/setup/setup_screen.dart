@@ -6834,7 +6834,8 @@ class _StepBar extends StatelessWidget {
         color: t.bg,
         border: Border(bottom: BorderSide(color: t.divider)),
       ),
-      child: Row(children: List.generate(labels.length, (i) {
+      child: Column(children: [
+      Row(children: List.generate(labels.length, (i) {
         final active   = i == step;
         final done     = i < step;
         final inactive = i > step;
@@ -6857,15 +6858,27 @@ class _StepBar extends StatelessWidget {
                       color: active ? t.onPrimary : inactive ? t.sub : t.primary,
                       fontSize: 10, fontWeight: FontWeight.w800))),
             ),
-            const SizedBox(height: 3),
-            Text(labels[i], style: TextStyle(
-              color: active ? t.primary : done ? t.primary.withValues(alpha: 0.7) : t.sub,
-              fontSize: 9, fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-            )),
           ]),
           if (i < labels.length - 1) Expanded(child: Container(height: 1, color: done ? t.primary : t.divider)),
         ]));
       })),
+      // SOLO la etiqueta del paso actual.
+      //
+      // Antes se pintaban las diez y no caben en 390 px: salía "Qué se
+      // juegaDetalle" sin espacio. Con ocho ya iba justo, así que el problema
+      // crecía con cada paso nuevo.
+      //
+      // Los puntos numerados y los checks ya dicen dónde estás y cuánto falta;
+      // las otras nueve etiquetas no añadían nada y estorbaban.
+      const SizedBox(height: 6),
+      Text(
+        // Se dice también el número: "Paso 5 de 10" responde "cuánto falta" sin
+        // que haya que contar los puntos.
+        'Paso ${step + 1} de ${labels.length} · ${labels[step]}',
+        style: TextStyle(
+            color: t.primary, fontSize: 12, fontWeight: FontWeight.w700),
+      ),
+      ]),
     );
   }
 }

@@ -191,6 +191,22 @@ class _ResultsScreenState extends State<ResultsScreen> {
               p.linkedUserId == myUid && !p.isVirtual).firstOrNull
         : null;
     final iAmRegistered = myLinkedPlayer != null;
+
+    // ── De quién es la cifra héroe ─────────────────────────────────────────
+    //
+    // 1º el vinculado, 2º el que se eligió y se recordó. Si no hay ninguno, el
+    // héroe PREGUNTA en vez de adivinar: la app no sabe quién eres, así que lo
+    // pide una vez.
+    //
+    // Se descartó caer al "jugador que está anotando": _activePlayerId es estado
+    // local de la pantalla de captura, se pierde al salir y no está disponible
+    // aquí. Subirlo al provider sería más trabajo del que el caso justifica.
+    final heroe = myLinkedPlayer ??
+        (prov.heroPlayerId != null
+            ? round.realPlayers
+                .where((p) => p.id == prov.heroPlayerId)
+                .firstOrNull
+            : null);
     final adminFinished = prov.roundFinishedByAdmin;
 
     final cuerpo = Column(children: [
@@ -202,6 +218,18 @@ class _ResultsScreenState extends State<ResultsScreen> {
               onClose: () => _handleGuestClose(context, round, prov, iAmRegistered),
             ),
           _PGAHeader(round: round, t: t, g: g, prov: prov, onFinish: _confirmFinish),
+          // La cifra héroe: UNA pregunta respondida arriba y en grande.
+          //
+          // El podio mostraba los cuatro jugadores por igual, así que la
+          // pantalla apilaba varias respuestas sin declarar cuál es la
+          // principal. Aquí la pregunta es "¿cuánto gano o pierdo YO?".
+          _HeroNeto(
+            round: round,
+            jugador: heroe,
+            balance: heroe == null ? null : (balances[heroe.id] ?? 0),
+            t: t,
+            onElegir: (pid) => prov.setHeroPlayer(pid),
+          ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
@@ -2077,6 +2105,131 @@ class _LowHighTeamResultState extends State<_LowHighTeamResult> {
         ),
         ],
       ]),
+    );
+  }
+}
+
+
+// ── Cifra héroe de Resultados ───────────────────────────────────────────────
+//
+// Responde "¿cuánto gano o pierdo yo?" en una cifra grande, y subordina el resto
+// de la pantalla en vez de apilarlo todo al mismo tamaño.
+//
+// Es TOCABLE para cambiar de jugador, que resuelve el caso real de pasarse el
+// teléfono entre el grupo para que cada uno vea lo suyo.
+class _HeroNeto extends StatelessWidget {
+  final Round round;
+
+  /// De quién es la cifra. null = todavía no se sabe, y entonces se pregunta.
+  final Player? jugador;
+
+  final double? balance;
+  final GolfTheme t;
+  final void Function(String pid) onElegir;
+
+  const _HeroNeto({
+    required this.round,
+    required this.jugador,
+    required this.balance,
+    required this.t,
+    required this.onElegir,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Sin jugador resuelto se PREGUNTA, no se adivina ni se deja vacío. Una
+    // pantalla sin héroe vuelve al problema que esto viene a arreglar.
+    if (jugador == null) return _preguntar();
+
+    final b = balance ?? 0;
+    // El canal del dinero: cobrar y pagar nunca son el mismo color, y "en ceros"
+    // tiene su propio token porque es un resultado, no un dato ausente.
+    final color = b > 0 ? t.profit : (b < 0 ? t.loss : t.even);
+    final signo = b > 0 ? '+' : (b < 0 ? '−' : '');
+
+    return GestureDetector(
+      // Toda el área, no solo el número.
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _elegir(context),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+        child: Column(children: [
+          Text('$signo\$${b.abs().toStringAsFixed(0)}',
+              style: GolfType.hero(color)),
+          const SizedBox(height: 2),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Text(
+                b > 0
+                    ? 'COBRAS · ${jugador!.name.split(' ').first}'
+                    : b < 0
+                        ? 'PAGAS · ${jugador!.name.split(' ').first}'
+                        : 'EN CEROS · ${jugador!.name.split(' ').first}',
+                style: GolfType.label(t.sub)),
+            const SizedBox(width: 5),
+            // Que se puede cambiar tiene que VERSE, o nadie lo intenta.
+            Icon(Icons.unfold_more_rounded, size: 13, color: t.sub),
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  Widget _preguntar() => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('¿Cuál eres?', style: GolfType.title(t.text)),
+          const SizedBox(height: 2),
+          Text('Para mostrar tu neto arriba. Se recuerda durante la ronda.',
+              style: GolfType.label(t.sub)),
+          const SizedBox(height: 9),
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            for (final p in round.realPlayers)
+              GestureDetector(
+                onTap: () => onElegir(p.id),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: t.card,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: t.divider),
+                  ),
+                  child: Text(p.name.split(' ').first,
+                      style: GolfType.body(t.text)),
+                ),
+              ),
+          ]),
+        ]),
+      );
+
+  void _elegir(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 14),
+          Text('¿De quién es el neto?', style: GolfType.body(t.text)),
+          const SizedBox(height: 4),
+          Text('Para que cada uno vea lo suyo al pasarse el teléfono.',
+              style: GolfType.label(t.sub)),
+          const SizedBox(height: 10),
+          for (final p in round.realPlayers)
+            ListTile(
+              title: Text(p.name, style: GolfType.body(t.text)),
+              trailing: p.id == jugador?.id
+                  ? Icon(Icons.check, color: t.primary, size: 18)
+                  : null,
+              onTap: () {
+                onElegir(p.id);
+                Navigator.pop(ctx);
+              },
+            ),
+          const SizedBox(height: 10),
+        ]),
+      ),
     );
   }
 }
