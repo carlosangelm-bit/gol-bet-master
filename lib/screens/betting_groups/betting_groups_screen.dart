@@ -9,6 +9,7 @@ import '../../providers/betting_group_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/round_provider.dart';
 import '../../widgets/common_widgets.dart';
+import 'betting_group_card_menu.dart';
 import 'betting_group_editor_screen.dart';
 
 class BettingGroupsScreen extends StatelessWidget {
@@ -96,7 +97,7 @@ class BettingGroupsScreen extends StatelessWidget {
                         padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
                         itemCount: bgProv.groups.length,
                         itemBuilder: (ctx, i) => _groupCard(
-                            ctx, bgProv.groups[i], bgProv, t),
+                            ctx, bgProv.groups[i], t),
                       ),
           ),
         ]),
@@ -115,8 +116,7 @@ class BettingGroupsScreen extends StatelessWidget {
   }
 
   // ── Card de grupo ──────────────────────────────────────────────────────────
-  Widget _groupCard(BuildContext context, BettingGroup g,
-      BettingGroupProvider bgProv, GolfTheme t) {
+  Widget _groupCard(BuildContext context, BettingGroup g, GolfTheme t) {
     final playerProv = context.read<PlayerProvider>();
 
     // Nombre de jugadores del grupo
@@ -168,47 +168,8 @@ class BettingGroupsScreen extends StatelessWidget {
                       style: TextStyle(color: t.sub, fontSize: 12)),
               ],
             )),
-            // Menú
-            PopupMenuButton<String>(
-              icon: Icon(Icons.more_vert, color: t.sub, size: 20),
-              color: t.card,
-              onSelected: (v) async {
-                if (v == 'edit') {
-                  _openEditor(context, t, g);
-                } else if (v == 'dup') {
-                  await _duplicate(context, g, bgProv);
-                } else if (v == 'del') {
-                  await _confirmDelete(context, g, bgProv, t);
-                }
-              },
-              itemBuilder: (_) => [
-                PopupMenuItem(
-                  value: 'edit',
-                  child: Row(children: [
-                    Icon(Icons.edit_outlined, color: t.text, size: 16),
-                    const SizedBox(width: 8),
-                    Text('Editar', style: TextStyle(color: t.text)),
-                  ]),
-                ),
-                PopupMenuItem(
-                  value: 'dup',
-                  child: Row(children: [
-                    Icon(Icons.copy_outlined, color: t.text, size: 16),
-                    const SizedBox(width: 8),
-                    Text('Duplicar', style: TextStyle(color: t.text)),
-                  ]),
-                ),
-                PopupMenuItem(
-                  value: 'del',
-                  child: Row(children: [
-                    Icon(Icons.delete_outline, color: Colors.red, size: 16),
-                    const SizedBox(width: 8),
-                    const Text('Eliminar',
-                        style: TextStyle(color: Colors.red)),
-                  ]),
-                ),
-              ],
-            ),
+            // Menú de administración (componente compartido con Mis Plantillas).
+            BettingGroupCardMenu(group: g, t: t),
           ]),
 
           const SizedBox(height: 10),
@@ -358,56 +319,5 @@ class BettingGroupsScreen extends StatelessWidget {
         fullscreenDialog: true,
       ),
     );
-  }
-
-  Future<void> _duplicate(
-      BuildContext context, BettingGroup g, BettingGroupProvider bgProv) async {
-    final copy = g.copyWith(
-      id:        '',
-      name:      '${g.name} (copia)',
-      updatedAt: DateTime.now(),
-    );
-    await bgProv.save(copy);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Grupo duplicado: ${copy.name}'),
-          backgroundColor: Colors.green.shade700,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
-  Future<void> _confirmDelete(BuildContext context, BettingGroup g,
-      BettingGroupProvider bgProv, GolfTheme t) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: t.card,
-        title: Text('Eliminar grupo',
-            style: TextStyle(
-                color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
-        content: Text('¿Eliminar "${g.name}"? Esta acción no se puede deshacer.',
-            style: TextStyle(color: t.sub, fontSize: 13)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancelar', style: TextStyle(color: t.sub)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      await bgProv.delete(g.id);
-    }
   }
 }

@@ -12,6 +12,7 @@ import '../setup/quick_start_screen.dart';
 import '../setup/setup_flow.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/common_widgets.dart';
+import '../betting_groups/betting_group_card_menu.dart';
 
 class TemplatesScreen extends StatelessWidget {
   const TemplatesScreen({super.key});
@@ -564,6 +565,9 @@ class _GrupoCard extends StatelessWidget {
                         fontSize: 11.5,
                         fontWeight: FontWeight.w600)),
               ])),
+          // Administrar (menú compartido con la lista de grupos); el chevron
+          // de al lado sigue siendo "jugar".
+          BettingGroupCardMenu(group: grupo, t: t),
           Icon(Icons.chevron_right, color: t.sub, size: 20),
         ]),
       ),
