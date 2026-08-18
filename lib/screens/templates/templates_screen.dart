@@ -8,6 +8,8 @@ import '../../models/models.dart';
 import '../../providers/round_provider.dart';
 import '../../providers/betting_group_provider.dart';
 import '../setup/setup_screen.dart';
+import '../setup/quick_start_screen.dart';
+import '../setup/setup_flow.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/common_widgets.dart';
 
@@ -511,10 +513,14 @@ class _GrupoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      // Al ATAJO, no al wizard.
+      //
+      // Antes abría SetupScreen y aterrizaba en "paso 1 de 8" sin un check: la
+      // precarga funcionaba pero había que pulsar Siguiente seis veces
+      // confirmando lo que el grupo ya respondía. El wizard sigue a un toque,
+      // desde "Revisar todo".
       onTap: () => Navigator.of(context).push(MaterialPageRoute(
-        // El wizard aterriza en el primer paso que el grupo no responde, y se
-        // puede retroceder a cambiar lo precargado.
-        builder: (_) => SetupScreen(grupoInicial: grupo),
+        builder: (_) => QuickStartScreen(grupo: grupo),
       )),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
@@ -542,6 +548,21 @@ class _GrupoCard extends StatelessWidget {
                     '${grupo.activeRulesCount} duelos · '
                     '${grupo.totalModules} apuestas',
                     style: TextStyle(color: t.sub, fontSize: 12)),
+                const SizedBox(height: 3),
+                // Qué falta por decidir, no de qué TIPO es.
+                //
+                // "Grupo de apuesta" contra "plantilla de ronda" describe
+                // implementación; el usuario piensa "hoy juego con los del
+                // viernes". Lo que le permite decidir si tocar la tarjeta es
+                // saber qué queda pendiente, y eso además vuelve la distinción
+                // innecesaria en la etiqueta.
+                Text(
+                    faltaPorDecidir(preguntasPendientes(
+                        traeCampo: false, traeVentaja: false)),
+                    style: TextStyle(
+                        color: t.primary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600)),
               ])),
           Icon(Icons.chevron_right, color: t.sub, size: 20),
         ]),

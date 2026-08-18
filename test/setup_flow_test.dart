@@ -101,6 +101,7 @@ void main() {
 
   _cuenta();
   _desdeGrupo();
+  _atajo();
 
   test('todo paso tiene etiqueta', () {
     for (final s in SetupStep.values) {
@@ -205,6 +206,76 @@ void _desdeGrupo() {
         final pasos = setupSteps(porEquipos: eq, conCuenta: true);
         expect(pasos,
             contains(primerPasoSinResolver(pasos, resueltosPorGrupo())));
+      }
+    });
+  });
+}
+
+// ── Un punto de partida es un ATAJO, no un formulario prellenado ─────────────
+//
+// La precarga funcionaba pero se sentía igual que empezar de cero: la barra
+// mostraba "paso 1 de 8" sin un check y había que pulsar Siguiente seis veces
+// confirmando lo que el grupo ya respondía.
+//
+// Prellenar ahorra escribir pero se recorre igual. Un atajo lleva al final y
+// solo para donde falta algo.
+void _atajo() {
+  group('qué queda por decidir', () {
+    test('hoy: campo y ventaja, porque ningún modelo los guarda', () {
+      expect(preguntasPendientes(traeCampo: false, traeVentaja: false),
+          [SetupStep.campo, SetupStep.ventaja]);
+    });
+
+    test('con el campo guardado, solo la ventaja', () {
+      // Se CALCULA: el día que un punto de partida guarde el campo, la pantalla
+      // de arranque se acorta sola sin tocar nada.
+      expect(preguntasPendientes(traeCampo: true, traeVentaja: false),
+          [SetupStep.ventaja]);
+    });
+
+    test('con todo guardado, ninguna pregunta', () {
+      // Criterio 5. No es alcanzable en pantalla hoy —nada guarda campo Y
+      // ventaja— así que solo se puede fijar por test.
+      expect(preguntasPendientes(traeCampo: true, traeVentaja: true), isEmpty);
+    });
+
+    test('el orden respeta el del wizard', () {
+      // Campo antes que ventaja, como en el flujo completo: cambiar el orden
+      // entre las dos superficies desorientaría.
+      final p = preguntasPendientes(traeCampo: false, traeVentaja: false);
+      expect(p.map(SetupStep.values.indexOf).toList(),
+          [...p.map(SetupStep.values.indexOf)]..sort());
+    });
+  });
+
+  group('la frase de la tarjeta', () {
+    test('dice qué falta, no de qué tipo es', () {
+      // "Grupo de apuesta" contra "plantilla de ronda" describe implementación.
+      // Lo que permite decidir si tocarla es qué queda por decidir.
+      expect(
+          faltaPorDecidir(
+              preguntasPendientes(traeCampo: false, traeVentaja: false)),
+          'Falta elegir campo y ventaja');
+    });
+
+    test('en singular cuando falta una sola', () {
+      expect(faltaPorDecidir(preguntasPendientes(traeCampo: true, traeVentaja: false)),
+          'Solo falta la ventaja');
+    });
+
+    test('y lo dice cuando no falta nada', () {
+      expect(faltaPorDecidir(const []), 'Todo listo');
+    });
+
+    test('nunca queda vacía', () {
+      // Una tarjeta sin frase no dice si se puede tocar.
+      for (final c in [true, false]) {
+        for (final v in [true, false]) {
+          expect(
+              faltaPorDecidir(
+                  preguntasPendientes(traeCampo: c, traeVentaja: v)),
+              isNotEmpty);
+        }
       }
     });
   });

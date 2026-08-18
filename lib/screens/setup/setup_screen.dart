@@ -27,6 +27,24 @@ import '../../providers/betting_group_provider.dart';
 import '../betting_groups/betting_groups_screen.dart';
 
 class SetupScreen extends StatefulWidget {
+  /// Campo ya elegido en la pantalla de arranque rápido.
+  final CourseInfo? campoInicial;
+
+  /// Ventaja ya elegida en la pantalla de arranque rápido.
+  ///
+  /// Se pasa como texto —'handicap', 'sliding', 'ninguna'— para no exponer el
+  /// enum privado del State.
+  final String? ventajaInicial;
+
+  /// Si hay que lanzar la ronda al entrar, sin mostrar el wizard.
+  ///
+  /// Es lo que convierte un punto de partida guardado en un ATAJO: la pantalla
+  /// de arranque pregunta lo que falta y esta pantalla LANZA, reutilizando
+  /// _createAndStartRound. Un segundo camino de lanzamiento habría sido la
+  /// tercera vez en la sesión que dos rutas al mismo sitio se comportan
+  /// distinto.
+  final bool lanzarAlEntrar;
+
   /// Grupo de apuesta con el que arrancar, si se entró desde Plantillas.
   ///
   /// Un grupo guardado responde media configuración por adelantado: los
@@ -38,7 +56,13 @@ class SetupScreen extends StatefulWidget {
   /// responde y se puede retroceder a cambiar cualquier cosa.
   final BettingGroup? grupoInicial;
 
-  const SetupScreen({super.key, this.grupoInicial});
+  const SetupScreen({
+    super.key,
+    this.grupoInicial,
+    this.campoInicial,
+    this.ventajaInicial,
+    this.lanzarAlEntrar = false,
+  });
   @override State<SetupScreen> createState() => _SetupScreenState();
 }
 
@@ -374,6 +398,30 @@ class _SetupScreenState extends State<SetupScreen> {
       // lista y _precargarDesdeGrupo no lo duplica al recorrer playerIds.
       final bg = widget.grupoInicial;
       if (bg != null && mounted) _precargarDesdeGrupo(bg);
+
+      // Lo que ya respondió la pantalla de arranque.
+      if (widget.campoInicial != null) {
+        setState(() {
+          _selectedCourse = widget.campoInicial;
+          _autoAssignDefaultTee();
+        });
+      }
+      final v = widget.ventajaInicial;
+      if (v != null) {
+        setState(() => _ventaja = switch (v) {
+              'sliding' => _Ventaja.sliding,
+              'ninguna' => _Ventaja.ninguna,
+              _ => _Ventaja.handicap,
+            });
+      }
+
+      // Atajo: se lanza sin pasar por el wizard. Un frame más de espera para que
+      // el precargado y los tees hayan cuajado antes de construir la ronda.
+      if (widget.lanzarAlEntrar && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _launchRound(context);
+        });
+      }
     });
   }
 
@@ -448,9 +496,18 @@ class _SetupScreenState extends State<SetupScreen> {
       return;
     }
     _applyBettingGroup(bg);
-    // El aterrizaje se CALCULA de lo que el grupo resuelve, no se fija: el día
-    // que un grupo guarde campo, esto lleva a Ventaja sin tocar nada.
-    setState(() => _current = primerPasoSinResolver(_steps, resueltosPorGrupo()));
+    // Dónde queda el wizard.
+    //
+    // Con lanzarAlEntrar se va a Revisar: la hoja de vuelta de inicio se abre
+    // encima, y lo que se ve detrás es el resumen. Dejarlo en Campo mostraría
+    // "paso 1 de 8" un instante, que es exactamente la impresión que este atajo
+    // viene a quitar.
+    //
+    // Sin él, el aterrizaje se CALCULA de lo que el grupo resuelve: el día que
+    // un grupo guarde campo, lleva a Ventaja sin tocar nada.
+    setState(() => _current = widget.lanzarAlEntrar
+        ? SetupStep.revisar
+        : primerPasoSinResolver(_steps, resueltosPorGrupo()));
   }
 
   @override

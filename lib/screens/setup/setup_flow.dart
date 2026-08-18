@@ -137,3 +137,43 @@ SetupStep primerPasoSinResolver(
   // Todo resuelto: se va a revisar, que es donde se confirma.
   return pasos.last;
 }
+
+/// Lo que un punto de partida guardado deja sin responder.
+///
+/// Se CALCULA de lo que trae, no se fija. Hoy son Campo y Ventaja porque ningún
+/// modelo los guarda; el día que uno guarde el campo, esta función devuelve solo
+/// Ventaja y la pantalla de arranque se acorta sola.
+///
+/// Es la misma función que decidía el aterrizaje del wizard, usada para lo que
+/// de verdad hacía falta: en vez de llevar al primer paso sin responder —que por
+/// el orden es siempre Campo, o sea el paso 1— dice QUÉ preguntas quedan, para
+/// preguntar solo esas.
+///
+/// Un punto de partida es un ATAJO, no un formulario prellenado. Prellenar
+/// ahorra escribir pero se recorre igual; un atajo lleva al final y solo para
+/// donde falta algo.
+List<SetupStep> preguntasPendientes({
+  required bool traeCampo,
+  required bool traeVentaja,
+}) =>
+    [
+      if (!traeCampo) SetupStep.campo,
+      if (!traeVentaja) SetupStep.ventaja,
+    ];
+
+/// Frase corta de lo que falta, para la tarjeta.
+///
+/// Lo que permite decidir si tocar una tarjeta no es de qué TIPO es —"grupo de
+/// apuesta" contra "plantilla de ronda" describe implementación— sino qué queda
+/// por decidir. Y eso vuelve la distinción innecesaria en la etiqueta, porque
+/// queda expresada en lo concreto.
+String faltaPorDecidir(List<SetupStep> pendientes) {
+  if (pendientes.isEmpty) return 'Todo listo';
+  final nombres = pendientes.map((p) => switch (p) {
+        SetupStep.campo => 'campo',
+        SetupStep.ventaja => 'ventaja',
+        _ => setupStepLabel(p).toLowerCase(),
+      });
+  if (pendientes.length == 1) return 'Solo falta la ${nombres.first}';
+  return 'Falta elegir ${nombres.join(' y ')}';
+}
