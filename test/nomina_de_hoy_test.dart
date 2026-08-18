@@ -158,6 +158,8 @@ void main() {
     });
   });
 
+  _creados();
+
   group('los módulos de hoy', () {
     test('salen de la lista de hoy, no de la del grupo', () {
       final mods = _uniforme().toBetModuleInstancesForToday(
@@ -184,6 +186,66 @@ void main() {
             presentes: const [], betGroupId: 'bg', betGroupName: 'V',
           ),
           isEmpty);
+    });
+  });
+}
+
+// ── Un jugador creado se trata igual que un invitado ────────────────────────
+//
+// Criterio 3. Un jugador creado no tiene PairBetRule con nadie, exactamente
+// igual que alguien del directorio que no está en el grupo. No hace falta lógica
+// nueva: solo que pase por el mismo camino.
+void _creados() {
+  group('el jugador creado pasa por el mismo camino', () {
+    test('con patrón uniforme, lo hereda contra todos', () {
+      // 'nuevo_...' es el id que genera el arranque rápido. Para rulesForToday es
+      // simplemente un id que no está en playerIds: la misma rama del invitado.
+      const nuevo = 'nuevo_1737000000000';
+      final hoy = _uniforme().rulesForToday(const [cam, rafa, cav, nuevo]);
+      expect(hoy.length, 6);
+      final suyas =
+          hoy.where((r) => r.playerAId == nuevo || r.playerBId == nuevo);
+      expect(suyas.length, 3);
+      for (final r in suyas) {
+        expect(r.modules.single.nassauConfig!.frontValue, 50, reason: r.id);
+      }
+    });
+
+    test('sin patrón, entra sin apuestas igual que el invitado', () {
+      const nuevo = 'nuevo_1737000000001';
+      final hoy = _desigual().rulesForToday(const [cam, rafa, cav, nuevo]);
+      expect(hoy.any((r) => r.playerAId == nuevo || r.playerBId == nuevo),
+          isFalse);
+    });
+
+    test('no entra en el grupo guardado', () {
+      final g = _uniforme();
+      g.rulesForToday(const [cam, rafa, cav, 'nuevo_x']);
+      expect(g.playerIds, isNot(contains('nuevo_x')));
+      expect(g.playerIds.length, 3);
+    });
+
+    test('un creado y un invitado del directorio conviven', () {
+      // Los dos son "no habituales": la rama no distingue de dónde salieron, y
+      // no tiene por qué.
+      final hoy =
+          _uniforme().rulesForToday(const [cam, rafa, kawa, 'nuevo_y']);
+      expect(hoy.length, 6);
+      for (final id in [kawa, 'nuevo_y']) {
+        expect(hoy.where((r) => r.playerAId == id || r.playerBId == id).length,
+            3, reason: id);
+      }
+    });
+
+    test('más de 8 jugadores funciona: el límite es solo del wizard', () {
+      // Martes CGM tiene 9 y carga bien. El límite vive en dos gates de UI de
+      // SetupScreen, no en el modelo: aplicarlo aquí rompería ese caso.
+      final nueve = [
+        cam, rafa, cav,
+        for (var i = 0; i < 6; i++) 'extra_$i',
+      ];
+      final hoy = _uniforme().rulesForToday(nueve);
+      expect(hoy.length, 36, reason: 'los 36 cruces de nueve jugadores');
     });
   });
 }

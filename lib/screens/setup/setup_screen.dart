@@ -14,6 +14,7 @@ import '../../providers/round_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../services/golf_course_service.dart';
 import '../../widgets/common_widgets.dart';
+import '../../widgets/player_edit_sheet.dart';
 import '../../widgets/course_picker_sheet.dart';
 import '../../widgets/bet_module_edit_sheet.dart';
 import '../../services/firestore_service.dart';
@@ -45,6 +46,13 @@ class SetupScreen extends StatefulWidget {
   /// distinto.
   final bool lanzarAlEntrar;
 
+  /// Jugadores creados en el arranque rápido, que no están en el directorio.
+  ///
+  /// Sin esto se perderían: _precargarDesdeGrupo resuelve los ids contra el
+  /// directorio y omite los que no aparecen, así que un jugador nuevo entraría en
+  /// la nómina y desaparecería al llegar aquí, en silencio.
+  final List<Player>? jugadoresNuevos;
+
   /// Quiénes juegan HOY, si la pantalla de arranque lo ajustó.
   ///
   /// null = los habituales del grupo. Cuando viene, manda sobre playerIds: la
@@ -66,6 +74,7 @@ class SetupScreen extends StatefulWidget {
     super.key,
     this.grupoInicial,
     this.nominaInicial,
+    this.jugadoresNuevos,
     this.campoInicial,
     this.ventajaInicial,
     this.lanzarAlEntrar = false,
@@ -490,6 +499,14 @@ class _SetupScreenState extends State<SetupScreen> {
     setState(() {
       for (final id in nomina) {
         if (_players.any((p) => p.id == id)) continue;
+        // Creado en el arranque rápido: no está en el directorio y viene entero.
+        final nuevo =
+            widget.jugadoresNuevos?.where((x) => x.id == id).firstOrNull;
+        if (nuevo != null) {
+          _players.add(nuevo);
+          _assignDefaultTeeToPlayer(nuevo.id);
+          continue;
+        }
         final pw = dir.where((x) => x.player.id == id).firstOrNull;
         if (pw == null) continue; // ya no está en el directorio: se omite
         var player = pw.player.copyWith(name: pw.displayName);
@@ -1446,162 +1463,29 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
 
-  void _editPlayer(int idx, Player p, GolfTheme t) {
-    final nc = TextEditingController(text: p.name);
-    final hc = TextEditingController(text: p.handicapBase.toStringAsFixed(1));
-    // Tee actual del jugador
-    TeeInfo selectedTee = _teeOf(p.id);
-    final availableTees = _selectedApiCourse?.allTees ?? [];
-
-    showModalBottomSheet(context: context, backgroundColor: t.card, isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(builder: (ctx2, setSt) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx2).viewInsets.bottom + 24, left: 20, right: 20, top: 24),
-        child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Jugador', style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 16),
-          // Nombre
-          TextField(controller: nc, style: TextStyle(color: t.text),
-            decoration: InputDecoration(labelText: 'Nombre', fillColor: t.surface, filled: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.divider)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.divider)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.primary, width: 2)),
-              labelStyle: TextStyle(color: t.sub))),
-          const SizedBox(height: 12),
-          // HCP Index
-          TextField(controller: hc, keyboardType: const TextInputType.numberWithOptions(decimal: true), style: TextStyle(color: t.text),
-            decoration: InputDecoration(labelText: 'HCP Index', fillColor: t.surface, filled: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.divider)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.divider)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.primary, width: 2)),
-              labelStyle: TextStyle(color: t.sub),
-              helperText: availableTees.isNotEmpty
-                  ? 'HCP de juego se calculará según tu salida'
-                  : 'Handicap base del jugador',
-              helperStyle: TextStyle(color: t.sub, fontSize: 10))),
-
-          // ── Selector de salida (solo si hay campo con tees) ──────────
-          if (availableTees.isNotEmpty) ...[
-            const SizedBox(height: 16),
-
-            // Sección masculinos
-            if ((_selectedApiCourse?.maleTees ?? []).isNotEmpty) ...[
-              Text('TEEs MASCULINOS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
-              const SizedBox(height: 8),
-              Wrap(spacing: 8, runSpacing: 8, children: (_selectedApiCourse!.maleTees).map((tee) {
-                final cleanName = tee.teeName;
-                // Comparar por key (nombre + género) para evitar falsos positivos
-                final thisTeeKey = TeeInfo(name: cleanName, courseRating: tee.courseRating, slopeRating: tee.slopeRating, parTotal: tee.parTotal, gender: 'M').key;
-                final isSelected = selectedTee.key == thisTeeKey;
-                return GestureDetector(
-                  onTap: () => setSt(() => selectedTee = TeeInfo(
-                    name: cleanName,
-                    courseRating: tee.courseRating,
-                    slopeRating: tee.slopeRating,
-                    parTotal: tee.parTotal,
-                    gender: 'M',
-                  )),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: isSelected ? t.primary.withValues(alpha: 0.12) : t.surface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: isSelected ? t.primary : t.divider, width: isSelected ? 1.5 : 1),
-                    ),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Text(cleanName, style: TextStyle(color: isSelected ? t.primary : t.text, fontWeight: FontWeight.w700, fontSize: 13)),
-                      Text('CR ${tee.courseRating.toStringAsFixed(1)} / Slope ${tee.slopeRating}',
-                          style: TextStyle(color: isSelected ? t.primary.withValues(alpha: 0.7) : t.sub, fontSize: 10)),
-                    ]),
-                  ),
-                );
-              }).toList()),
-            ],
-
-            // Sección femeninos
-            if ((_selectedApiCourse?.femaleTees ?? []).isNotEmpty) ...[
-              const SizedBox(height: 14),
-              Text('TEEs FEMENINOS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
-              const SizedBox(height: 8),
-              Wrap(spacing: 8, runSpacing: 8, children: (_selectedApiCourse!.femaleTees).map((tee) {
-                final cleanName = tee.teeName;
-                final thisTeeKey = TeeInfo(name: cleanName, courseRating: tee.courseRating, slopeRating: tee.slopeRating, parTotal: tee.parTotal, gender: 'F').key;
-                final isSelected = selectedTee.key == thisTeeKey;
-                return GestureDetector(
-                  onTap: () => setSt(() => selectedTee = TeeInfo(
-                    name: cleanName,
-                    courseRating: tee.courseRating,
-                    slopeRating: tee.slopeRating,
-                    parTotal: tee.parTotal,
-                    gender: 'F',
-                  )),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: isSelected ? t.accent.withValues(alpha: 0.12) : t.surface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: isSelected ? t.accent : t.divider, width: isSelected ? 1.5 : 1),
-                    ),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Text(cleanName, style: TextStyle(color: isSelected ? t.accent : t.text, fontWeight: FontWeight.w700, fontSize: 13)),
-                      Text('CR ${tee.courseRating.toStringAsFixed(1)} / Slope ${tee.slopeRating}',
-                          style: TextStyle(color: isSelected ? t.accent.withValues(alpha: 0.7) : t.sub, fontSize: 10)),
-                    ]),
-                  ),
-                );
-              }).toList()),
-            ],
-            // Mostrar HCP de juego calculado
-            const SizedBox(height: 10),
-            Builder(builder: (_) {
-              final hcpIdx = double.tryParse(hc.text) ?? p.handicapBase;
-              final phcp = selectedTee.playingHandicap(hcpIdx);
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: t.primary.withValues(alpha: 0.07),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(children: [
-                  Icon(Icons.calculate_outlined, color: t.primary, size: 16),
-                  const SizedBox(width: 8),
-                  Text(
-                    'HCP de juego: ',
-                    style: TextStyle(color: t.sub, fontSize: 12),
-                  ),
-                  Text(
-                    '${phcp.toStringAsFixed(0)} strokes',
-                    style: TextStyle(color: t.primary, fontWeight: FontWeight.w800, fontSize: 14),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '(${hcpIdx.toStringAsFixed(1)} × ${selectedTee.slopeRating}/113 + ${(selectedTee.courseRating - selectedTee.parTotal).toStringAsFixed(1)})',
-                    style: TextStyle(color: t.sub, fontSize: 9),
-                  ),
-                ]),
-              );
-            }),
-          ],
-
-          const SizedBox(height: 20),
-          GPrimaryButton(label: 'Guardar', onTap: () {
-            final newHcp = double.tryParse(hc.text) ?? p.handicapBase;
-            setState(() {
-              _players[idx] = p.copyWith(
-                name: nc.text.trim().isEmpty ? 'Jugador ${idx+1}' : nc.text.trim(),
-                handicapBase: newHcp,
-              );
-              // Guardar tee seleccionado
-              _playerTees[p.id] = selectedTee;
-              // Recalcular HCPs manuales que dependían de auto
-              // (limpiar entradas que eran auto para que se recalculen)
-            });
-            Navigator.pop(ctx);
-          }),
-        ])),
-      )));
+  /// Abre EL formulario de jugador —el compartido— y aplica lo que devuelva.
+  ///
+  /// El cuerpo vivía aquí y se extrajo a showPlayerEditSheet cuando el atajo de
+  /// arranque necesitó crear jugadores: dos formularios divergen en cuanto
+  /// alguien añada un campo a uno de los dos.
+  ///
+  /// Lo que queda aquí es lo ÚNICO que era de esta pantalla: escribir el
+  /// resultado en _players y en _playerTees.
+  Future<void> _editPlayer(int idx, Player p, GolfTheme t) async {
+    final r = await showPlayerEditSheet(
+      context,
+      t: t,
+      nombreInicial: p.name,
+      handicapInicial: p.handicapBase,
+      teeInicial: _teeOf(p.id),
+      nombreFallback: 'Jugador ${idx + 1}',
+      apiCourse: _selectedApiCourse,
+    );
+    if (r == null || !mounted) return;
+    setState(() {
+      _players[idx] = p.copyWith(name: r.name, handicapBase: r.handicap);
+      _playerTees[p.id] = r.tee;
+    });
   }
 
   // ── STEP 2: Partidas y módulos (nuevo) ───────────────────────────────────

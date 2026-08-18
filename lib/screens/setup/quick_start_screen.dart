@@ -26,6 +26,7 @@ import '../../providers/round_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/course_picker_sheet.dart';
+import '../../widgets/player_edit_sheet.dart';
 import 'setup_flow.dart';
 import 'setup_screen.dart';
 
@@ -176,6 +177,18 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
     return 'Elige ${faltan.join(' y ')} para empezar.';
   }
 
+  /// Jugadores creados aquí mismo. No están en el directorio.
+  ///
+  /// Mismo comportamiento que el wizard, comprobado: _editPlayer solo escribía
+  /// en _players y _playerTees, sin tocar PlayerProvider ni Firestore. Un
+  /// jugador creado es LOCAL a la ronda por las dos rutas, así que crear desde
+  /// aquí no introduce una diferencia nueva.
+  ///
+  /// Que convenga guardarlos —un invitado de hoy suele repetir— es cierto, pero
+  /// cambiarlo aquí y no en el wizard sí crearía la divergencia que el criterio
+  /// 5 trata de evitar. Se deja igual y se dice.
+  final Map<String, Player> _creados = {};
+
   /// Quiénes juegan hoy. Los habituales marcados, y se puede invitar a alguien.
   Widget _bloqueNomina(GolfTheme t) {
     final dir = context.watch<PlayerProvider>().directory;
@@ -183,6 +196,8 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
     final pat = widget.grupo.patron;
 
     String nombre(String id) {
+      final creado = _creados[id];
+      if (creado != null) return creado.name;
       final pw = dir.where((x) => x.player.id == id).firstOrNull;
       return pw?.displayName ?? id;
     }
@@ -204,9 +219,34 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
         _filaJugador(t, nombre(id), true, habitual: false,
             onTap: () => setState(() => _hoy.remove(id))),
 
+      const SizedBox(height: 8),
+      Text('INVITAR A ALGUIEN MÁS', style: GolfType.label(t.sub)),
+      const SizedBox(height: 6),
+      Wrap(spacing: 6, runSpacing: 6, children: [
+        // Crear a alguien que no está en el directorio.
+        //
+        // Sin esto, que aparezca un amigo nuevo el sábado rompía el atajo: había
+        // que ir a "Revisar todo" y recorrer el wizard hasta el paso Jugadores.
+        // El mismo problema que el atajo resuelve, un nivel más abajo.
+        GestureDetector(
+          onTap: () => _crearJugador(t),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+            decoration: BoxDecoration(
+              color: t.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: t.primary.withValues(alpha: 0.45)),
+            ),
+            child: Text('+ Jugador nuevo',
+                style: GolfType.label(t.primary)
+                    .copyWith(fontWeight: FontWeight.w700)),
+          ),
+        ),
+      ]),
+
       if (invitables.isNotEmpty) ...[
-        const SizedBox(height: 8),
-        Text('INVITAR A ALGUIEN MÁS', style: GolfType.label(t.sub)),
+        const SizedBox(height: 10),
+        Text('DEL DIRECTORIO', style: GolfType.label(t.sub)),
         const SizedBox(height: 6),
         Wrap(spacing: 6, runSpacing: 6, children: [
           for (final x in invitables.take(12))
@@ -238,6 +278,45 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
             style: GolfType.label(t.danger)),
       ],
     ]);
+  }
+
+  /// Crea un jugador con EL formulario compartido.
+  ///
+  /// El mismo showPlayerEditSheet que usa el wizard, no una copia: dos
+  /// formularios divergen en cuanto alguien añada un campo a uno de los dos.
+  ///
+  /// Sin apiCourse: aquí el campo puede no estar elegido todavía, y pedir un tee
+  /// de un campo que no se ha decidido no significa nada. El tee se asigna solo
+  /// al construir la ronda, como con cualquier otro jugador.
+  /// No se aplica el límite de 8 del wizard, y es deliberado.
+  ///
+  /// Ese límite vive SOLO en dos gates de UI de SetupScreen —el botón de crear y
+  /// el de añadir del directorio—. Ni el modelo ni el motor limitan, y
+  /// _precargarDesdeGrupo tampoco lo comprueba: por eso Martes CGM carga sus 9
+  /// jugadores y funciona.
+  ///
+  /// Es una inconsistencia anterior a este encargo: el wizard no te deja LLEGAR
+  /// a 9 a mano, pero un grupo con 9 entra sin problema. Aplicar aquí el 8
+  /// rompería un caso que hoy funciona, así que no se aplica y se dice.
+  Future<void> _crearJugador(GolfTheme t) async {
+    final r = await showPlayerEditSheet(
+      context,
+      t: t,
+      nombreInicial: 'Jugador ${_hoy.length + 1}',
+      handicapInicial: 0,
+      teeInicial: TeeInfo.standard,
+      nombreFallback: 'Jugador ${_hoy.length + 1}',
+    );
+    if (r == null || !mounted) return;
+    final id = 'nuevo_${DateTime.now().microsecondsSinceEpoch}';
+    setState(() {
+      _creados[id] = Player(
+          id: id,
+          name: r.name,
+          handicapBase: r.handicap,
+          colorIndex: _hoy.length);
+      _hoy.add(id);
+    });
   }
 
   Widget _filaJugador(GolfTheme t, String nombre, bool dentro,
@@ -379,6 +458,9 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
         grupoInicial: widget.grupo,
         // La lista de HOY, no la de los habituales.
         nominaInicial: List.of(_hoy),
+        // Los que no están en el directorio: sin esto se caerían al precargar,
+        // porque _precargarDesdeGrupo los busca ahí y los omite si no aparecen.
+        jugadoresNuevos: _creados.values.toList(),
         campoInicial: _campo,
         ventajaInicial: _ventaja,
         lanzarAlEntrar: directo,
