@@ -1256,12 +1256,19 @@ class _UnitsSheetContent extends StatefulWidget {
 }
 
 class _UnitsSheetContentState extends State<_UnitsSheetContent> {
-  late final Map<UnitEventType, double> _localValues;
+  // Sin copia local de los montos, a propósito.
+  //
+  // Antes había un _localValues mutable: el monto se podía cambiar durante la
+  // ronda desde la tarjeta y esa copia ganaba sobre lo pactado en la apuesta.
+  // Dos fuentes de verdad para el mismo número.
+  //
+  // La tarjeta registra QUÉ unidad ocurrió; cuánto vale se configura en la
+  // apuesta. Misma distinción que scoreCarriersOf: una cosa es qué pasó y otra
+  // cuánto vale lo que pasó.
 
   @override
   void initState() {
     super.initState();
-    _localValues = Map<UnitEventType, double>.from(widget.values);
   }
 
   @override
@@ -1311,20 +1318,15 @@ class _UnitsSheetContentState extends State<_UnitsSheetContent> {
                 itemBuilder: (_, i) {
                   final evt     = UnitEventType.values[i];
                   final isActive = prov.hasEvent(widget.playerId, widget.hole, evt);
-                  final selVal  = _localValues[evt] ?? 25.0;
-                  final isCustom = !widget.quickValues.contains(selVal);
+                  // El monto viene de la apuesta y se MUESTRA, no se edita.
+                  final selVal = widget.values[evt] ?? 25.0;
 
                   return _UnitRow(
-                    evt: evt, isActive: isActive, selVal: selVal,
-                    isCustom: isCustom, quickValues: widget.quickValues, t: t,
+                    evt: evt, isActive: isActive, selVal: selVal, t: t,
                     onToggle: () {
                       context.read<RoundProvider>().toggleEvent(
                           widget.playerId, widget.hole, evt);
                       setState(() {});
-                    },
-                    onValueChange: (v) {
-                      setState(() => _localValues[evt] = v);
-                      widget.onValueChange(evt, v);
                     },
                   );
                 },
@@ -1348,16 +1350,12 @@ class _UnitRow extends StatelessWidget {
   final UnitEventType evt;
   final bool isActive;
   final double selVal;
-  final bool isCustom;
-  final List<double> quickValues;
   final GolfTheme t;
   final VoidCallback onToggle;
-  final void Function(double) onValueChange;
 
   const _UnitRow({
     required this.evt, required this.isActive, required this.selVal,
-    required this.isCustom, required this.quickValues, required this.t,
-    required this.onToggle, required this.onValueChange,
+    required this.t, required this.onToggle,
   });
 
   @override
@@ -1418,53 +1416,13 @@ class _UnitRow extends StatelessWidget {
             child: Row(children: [
               Text('Valor:', style: TextStyle(color: t.sub, fontSize: 11, fontWeight: FontWeight.w600)),
               const SizedBox(width: 8),
-              Expanded(child: Row(children: [
-                ...quickValues.map((v) {
-                  final isSel = selVal == v;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: GestureDetector(
-                      onTap: () => onValueChange(v),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 120),
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: isSel ? t.primary : t.card,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: isSel ? t.primary : t.divider, width: isSel ? 2 : 1),
-                        ),
-                        child: Text('\$${v.toStringAsFixed(0)}', style: TextStyle(
-                          color: isSel ? t.onPrimary : t.text,
-                          fontSize: 12, fontWeight: isSel ? FontWeight.w800 : FontWeight.w400,
-                        )),
-                      ),
-                    ),
-                  );
-                }),
-                GestureDetector(
-                  onTap: () => _showCustomDialog(context),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: isCustom ? t.primary : t.card,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: isCustom ? t.primary : t.divider, width: isCustom ? 2 : 1),
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.edit_outlined, size: 11, color: isCustom ? t.onPrimary : t.sub),
-                      const SizedBox(width: 3),
-                      Text(
-                        isCustom ? '\$${selVal.toStringAsFixed(0)}' : 'Otro',
-                        style: TextStyle(
-                          color: isCustom ? t.onPrimary : t.sub,
-                          fontSize: 12, fontWeight: isCustom ? FontWeight.w800 : FontWeight.w400,
-                        ),
-                      ),
-                    ]),
-                  ),
-                ),
-              ])),
+              // Se MUESTRA, no se edita: editarlo aquí creaba una segunda fuente
+              // de verdad que ganaba sobre lo pactado en la apuesta.
+              Text('\$${selVal.toStringAsFixed(0)}',
+                  style: TextStyle(color: t.text, fontSize: 13, fontWeight: FontWeight.w800)),
+              const Spacer(),
+              Text('se configura en la apuesta',
+                  style: TextStyle(color: t.sub, fontSize: 10)),
             ]),
           ),
         ],
@@ -1472,42 +1430,6 @@ class _UnitRow extends StatelessWidget {
     );
   }
 
-  void _showCustomDialog(BuildContext context) {
-    final ctrl = TextEditingController(text: isCustom ? selVal.toStringAsFixed(0) : '');
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: t.card,
-        title: Text('Valor personalizado',
-            style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 18),
-          textAlign: TextAlign.center,
-          decoration: InputDecoration(
-            hintText: 'Ej: 200', prefixText: '\$ ',
-            fillColor: t.surface, filled: true,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: t.divider)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: t.divider)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: t.primary, width: 2)),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancelar', style: TextStyle(color: t.sub))),
-          TextButton(
-            onPressed: () {
-              final v = double.tryParse(ctrl.text);
-              if (v != null && v > 0) { onValueChange(v); Navigator.pop(ctx); }
-            },
-            child: Text('OK', style: TextStyle(color: t.primary, fontWeight: FontWeight.w800)),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

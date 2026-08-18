@@ -70,6 +70,10 @@ class BetModuleEditSheet extends StatefulWidget {
 class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   late BetModuleInstance _current;
 
+  /// Campo "todas a este monto". Vive con los demás para sobrevivir al rebuild:
+  /// creado en el builder, el TextField perdía el controller con el foco puesto.
+  late final TextEditingController _unitAllCtrl;
+
   late final TextEditingController _skinCtrl;
   late final TextEditingController _nassauF, _nassauB, _nassauT;
   late final TextEditingController _matchM, _matchP;
@@ -130,6 +134,11 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       for (final e in UnitEventType.values)
         e: TextEditingController(text: m.units.valueFor(e).toStringAsFixed(0)),
     };
+    // Arranca vacío si los eventos no valen todos lo mismo: mostrar uno de los
+    // seis daría a entender que ese manda, y no manda ninguno.
+    final valores = UnitEventType.values.map(m.units.valueFor).toSet();
+    _unitAllCtrl = TextEditingController(
+        text: valores.length == 1 ? valores.first.toStringAsFixed(0) : '');
 
     // ── Inicializar estado de lados ─────────────────────────────────────────
     if (kDebugMode) {
@@ -181,6 +190,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _puttsCtrl.dispose();
     _oyesCtrl.dispose(); _zapatoCtrl.dispose();
     _lhSegCtrl.dispose(); _lhPointCtrl.dispose();
+    _unitAllCtrl.dispose();
     for (final c in _unitCtrls.values) {
       c.dispose();
     }
@@ -1621,6 +1631,77 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       const SizedBox(height: 4),
       Text('Cada jugador que logra el evento cobra este monto de cada rival.', style: TextStyle(color: t.sub, fontSize: 11)),
       const SizedBox(height: 12),
+
+      // ── Todas de golpe ────────────────────────────────────────────────────
+      //
+      // El caso común —"todas a $50"— exigía rellenar los seis campos uno a uno.
+      // La estructura ya lo soportaba: UnitsConfig.withAllEventsValue existe
+      // justo para esto, y los campos de abajo siguen sirviendo para desviar lo
+      // que haga falta, que un eagle suele valer más que un birdie.
+      //
+      // Es el mismo patrón del monto base con ajuste por enfrentamiento: el caso
+      // común en un campo, el detallado disponible.
+      Container(
+        padding: const EdgeInsets.all(11),
+        margin: const EdgeInsets.only(bottom: 14),
+        decoration: BoxDecoration(
+          color: t.primary.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+        ),
+        child: Row(children: [
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('Todas a este monto',
+                    style: TextStyle(
+                        color: t.text,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13)),
+                Text('Después puedes desviar las que quieras',
+                    style: TextStyle(color: t.sub, fontSize: 10)),
+              ])),
+          SizedBox(
+            width: 92,
+            child: TextField(
+              controller: _unitAllCtrl,
+              onChanged: (txt) {
+                final v = double.tryParse(txt);
+                if (v == null || v <= 0) return;
+                // Se escriben también los controllers de abajo: si no, los
+                // campos seguirían mostrando el valor viejo y no se sabría cuál
+                // manda.
+                for (final ev in UnitEventType.values) {
+                  _unitCtrls[ev]!.text = v.toStringAsFixed(0);
+                }
+                _update(_current.copyWith(
+                    unitsConfig: _current.units.withAllEventsValue(v)));
+              },
+              keyboardType: const TextInputType.numberWithOptions(decimal: false),
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                  color: t.text, fontWeight: FontWeight.w800, fontSize: 15),
+              decoration: InputDecoration(
+                prefixText: '\$ ',
+                prefixStyle: TextStyle(color: t.sub, fontSize: 11),
+                isDense: true,
+                filled: true,
+                fillColor: t.card,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(9),
+                    borderSide: BorderSide(color: t.divider)),
+                enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(9),
+                    borderSide: BorderSide(color: t.divider)),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(9),
+                    borderSide: BorderSide(color: t.primary, width: 1.5)),
+              ),
+            ),
+          ),
+        ]),
+      ),
       ...UnitEventType.values.map((e) => Padding(
         padding: const EdgeInsets.only(bottom: 10),
         child: Row(children: [
