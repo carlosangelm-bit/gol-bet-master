@@ -175,15 +175,31 @@ class GPrimaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = GolfThemeExt.current;
+    // Un botón sin acción tiene que VERSE sin acción.
+    //
+    // Antes pintaba t.primary siempre, así que uno deshabilitado se veía igual
+    // que uno activo: al pulsarlo no pasaba nada y parecía que la app no
+    // respondía, en vez de que faltaba algo por elegir.
+    //
+    // Está en el widget compartido y no en la pantalla donde se vio, porque el
+    // fallo era del widget: afectaba a todos los botones deshabilitados de la
+    // app, no solo al de empezar ronda.
+    final activo = onTap != null;
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        height: 52, width: double.infinity,
-        decoration: BoxDecoration(color: t.primary, borderRadius: BorderRadius.circular(12)),
-        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          if (icon != null) ...[Icon(icon, color: t.onPrimary, size: 18), const SizedBox(width: 8)],
-          Text(label, style: TextStyle(color: t.onPrimary, fontWeight: FontWeight.w700, fontSize: 16)),
-        ]),
+      child: Opacity(
+        opacity: activo ? 1 : 0.45,
+        child: Container(
+          height: 52, width: double.infinity,
+          decoration: BoxDecoration(
+            color: activo ? t.primary : t.sub,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            if (icon != null) ...[Icon(icon, color: t.onPrimary, size: 18), const SizedBox(width: 8)],
+            Text(label, style: TextStyle(color: t.onPrimary, fontWeight: FontWeight.w700, fontSize: 16)),
+          ]),
+        ),
       ),
     );
   }

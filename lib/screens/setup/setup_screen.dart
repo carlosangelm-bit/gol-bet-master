@@ -45,6 +45,12 @@ class SetupScreen extends StatefulWidget {
   /// distinto.
   final bool lanzarAlEntrar;
 
+  /// Quiénes juegan HOY, si la pantalla de arranque lo ajustó.
+  ///
+  /// null = los habituales del grupo. Cuando viene, manda sobre playerIds: la
+  /// lista de hoy no es la del grupo, y el grupo no se modifica.
+  final List<String>? nominaInicial;
+
   /// Grupo de apuesta con el que arrancar, si se entró desde Plantillas.
   ///
   /// Un grupo guardado responde media configuración por adelantado: los
@@ -59,6 +65,7 @@ class SetupScreen extends StatefulWidget {
   const SetupScreen({
     super.key,
     this.grupoInicial,
+    this.nominaInicial,
     this.campoInicial,
     this.ventajaInicial,
     this.lanzarAlEntrar = false,
@@ -477,8 +484,11 @@ class _SetupScreenState extends State<SetupScreen> {
   /// Deja el wizard con lo que el grupo ya sabe, y aterriza donde no llega.
   void _precargarDesdeGrupo(BettingGroup bg) {
     final dir = context.read<PlayerProvider>().directory;
+    // La nómina de HOY manda sobre los habituales: "a veces falta uno y va
+    // otro". El grupo guardado no se toca.
+    final nomina = widget.nominaInicial ?? bg.playerIds;
     setState(() {
-      for (final id in bg.playerIds) {
+      for (final id in nomina) {
         if (_players.any((p) => p.id == id)) continue;
         final pw = dir.where((x) => x.player.id == id).firstOrNull;
         if (pw == null) continue; // ya no está en el directorio: se omite
@@ -3215,8 +3225,11 @@ class _SetupScreenState extends State<SetupScreen> {
     // Generar el ID del grupo UNA sola vez para que todos los módulos compartan
     // el mismo betGroupId (evita el bug de doble llamada con UUIDs distintos).
     final bgId    = _uuid.v4();
-    final modules = bg.toBetModuleInstances(
-      presentIds:   presentIds,
+    // Los módulos de HOY: incluye al invitado que no estaba en el grupo, con el
+    // patrón derivado. toBetModuleInstances solo daba las reglas guardadas, así
+    // que un invitado entraba sin jugar nada.
+    final modules = bg.toBetModuleInstancesForToday(
+      presentes:    presentIds.toList(),
       betGroupId:   bgId,
       betGroupName: bg.name,
     );

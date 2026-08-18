@@ -3634,6 +3634,46 @@ class PairBetRule {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Qué juega un invitado que no estaba en el grupo.
+///
+/// El caso: "en algún grupo de apuesta es común que a veces falte uno y vaya
+/// otro". Quitar a alguien es limpio —sus reglas desaparecen y los demás quedan
+/// igual— pero AÑADIR no es simétrico: [PairBetRule] es por pareja concreta, así
+/// que quien no estaba no tiene regla con nadie y entraría sin jugar nada.
+///
+/// La forma que sí admite un invitado gratis existe ya en el modelo, en otro
+/// objeto: GamePreset guarda modulesJson SIN participantIds —la regla que
+/// aplica a todos— más pairAgreementsJson de excepciones. Un grupo no tiene esa
+/// separación, así que hay que DERIVARLA.
+///
+/// Se deriva comparando las plantillas de todos los cruces por su toJson: si
+/// todos juegan lo mismo, eso es el patrón y el invitado lo hereda contra todos.
+/// Si no coinciden, [uniforme] es false y NO se adivina — el grupo puede tener
+/// un Nassau de $50 entre cuatro y unas Skins de $200 entre otros dos, y elegir
+/// uno de los dos por mayoría sería inventarle al invitado un acuerdo que nadie
+/// pactó.
+///
+/// La otra opción sería que el invitado ocupara el sitio del que falta y
+/// heredara SUS reglas. Es lo que más se parece a "va otro en su lugar", pero
+/// exige saber a quién sustituye, y eso no se puede inferir de una lista de
+/// presentes: quitar a uno y añadir a otro es indistinguible de que el grupo
+/// crezca y encoja a la vez.
+class PatronDeGrupo {
+  /// true si todos los cruces con apuesta juegan exactamente lo mismo.
+  final bool uniforme;
+
+  /// Las plantillas del patrón. Vacía si no es uniforme.
+  final List<BetModuleTemplate> modules;
+
+  const PatronDeGrupo({required this.uniforme, required this.modules});
+
+  /// Por qué no se puede heredar, para decirlo en pantalla.
+  String? get motivo => uniforme
+      ? null
+      : 'Los duelos de este grupo no juegan todos lo mismo, así que no hay un '
+          'patrón que heredar. Añádele su apuesta en «Revisar todo».';
+}
+
 /// Grupo habitual de golf/apuestas.
 /// NO representa una ronda. Solo define el ecosistema de jugadores habituales
 /// y las reglas de apuesta que existen entre ellos por duelo.
@@ -3663,6 +3703,93 @@ class BettingGroup {
   /// Número total de módulos de apuesta en el grupo.
   int get totalModules =>
       pairRules.fold(0, (sum, r) => sum + r.modules.length);
+
+  /// Las reglas para la nómina de HOY, con los invitados incluidos.
+  ///
+  /// Devuelve una lista nueva; **no modifica el grupo**. Es donde esto se rompe
+  /// más fácil: reutilizar pairRules para la sesión de hoy haría que jugar sin
+  /// uno lo borrara del grupo para siempre. La lista de hoy es una copia, no una
+  /// edición.
+  ///
+  /// Los que estaban y siguen → sus reglas tal cual. Los que no vienen → sus
+  /// reglas desaparecen solas, porque [activeRulesFor] ya filtra por presentes.
+  /// Los invitados → el patrón del grupo contra todos los presentes, si hay
+  /// patrón; nada si no lo hay.
+  List<PairBetRule> rulesForToday(List<String> presentes) {
+    final set = presentes.toSet();
+    final habituales = playerIds.toSet();
+    final salida = List<PairBetRule>.of(activeRulesFor(set));
+
+    final invitados = presentes.where((p) => !habituales.contains(p)).toList();
+    if (invitados.isEmpty) return salida;
+
+    final pat = patron;
+    if (!pat.uniforme) return salida; // no se adivina: se dice en pantalla
+
+    // Un cruce por cada pareja que involucre a un invitado y que no exista ya.
+    final existentes = {for (final r in salida) r.pairKey};
+    for (var i = 0; i < presentes.length; i++) {
+      for (var j = i + 1; j < presentes.length; j++) {
+        final a = presentes[i], b = presentes[j];
+        if (!invitados.contains(a) && !invitados.contains(b)) continue;
+        final clave = ([a, b]..sort()).join('|');
+        if (existentes.contains(clave)) continue;
+        salida.add(PairBetRule(
+          id: 'hoy_$clave',
+          playerAId: a,
+          playerBId: b,
+          modules: List.of(pat.modules),
+        ));
+      }
+    }
+    return salida;
+  }
+
+  /// Los módulos para la nómina de HOY, invitados incluidos.
+  List<BetModuleInstance> toBetModuleInstancesForToday({
+    required List<String> presentes,
+    required String betGroupId,
+    required String betGroupName,
+  }) {
+    final result = <BetModuleInstance>[];
+    var counter = 0;
+    for (final rule in rulesForToday(presentes)) {
+      for (final tpl in rule.modules) {
+        result.add(tpl.toInstance(
+          id: '${betGroupId}_${rule.id}_${tpl.type.name}_$counter',
+          participantIds: [rule.playerAId, rule.playerBId],
+          betGroupId: '${betGroupId}_${rule.id}_${tpl.type.name}',
+          betGroupName: betGroupName,
+        ));
+        counter++;
+      }
+    }
+    return result;
+  }
+
+  /// El patrón que comparten todos los cruces con apuesta, si lo hay.
+  ///
+  /// Lo consume la pantalla de arranque rápido para saber qué darle a un
+  /// invitado que no estaba en el grupo.
+  PatronDeGrupo get patron {
+    final conApuesta = pairRules.where((r) => r.modules.isNotEmpty).toList();
+    if (conApuesta.isEmpty) {
+      return const PatronDeGrupo(uniforme: false, modules: []);
+    }
+    // La firma de un cruce: sus plantillas serializadas y ordenadas, para que
+    // el ORDEN en que se guardaron no haga parecer distintos dos cruces iguales.
+    String firma(PairBetRule r) {
+      final fs = r.modules.map((m) => m.toJson().toString()).toList()..sort();
+      return fs.join('||');
+    }
+
+    final primera = firma(conApuesta.first);
+    final todos = conApuesta.every((r) => firma(r) == primera);
+    return PatronDeGrupo(
+      uniforme: todos,
+      modules: todos ? List.of(conApuesta.first.modules) : const [],
+    );
+  }
 
   /// Reglas activas dado el conjunto de jugadores presentes.
   List<PairBetRule> activeRulesFor(Set<String> presentIds) =>
