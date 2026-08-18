@@ -334,8 +334,18 @@ class _EditTemplateSheetState extends State<_EditTemplateSheet> {
 class SaveTemplateDialog extends StatefulWidget {
   final List<BetGroup> betGroups;
   final List<Player> players;
+
+  /// Campo de la ronda actual, para poder incluirlo. null si no hay.
+  final String? courseName;
+
   final GolfTheme t;
-  const SaveTemplateDialog({required this.betGroups, required this.players, required this.t, super.key});
+  const SaveTemplateDialog({
+    required this.betGroups,
+    required this.players,
+    required this.t,
+    this.courseName,
+    super.key,
+  });
   @override State<SaveTemplateDialog> createState() => _SaveTemplateDialogState();
 }
 
@@ -344,6 +354,16 @@ class _SaveTemplateDialogState extends State<SaveTemplateDialog> {
   final _descCtrl = TextEditingController();
   String _emoji = '⛳️';
   bool _saving = false;
+
+  /// Incluir el campo. Apagado por defecto.
+  ///
+  /// Es la UNICA decision que separaba "plantilla de ronda" de "grupo de
+  /// apuesta", y ahora es una casilla en vez de dos conceptos. Quien juega
+  /// siempre en el mismo campo la marca; quien rota entre campos, no.
+  ///
+  /// Apagado por defecto porque incluirlo es lo mas restrictivo: una
+  /// plantilla con campo sirve para menos rondas que una sin el.
+  bool _conCampo = false;
   static const _emojis = ['⛳️','🏌️','🏆','💰','🎯','🃏','⚡️','🔥','💎','🎖️','🥇','🤝'];
 
   @override
@@ -354,6 +374,33 @@ class _SaveTemplateDialogState extends State<SaveTemplateDialog> {
       title: Text('Guardar plantilla', style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
       content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Guarda esta configuración para usarla en futuras rondas.', style: TextStyle(color: t.sub, fontSize: 13)),
+        if (widget.courseName != null) ...[
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => setState(() => _conCampo = !_conCampo),
+            child: Row(children: [
+              Icon(
+                  _conCampo
+                      ? Icons.check_box_rounded
+                      : Icons.check_box_outline_blank_rounded,
+                  color: _conCampo ? t.primary : t.divider,
+                  size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text('Incluir el campo',
+                        style: TextStyle(color: t.text, fontSize: 13.5)),
+                    Text(
+                        _conCampo
+                            ? widget.courseName!
+                            : 'Se elegirá al empezar cada ronda',
+                        style: TextStyle(color: t.sub, fontSize: 11.5)),
+                  ])),
+            ]),
+          ),
+        ],
         const SizedBox(height: 16),
         // Emoji
         Wrap(spacing: 8, children: _emojis.map((e) => GestureDetector(
@@ -418,6 +465,7 @@ class _SaveTemplateDialogState extends State<SaveTemplateDialog> {
       playerNames: widget.players.map((p) => p.name).toList(),
       betGroupsJson: widget.betGroups.map((g) => g.toJson()).toList(),
       updatedAt: DateTime.now(),
+      courseName: _conCampo ? widget.courseName : null,
     );
     await FirestoreService.saveTemplate(template);
     if (mounted) {

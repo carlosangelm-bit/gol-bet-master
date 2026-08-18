@@ -1187,6 +1187,20 @@ class _EmptyView extends StatelessWidget {
                     ),
                   ),
 
+                // ── LA puerta a los puntos de partida guardados ──────────
+                //
+                // Una sola, y en Home: es donde se empieza una ronda. Ajustes es
+                // donde se configura la app, no donde se arranca a jugar.
+                //
+                // Detrás hay dos modelos —RoundTemplate y BettingGroup— y
+                // ninguno es superconjunto del otro: la plantilla puede guardar
+                // apuestas por EQUIPOS y el grupo no; el grupo guarda
+                // REFERENCIAS a jugadores y la plantilla solo nombres. Fundirlos
+                // sin pérdida pediría un tercer modelo y migrar los dos.
+                //
+                // Así que la unificación es de PRESENTACIÓN: una lista, una
+                // acción de guardar. El usuario no distingue, que es lo que
+                // importa; por dentro cada uno sigue guardándose como sabe.
                 // Botón secundario – Usar plantilla
                 SizedBox(
                   width: double.infinity,
@@ -1203,7 +1217,7 @@ class _EmptyView extends StatelessWidget {
                     ),
                     icon: Icon(Icons.library_books_outlined, size: 18, color: t.primary),
                     label: Text(
-                      'Usar plantilla',
+                      'Lo de siempre',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
@@ -2294,7 +2308,14 @@ class _ActiveRoundView extends StatelessWidget {
     final round = prov.round!;
     await showDialog(
       context: context,
-      builder: (_) => SaveTemplateDialog(betGroups: round.betGroups, players: round.players, t: t),
+      builder: (_) => SaveTemplateDialog(
+        betGroups: round.betGroups,
+        players: round.players,
+        // El campo de la ronda, para que la casilla "incluir el campo" tenga
+        // qué incluir. Antes ningún punto de partida guardado lo guardaba.
+        courseName: round.course.name,
+        t: t,
+      ),
     );
   }
 

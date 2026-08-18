@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../templates/templates_screen.dart';
 import '../../providers/round_provider.dart';
 import '../../providers/user_profile_provider.dart';
 import '../../services/user_profile_service.dart';
@@ -2016,9 +2017,15 @@ class _BettingGroupsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GCard(
       child: GestureDetector(
+        // Redirige a LA puerta única.
+        //
+        // Los grupos de apuesta se ven donde se empieza una ronda, no en
+        // Ajustes: aquí se configura la app. Esta tarjeta se queda porque quien
+        // ya sabía que estaba aquí no debe encontrarse con nada, pero lleva al
+        // mismo sitio que Home.
         onTap: () => Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const BettingGroupsScreen()),
+          MaterialPageRoute(builder: (_) => const TemplatesScreen()),
         ),
         child: Row(children: [
           Container(
@@ -2032,7 +2039,7 @@ class _BettingGroupsCard extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-            Text('Grupos de apuesta',
+            Text('Lo de siempre',
                 style: TextStyle(color: t.text,
                     fontWeight: FontWeight.w700, fontSize: 14)),
             Text('Apuestas automáticas para círculos habituales',

@@ -485,6 +485,18 @@ class RoundTemplate {
   final DateTime updatedAt;
   final int useCount;          // Veces usado
 
+  /// Nombre del campo, si se decidió incluirlo al guardar.
+  ///
+  /// OPCIONAL a propósito. Hasta ahora ningún punto de partida guardado —ni
+  /// plantilla ni grupo de apuesta— guardaba campo, así que "incluir el campo"
+  /// no tenía nada que incluir.
+  ///
+  /// Quien juega siempre en el mismo campo lo marca; quien rota entre Malanquín
+  /// y México, no. Y null significa exactamente eso: no se pidió, no que se
+  /// haya perdido. Las plantillas guardadas antes de que existiera el campo lo
+  /// tienen null y se comportan igual que siempre.
+  final String? courseName;
+
   const RoundTemplate({
     required this.id,
     required this.name,
@@ -494,12 +506,13 @@ class RoundTemplate {
     required this.betGroupsJson,
     required this.updatedAt,
     this.useCount = 0,
+    this.courseName,
   });
 
   RoundTemplate copyWith({
     String? id, String? name, String? emoji, String? description,
     List<String>? playerNames, List<Map<String, dynamic>>? betGroupsJson,
-    DateTime? updatedAt, int? useCount,
+    DateTime? updatedAt, int? useCount, String? courseName,
   }) => RoundTemplate(
     id:            id ?? this.id,
     name:          name ?? this.name,
@@ -509,6 +522,7 @@ class RoundTemplate {
     betGroupsJson: betGroupsJson ?? this.betGroupsJson,
     updatedAt:     updatedAt ?? this.updatedAt,
     useCount:      useCount ?? this.useCount,
+    courseName:    courseName ?? this.courseName,
   );
 
   /// Reconstruir BetGroups desde la plantilla
@@ -524,6 +538,9 @@ class RoundTemplate {
     'betGroupsJson': betGroupsJson,
     'updatedAt':     FieldValue.serverTimestamp(),
     'useCount':      useCount,
+    // Solo se escribe si se pidió: el default no ensucia lo guardado, y una
+    // plantilla vieja releída sigue teniendo null.
+    if (courseName != null) 'courseName': courseName,
   };
 
   factory RoundTemplate.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -539,6 +556,9 @@ class RoundTemplate {
           .toList(),
       updatedAt:  (d['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       useCount:    (d['useCount'] as int?) ?? 0,
+      // Ausente en todo lo guardado antes de que el campo existiera: null, que
+      // significa "no se pidió", y se comporta igual que siempre.
+      courseName:  d['courseName'] as String?,
     );
   }
 }
