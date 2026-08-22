@@ -102,6 +102,31 @@ class BetTypeRules {
   /// injugable en una ronda de cuatro personas.
   ///
   /// Se resuelve en UN sitio: [Round.participantesDe].
+  ///
+  /// ── Por qué también lo llevan Unidades, Medal y Putts ─────────────────────
+  ///
+  /// Lo llevaban los tres formatos nuevos y se midió si los individuales viejos
+  /// tenían el mismo problema. Lo tenían, desde antes, y nadie lo había visto
+  /// porque nadie había añadido un formato individual a una ronda por equipos:
+  ///
+  ///   · Unidades COBRABA A LOS EQUIPOS. En una ronda best ball, un birdie de
+  ///     CAM producía `bb_A → cam \$50` y `bb_B → cam \$50`: dos asientos contra
+  ///     entidades que no juegan, así que los importes no cuadraban con lo que
+  ///     se pagó en el campo.
+  ///   · Medal y Putts liquidaban CERO. Necesitan score de todos los
+  ///     participantes, y los virtuales no lo tienen en best ball. Peor que mal:
+  ///     la apuesta aparecía configurada, con su monto, y no pagaba nada.
+  ///
+  /// No es la decisión de retirar Match + Press. Aquello era catálogo —un tipo
+  /// redundante que dejaba de ofrecerse— sin efecto sobre el dinero de nadie.
+  /// Esto corrige dinero MAL CALCULADO, así que el argumento de "cambia números
+  /// de rondas ya jugadas" pesa menos: los números actuales están mal y
+  /// cambiarlos es corregirlos.
+  ///
+  /// Consecuencia que hay que saber: el balance de una ronda pasada se recalcula
+  /// al abrirla, así que sale corregido solo. Lo que NO se recalcula solo es el
+  /// `RoundResult` guardado que alimenta el tablero de Inicio —se escribió al
+  /// cerrar, con los números viejos—. Para eso está el backfill del Historial.
   final bool soloPersonas;
 
   /// Cuántos jugadores necesita EXACTAMENTE. Null = cualquier número.
@@ -151,24 +176,34 @@ extension BetModuleTypeRules on BetModuleType {
                 'son cómo se reparte el importe del duelo.',
           ),
         BetModuleType.medal => const BetTypeRules(
+            soloPersonas: true,
             perPairAmount: true,
             sinEquipos: 'Medal aún no tiene semántica de equipo: se liquidaría '
                 'como duelos individuales entre todos.',
             sinSegmentos: 'Medal ya elige entre 9 y 18 hoyos en su detalle.',
           ),
         BetModuleType.putts => const BetTypeRules(
+            soloPersonas: true,
             perPairAmount: true,
             sinEquipos: 'Putts aún no tiene semántica de equipo: se liquidaría '
                 'como duelos individuales entre todos.',
             sinSegmentos: 'Putts ya elige entre total y hoyo a hoyo en su detalle.',
           ),
         BetModuleType.oyeses => const BetTypeRules(
+            // Oyes ya se comportaba bien —medido: 6 asientos y ninguno contra un
+            // equipo, porque el ranking solo contiene personas— y lleva la marca
+            // igual. No por simetría: dejar UNO de los siete formatos sin
+            // semántica de equipo sin declararse es exactamente la incoherencia
+            // que produjo los cuatro hallazgos, y bastaría con que un día el
+            // ranking se rellenara desde otro sitio para reproducirla.
+            soloPersonas: true,
             perPairAmount: true,
             sinEquipos: 'Los oyeses son de tiro individual: no hay bola de '
                 'equipo que comparar.',
             sinSegmentos: 'Se juegan en los par 3, que no caen por vuelta.',
           ),
         BetModuleType.units => const BetTypeRules(
+            soloPersonas: true,
             perPairAmount: true,
             sinEquipos: 'Las unidades premian un logro individual —birdie, '
                 'eagle, sandy— que no se atribuye a un equipo.',

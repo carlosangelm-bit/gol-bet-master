@@ -119,6 +119,8 @@ BetModuleInstance _mod(Round r, BetModuleType t) =>
     r.betGroups.first.modules.firstWhere((m) => m.type == t);
 
 void main() {
+  _individualesViejos();
+
   group('1 · el conteo de hoyos pendientes descuenta lo capturado', () {
     test('con 2 de 18 capturados quedan 16, no 18', () {
       // El hallazgo tal como se reportó.
@@ -297,6 +299,182 @@ void main() {
       final nassau = _mod(r, BetModuleType.nassau);
       expect(r.participantesDe(nassau, seisDelGrupo),
           nassau.effectivePids(seisDelGrupo));
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOS INDIVIDUALES VIEJOS: MISMA CAUSA, DESDE ANTES
+//
+// Se midieron porque el hallazgo de los side bets abría la pregunta —si los
+// nuevos tenían esto, ¿los viejos también?— y la tenían. Nadie lo había visto
+// porque nadie había añadido un formato individual a una ronda por equipos.
+//
+// Los números de esta sección son los que MEDÍ con el código anterior, no
+// inventados:
+//
+//   oyeses: 6 asientos, 0 con equipo      ← ya era correcto
+//   units:  5 asientos, 2 con equipo      ← bb_A → cam $50, bb_B → cam $50
+//   medal:  0 asientos                    ← no liquidaba nada
+//   putts:  0 asientos                    ← no liquidaba nada
+//
+// Ninguno de los 1078 tests existentes falló al marcarlos. Eso no significa que
+// el comportamiento estuviera bendecido: significa que nadie lo había probado.
+// ─────────────────────────────────────────────────────────────────────────────
+void _individualesViejos() {
+  /// Ronda best ball con los cuatro individuales añadidos como side bets.
+  ///
+  /// CAM hace 3 en todos los hoyos y un putt; los demás 4 y dos putts. Así hay
+  /// un ganador claro en medal y en putts, y un birdie en el hoyo 2.
+  Round conIndividuales() {
+    final course = CourseInfo(
+        name: 'T',
+        holes: List.generate(18,
+            (i) => CourseHole(hole: i + 1, par: i == 0 ? 3 : 4, strokeIndex: i + 1)));
+    return Round(
+      id: 'r', name: 'R', course: course,
+      players: [
+        ...reales.map((i) => Player(id: i, name: i.toUpperCase())),
+        Player(id: eqA, name: 'Equipo A', isVirtual: true,
+            teamMemberIds: const [cam, cav]),
+        Player(id: eqB, name: 'Equipo B', isVirtual: true,
+            teamMemberIds: const [aam, rafa]),
+      ],
+      roundPlayers: seisDelGrupo
+          .map((i) => RoundPlayer(playerId: i, handicapEnRonda: 0))
+          .toList(),
+      betGroups: [
+        BetGroup(
+            id: 'g', name: 'G',
+            format: PartidaFormat.allInOnePot,
+            playerIds: seisDelGrupo,
+            modules: [
+              for (final t in [
+                BetModuleType.oyeses,
+                BetModuleType.units,
+                BetModuleType.medal,
+                BetModuleType.putts,
+              ])
+                BetModuleInstance.defaultFor(t, seisDelGrupo, id: t.name),
+            ]),
+      ],
+      scores: {
+        for (final p in reales)
+          p: {
+            for (var h = 1; h <= 18; h++)
+              h: HoleScore(
+                  playerId: p, hole: h,
+                  grossScore: p == cam ? 3 : 4,
+                  putts: p == cam ? 1 : 2),
+          },
+        eqA: const {}, eqB: const {},
+      },
+      events: {
+        cam: {2: [HoleEvent(playerId: cam, hole: 2, type: UnitEventType.birdie)]}
+      },
+      oyeseRankings: {1: OyeseRanking(hole: 1, ranking: reales)},
+      sliding: const [],
+      createdAt: DateTime(2026, 1, 1), totalHoles: 18,
+    );
+  }
+
+  List<LedgerEntry> deTipo(Round r, BetModuleType t) =>
+      BetEngine.computeAll(r).where((x) => x.betType == t).toList();
+
+  group('6 · ningún asiento contra un jugador virtual', () {
+    test('Unidades ya no cobra a los equipos', () {
+      // Eran DOS asientos: bb_A → cam \$50 y bb_B → cam \$50, por el birdie del
+      // hoyo 2. Dinero cargado a entidades que no juegan.
+      final e = deTipo(conIndividuales(), BetModuleType.units);
+      expect(e, isNotEmpty, reason: 'sin asientos el test pasaría por ausencia');
+      for (final x in e) {
+        expect([x.fromPlayerId, x.toPlayerId], isNot(contains(eqA)));
+        expect([x.fromPlayerId, x.toPlayerId], isNot(contains(eqB)));
+      }
+    });
+
+    test('y el birdie lo pagan los TRES rivales reales', () {
+      // El número concreto: antes eran 5 asientos —tres reales y dos equipos—.
+      final e = deTipo(conIndividuales(), BetModuleType.units)
+          .where((x) => x.reason.contains('Birdie'));
+      expect(e, hasLength(3));
+      expect(e.every((x) => x.toPlayerId == cam), isTrue);
+    });
+
+    test('ninguno de los cuatro individuales toca un virtual', () {
+      final r = conIndividuales();
+      for (final t in [BetModuleType.oyeses, BetModuleType.units,
+        BetModuleType.medal, BetModuleType.putts]) {
+        for (final x in deTipo(r, t)) {
+          expect([x.fromPlayerId, x.toPlayerId], isNot(contains(eqA)),
+              reason: '${t.label}: ${x.reason}');
+          expect([x.fromPlayerId, x.toPlayerId], isNot(contains(eqB)),
+              reason: '${t.label}: ${x.reason}');
+        }
+      }
+    });
+  });
+
+  group('7 · Medal y Putts liquidan en una ronda por equipos', () {
+    test('Medal paga: antes daba CERO asientos', () {
+      // El caso peor que "mal": la apuesta aparecía configurada, con su monto, y
+      // no pagaba nada. El usuario creía jugar algo que no existía.
+      final e = deTipo(conIndividuales(), BetModuleType.medal);
+      expect(e, isNotEmpty);
+      expect(e.every((x) => x.toPlayerId == cam), isTrue,
+          reason: 'CAM hace 3 en todos los hoyos: gana el medal');
+    });
+
+    test('Putts paga: antes daba CERO asientos', () {
+      final e = deTipo(conIndividuales(), BetModuleType.putts);
+      expect(e, isNotEmpty);
+      expect(e.every((x) => x.toPlayerId == cam), isTrue,
+          reason: 'CAM hace un putt por hoyo');
+    });
+
+    test('Oyes sigue igual: ya era correcto, y no se rompe', () {
+      // Medí 6 asientos y 0 con equipo antes del cambio. Es el contrapeso: si el
+      // filtro hubiera alterado lo que ya funcionaba, aquí se vería.
+      final e = deTipo(conIndividuales(), BetModuleType.oyeses);
+      expect(e, hasLength(6), reason: 'C(4,2) duelos entre los cuatro reales');
+    });
+
+    test('la suma de cada tipo es cero: el dinero no se crea ni se pierde', () {
+      // Con los equipos dentro, Medal y Putts sumaban cero por no emitir NADA.
+      // Ahora suma cero por estar cuadrado, que es distinto.
+      final r = conIndividuales();
+      for (final t in [BetModuleType.oyeses, BetModuleType.units,
+        BetModuleType.medal, BetModuleType.putts]) {
+        final e = deTipo(r, t);
+        var suma = 0.0;
+        for (final x in e) {
+          suma += x.amount; // sale de uno
+          suma -= x.amount; // entra en otro
+        }
+        expect(suma.abs() < 0.01, isTrue, reason: t.label);
+        expect(e, isNotEmpty, reason: '${t.label} no emite nada');
+      }
+    });
+  });
+
+  group('8 · la tabla queda coherente', () {
+    test('los siete formatos sin semántica de equipo se declaran de personas', () {
+      // La regla completa, no una lista de los que se acordaron. Un tipo que
+      // dice "no tiene semántica de equipo" y no marca soloPersonas es
+      // exactamente la incoherencia que produjo los cuatro hallazgos.
+      for (final t in creatableBetTypes) {
+        final r = t.rules;
+        if (r.teams || r.requiresTeams) continue;
+        expect(r.soloPersonas, isTrue,
+            reason: '${t.label} no admite equipos y no se declara de personas');
+      }
+    });
+
+    test('y los que SÍ tienen semántica de equipo no la llevan', () {
+      for (final t in creatableBetTypes) {
+        if (!t.rules.teams) continue;
+        expect(t.rules.soloPersonas, isFalse, reason: t.label);
+      }
     });
   });
 }
