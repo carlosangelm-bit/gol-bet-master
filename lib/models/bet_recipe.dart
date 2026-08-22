@@ -30,7 +30,7 @@ import 'models.dart';
 /// Los nombres son los que usa el grupo, no los del modelo: Oyes y Unidades,
 /// no "oyeses" y "units". Un nombre que hay que traducir mentalmente ya cuesta
 /// un paso.
-enum BetCount { puntos, skins, scoreTotal, putts, oyes, unidades, snake, rabbit }
+enum BetCount { puntos, skins, scoreTotal, putts, oyes, unidades, snake, rabbit, wolf }
 
 /// Si la apuesta se parte en sub-apuestas.
 ///
@@ -108,6 +108,7 @@ extension BetCountLabel on BetCount {
       BetCount.unidades => 'Unidades',
       BetCount.snake => 'Snake',
       BetCount.rabbit => 'Rabbit',
+      BetCount.wolf => 'Wolf',
       BetCount.puntos => 'Match', // inalcanzable
     };
   }
@@ -132,6 +133,7 @@ extension BetCountLabel on BetCount {
       BetCount.unidades => BetModuleType.units,
       BetCount.snake => BetModuleType.snake,
       BetCount.rabbit => BetModuleType.rabbit,
+      BetCount.wolf => BetModuleType.wolf,
     };
   }
 
@@ -154,7 +156,10 @@ extension BetCountLabel on BetCount {
         BetCount.puntos ||
         BetCount.unidades ||
         BetCount.snake ||
-        BetCount.rabbit =>
+        BetCount.rabbit ||
+        // Wolf tampoco: el enfrentamiento del hoyo ya define quién cobra a
+        // quién, y cambia cada hoyo.
+        BetCount.wolf =>
           false,
       };
 
@@ -164,6 +169,9 @@ extension BetCountLabel on BetCount {
           'La serpiente es una sola y su dueño paga a todos: ya es un bote.',
         BetCount.rabbit =>
           'El conejo es uno y su dueño cobra a todos: ya es un bote.',
+        BetCount.wolf =>
+          'Cada hoyo enfrenta a la pareja del Wolf contra los otros dos: el '
+              'reparto ya está definido.',
         BetCount.unidades =>
           'El motor de Unidades acredita cada unidad contra cada rival por '
               'separado.',
@@ -335,6 +343,14 @@ class BetRecipe {
     if (sides == null && tipo.rules.requiresTeams) {
       return BetRecipeResult.no(
           '${cuenta.labelCon(bola)} se juega 2 vs 2: hacen falta dos lados.');
+    }
+
+    // ── ¿Cuántos jugadores necesita? ───────────────────────────────────────
+    // Mecanismo existente, no uno nuevo: devolver `no(motivo)` es lo que ya
+    // atenúa la opción en el selector con su explicación.
+    final exactos = tipo.rules.jugadoresExactos;
+    if (exactos != null && participantIds.length != exactos) {
+      return BetRecipeResult.no(tipo.rules.sinEseNumero!);
     }
 
     final div = divisionDe(cuenta,
@@ -588,6 +604,7 @@ class BetRecipe {
       unitsConfig: base.unitsConfig,
       snakeConfig: base.snakeConfig,
       rabbitConfig: base.rabbitConfig,
+      wolfConfig: base.wolfConfig,
     );
   }
 

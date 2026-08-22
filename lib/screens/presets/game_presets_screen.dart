@@ -859,6 +859,14 @@ class _PresetConfigWidgets {
             style: TextStyle(color: t.sub, fontSize: 12, height: 1.4),
           ),
         ];
+      case BetModuleType.wolf:
+        return wolfFields(
+          t: t,
+          cfg: cfg.wolf,
+          montoCtrl:
+              TextEditingController(text: cfg.wolf.value.toStringAsFixed(0)),
+          onChanged: (c) => update(cfg.copyWith(wolfConfig: c)),
+        );
       case BetModuleType.rabbit:
         return rabbitFields(
           t: t,

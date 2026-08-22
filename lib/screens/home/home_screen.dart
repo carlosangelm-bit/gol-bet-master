@@ -1723,6 +1723,41 @@ class _BetInfo {
           'H16 (par 3): Carlos más cerca → empate 2-2\n'
           'Premio se divide: cada uno cobra \$25 de Rich',
     ),
+    // ── Wolf ──────────────────────────────────────────────────────────────────
+    _BetInfo(
+      type: BetModuleType.wolf,
+      icon: Icons.groups_2_rounded,
+      color: Color(0xFF37474F),
+      tagline: 'Cada hoyo eliges compañero — o vas solo por el doble',
+      howItWorks:
+          'Cada hoyo le toca a uno ser el Wolf, por turnos según el orden de '
+          'salida: el 1 al primero, el 2 al segundo, y así. El Wolf juega con '
+          'un compañero contra los otros dos, o se va SOLO contra los tres por '
+          'el doble.\n\n'
+          'La app no te pregunta quién es el Wolf —eso lo sabes en el tee— ni '
+          'te hace ir tocando durante el hoyo. Al anotar el score te pide UNA '
+          'cosa: con quién jugó.',
+      rules: [
+        'Se juega exactamente con 4: el Wolf rota uno por hoyo',
+        'El Wolf sale del orden de salida — no se pregunta',
+        'Su pareja contra los otros dos, mejor bola neta de cada lado',
+        'Cada perdedor del hoyo paga al monto a cada ganador',
+        'Lone Wolf que gana: ×2 por defecto, configurable a ×3 o ×4',
+        'Lone Wolf que pierde: paga sencillo a cada rival',
+        'Hoyo empatado: nadie paga',
+        'Hoyo sin compañero elegido: no liquida, y la app lo dice',
+      ],
+      example:
+          'Wolf \$50/hoyo · lone ×2 · orden RAFA, CAM, CAV, AAM\n'
+          '───────────────────────────────\n'
+          'H1 Wolf RAFA, juega con CAM → ganan\n'
+          '   CAV y AAM pagan \$50 a cada uno (RAFA +100, CAM +100)\n'
+          'H2 Wolf CAM, va SOLO → gana\n'
+          '   los tres le pagan \$100 (CAM +300)\n'
+          'H3 Wolf CAV, va SOLO → pierde\n'
+          '   CAV paga \$50 a cada uno (CAV -150)\n'
+          'H4 Wolf AAM, juega con RAFA → empate, nadie paga',
+    ),
     // ── Rabbit ────────────────────────────────────────────────────────────────
     _BetInfo(
       type: BetModuleType.rabbit,
@@ -2702,6 +2737,7 @@ class _ActiveRoundView extends StatelessWidget {
     switch (m.type) {
       case BetModuleType.snake:
       case BetModuleType.rabbit:
+      case BetModuleType.wolf:
         return '\$${m.value.toStringAsFixed(0)}';
       case BetModuleType.skins:
         return '\$${m.skins.valuePerSkin.toStringAsFixed(0)}/skin';
@@ -3132,6 +3168,7 @@ class _ActiveRoundView extends StatelessWidget {
                               unitsConfig:          effUnits,
                               snakeConfig:          cfg.snakeConfig,
                               rabbitConfig:         cfg.rabbitConfig,
+                              wolfConfig:           cfg.wolfConfig,
                               pairConfigOverrides:
                                   pairOvsMap.isEmpty ? null : pairOvsMap,
                               clearPlayerOverrides: true,

@@ -2013,6 +2013,8 @@ class _BetRow extends StatelessWidget {
   String _buildLabel() {
     final label = mod.type.label;
     switch (mod.type) {
+      case BetModuleType.wolf:
+        return '$label · \$${mod.wolf.value.toStringAsFixed(0)}/hoyo';
       case BetModuleType.rabbit:
         return '$label · \$${mod.rabbit.value.toStringAsFixed(0)}/nueve';
       case BetModuleType.snake:
@@ -2067,6 +2069,9 @@ class _BetRow extends StatelessWidget {
       // su ventaja aplicada, que es lo que mete en la caza al que va con
       // handicap alto. Ofrecer bruto sería otra apuesta.
       case BetModuleType.rabbit:
+      // Wolf también es siempre neto: el enfrentamiento del hoyo se decide por
+      // la mejor bola NETA de cada lado.
+      case BetModuleType.wolf:
         return null;
     }
   }
@@ -2209,6 +2214,7 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
     switch (mod.type) {
       case BetModuleType.snake:        return mod.snake.value;
       case BetModuleType.rabbit:       return mod.rabbit.value;
+      case BetModuleType.wolf:         return mod.wolf.value;
       case BetModuleType.skins:        return mod.skins.valuePerSkin;
       case BetModuleType.nassau:       return mod.nassau.frontValue;
       case BetModuleType.matchAutoPress: return mod.matchAutoPress.matchValue;
@@ -2225,6 +2231,7 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
     switch (mod.type) {
       case BetModuleType.snake:        return {'snakeValue': newVal};
       case BetModuleType.rabbit:       return {'rabbitValue': newVal};
+      case BetModuleType.wolf:         return {'wolfValue': newVal};
       case BetModuleType.skins:        return {'valuePerSkin': newVal};
       case BetModuleType.nassau:       return {'nassauFront': newVal, 'nassauBack': newVal, 'nassauTotal': newVal * 2};
       case BetModuleType.matchAutoPress: return {'matchValue': newVal};

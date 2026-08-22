@@ -19,6 +19,7 @@ import '../../models/models.dart';
 import '../../providers/round_provider.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sliding_adjustment_dialog.dart';
+import '../../engines/wolf_engine.dart';
 
 class CaptureScreen extends StatefulWidget {
   const CaptureScreen({super.key});
@@ -27,6 +28,16 @@ class CaptureScreen extends StatefulWidget {
 }
 
 class _CaptureScreenState extends State<CaptureScreen> {
+
+  /// Módulos Wolf de la ronda. Vacío = no se juega y no se pregunta nada.
+  static List<(BetGroup, BetModuleInstance)> _wolfMods(Round round) => [
+        for (final g in round.betGroups)
+          for (final m in g.modules)
+            if (m.type == BetModuleType.wolf) (g, m),
+      ];
+
+  static bool _tieneWolf(Round round) => _wolfMods(round).isNotEmpty;
+
   int _currentHole = 1; // Se corrige en initState via postFrameCallback
   String? _activePlayerId; // jugador seleccionado en la tabla
   final ScrollController _holeScroll = ScrollController();
@@ -204,6 +215,16 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 if (ch.isPar3) ...[
                   const SizedBox(height: 10),
                   _OyesRankingSection(hole: _currentHole, t: t),
+                ],
+
+                // ── Wolf: con quién jugó ───────────────────────────────
+                //
+                // La única pregunta del formato, y va aquí porque es aquí
+                // donde se anota el score. Solo aparece si la ronda tiene
+                // una apuesta Wolf: quien no la juega no ve nada.
+                if (_tieneWolf(round)) ...[
+                  const SizedBox(height: 10),
+                  _WolfCallSection(hole: _currentHole, t: t),
                 ],
 
                 const SizedBox(height: 10),
@@ -1832,6 +1853,189 @@ class LowHighHoleBlock extends StatelessWidget {
           Text('puntos', style: TextStyle(color: t.sub, fontSize: 9)),
         ]),
       ]),
+    );
+  }
+}
+
+// ── Wolf: con quién jugó el Wolf en este hoyo ────────────────────────────────
+//
+// UNA pregunta, un toque, junto al score. Es todo lo que Wolf pide en el campo.
+//
+// Lo que NO hay, y es la decisión que hace este formato barato: no se pregunta
+// quién es el Wolf —se deriva del orden de salida—, no hay máquina de decisión
+// secuencial, no hay bloqueo de opciones tras cada tiro, no hay captura en
+// tiempo real. Eso es lo que hacía a Wolf parecer caro y no era necesario.
+//
+// El nombre del Wolf se ENSEÑA porque orienta —"Wolf: RAFA"— pero no se pide. Y
+// "Solo" es una opción más de la misma fila: ir en solitario es una de las
+// cuatro respuestas posibles, no una pantalla aparte.
+class _WolfCallSection extends StatelessWidget {
+  final int hole;
+  final GolfTheme t;
+  const _WolfCallSection({required this.hole, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final prov = context.watch<RoundProvider>();
+    final round = prov.round!;
+    final mods = _CaptureScreenState._wolfMods(round);
+    if (mods.isEmpty) return const SizedBox.shrink();
+
+    final (grupo, mod) = mods.first;
+    final orden = mod.effectivePids(grupo.playerIds);
+    if (orden.length != 4) {
+      // No debería pasar —el selector atenúa Wolf sin 4— pero una ronda
+      // guardada a la que se le saca un jugador llega aquí, y quedarse mudo
+      // sería peor que decirlo.
+      return _aviso(
+          'Wolf necesita 4 jugadores y esta apuesta tiene ${orden.length}.');
+    }
+
+    final wolf = WolfEngine.wolfDelHoyo(orden, hole);
+    final call = round.getWolfCall(hole);
+    final elegido = call?.partnerId;
+    final esSolo = call != null && call.solo;
+
+    String nombre(String pid) => round.players
+        .firstWhere((p) => p.id == pid, orElse: () => Player(id: pid, name: pid))
+        .name
+        .split(' ')
+        .first;
+
+    final candidatos = orden.where((p) => p != wolf).toList();
+
+    return Container(
+      // Llave para los tests: los nombres de los jugadores también aparecen en
+      // la tabla de arriba, así que buscarlos por texto apunta a la fila
+      // equivocada. Lo descubrió el test.
+      key: const Key('wolfCallSection'),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: call == null
+                // Sin respuesta el borde avisa: este hoyo no liquida.
+                ? t.scoreOver.withValues(alpha: 0.55)
+                : t.divider),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: t.text.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text('🐺 WOLF: ${nombre(wolf).toUpperCase()}',
+                style: TextStyle(
+                    color: t.text,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3)),
+          ),
+          const Spacer(),
+          if (call != null)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => prov.setWolfCall(hole, limpiar: true),
+              child:
+                  Text('Limpiar', style: TextStyle(color: t.sub, fontSize: 10)),
+            ),
+        ]),
+        const SizedBox(height: 4),
+        Text(
+          call == null
+              ? '¿Con quién jugó?'
+              : (esSolo
+                  ? 'Fue solo contra los otros tres.'
+                  : 'Jugó con ${nombre(elegido!)}.'),
+          style: TextStyle(color: t.sub, fontSize: 11.5),
+        ),
+        const SizedBox(height: 10),
+        // Wrap y no Row: son cuatro opciones con nombres de persona, y a 320 px
+        // un Row las recorta. Es la misma lección que la fila de contadores del
+        // tablero de Inicio, medida: las etiquetas ocupan más de lo que parece.
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          for (final pid in candidatos)
+            _WolfOpcion(
+              key: ValueKey('wolfOpt_$pid'),
+              texto: nombre(pid),
+              activa: elegido == pid,
+              t: t,
+              onTap: () => prov.setWolfCall(hole, partnerId: pid),
+            ),
+          _WolfOpcion(
+            key: const Key('wolfOpt_solo'),
+            texto: 'Solo',
+            activa: esSolo,
+            t: t,
+            destacada: true,
+            onTap: () => prov.setWolfCall(hole, solo: true),
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _aviso(String texto) => Container(
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: t.scoreOver.withValues(alpha: 0.5)),
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Text(texto, style: TextStyle(color: t.sub, fontSize: 12)),
+      );
+}
+
+class _WolfOpcion extends StatelessWidget {
+  final String texto;
+  final bool activa;
+  final bool destacada;
+  final GolfTheme t;
+  final VoidCallback onTap;
+
+  const _WolfOpcion({
+    super.key,
+    required this.texto,
+    required this.activa,
+    required this.t,
+    required this.onTap,
+    this.destacada = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final acento = destacada ? t.accent : t.primary;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        // Área de toque suficiente: se usa con guante, a una mano y entre golpe
+        // y golpe.
+        constraints: const BoxConstraints(minWidth: 68, minHeight: 44),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: activa ? acento.withValues(alpha: 0.16) : t.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: activa ? acento : t.divider, width: activa ? 1.6 : 1),
+        ),
+        child: Center(
+          child: Text(
+            texto,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: activa ? acento : t.sub,
+              fontSize: 12.5,
+              fontWeight: activa ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

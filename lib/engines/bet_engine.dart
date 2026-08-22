@@ -6,6 +6,7 @@
 import '../models/models.dart';
 import 'snake_engine.dart';
 import 'rabbit_engine.dart';
+import 'wolf_engine.dart';
 import 'game_engine.dart';
 
 class BetEngine {
@@ -553,6 +554,12 @@ class BetEngine {
         // en vez de redefinir "ganar un hoyo": una segunda definición podría
         // discrepar de la que usa Skins.
         entries.addAll(RabbitEngine.liquidar(round, pids, mod));
+        break;
+      case BetModuleType.wolf:
+        // El único de los tres con cálculo realmente nuevo: los lados cambian
+        // CADA HOYO, y BetSide es de la ronda. Por eso Wolf no puede usar los
+        // ejes de composición existentes y arma su enfrentamiento hoyo a hoyo.
+        entries.addAll(WolfEngine.liquidar(round, pids, mod));
         break;
     }
     return entries;

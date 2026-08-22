@@ -233,3 +233,67 @@ List<Widget> rabbitFields({
           cfg.squirrel, t,
           (v) => onChanged(cfg.copyWith(squirrel: v))),
     ];
+
+// ── WOLF ─────────────────────────────────────────────────────────────────────
+
+/// Los campos de Wolf: el importe del hoyo y el multiplicador del Lone Wolf.
+///
+/// Dos controles, y el segundo existe por una razón concreta: Carlos no juega
+/// Wolf. Conoce grupos que sí, pero no el detalle. Así que lo que no se sabe va
+/// configurable con el valor estándar por defecto en vez de decidirse a ciegas.
+///
+/// Lo que NO está aquí, y es deliberado:
+///
+///   · **El Lone Wolf que pierde** paga sencillo a cada rival. Es lo estándar y
+///     no se hace configurable: un control por cada regla convierte la hoja en
+///     un formulario y deja de leerse.
+///   · **La regla de los hoyos 17-18.** Algunos grupos hacen que sea Wolf el que
+///     va perdiendo; sin dato, rotación simple. Vive en WolfEngine.wolfDelHoyo.
+///   · **Blind Wolf.** Variante sobre variante y sin nadie a quien preguntar.
+///
+/// Y lo importante: el diseño de captura —una pregunta por hoyo— no depende de
+/// ninguna de las tres. Añadir cualquiera después es una opción más, no rehacer
+/// el formato.
+List<Widget> wolfFields({
+  required GolfTheme t,
+  required WolfConfig cfg,
+  required TextEditingController montoCtrl,
+  required ValueChanged<WolfConfig> onChanged,
+}) =>
+    [
+      _etiqueta('MONTO POR HOYO', t),
+      const SizedBox(height: 8),
+      _monto('Monto', montoCtrl, t,
+          onChanged: (v) => onChanged(cfg.copyWith(value: v))),
+      const SizedBox(height: 6),
+      _nota(
+          'Cada perdedor del hoyo paga esto a cada ganador. El hoyo se decide '
+          'por la mejor bola neta de la pareja del Wolf contra la de los otros '
+          'dos.',
+          t),
+      const SizedBox(height: 18),
+
+      _etiqueta('LONE WOLF QUE GANA', t),
+      const SizedBox(height: 8),
+      _opciones(
+          ['×2', '×3', '×4'],
+          cfg.loneMultiplier >= 4 ? 2 : (cfg.loneMultiplier >= 3 ? 1 : 0),
+          t,
+          (i) => onChanged(cfg.copyWith(loneMultiplier: [2.0, 3.0, 4.0][i]))),
+      const SizedBox(height: 6),
+      _nota(
+          'Ir solo contra los otros tres y ganar paga '
+          '×${cfg.loneMultiplier.toStringAsFixed(0)}. Si pierde, paga sencillo '
+          'a cada rival — eso es lo estándar y no se cambia.',
+          t),
+      const SizedBox(height: 18),
+
+      _etiqueta('QUIÉN ES EL WOLF', t),
+      const SizedBox(height: 6),
+      _nota(
+          'Se deriva del orden de salida y rota un hoyo por jugador: el 1 le '
+          'toca al primero, el 2 al segundo, y así. No hay nada que elegir ni '
+          'que ver durante el hoyo — la app solo pregunta con quién jugó al '
+          'anotar el score.',
+          t),
+    ];

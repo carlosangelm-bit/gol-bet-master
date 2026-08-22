@@ -20,6 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import '../models/models.dart';
 import 'rabbit_engine.dart';
+import 'wolf_engine.dart';
 import 'snake_engine.dart';
 
 /// Qué tono le toca a la nota.
@@ -65,6 +66,8 @@ List<NotaDeLiquidacion> notasDeLiquidacion(Round round) {
           notas.addAll(_snake(round, grupo, mod));
         case BetModuleType.rabbit:
           notas.addAll(_rabbit(round, grupo, mod));
+        case BetModuleType.wolf:
+          notas.addAll(_wolf(round, grupo, mod));
         default:
           break;
       }
@@ -194,6 +197,79 @@ List<NotaDeLiquidacion> _rabbit(
         texto: 'Con Squirrel encendido hace falta birdie neto para capturar, '
             'y los hoyos ganados se ganaron sin birdie.',
         tono: TonoNota.informativa));
+  }
+
+  return notas;
+}
+
+// ── WOLF ─────────────────────────────────────────────────────────────────────
+//
+// Un hoyo sin WolfCall no liquida, y hay que DECIRLO. Es el criterio del
+// encargo, y la razón es la misma que en los otros dos: sin la frase, un hoyo
+// que no paga es indistinguible de uno que se calculó y salió empatado.
+//
+// Se agrupan en UNA línea con los hoyos nombrados, no una por hoyo. Dieciocho
+// avisos del mismo problema entierran el resto de la pantalla — es el mismo
+// colapso que ya se aplicó a los avisos de score incompleto.
+List<NotaDeLiquidacion> _wolf(
+    Round round, BetGroup grupo, BetModuleInstance mod) {
+  final pids = mod.effectivePids(grupo.playerIds);
+  final notas = <NotaDeLiquidacion>[];
+
+  NotaDeLiquidacion nota(String texto, TonoNota tono) => NotaDeLiquidacion(
+      moduleId: mod.id, tipo: BetModuleType.wolf, texto: texto, tono: tono);
+
+  if (pids.length != 4) {
+    // No debería poder crearse —el selector lo atenúa— pero una ronda guardada
+    // a la que se le saca un jugador acaba aquí, y quedarse mudo sería lo peor.
+    return [
+      nota(
+          'Wolf se juega exactamente con 4 y esta apuesta tiene ${pids.length}. '
+          'No liquida.',
+          TonoNota.faltaDato)
+    ];
+  }
+
+  final hoyos = WolfEngine.recorrido(round, pids, mod.wolf);
+
+  final sinEleccion = hoyos
+      .where((h) => h.sinLiquidar == WolfSinLiquidar.sinEleccion)
+      .map((h) => h.hoyo)
+      .toList();
+  final sinScore = hoyos
+      .where((h) => h.sinLiquidar == WolfSinLiquidar.sinScore)
+      .map((h) => h.hoyo)
+      .toList();
+
+  if (sinEleccion.isNotEmpty) {
+    // Se distingue de "falta el score": aquí falta una DECISIÓN del usuario,
+    // así que el tono pide acción. No se inventa un compañero.
+    final lista = sinEleccion.length <= 6
+        ? 'H${sinEleccion.join(', H')}'
+        : '${sinEleccion.length} hoyos';
+    notas.add(nota(
+        'Sin compañero elegido en $lista: '
+        '${sinEleccion.length == 1 ? 'ese hoyo' : 'esos hoyos'} no liquida'
+        '${sinEleccion.length == 1 ? '' : 'n'}. '
+        'Se elige al anotar el score.',
+        TonoNota.faltaDato));
+  }
+
+  if (sinScore.isNotEmpty) {
+    notas.add(nota(
+        'Faltan scores en ${sinScore.length} '
+        '${sinScore.length == 1 ? 'hoyo' : 'hoyos'}.',
+        TonoNota.provisional));
+  }
+
+  // Los Lone Wolf son la sal del formato: merecen su línea cuando ocurren.
+  final solos = hoyos.where((h) => h.liquido && h.loneWolf).toList();
+  if (solos.isNotEmpty) {
+    final ganados = solos.where((h) => h.ganadores.length == 1).length;
+    notas.add(nota(
+        '${solos.length} ${solos.length == 1 ? 'hoyo' : 'hoyos'} en solitario: '
+        '$ganados ganado${ganados == 1 ? '' : 's'}.',
+        TonoNota.informativa));
   }
 
   return notas;

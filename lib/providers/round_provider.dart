@@ -42,6 +42,9 @@ Map<String, dynamic> roundToJson(Round r) {
   'scores': r.scores.map((pid, hmap) => MapEntry(pid, hmap.map((h, s) => MapEntry(h.toString(), s.toJson())))),
   'events': r.events.map((pid, hmap) => MapEntry(pid, hmap.map((h, list) => MapEntry(h.toString(), list.map((e) => e.toJson()).toList())))),
   'oyeseRankings': r.oyeseRankings.map((h, or_) => MapEntry(h.toString(), or_.toJson())),
+  // Solo si hay alguno: las rondas sin Wolf no ganan una clave vacía.
+  if (r.wolfCalls.isNotEmpty)
+    'wolfCalls': r.wolfCalls.map((h, w) => MapEntry(h.toString(), w.toJson())),
   'sliding': r.sliding.map((s) => s.toJson()).toList(),
   // pairSliding: fuente canónica de acuerdos bilaterales (solo si hay valores)
   if (r.pairSliding.isNotEmpty) 'pairSliding': r.pairSliding,
@@ -97,6 +100,15 @@ Round roundFromJson(Map<String, dynamic> j) {
     events[pid] = inner;
   });
 
+  final wolfJson = asMap(j['wolfCalls']);
+  final wolfCalls = <int, WolfCall>{};
+  wolfJson.forEach((hStr, w) {
+    final h = int.tryParse(hStr);
+    if (h != null && w != null) {
+      try { wolfCalls[h] = WolfCall.fromJson(asMap(w)); } catch (_) {}
+    }
+  });
+
   final oyesesJson = asMap(j['oyeseRankings']);
   final oyeses = <int, OyeseRanking>{};
   oyesesJson.forEach((hStr, or_) {
@@ -145,6 +157,7 @@ Round roundFromJson(Map<String, dynamic> j) {
         ? CourseInfo.fromJson(asMap(j['course']))   // asMap() normaliza Map<Object?,Object?>
         : CourseInfo.standard,
     scores: scores, events: events, oyeseRankings: oyeses, sliding: sliding,
+    wolfCalls: wolfCalls,
     // ── pairSliding: leer campo canónico y aplicar migración legacy ──────────
     pairSliding: _buildPairSliding(j, roundPlayers),
     slidingRecalcula: j['slidingRecalcula'] as bool? ?? true,
@@ -595,6 +608,28 @@ class RoundProvider extends ChangeNotifier {
     final newRankings = Map<int, OyeseRanking>.from(_round!.oyeseRankings);
     newRankings[hole] = OyeseRanking(hole: hole, ranking: ranking);
     _round = _round!.copyWith(oyeseRankings: newRankings);
+    notifyListeners();
+    _persist();
+  }
+
+  // ── Wolf: con quién jugó el Wolf en este hoyo ──────────────────────────────
+  //
+  // La ÚNICA cosa que Wolf pide al usuario. El Wolf no se pregunta: se deriva
+  // del orden de salida.
+  //
+  // [partnerId] nulo con [solo] true significa Lone Wolf. Y borrar la entrada
+  // —[limpiar]— es distinto de elegir solo: sin entrada el hoyo no liquida.
+  void setWolfCall(int hole, {String? partnerId, bool solo = false,
+      bool limpiar = false}) {
+    if (_round == null) return;
+    final nuevos = Map<int, WolfCall>.from(_round!.wolfCalls);
+    if (limpiar) {
+      nuevos.remove(hole);
+    } else {
+      nuevos[hole] =
+          WolfCall(hole: hole, partnerId: solo ? null : partnerId);
+    }
+    _round = _round!.copyWith(wolfCalls: nuevos);
     notifyListeners();
     _persist();
   }
@@ -1077,6 +1112,14 @@ class RoundProvider extends ChangeNotifier {
       );
     }
 
+    // Configuración de Wolf
+    WolfConfig? wolfCfg = mod.wolfConfig;
+    if (wolfCfg != null) {
+      wolfCfg = wolfCfg.copyWith(
+        value: (payload['wolfValue'] as num?)?.toDouble(),
+      );
+    }
+
     // Configuración de Medal
     MedalConfig? medalCfg = mod.medalConfig;
     if (medalCfg != null) {
@@ -1105,6 +1148,7 @@ class RoundProvider extends ChangeNotifier {
       // módulo. El compilador no lo caza: son parámetros con nombre opcionales.
       snakeConfig:           snakeCfg,
       rabbitConfig:          rabbitCfg,
+      wolfConfig:            wolfCfg,
       presses:               mod.presses,
       structure:             mod.structure,
       betGroupId:            mod.betGroupId,

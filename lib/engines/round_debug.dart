@@ -493,6 +493,7 @@ class RoundDebug {
 
   static String _moduleCfgSummary(BetModuleInstance m) {
     return switch (m.type) {
+      BetModuleType.wolf    => '\$${m.wolf.value.toStringAsFixed(0)}/hoyo lone×${m.wolf.loneMultiplier}',
       BetModuleType.rabbit  => '\$${m.rabbit.value.toStringAsFixed(0)}/9 robable=${m.rabbit.robable} acum=${m.rabbit.acumula} squirrel=${m.rabbit.squirrel}',
       BetModuleType.snake   => '\$${m.snake.value.toStringAsFixed(0)} umbral=${m.snake.umbral} empate=${m.snake.empate.name}',
       BetModuleType.nassau  => '\$${m.nassau.frontValue.toStringAsFixed(0)}F/\$${m.nassau.backValue.toStringAsFixed(0)}B/\$${m.nassau.totalValue.toStringAsFixed(0)}T press=${m.nassau.pressEnabled}',
