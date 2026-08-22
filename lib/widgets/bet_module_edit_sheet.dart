@@ -82,7 +82,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   late final TextEditingController _medalCtrl;
   late final TextEditingController _puttsCtrl;
   late final TextEditingController _oyesCtrl, _zapatoCtrl;
-  late final TextEditingController _snakeCtrl;
+  late final TextEditingController _snakeCtrl, _rabbitCtrl;
   late final TextEditingController _lhSegCtrl, _lhPointCtrl;
   late final Map<UnitEventType, TextEditingController> _unitCtrls;
 
@@ -129,6 +129,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _puttsCtrl  = TextEditingController(text: m.putts.value.toStringAsFixed(0));
     _oyesCtrl   = TextEditingController(text: m.oyeses.value.toStringAsFixed(0));
     _snakeCtrl  = TextEditingController(text: m.snake.value.toStringAsFixed(0));
+    _rabbitCtrl = TextEditingController(text: m.rabbit.value.toStringAsFixed(0));
     _lhSegCtrl   = TextEditingController(text: m.lowHigh.segmentAmount.toStringAsFixed(0));
     _lhPointCtrl = TextEditingController(text: m.lowHigh.amountPerPoint.toStringAsFixed(0));
     _zapatoCtrl = TextEditingController(
@@ -192,7 +193,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _medalCtrl.dispose();
     _puttsCtrl.dispose();
     _oyesCtrl.dispose(); _zapatoCtrl.dispose();
-    _snakeCtrl.dispose();
+    _snakeCtrl.dispose(); _rabbitCtrl.dispose();
     _lhSegCtrl.dispose(); _lhPointCtrl.dispose();
     _unitAllCtrl.dispose();
     for (final c in _unitCtrls.values) {
@@ -420,6 +421,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       case BetModuleType.units:         return _unitsFields(t);
       case BetModuleType.nassauLowHigh: return _lowHighFields(t);
       case BetModuleType.snake:         return _snakeFields(t);
+      case BetModuleType.rabbit:        return _rabbitFields(t);
     }
   }
 
@@ -431,6 +433,13 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         cfg: _current.snake,
         montoCtrl: _snakeCtrl,
         onChanged: (c) => _update(_current.copyWith(snakeConfig: c)),
+      );
+
+  List<Widget> _rabbitFields(GolfTheme t) => rabbitFields(
+        t: t,
+        cfg: _current.rabbit,
+        montoCtrl: _rabbitCtrl,
+        onChanged: (c) => _update(_current.copyWith(rabbitConfig: c)),
       );
 
   // ══════════════════════════════════════════════════════════════════════════

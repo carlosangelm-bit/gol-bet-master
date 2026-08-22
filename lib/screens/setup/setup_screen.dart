@@ -4403,6 +4403,7 @@ class _SetupScreenState extends State<SetupScreen> {
                                 oyesesConfig:         effectiveOyeses,
                                 unitsConfig:          effectiveUnits,
                                 snakeConfig:          cfg.snakeConfig,
+                                rabbitConfig:         cfg.rabbitConfig,
                                 // Guardar los overrides por par para que al
                                 // reabrir el editor se reconstruya el estado.
                                 pairConfigOverrides:
@@ -4628,6 +4629,14 @@ class _SetupScreenState extends State<SetupScreen> {
             style: TextStyle(color: t.sub, fontSize: 12, height: 1.4),
           ),
         ];
+      case BetModuleType.rabbit:
+        return rabbitFields(
+          t: t,
+          cfg: cfg.rabbit,
+          montoCtrl:
+              _cfgCtrl('rabbit.value', cfg.rabbit.value.toStringAsFixed(0)),
+          onChanged: (c) => update(cfg.copyWith(rabbitConfig: c)),
+        );
       case BetModuleType.snake:
         return snakeFields(
           t: t,

@@ -30,7 +30,7 @@ import 'models.dart';
 /// Los nombres son los que usa el grupo, no los del modelo: Oyes y Unidades,
 /// no "oyeses" y "units". Un nombre que hay que traducir mentalmente ya cuesta
 /// un paso.
-enum BetCount { puntos, skins, scoreTotal, putts, oyes, unidades, snake }
+enum BetCount { puntos, skins, scoreTotal, putts, oyes, unidades, snake, rabbit }
 
 /// Si la apuesta se parte en sub-apuestas.
 ///
@@ -107,6 +107,7 @@ extension BetCountLabel on BetCount {
       BetCount.oyes => 'Oyes',
       BetCount.unidades => 'Unidades',
       BetCount.snake => 'Snake',
+      BetCount.rabbit => 'Rabbit',
       BetCount.puntos => 'Match', // inalcanzable
     };
   }
@@ -130,6 +131,7 @@ extension BetCountLabel on BetCount {
       BetCount.oyes => BetModuleType.oyeses,
       BetCount.unidades => BetModuleType.units,
       BetCount.snake => BetModuleType.snake,
+      BetCount.rabbit => BetModuleType.rabbit,
     };
   }
 
@@ -148,13 +150,20 @@ extension BetCountLabel on BetCount {
         // Ofrecer "un solo bote" contra "todos vs todos" sería un control sin
         // efecto —_snake no lee BetFormatMode—, y un control que no hace nada
         // enseña a no leer los que sí.
-        BetCount.puntos || BetCount.unidades || BetCount.snake => false,
+        // Rabbit tampoco: el conejo es uno y su dueño cobra a todos.
+        BetCount.puntos ||
+        BetCount.unidades ||
+        BetCount.snake ||
+        BetCount.rabbit =>
+          false,
       };
 
   /// Por qué no admite bote, para la opción atenuada.
   String? get sinBote => switch (this) {
         BetCount.snake =>
           'La serpiente es una sola y su dueño paga a todos: ya es un bote.',
+        BetCount.rabbit =>
+          'El conejo es uno y su dueño cobra a todos: ya es un bote.',
         BetCount.unidades =>
           'El motor de Unidades acredita cada unidad contra cada rival por '
               'separado.',
@@ -578,6 +587,7 @@ class BetRecipe {
       oyesesConfig: base.oyesesConfig,
       unitsConfig: base.unitsConfig,
       snakeConfig: base.snakeConfig,
+      rabbitConfig: base.rabbitConfig,
     );
   }
 

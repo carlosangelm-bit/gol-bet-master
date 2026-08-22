@@ -1723,6 +1723,40 @@ class _BetInfo {
           'H16 (par 3): Carlos más cerca → empate 2-2\n'
           'Premio se divide: cada uno cobra \$25 de Rich',
     ),
+    // ── Rabbit ────────────────────────────────────────────────────────────────
+    _BetInfo(
+      type: BetModuleType.rabbit,
+      icon: Icons.pets_rounded,
+      color: Color(0xFF827717),
+      tagline: 'Caza el conejo y no lo sueltes hasta el cierre',
+      howItWorks:
+          'El conejo empieza suelto. Lo agarra quien gana un hoyo SOLO —el '
+          'neto más bajo, sin empate—. Quien lo tenga al cerrar los primeros '
+          'nueve cobra a todos los demás; luego se suelta y la caza empieza de '
+          'cero para los segundos nueve.\n\n'
+          'Lo difícil no es agarrarlo, es quedárselo: si otro gana un hoyo, el '
+          'conejo se suelta y hay que volver a cazarlo.',
+      rules: [
+        'Se captura ganando un hoyo en solitario por score neto',
+        'Un hoyo empatado no lo mueve: quien lo tenía sigue teniéndolo',
+        'Ganarle al dueño lo SUELTA — no se lo quita (configurable)',
+        'Se cobra dos veces: al cerrar los primeros nueve y los segundos',
+        'Si nadie lo tiene al cerrar, nadie cobra ese tramo — y se dice',
+        'El importe no cobrado se puede acumular al tramo siguiente (opcional)',
+        'Squirrel: exigir birdie neto para capturar (opcional)',
+        'Siempre neto: es lo que mete en la caza al de handicap alto',
+      ],
+      example:
+          'Rabbit \$100/nueve · 4 jugadores\n'
+          '───────────────────────────────\n'
+          'H1-H3 empatados → conejo suelto\n'
+          'H4: Rafa gana solo → conejo de Rafa\n'
+          'H5, H6 empatados → sigue de Rafa\n'
+          'H7: Carlos gana solo → se SUELTA\n'
+          'H8: Carlos gana solo otra vez → conejo de Carlos\n'
+          'H9 empatado → Carlos lo conserva\n'
+          'Cierre de los 9: Carlos cobra \$100 a cada uno (+\$300)',
+    ),
     // ── Snake ─────────────────────────────────────────────────────────────────
     _BetInfo(
       type: BetModuleType.snake,
@@ -2667,7 +2701,8 @@ class _ActiveRoundView extends StatelessWidget {
   String _shortChipLabel(BetModuleInstance m) {
     switch (m.type) {
       case BetModuleType.snake:
-        return '\$${m.snake.value.toStringAsFixed(0)}';
+      case BetModuleType.rabbit:
+        return '\$${m.value.toStringAsFixed(0)}';
       case BetModuleType.skins:
         return '\$${m.skins.valuePerSkin.toStringAsFixed(0)}/skin';
       case BetModuleType.nassau:
@@ -3096,6 +3131,7 @@ class _ActiveRoundView extends StatelessWidget {
                               oyesesConfig:         effOyeses,
                               unitsConfig:          effUnits,
                               snakeConfig:          cfg.snakeConfig,
+                              rabbitConfig:         cfg.rabbitConfig,
                               pairConfigOverrides:
                                   pairOvsMap.isEmpty ? null : pairOvsMap,
                               clearPlayerOverrides: true,

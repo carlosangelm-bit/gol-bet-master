@@ -1069,6 +1069,14 @@ class RoundProvider extends ChangeNotifier {
       );
     }
 
+    // Configuración de Rabbit
+    RabbitConfig? rabbitCfg = mod.rabbitConfig;
+    if (rabbitCfg != null) {
+      rabbitCfg = rabbitCfg.copyWith(
+        value: (payload['rabbitValue'] as num?)?.toDouble(),
+      );
+    }
+
     // Configuración de Medal
     MedalConfig? medalCfg = mod.medalConfig;
     if (medalCfg != null) {
@@ -1096,6 +1104,7 @@ class RoundProvider extends ChangeNotifier {
       // falte aquí se BORRA en silencio al editar cualquier otra cosa del
       // módulo. El compilador no lo caza: son parámetros con nombre opcionales.
       snakeConfig:           snakeCfg,
+      rabbitConfig:          rabbitCfg,
       presses:               mod.presses,
       structure:             mod.structure,
       betGroupId:            mod.betGroupId,

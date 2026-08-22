@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import '../models/models.dart';
 import 'snake_engine.dart';
+import 'rabbit_engine.dart';
 import 'game_engine.dart';
 
 class BetEngine {
@@ -546,6 +547,12 @@ class BetEngine {
         // frase, y esa la pone notasDeLiquidacion() desde la misma búsqueda que
         // usa esto. Ver settlement_notes.dart.
         entries.addAll(SnakeEngine.liquidar(round, pids, mod));
+        break;
+      case BetModuleType.rabbit:
+        // Otra rama nueva, otro motor aparte. Reutiliza GameEngine.holeWinner
+        // en vez de redefinir "ganar un hoyo": una segunda definición podría
+        // discrepar de la que usa Skins.
+        entries.addAll(RabbitEngine.liquidar(round, pids, mod));
         break;
     }
     return entries;

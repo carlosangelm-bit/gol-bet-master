@@ -144,3 +144,92 @@ List<Widget> snakeFields({
       const SizedBox(height: 6),
       _nota(cfg.empate.description, t),
     ];
+
+// ── RABBIT ───────────────────────────────────────────────────────────────────
+
+Widget _interruptor(
+        String titulo, String explica, bool valor, GolfTheme t,
+        ValueChanged<bool> onChanged) =>
+    Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(titulo,
+                style: TextStyle(
+                    color: t.text, fontSize: 13, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Text(explica,
+                style: TextStyle(color: t.sub, fontSize: 11, height: 1.35)),
+          ]),
+        ),
+        const SizedBox(width: 10),
+        Switch(value: valor, onChanged: onChanged, activeThumbColor: t.primary),
+      ]),
+    );
+
+/// Los campos de Rabbit: el importe por nueve y las variantes.
+///
+/// Las variantes van TODAS apagadas por defecto, que es el estándar, y cada una
+/// dice qué cambia. Un interruptor sin explicación en un formato que casi nadie
+/// conoce de memoria es un interruptor que se deja como está por miedo.
+///
+/// Falta una de las cuatro que pedía el encargo: **patas (legs)**. El resumen de
+/// la especificación la lista pero no dice qué hace, y no hay a quién preguntar.
+/// Un interruptor con el nombre de una variante real y una regla que yo me haya
+/// inventado detrás es peor que no ofrecerla: el usuario la activa creyendo que
+/// juega a lo que su grupo llama "patas". Queda reportado, no adivinado.
+List<Widget> rabbitFields({
+  required GolfTheme t,
+  required RabbitConfig cfg,
+  required TextEditingController montoCtrl,
+  required ValueChanged<RabbitConfig> onChanged,
+}) =>
+    [
+      _etiqueta('MONTO POR CADA NUEVE', t),
+      const SizedBox(height: 8),
+      _monto('Monto', montoCtrl, t,
+          onChanged: (v) => onChanged(cfg.copyWith(value: v))),
+      const SizedBox(height: 6),
+      _nota(
+          'Quien tenga el conejo al cerrar los primeros nueve cobra esto a cada '
+          'uno de los demás. Y otra vez al cerrar los segundos: el conejo se '
+          'suelta y la caza empieza de cero.',
+          t),
+      const SizedBox(height: 18),
+
+      _etiqueta('CÓMO SE CAPTURA', t),
+      const SizedBox(height: 6),
+      _nota(
+          'Lo agarra quien gana el hoyo SOLO —el neto más bajo, sin empate—. Un '
+          'hoyo empatado no lo mueve: quien lo tenía sigue teniéndolo.',
+          t),
+      const SizedBox(height: 18),
+
+      _etiqueta('VARIANTES', t),
+      const SizedBox(height: 10),
+      _interruptor(
+          'Conejo robable',
+          cfg.robable
+              ? 'Ganarle al dueño se lo quita en el acto.'
+              : 'Ganarle al dueño SUELTA el conejo; hay que ganar otro hoyo '
+                  'para agarrarlo. Es lo estándar.',
+          cfg.robable, t,
+          (v) => onChanged(cfg.copyWith(robable: v))),
+      _interruptor(
+          'Acumular el bote no cobrado',
+          cfg.acumula
+              ? 'Si nadie lo tiene al cerrar los primeros nueve, ese importe se '
+                  'suma al de los segundos.'
+              : 'Si nadie lo tiene al cerrar, ese importe se pierde. Es lo '
+                  'estándar.',
+          cfg.acumula, t,
+          (v) => onChanged(cfg.copyWith(acumula: v))),
+      _interruptor(
+          'Squirrel',
+          cfg.squirrel
+              ? 'Para capturar hace falta birdie neto, no solo ganar el hoyo.'
+              : 'Basta con ganar el hoyo. Es lo estándar.',
+          cfg.squirrel, t,
+          (v) => onChanged(cfg.copyWith(squirrel: v))),
+    ];

@@ -19,6 +19,7 @@
 // podría decir que la serpiente la tiene RAFA mientras el ledger le cobra a CAM.
 // ─────────────────────────────────────────────────────────────────────────────
 import '../models/models.dart';
+import 'rabbit_engine.dart';
 import 'snake_engine.dart';
 
 /// Qué tono le toca a la nota.
@@ -62,6 +63,8 @@ List<NotaDeLiquidacion> notasDeLiquidacion(Round round) {
       switch (mod.type) {
         case BetModuleType.snake:
           notas.addAll(_snake(round, grupo, mod));
+        case BetModuleType.rabbit:
+          notas.addAll(_rabbit(round, grupo, mod));
         default:
           break;
       }
@@ -123,4 +126,75 @@ String _nombre(Round round, String pid) {
     if (p.id == pid) return p.name.split(' ').first;
   }
   return pid;
+}
+
+// ── RABBIT ───────────────────────────────────────────────────────────────────
+//
+// Una línea por segmento. El caso que el encargo pide explicar es el conejo
+// SUELTO al cerrar: nadie cobra ese tramo, y sin la frase es indistinguible de
+// un segmento que no se calculó.
+List<NotaDeLiquidacion> _rabbit(
+    Round round, BetGroup grupo, BetModuleInstance mod) {
+  final pids = mod.effectivePids(grupo.playerIds);
+  final cfg = mod.rabbit;
+  final rec = RabbitEngine.recorrido(round, pids, cfg);
+  final notas = <NotaDeLiquidacion>[];
+
+  for (final seg in rec.segmentos) {
+    // Un segmento del que no se ha capturado NADA no tiene nada que contar
+    // todavía. Decir "el conejo quedó suelto en los segundos nueve" antes de
+    // jugarlos sería afirmar el resultado de algo que no ha pasado.
+    if (seg.pasos.every((p) => p.evento == RabbitEvento.sinScore)) continue;
+
+    final String texto;
+    final TonoNota tono;
+
+    if (seg.dueno == null) {
+      final arrastra = cfg.acumula && seg.primero;
+      texto = 'El conejo quedó suelto al cerrar los ${seg.etiqueta}: '
+          '${arrastra ? 'el importe pasa al siguiente tramo' : 'nadie cobra ese tramo'}.'
+          '${seg.completo ? '' : ' Quedan ${seg.hoyosSinCapturar} hoyos por capturar.'}';
+      tono = seg.completo ? TonoNota.informativa : TonoNota.provisional;
+    } else {
+      final quien = _nombre(round, seg.dueno!);
+      // Se cuenta CÓMO acabó ahí, no solo quién: el conejo se mueve varias
+      // veces y el dueño final sin la historia parece arbitrario.
+      final capturas = seg.pasos
+          .where((p) =>
+              p.evento == RabbitEvento.capturado ||
+              p.evento == RabbitEvento.robado)
+          .length;
+      final sueltas =
+          seg.pasos.where((p) => p.evento == RabbitEvento.soltado).length;
+      final historia = sueltas > 0
+          ? ' Cambió de manos $capturas ${capturas == 1 ? 'vez' : 'veces'} y se '
+              'soltó $sueltas.'
+          : '';
+      texto = '$quien tiene el conejo al cerrar los ${seg.etiqueta}.$historia'
+          '${seg.completo ? '' : ' Provisional: quedan ${seg.hoyosSinCapturar} hoyos.'}';
+      tono = seg.completo ? TonoNota.informativa : TonoNota.provisional;
+    }
+
+    notas.add(NotaDeLiquidacion(
+        moduleId: mod.id,
+        tipo: BetModuleType.rabbit,
+        texto: texto,
+        tono: tono));
+  }
+
+  // Squirrel encendido y nadie capturó nunca: conviene decir por qué, porque
+  // desde fuera parece que el formato no funciona.
+  if (cfg.squirrel &&
+      rec.segmentos.every((s) => s.dueno == null) &&
+      rec.segmentos
+          .any((s) => s.pasos.any((p) => p.evento == RabbitEvento.sinBirdie))) {
+    notas.add(NotaDeLiquidacion(
+        moduleId: mod.id,
+        tipo: BetModuleType.rabbit,
+        texto: 'Con Squirrel encendido hace falta birdie neto para capturar, '
+            'y los hoyos ganados se ganaron sin birdie.',
+        tono: TonoNota.informativa));
+  }
+
+  return notas;
 }
