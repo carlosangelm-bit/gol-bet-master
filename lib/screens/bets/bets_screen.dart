@@ -1937,8 +1937,7 @@ class _BetRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isMatch = mod.type == BetModuleType.nassau ||
-        mod.type == BetModuleType.matchAutoPress;
+    final isMatch = mod.type.family == BetFamily.matchPlay;
     final accentColor = isMatch ? t.accent : t.primary;
 
     return Container(

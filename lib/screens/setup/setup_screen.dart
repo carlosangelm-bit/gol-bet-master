@@ -5478,23 +5478,20 @@ class _SetupScreenState extends State<SetupScreen> {
             const SizedBox(height: 16),
 
             // ── Tipo de apuesta ─────────────────────────────────────────────
-            Text('MATCH PLAY', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
-            const SizedBox(height: 8),
-            // La lista es explícita para controlar orden y agrupado, pero pasa
-            // por isCreatable: así retirar un tipo se hace en un solo sitio
-            // —creatableBetTypes— y no hay que acordarse de cinco pantallas.
-            // Añadir uno nuevo sí sigue exigiendo meterlo aquí, o queda
-            // inalcanzable desde Setup.
-            ...[
-              BetModuleType.nassau,
-              BetModuleType.nassauLowHigh,
-            ].where((bt) => bt.isCreatable)
-             .map((bt) => _betTypeTile(bt, selected, setSt, t)),
-            const SizedBox(height: 16),
-            Text('OTRAS APUESTAS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
-            const SizedBox(height: 8),
-            ...[BetModuleType.skins, BetModuleType.medal, BetModuleType.putts, BetModuleType.oyeses, BetModuleType.units].map((bt) => _betTypeTile(bt, selected, setSt, t)),
-            const SizedBox(height: 20),
+            //
+            // Sale de betTypeSections. Aquí había una lista literal con un
+            // comentario que decía "añadir uno nuevo sí sigue exigiendo meterlo
+            // aquí, o queda inalcanzable desde Setup". Predijo el fallo exacto
+            // que ocurrió con Snake, Rabbit y Wolf. Un comentario que avisa no
+            // sustituye a una estructura que impide.
+            for (final sec in betTypeSections) ...[
+              Text(sec.familia.label, style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+              const SizedBox(height: 8),
+              ...sec.tipos.map((bt) =>
+                  _betTypeTile(bt, selected, setSt, t, jugadores: pids.length)),
+              const SizedBox(height: 16),
+            ],
+            const SizedBox(height: 4),
 
             // ── Selector de estructura ──────────────────────────────────────
             Text('FORMATO DE ENFRENTAMIENTO', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
@@ -5681,15 +5678,21 @@ class _SetupScreenState extends State<SetupScreen> {
     BetStructure.manual      => 'Manual',
   };
 
-  Widget _betTypeTile(BetModuleType bt, Set<BetModuleType> selected, StateSetter setSt, GolfTheme t) {
+  /// [jugadores] es cuántas personas tiene la partida, para poder atenuar los
+  /// tipos que necesitan un número exacto. Null cuando no se sabe —una
+  /// configuración guardada no tiene jugadores— y entonces no se atenúa nada.
+  Widget _betTypeTile(BetModuleType bt, Set<BetModuleType> selected,
+      StateSetter setSt, GolfTheme t, {int? jugadores}) {
     final isSel = selected.contains(bt);
-    // Colores especiales para Match types
-    final isMatchType = bt == BetModuleType.nassau || bt == BetModuleType.matchAutoPress;
-    final accentColor = isMatchType ? t.accent : t.primary;
+    final accentColor =
+        bt.family == BetFamily.matchPlay ? t.accent : t.primary;
+    final motivo =
+        jugadores == null ? null : bt.motivoNoDisponible(jugadores);
+    final bloqueada = motivo != null;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
-        onTap: () => setSt(() { if (isSel) {
+        onTap: bloqueada ? null : () => setSt(() { if (isSel) {
           selected.remove(bt);
         } else {
           selected.add(bt);
@@ -5698,18 +5701,28 @@ class _SetupScreenState extends State<SetupScreen> {
           duration: const Duration(milliseconds: 120),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: isSel ? accentColor.withValues(alpha: 0.1) : t.card,
+            color: bloqueada
+                ? t.surface
+                : isSel ? accentColor.withValues(alpha: 0.1) : t.card,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: isSel ? accentColor : t.divider, width: isSel ? 1.5 : 1),
+            border: Border.all(color: isSel && !bloqueada ? accentColor : t.divider,
+                width: isSel && !bloqueada ? 1.5 : 1),
           ),
           child: Row(children: [
             Text(bt.icon, style: const TextStyle(fontSize: 20)),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(bt.label, style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 14)),
+              Text(bt.label, style: TextStyle(color: bloqueada ? t.sub : t.text, fontWeight: FontWeight.w700, fontSize: 14)),
               Text(bt.description, style: TextStyle(color: t.sub, fontSize: 11)),
+              // El motivo completo, no "no disponible": una opción atenuada que
+              // explica enseña el modelo.
+              if (motivo != null)
+                Text(motivo,
+                    style: TextStyle(color: t.sub.withValues(alpha: 0.75),
+                        fontSize: 10, fontStyle: FontStyle.italic)),
             ])),
-            if (isSel) Icon(Icons.check_circle, color: accentColor, size: 20)
+            if (bloqueada) Icon(Icons.block, color: t.sub, size: 18)
+            else if (isSel) Icon(Icons.check_circle, color: accentColor, size: 20)
             else Icon(Icons.add_circle_outline, color: t.sub, size: 20),
           ]),
         ),

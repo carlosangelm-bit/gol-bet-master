@@ -2691,8 +2691,7 @@ class _ActiveRoundView extends StatelessWidget {
   ) {
     final template = family.first.value;
     final count    = family.length;
-    final isMatch  = template.type == BetModuleType.nassau ||
-                     template.type == BetModuleType.matchAutoPress;
+    final isMatch  = template.type.family == BetFamily.matchPlay;
     final accent   = isMatch ? t.accent : t.primary;
 
     // ¿Algún módulo tiene overrides por par personalizados?
@@ -3322,18 +3321,16 @@ class _ActiveRoundView extends StatelessWidget {
           Text('${group.name}  ·  Se activa desde el hoyo actual', style: TextStyle(color: t.sub, fontSize: 12)),
           const SizedBox(height: 16),
 
-          Text('MATCH PLAY', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
-          const SizedBox(height: 8),
-          ...[BetModuleType.nassau, BetModuleType.matchAutoPress]
-              .where((bt) => bt.isCreatable)
-              .map((bt) => _betTypeTileHome(bt, selected, setSt, t, group)),
-          const SizedBox(height: 16),
-          Text('OTRAS APUESTAS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
-          const SizedBox(height: 8),
-          ...[BetModuleType.skins, BetModuleType.medal, BetModuleType.putts,
-              BetModuleType.oyeses, BetModuleType.units].map((bt) =>
-            _betTypeTileHome(bt, selected, setSt, t, group)),
-          const SizedBox(height: 16),
+          // Las secciones y su contenido salen de betTypeSections. Eran dos
+          // listas literales, y por eso esta hoja ofrecía SEIS tipos de once:
+          // Snake, Rabbit y Wolf no llegaron nunca, y Bola Baja / Bola Alta
+          // llevaba tiempo sin aparecer aquí.
+          for (final sec in betTypeSections) ...[
+            Text(sec.familia.label, style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+            const SizedBox(height: 8),
+            ...sec.tipos.map((bt) => _betTypeTileHome(bt, selected, setSt, t, group)),
+            const SizedBox(height: 16),
+          ],
 
           SizedBox(
             width: double.infinity,
@@ -3381,13 +3378,17 @@ class _ActiveRoundView extends StatelessWidget {
 
   Widget _betTypeTileHome(BetModuleType bt, Set<BetModuleType> selected, StateSetter setSt, GolfTheme t, BetGroup group) {
     final isSel = selected.contains(bt);
-    final isMatchType = bt == BetModuleType.nassau || bt == BetModuleType.matchAutoPress;
-    final accentColor = isMatchType ? t.accent : t.primary;
+    final accentColor = bt.family == BetFamily.matchPlay ? t.accent : t.primary;
     final alreadyAdded = group.modules.any((m) => m.type == bt);
+    // Por qué no se puede añadir a ESTA partida. Hoy solo Wolf lo usa —necesita
+    // exactamente 4—, y se atenúa con el motivo en vez de ofrecerlo y liquidar
+    // nada: es la misma convención que el selector de Setup.
+    final motivo = bt.motivoNoDisponible(group.playerIds.length);
+    final bloqueada = alreadyAdded || motivo != null;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
-        onTap: alreadyAdded ? null : () => setSt(() {
+        onTap: bloqueada ? null : () => setSt(() {
           if (isSel) {
             selected.remove(bt);
           } else {
@@ -3398,20 +3399,25 @@ class _ActiveRoundView extends StatelessWidget {
           duration: const Duration(milliseconds: 120),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: alreadyAdded
+            color: bloqueada
                 ? t.divider.withValues(alpha: 0.3)
                 : isSel ? accentColor.withValues(alpha: 0.1) : t.surface,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: isSel ? accentColor : t.divider),
           ),
           child: Row(children: [
-            Text(bt.icon, style: TextStyle(fontSize: 20, color: alreadyAdded ? t.sub : null)),
+            Text(bt.icon, style: TextStyle(fontSize: 20, color: bloqueada ? t.sub : null)),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(bt.label, style: TextStyle(color: alreadyAdded ? t.sub : t.text, fontWeight: FontWeight.w700, fontSize: 13)),
+              Text(bt.label, style: TextStyle(color: bloqueada ? t.sub : t.text, fontWeight: FontWeight.w700, fontSize: 13)),
               Text(bt.description, style: TextStyle(color: t.sub, fontSize: 10)),
               if (alreadyAdded)
-                Text('Ya incluida en esta partida', style: TextStyle(color: t.sub.withValues(alpha: 0.6), fontSize: 9, fontStyle: FontStyle.italic)),
+                Text('Ya incluida en esta partida', style: TextStyle(color: t.sub.withValues(alpha: 0.6), fontSize: 9, fontStyle: FontStyle.italic))
+              else if (motivo != null)
+                // El motivo COMPLETO, no "no disponible": una opción atenuada
+                // que explica enseña el modelo; una que solo se apaga enseña que
+                // la app es arbitraria.
+                Text(motivo, style: TextStyle(color: t.sub.withValues(alpha: 0.7), fontSize: 9, fontStyle: FontStyle.italic)),
             ])),
             if (isSel && !alreadyAdded)
               Icon(Icons.check_circle, color: accentColor, size: 20),

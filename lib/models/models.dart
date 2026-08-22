@@ -199,6 +199,95 @@ extension BetModuleTypeRules on BetModuleType {
       };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LAS SECCIONES DE "AGREGAR APUESTA" — una fuente, no una lista por pantalla
+//
+// Había TRES hojas de "Agregar apuesta" —Inicio durante la ronda, el paso de
+// detalle de Setup y las configuraciones guardadas— y cada una enumeraba los
+// tipos a mano en dos listas literales. Snake, Rabbit y Wolf no aparecieron en
+// ninguna, y Bola Baja / Bola Alta llevaba tiempo sin aparecer en dos de ellas.
+//
+// Es la séptima superficie de esta clase en la sesión, y la lección ya estaba
+// escrita: en el propio Setup, encima de la lista literal, había un comentario
+// que decía "añadir uno nuevo sí sigue exigiendo meterlo aquí, o queda
+// inalcanzable desde Setup". Predijo el fallo exacto. Un comentario que avisa no
+// sustituye a una estructura que impide.
+//
+// Lo que hace que esto no vuelva a pasar no es que la lista salga del enum —eso
+// ya lo hacían otros selectores— sino que [BetFamily] se resuelva con un switch
+// EXHAUSTIVO: el compilador no deja añadir un tipo sin declarar en qué sección
+// va, así que no hay forma de añadir uno y que quede fuera de las tres hojas.
+//
+// El ORDEN sale del enum. No hay una lista de presentación aparte, porque una
+// lista de presentación aparte es exactamente lo que acabamos de quitar.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Con qué grupo se presenta el tipo en las hojas de selección.
+enum BetFamily {
+  /// Se gana por hoyos ganados: el match y sus parientes.
+  matchPlay,
+
+  /// Todo lo demás.
+  otras,
+}
+
+extension BetFamilyLabel on BetFamily {
+  String get label => switch (this) {
+        BetFamily.matchPlay => 'MATCH PLAY',
+        BetFamily.otras => 'OTRAS APUESTAS',
+      };
+}
+
+extension BetModuleFamilyOf on BetModuleType {
+  /// En qué sección va este tipo.
+  ///
+  /// Switch exhaustivo A PROPÓSITO: es lo que obliga al siguiente formato a
+  /// declararse y lo que impide que quede inalcanzable en las tres hojas.
+  BetFamily get family => switch (this) {
+        BetModuleType.nassau ||
+        BetModuleType.matchAutoPress ||
+        BetModuleType.nassauLowHigh =>
+          BetFamily.matchPlay,
+        BetModuleType.skins ||
+        BetModuleType.medal ||
+        BetModuleType.putts ||
+        BetModuleType.oyeses ||
+        BetModuleType.units ||
+        BetModuleType.snake ||
+        BetModuleType.rabbit ||
+        BetModuleType.wolf =>
+          BetFamily.otras,
+      };
+
+  /// Por qué este tipo no se puede añadir a una partida de [jugadores]
+  /// personas, o null si sí se puede.
+  ///
+  /// Hoy solo lo usa la cardinalidad de Wolf. Vive aquí y no en un `if` dentro
+  /// de cada hoja para que las tres digan lo mismo.
+  String? motivoNoDisponible(int jugadores) {
+    final exactos = rules.jugadoresExactos;
+    if (exactos != null && jugadores != exactos) return rules.sinEseNumero;
+    return null;
+  }
+}
+
+/// Las secciones de las hojas de "Agregar apuesta", en orden.
+///
+/// Solo tipos creables, agrupados por [BetFamily] y en orden del enum. Una
+/// sección sin tipos no se devuelve: así retirar el último tipo de una familia
+/// no deja una cabecera huérfana.
+List<({BetFamily familia, List<BetModuleType> tipos})> get betTypeSections {
+  final porFamilia = <BetFamily, List<BetModuleType>>{};
+  for (final t in creatableBetTypes) {
+    porFamilia.putIfAbsent(t.family, () => []).add(t);
+  }
+  return [
+    for (final f in BetFamily.values)
+      if ((porFamilia[f] ?? const []).isNotEmpty)
+        (familia: f, tipos: porFamilia[f]!),
+  ];
+}
+
 /// Tipos que se pueden crear hoy. **Toda hoja de selección debe usar esto.**
 ///
 /// Un tipo retirado sigue existiendo en el enum, en la deserialización, en el

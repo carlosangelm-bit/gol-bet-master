@@ -598,22 +598,15 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
               Text('Selecciona el tipo de apuesta', style: TextStyle(color: t.sub, fontSize: 12)),
               const SizedBox(height: 16),
 
-              Text('MATCH PLAY', style: TextStyle(color: t.sub, fontSize: 10,
-                  fontWeight: FontWeight.w800, letterSpacing: 0.8)),
-              const SizedBox(height: 8),
-              ...[BetModuleType.nassau, BetModuleType.matchAutoPress]
-                  .where((bt) => bt.isCreatable)
-                  .map((bt) => _betTypeTile(bt, selected, setSt, t)),
-              const SizedBox(height: 16),
-
-              Text('OTRAS APUESTAS', style: TextStyle(color: t.sub, fontSize: 10,
-                  fontWeight: FontWeight.w800, letterSpacing: 0.8)),
-              const SizedBox(height: 8),
-              ...[BetModuleType.skins, BetModuleType.medal,
-                BetModuleType.putts, BetModuleType.oyeses, BetModuleType.units]
-                  .map((bt) => _betTypeTile(bt, selected, setSt, t)),
-
-              const SizedBox(height: 16),
+              // De betTypeSections, como las otras dos hojas de "Agregar
+              // apuesta". Eran dos listas literales.
+              for (final sec in betTypeSections) ...[
+                Text(sec.familia.label, style: TextStyle(color: t.sub, fontSize: 10,
+                    fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+                const SizedBox(height: 8),
+                ...sec.tipos.map((bt) => _betTypeTile(bt, selected, setSt, t)),
+                const SizedBox(height: 16),
+              ],
               GPrimaryButton(
                 label: selected.isEmpty
                     ? 'Selecciona al menos uno'
@@ -643,7 +636,7 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
 
   Widget _betTypeTile(BetModuleType bt, Set<BetModuleType> selected, StateSetter setSt, GolfTheme t) {
     final isSel = selected.contains(bt);
-    final isMatchType = bt == BetModuleType.nassau || bt == BetModuleType.matchAutoPress;
+    final isMatchType = bt.family == BetFamily.matchPlay;
     final accentColor = isMatchType ? t.accent : t.primary;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),

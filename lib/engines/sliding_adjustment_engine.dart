@@ -179,6 +179,23 @@ extension SinAjusteMotivoTexto on SinAjusteMotivo {
 }
 
 class SlidingAdjustmentEngine {
+  /// Los tipos de los que este motor sabe derivar un duelo.
+  ///
+  /// UNA constante porque había dos listas que tenían que coincidir: esta y las
+  /// tres llamadas a `_duelFrom…Entries` de abajo. Si alguien añadiera un cuarto
+  /// tipo con duelo y olvidara la de arriba, la ronda diría "sin match ni skins"
+  /// mientras calcula ajustes.
+  ///
+  /// Es una lista BLANCA a propósito, no negra: un formato nuevo queda fuera por
+  /// defecto. Es la dirección segura —ganar en medal, putts, oyes, unidades,
+  /// snake, rabbit o wolf NO es ganar el duelo— y es la regla que se fijó
+  /// jugando: el sliding solo se mueve con el match o los skins.
+  static const tiposConDuelo = {
+    BetModuleType.matchAutoPress,
+    BetModuleType.nassau,
+    BetModuleType.skins,
+  };
+
   /// Por qué esta ronda no da ajustes. null si sí los da.
   ///
   /// Se calcula desde los MÓDULOS y no desde el ledger: lo que decide es qué se
@@ -193,11 +210,7 @@ class SlidingAdjustmentEngine {
         hubieraApuestas = true;
         if (m.hasTeamSides) continue;
         hubieraIndividual = true;
-        if (m.type == BetModuleType.matchAutoPress ||
-            m.type == BetModuleType.nassau ||
-            m.type == BetModuleType.skins) {
-          hubieraAjustable = true;
-        }
+        if (tiposConDuelo.contains(m.type)) hubieraAjustable = true;
       }
     }
 
