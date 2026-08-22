@@ -85,6 +85,25 @@ class BetTypeRules {
   final bool perPairAmount;
   final String? sinMontoPorPareja;
 
+  /// Sus participantes son PERSONAS, nunca lados ni equipos.
+  ///
+  /// Los side bets —Snake, Rabbit, Wolf— conviven con cualquier juego principal:
+  /// se pueden añadir a una ronda por equipos y eso es correcto, así los
+  /// describe la especificación. Pero entonces sus participantes son las cuatro
+  /// personas, no los dos lados.
+  ///
+  /// Sin esta marca pasaba lo siguiente, y son TRES síntomas de una causa: en
+  /// una ronda best ball, group.playerIds son los reales MÁS los virtuales de
+  /// equipo, y un módulo nacido de defaultFor(tipo, group.playerIds) se los
+  /// queda todos. Como los virtuales nunca tienen score en best ball, ningún
+  /// hoyo parecía capturado —"quedan 18 hoyos" con 2 capturados—, Rabbit no
+  /// llegaba a capturar el conejo ni a decir nada, el aviso de score incompleto
+  /// pedía score a "Equipo A", y Wolf contaba seis participantes y se declaraba
+  /// injugable en una ronda de cuatro personas.
+  ///
+  /// Se resuelve en UN sitio: [Round.participantesDe].
+  final bool soloPersonas;
+
   /// Cuántos jugadores necesita EXACTAMENTE. Null = cualquier número.
   ///
   /// Wolf es el primero que lo usa: con 3 la rotación cambia y con 5 o más el
@@ -105,6 +124,7 @@ class BetTypeRules {
     this.sinMontoPorPareja,
     this.jugadoresExactos,
     this.sinEseNumero,
+    this.soloPersonas = false,
   });
 }
 
@@ -155,6 +175,7 @@ extension BetModuleTypeRules on BetModuleType {
             sinSegmentos: 'Las unidades se cobran cuando ocurren, no por vuelta.',
           ),
         BetModuleType.wolf => const BetTypeRules(
+            soloPersonas: true,
             jugadoresExactos: 4,
             sinEseNumero: 'Wolf se juega exactamente con 4: el Wolf rota uno '
                 'por hoyo y elige compañero entre los otros tres. Con 3 la '
@@ -168,6 +189,7 @@ extension BetModuleTypeRules on BetModuleType {
                 'cruces del enfrentamiento de ese hoyo, que cambia cada vez.',
           ),
         BetModuleType.rabbit => const BetTypeRules(
+            soloPersonas: true,
             // Sí liquida por segmentos —cierre del 9 y del 18— pero NO son los
             // Front/Back/Total configurables del Nassau: son los dos cierres de
             // la caza, y no hay un tercer importe "total". Por eso segments
@@ -180,6 +202,7 @@ extension BetModuleTypeRules on BetModuleType {
                 'no un duelo con cada uno.',
           ),
         BetModuleType.snake => const BetTypeRules(
+            soloPersonas: true,
             sinEquipos: 'La serpiente la agarra una persona con sus putts: no '
                 'hay 3-putt de equipo.',
             sinSegmentos: 'Es UNA serpiente por ronda —la última—, así que no '
@@ -3770,7 +3793,27 @@ class Round {
           BetModuleInstance mod, List<String> groupPlayerIds) =>
       mod.hasTeamSides
           ? [...scoreCarriersOf(mod.sideA), ...scoreCarriersOf(mod.sideB)]
-          : mod.effectivePids(groupPlayerIds);
+          : participantesDe(mod, groupPlayerIds);
+
+  /// Los participantes de [mod] tal como los entiende SU formato.
+  ///
+  /// Para casi todos es [BetModuleInstance.effectivePids] sin más. Para los que
+  /// declaran [BetTypeRules.soloPersonas] —los side bets— se quitan los
+  /// jugadores virtuales de equipo: Snake cuenta los putts de una persona,
+  /// Rabbit lo captura una persona ganando un hoyo, y Wolf necesita cuatro
+  /// personas. Un equipo no hace tres putts.
+  ///
+  /// UN sitio a propósito. La alternativa era un filtro dentro de cada motor y
+  /// otro en la capa de notas, o sea cuatro sitios que tienen que coincidir —y
+  /// es exactamente la clase de duplicación que ya nos costó siete superficies
+  /// en esta sesión—.
+  List<String> participantesDe(
+      BetModuleInstance mod, List<String> groupPlayerIds) {
+    final pids = mod.effectivePids(groupPlayerIds);
+    if (!mod.type.rules.soloPersonas) return pids;
+    final virtuales = players.where((p) => p.isVirtual).map((p) => p.id).toSet();
+    return pids.where((id) => !virtuales.contains(id)).toList();
+  }
 
   double getHandicap(String playerId) =>
       roundPlayers.firstWhere((rp) => rp.playerId == playerId,

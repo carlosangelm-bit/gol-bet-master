@@ -78,7 +78,7 @@ List<NotaDeLiquidacion> notasDeLiquidacion(Round round) {
 
 List<NotaDeLiquidacion> _snake(
     Round round, BetGroup grupo, BetModuleInstance mod) {
-  final pids = mod.effectivePids(grupo.playerIds);
+  final pids = round.participantesDe(mod, grupo.playerIds);
   final cfg = mod.snake;
   final r = SnakeEngine.buscar(round, pids, cfg);
 
@@ -138,7 +138,7 @@ String _nombre(Round round, String pid) {
 // un segmento que no se calculó.
 List<NotaDeLiquidacion> _rabbit(
     Round round, BetGroup grupo, BetModuleInstance mod) {
-  final pids = mod.effectivePids(grupo.playerIds);
+  final pids = round.participantesDe(mod, grupo.playerIds);
   final cfg = mod.rabbit;
   final rec = RabbitEngine.recorrido(round, pids, cfg);
   final notas = <NotaDeLiquidacion>[];
@@ -154,14 +154,21 @@ List<NotaDeLiquidacion> _rabbit(
 
     if (seg.dueno == null) {
       final arrastra = cfg.acumula && seg.primero;
-      texto = 'El conejo quedó suelto al cerrar los ${seg.etiqueta}: '
-          '${arrastra ? 'el importe pasa al siguiente tramo' : 'nadie cobra ese tramo'}.'
-          '${seg.completo ? '' : ' Quedan ${seg.hoyosSinCapturar} hoyos por capturar.'}';
-      tono = seg.completo ? TonoNota.informativa : TonoNota.provisional;
+      if (seg.completo) {
+        texto = 'El conejo quedó suelto al cerrar los ${seg.etiqueta}: '
+            '${arrastra ? 'el importe pasa al siguiente tramo' : 'nadie cobra ese tramo'}.';
+        tono = TonoNota.informativa;
+      } else {
+        // En curso "quedó suelto" sería un veredicto. Está suelto, que es otra
+        // cosa: cualquiera lo agarra ganando un hoyo.
+        texto = 'El conejo está suelto: lo agarra quien gane un hoyo solo. '
+            'Quedan ${seg.hoyosSinCapturar} hoyos de los ${seg.etiqueta}.';
+        tono = TonoNota.provisional;
+      }
     } else {
       final quien = _nombre(round, seg.dueno!);
-      // Se cuenta CÓMO acabó ahí, no solo quién: el conejo se mueve varias
-      // veces y el dueño final sin la historia parece arbitrario.
+      // Se cuenta CÓMO llegó ahí, no solo quién: el conejo se mueve varias veces
+      // y el dueño sin la historia parece arbitrario.
       final capturas = seg.pasos
           .where((p) =>
               p.evento == RabbitEvento.capturado ||
@@ -173,9 +180,23 @@ List<NotaDeLiquidacion> _rabbit(
           ? ' Cambió de manos $capturas ${capturas == 1 ? 'vez' : 'veces'} y se '
               'soltó $sueltas.'
           : '';
-      texto = '$quien tiene el conejo al cerrar los ${seg.etiqueta}.$historia'
-          '${seg.completo ? '' : ' Provisional: quedan ${seg.hoyosSinCapturar} hoyos.'}';
-      tono = seg.completo ? TonoNota.informativa : TonoNota.provisional;
+
+      if (seg.completo) {
+        // Cerrado: el resultado ya es un hecho y se puede afirmar.
+        texto = '$quien tiene el conejo al cerrar los ${seg.etiqueta}.$historia';
+        tono = TonoNota.informativa;
+      } else {
+        // EN CURSO. La frase cambia de tiempo verbal a propósito: decir que
+        // alguien "lo tiene al cerrar" con hoyos por jugar afirma un resultado
+        // que aún puede cambiar —basta con que otro gane un hoyo para que se
+        // suelte—. Y el estado del conejo DURANTE la vuelta es justo la tensión
+        // del juego, así que callarse hasta el cierre esconde lo que importa.
+        final desde =
+            seg.desdeHoyo != null ? ' desde el hoyo ${seg.desdeHoyo}' : '';
+        texto = 'Lo tiene $quien$desde. Se cobra al cerrar los '
+            '${seg.etiqueta}, y quedan ${seg.hoyosSinCapturar} hoyos.$historia';
+        tono = TonoNota.provisional;
+      }
     }
 
     notas.add(NotaDeLiquidacion(
@@ -213,7 +234,7 @@ List<NotaDeLiquidacion> _rabbit(
 // colapso que ya se aplicó a los avisos de score incompleto.
 List<NotaDeLiquidacion> _wolf(
     Round round, BetGroup grupo, BetModuleInstance mod) {
-  final pids = mod.effectivePids(grupo.playerIds);
+  final pids = round.participantesDe(mod, grupo.playerIds);
   final notas = <NotaDeLiquidacion>[];
 
   NotaDeLiquidacion nota(String texto, TonoNota tono) => NotaDeLiquidacion(

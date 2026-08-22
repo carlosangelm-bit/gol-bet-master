@@ -508,7 +508,10 @@ class BetEngine {
   static List<LedgerEntry> _computeModuleIndividual(
       Round round, BetGroup group, BetModuleInstance mod) {
     final entries = <LedgerEntry>[];
-    final pids = mod.effectivePids(group.playerIds);
+    // participantesDe y no effectivePids: los side bets se resuelven a PERSONAS.
+    // Para el resto devuelve exactamente lo mismo, así que no cambia nada de lo
+    // que ya liquidaba.
+    final pids = round.participantesDe(mod, group.playerIds);
     switch (mod.type) {
       case BetModuleType.skins:
         entries.addAll(_skins(round, pids, mod));

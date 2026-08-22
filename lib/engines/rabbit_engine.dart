@@ -82,8 +82,16 @@ class RabbitSegmento {
 
   final List<RabbitPaso> pasos;
 
-  /// Quién tenía el conejo al cerrar. Null = quedó suelto.
+  /// Quién tiene el conejo al final de lo capturado. Null = suelto.
   final String? dueno;
+
+  /// Desde qué hoyo lo tiene.
+  ///
+  /// Existe para poder contarlo EN CURSO: "lo tiene CAV desde el hoyo 2" dice
+  /// algo cierto a mitad de vuelta, mientras "lo tiene al cerrar los nueve"
+  /// afirma un resultado que aún puede cambiar. Con siete hoyos por jugar, el
+  /// conejo se suelta con que otro gane uno.
+  final int? desdeHoyo;
 
   /// Hoyos del segmento sin capturar del todo.
   final int hoyosSinCapturar;
@@ -93,6 +101,7 @@ class RabbitSegmento {
     required this.primero,
     required this.pasos,
     required this.dueno,
+    required this.desdeHoyo,
     required this.hoyosSinCapturar,
   });
 
@@ -185,9 +194,20 @@ class RabbitEngine {
         }
       }
 
+      // Desde cuándo lo tiene: el último hoyo en que cambió de manos.
+      int? desde;
+      for (final p in pasos) {
+        if (p.evento == RabbitEvento.capturado ||
+            p.evento == RabbitEvento.robado) {
+          desde = p.hoyo;
+        } else if (p.evento == RabbitEvento.soltado) {
+          desde = null;
+        }
+      }
+
       salida.add(RabbitSegmento(
           etiqueta: seg.etiqueta, primero: seg.primero, pasos: pasos,
-          dueno: dueno, hoyosSinCapturar: sinCapturar));
+          dueno: dueno, desdeHoyo: desde, hoyosSinCapturar: sinCapturar));
     }
 
     return RabbitRecorrido(salida);

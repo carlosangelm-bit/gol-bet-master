@@ -1882,7 +1882,7 @@ class _WolfCallSection extends StatelessWidget {
     if (mods.isEmpty) return const SizedBox.shrink();
 
     final (grupo, mod) = mods.first;
-    final orden = mod.effectivePids(grupo.playerIds);
+    final orden = round.participantesDe(mod, grupo.playerIds);
     if (orden.length != 4) {
       // No debería pasar —el selector atenúa Wolf sin 4— pero una ronda
       // guardada a la que se le saca un jugador llega aquí, y quedarse mudo
