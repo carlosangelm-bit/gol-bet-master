@@ -18,6 +18,9 @@ import 'package:provider/provider.dart';
 import 'package:golf_bet_master/providers/round_provider.dart';
 import 'package:golf_bet_master/providers/auth_provider.dart';
 import 'package:golf_bet_master/providers/player_provider.dart';
+import 'package:golf_bet_master/providers/handicap_provider.dart';
+import 'package:golf_bet_master/providers/perfil_provider.dart';
+import 'package:golf_bet_master/providers/user_profile_provider.dart';
 import 'package:golf_bet_master/screens/home/home_screen.dart';
 
 /// Monta Inicio a un ancho de teléfono y devuelve los errores de layout.
@@ -35,6 +38,11 @@ Future<List<String>> _montar(WidgetTester tester, Size tamano) async {
       ChangeNotifierProvider(create: (_) => RoundProvider()),
       ChangeNotifierProvider(create: (_) => AuthProvider()),
       ChangeNotifierProvider(create: (_) => PlayerProvider()),
+      // El tablero de Inicio los necesita. Sin ellos la pantalla lanzaba
+      // ProviderNotFound y este test seguía pasando —ver _sinErroresGraves—.
+      ChangeNotifierProvider(create: (_) => HandicapProvider()),
+      ChangeNotifierProvider(create: (_) => PerfilProvider()),
+      ChangeNotifierProvider(create: (_) => UserProfileProvider()),
     ],
     child: const MaterialApp(home: HomeScreen()),
   ));
@@ -43,9 +51,32 @@ Future<List<String>> _montar(WidgetTester tester, Size tamano) async {
   return errores;
 }
 
+/// Falla si el árbol lanzó algo que no sea un desbordamiento conocido.
+///
+/// El recolector de _montar captura FlutterError.onError, así que se queda con
+/// TODO lo que la pantalla lance. Los tests de abajo solo miraban los
+/// desbordamientos, y eso dejaba pasar el fallo más gordo posible: una pantalla
+/// que no se construye. Se descubrió al añadir el tablero —Inicio lanzaba
+/// ProviderNotFound en tres widgets y la suite seguía en verde—.
+///
+/// Mira TODO, desbordamientos incluidos. Se pudo apretar así al arreglar el de
+/// los badges del hero —110 px, que llevaba tiempo saliendo—, y conviene que
+/// siga apretado: una lista de excepciones toleradas crece hasta que el test
+/// deja de decir nada.
+void _sinErroresGraves(List<String> errores) {
+  expect(errores, isEmpty,
+      reason: 'la pantalla lanzó:\n${errores.join('\n---\n')}');
+}
+
 void main() {
+  testWidgets('Inicio se construye sin lanzar nada', (tester) async {
+    // El test que faltaba, y el que habría cazado esto solo. Los de abajo miran
+    // geometría, así que una pantalla que no llega a construirse los pasaba.
+    _sinErroresGraves(await _montar(tester, const Size(390, 844)));
+  });
+
   testWidgets('los dos destinos de la cabecera están y caben', (tester) async {
-    await _montar(tester, const Size(390, 844));
+    _sinErroresGraves(await _montar(tester, const Size(390, 844)));
 
     for (final tip in ['Historial', 'Ajustes']) {
       final f = find.byTooltip(tip);
@@ -78,7 +109,7 @@ void main() {
   testWidgets('caben también en una pantalla estrecha', (tester) async {
     // 320 px es el suelo razonable. Si a ese ancho se salen, en algún teléfono
     // real también.
-    await _montar(tester, const Size(320, 640));
+    _sinErroresGraves(await _montar(tester, const Size(320, 640)));
     for (final tip in ['Historial', 'Ajustes']) {
       final r = tester.getRect(find.byTooltip(tip).first);
       expect(r.right, lessThanOrEqualTo(320), reason: '$tip a 320 px');

@@ -20,6 +20,7 @@ import '../../widgets/bet_module_edit_sheet.dart';
 import '../../widgets/sliding_adjustment_dialog.dart';
 import '../setup/setup_screen.dart';
 import '../templates/templates_screen.dart';
+import 'tablero_inicio.dart';
 import '../../debug/test_round.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -1069,6 +1070,18 @@ class _EmptyView extends StatelessWidget {
           // ── Hero section premium ────────────────────────────────────────
           _HeroSection(t: t),
 
+          // ── Quién eres, y tu índice ─────────────────────────────────────
+          //
+          // Lo primero después de la marca: esta pantalla es la que ves al
+          // entrar, y hasta ahora no decía en ningún sitio de quién es la
+          // sesión. El índice va aquí y no en un bloque aparte porque responde
+          // a la misma pregunta —cómo te presenta la app— y se cambia en el
+          // mismo sitio.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+            child: TiraIdentidadInicio(t: t),
+          ),
+
           // ── Card de acciones ────────────────────────────────────────────
           Container(
             margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -1226,12 +1239,28 @@ class _EmptyView extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 28),
-
-                // Sección de apuestas disponibles
-                _QuickInfoCards(t: t),
               ],
             ),
+          ),
+
+          // ── Tu histórico ────────────────────────────────────────────────
+          //
+          // DEBAJO de la acción, no encima. Inicio es donde se empieza a jugar;
+          // un tablero que empujara "Nueva ronda" hacia abajo convertiría la
+          // pantalla de arranque en una de consulta.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: HistoricoInicio(t: t),
+          ),
+
+          // ── El catálogo de apuestas ─────────────────────────────────────
+          //
+          // Baja hasta aquí. Estaba DENTRO de la card de acciones, así que
+          // material educativo genérico quedaba por encima de tus propios
+          // números. No se pierde nada: sigue en Inicio y a un scroll.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+            child: _QuickInfoCards(t: t),
           ),
         ],
       ),
@@ -1328,13 +1357,23 @@ class _HeroSection extends StatelessWidget {
                 const SizedBox(height: 24),
 
                 // ── Badges ───────────────────────────────────────────────
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                //
+                // Wrap y no Row: medido en test, los tres se salían 110 px por
+                // la derecha. Es el desbordamiento que llevaba tiempo saliendo
+                // en Inicio y que un comentario de más arriba atribuía al chip
+                // de tema de la cabecera —no era ahí—.
+                //
+                // Con la cautela de que en el entorno de test los emoji usan
+                // una fuente de recambio que puede medir distinto que en el
+                // navegador. Wrap es correcto en los dos casos: si caben, se
+                // ven igual; si no, bajan de línea en vez de recortarse.
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 10,
+                  runSpacing: 8,
                   children: [
                     _badge('⛳', 'Golf'),
-                    const SizedBox(width: 10),
                     _badge('💰', 'Apuestas'),
-                    const SizedBox(width: 10),
                     _badge('🏆', 'Resultados'),
                   ],
                 ),

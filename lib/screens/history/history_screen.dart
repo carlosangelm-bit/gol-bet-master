@@ -9,6 +9,7 @@ import '../../models/models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/round_provider.dart';
 import '../../providers/handicap_provider.dart';
+import '../../providers/perfil_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../services/handicap_service.dart';
 import '../../widgets/common_widgets.dart';
@@ -64,18 +65,30 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Future<void> _migrateHandicapHistory(GolfTheme t) async {
     setState(() => _migrating = true);
     try {
+      // Dos cosas derivadas se guardan al cerrar una ronda: el diferencial que
+      // mueve tu handicap y el resultado en dinero que alimenta el tablero de
+      // Inicio. Las rondas cerradas antes de que existiera cada una no la
+      // tienen, así que el backfill mira LAS DOS.
+      //
+      // Antes solo filtraba por diferencial, y una ronda con diferencial pero
+      // sin dinero —el caso de todo el histórico existente— no entraba: el
+      // botón habría dicho "todas calculadas" dejando el balance en cero.
       final hcpProv = context.read<HandicapProvider>();
-      final existingIds = hcpProv.differentials.map((d) => d.roundId).toSet();
+      final perfilProv = context.read<PerfilProvider>();
+      final conDiferencial = hcpProv.differentials.map((d) => d.roundId).toSet();
+      final conDinero = perfilProv.resultados.map((r) => r.roundId).toSet();
 
       // Obtener historial completo
       final history = await FirestoreService.getHistory(limit: 100);
-      final toMigrate = history.where((s) =>
-          !existingIds.contains(s.docId) && !existingIds.contains(s.id)).toList();
+      bool falta(RoundSummary s) =>
+          !(conDiferencial.contains(s.docId) || conDiferencial.contains(s.id)) ||
+          !(conDinero.contains(s.docId) || conDinero.contains(s.id));
+      final toMigrate = history.where(falta).toList();
 
       if (toMigrate.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Todas las rondas ya tienen diferencial calculado ✅'),
+          content: const Text('Todo el historial está calculado ✅'),
           backgroundColor: t.profit,
         ));
         return;
@@ -85,8 +98,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
       for (final summary in toMigrate) {
         final round = await FirestoreService.loadRoundById(summary.docId);
         if (round == null) continue;
-        final ok = await FirestoreService.recalculateDifferentialForRound(round);
-        if (ok) migrated++;
+        // El dinero se puede reconstruir aunque los scores estén incompletos
+        // —el ledger liquida lo que se pueda—, así que se cuenta como migrada
+        // si CUALQUIERA de las dos salió. Antes el diferencial mandaba solo, y
+        // una ronda sin scores válidos no dejaba tampoco su dinero.
+        final okDinero = await FirestoreService.rebuildRoundResult(round);
+        final okDiff = await FirestoreService.recalculateDifferentialForRound(round);
+        if (okDinero || okDiff) migrated++;
       }
 
       if (!mounted) return;
@@ -178,7 +196,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
             IconButton(
               icon: Icon(Icons.sports_golf_outlined, color: t.primary.withValues(alpha: 0.7)),
-              tooltip: 'Calcular diferenciales WHS del historial',
+              tooltip: 'Calcular mi histórico (handicap y balance)',
               onPressed: () => _migrateHandicapHistory(t),
             ),
             IconButton(
@@ -414,37 +432,38 @@ class _HistoryRoundDetail extends StatefulWidget {
 class _HistoryRoundDetailState extends State<_HistoryRoundDetail> {
   bool _calculating = false;
 
+  /// Recalcula lo derivado de ESTA ronda: el diferencial y el dinero.
+  ///
+  /// Antes resolvía por su cuenta a quién medir y acababa en
+  /// `players.firstOrNull` —la misma adivinanza que el servicio tenía—. Ahora
+  /// delega: quién eres se decide en UN sitio, y si no se sabe no se escribe
+  /// nada en tu handicap.
   Future<void> _calculateDifferential() async {
-    final hcpProv = context.read<HandicapProvider>();
-    // Buscar jugador principal (vinculado al usuario)
-    String? playerId;
-    final uid = FirestoreService.currentUid;
-    for (final p in widget.round.players) {
-      if (p.linkedUserId == uid) { playerId = p.id; break; }
-    }
-    playerId ??= widget.round.players.firstOrNull?.id;
-    if (playerId == null) return;
-
     setState(() => _calculating = true);
     try {
-      final diff = HandicapService.calculateFromRound(
-        round: widget.round, playerId: playerId);
-      if (diff != null) {
-        await hcpProv.saveDifferential(diff);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('⛳ Diferencial ${diff.differential.toStringAsFixed(1)} guardado'),
-            backgroundColor: widget.t.profit,
-          ));
-        }
+      final okDinero =
+          await FirestoreService.rebuildRoundResult(widget.round);
+      final okDiff = await FirestoreService
+          .recalculateDifferentialForRound(widget.round);
+      if (!mounted) return;
+
+      final String mensaje;
+      if (okDiff && okDinero) {
+        mensaje = '⛳ Handicap y balance actualizados';
+      } else if (okDinero) {
+        // Pasa de verdad: el ledger liquida lo que puede aunque falten scores,
+        // así que el dinero sale y el diferencial no.
+        mensaje = 'Balance actualizado · sin diferencial (scores incompletos)';
+      } else if (okDiff) {
+        mensaje = '⛳ Diferencial guardado';
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('No se pudo calcular el diferencial (scores incompletos)'),
-            backgroundColor: widget.t.sub,
-          ));
-        }
+        mensaje = 'No se pudo calcular esta ronda';
       }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(mensaje),
+        backgroundColor:
+            (okDiff || okDinero) ? widget.t.profit : widget.t.sub,
+      ));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

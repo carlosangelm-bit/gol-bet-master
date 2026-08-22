@@ -15,6 +15,7 @@ import '../../providers/round_provider.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sliding_adjustment_dialog.dart';
+import '../../services/user_profile_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPER: paleta de colores sólidos por estado — sin gradientes que desaparezcan
@@ -201,7 +202,15 @@ class _ResultsScreenState extends State<ResultsScreen> {
     // Se descartó caer al "jugador que está anotando": _activePlayerId es estado
     // local de la pantalla de captura, se pierde al salir y no está disponible
     // aquí. Subirlo al provider sería más trabajo del que el caso justifica.
-    final heroe = myLinkedPlayer ??
+    // 0º: el jugador que el PERFIL dice que eres. Es la respuesta durable —se
+    // crea al registrarse y se corrige en Ajustes— y no depende de que esta
+    // ronda tenga el vínculo escrito. Faltaba, así que en una ronda sin vínculo
+    // la cifra héroe preguntaba teniendo la respuesta a mano.
+    final delPerfil = UserProfileService.miJugadorId;
+    final heroe = (delPerfil != null
+            ? round.realPlayers.where((p) => p.id == delPerfil).firstOrNull
+            : null) ??
+        myLinkedPlayer ??
         (prov.heroPlayerId != null
             ? round.realPlayers
                 .where((p) => p.id == prov.heroPlayerId)

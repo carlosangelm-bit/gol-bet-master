@@ -10,6 +10,8 @@ import '../models/models.dart';
 import '../providers/round_provider.dart' show roundToJson, roundFromJson;
 import 'auth_service.dart';
 import 'handicap_service.dart';
+import 'user_profile_service.dart';
+import '../models/round_result.dart';
 
 class FirestoreService {
   static final _db = FirebaseFirestore.instance;
@@ -33,6 +35,15 @@ class FirestoreService {
   static CollectionReference<Map<String, dynamic>> _scoreDiffs() =>
       _db.collection('users').doc(AuthService.uid).collection('scoreDifferentials');
 
+  /// El dinero de cada ronda cerrada, en documentos de ~1KB.
+  ///
+  /// Hermana de scoreDifferentials y por el mismo motivo: el tablero del perfil
+  /// necesita tu histórico, y calcularlo de las rondas significaba descargarlas
+  /// enteras —Firestore no proyecta campos—. El id del documento es el de la
+  /// ronda, así que volver a cerrarla reescribe en vez de sumar dos veces.
+  static CollectionReference<Map<String, dynamic>> _roundResults() =>
+      _db.collection('users').doc(AuthService.uid).collection('roundResults');
+
   /// Guarda o actualiza una ronda en Firestore.
   /// Al finalizar, calcula y persiste el Score Differential del jugador propietario.
   static Future<void> saveRound(Round round) async {
@@ -46,29 +57,108 @@ class FirestoreService {
       data['finishedAt'] = FieldValue.serverTimestamp();
       // Calcular y guardar Score Differential para el jugador vinculado al uid
       await _saveScoreDifferentialsForRound(round);
+      // Y el dinero, que es lo que lee el tablero del perfil.
+      await _saveRoundResultFor(round);
     }
     await _rounds().doc(round.id).set(data, SetOptions(merge: true));
   }
 
+  // ── Quién de la ronda eres TÚ ─────────────────────────────────────────────
+  //
+  // Dos cosas se escriben a tu nombre al cerrar una ronda: el diferencial que
+  // mueve tu handicap y el resultado en dinero que alimenta tu perfil. Las dos
+  // necesitan la misma respuesta, y antes cada sitio la resolvía a su manera.
+  //
+  // El orden importa, y el cambio está en la última rama:
+  //
+  //   1. profile.myPlayerId — la respuesta DURABLE. Se crea al registrarse y el
+  //      usuario la puede corregir en Ajustes. Es la única que él controla.
+  //   2. linkedUserId == uid — el vínculo de esta ronda. Cubre unirse a una
+  //      ronda ajena, que sí escribe el vínculo al entrar.
+  //   3. El único que anotó, si es que hay uno solo.
+  //
+  // Lo que ya NO se hace: caer a `players.first`. Era una adivinanza, y una
+  // adivinanza aquí no deja un hueco, escribe el handicap de OTRA PERSONA en el
+  // tuyo. Devolver null y no guardar nada es peor a corto plazo y correcto: un
+  // dato que falta se nota y se arregla; uno inventado se queda.
+  static Player? _yoEnLaRonda(Round round, String uid) {
+    if (round.players.isEmpty) return null;
+
+    final mio = UserProfileService.miJugadorId;
+    if (mio != null && mio.isNotEmpty) {
+      final p = round.players.where((p) => p.id == mio).firstOrNull;
+      if (p != null) return p;
+      // El perfil dice quién eres y no estás en esta ronda: la organizaste sin
+      // jugarla. No hay diferencial tuyo que guardar.
+      return null;
+    }
+
+    final vinculado =
+        round.players.where((p) => p.linkedUserId == uid && !p.isVirtual).firstOrNull;
+    if (vinculado != null) return vinculado;
+
+    // Sin identidad y sin vínculo: solo si hay UN anotador es deducible.
+    final anotaron = round.players
+        .where((p) =>
+            !p.isVirtual &&
+            (round.scores[p.id] ?? const {})
+                .values
+                .any((s) => (s.grossScore ?? 0) > 0))
+        .toList();
+    return anotaron.length == 1 ? anotaron.first : null;
+  }
+
+  // ── El dinero de una ronda cerrada ────────────────────────────────────────
+  //
+  // Se escribe con el id de la ronda como id del documento: cerrar dos veces
+  // reescribe, nunca duplica. Y es derivado, así que se puede reconstruir
+  // entero desde las rondas —igual que los diferenciales—.
+  static Future<void> _saveRoundResultFor(Round round) async {
+    if (AuthService.uid == null) return;
+    try {
+      final result = RoundResult.fromRound(round, playedAt: round.createdAt);
+      await _roundResults()
+          .doc(round.id)
+          .set(result.toJson(), SetOptions(merge: false));
+    } catch (e) {
+      if (kDebugMode) debugPrint('[RoundResult] Error al guardar: $e');
+    }
+  }
+
+  /// Los resultados en dinero del usuario, en tiempo real.
+  static Stream<List<RoundResult>> roundResultsStream() {
+    if (AuthService.uid == null) return Stream.value(const []);
+    return _roundResults().snapshots().map((snap) => snap.docs
+        .map((d) {
+          try {
+            return RoundResult.fromJson(Map<String, dynamic>.from(d.data()));
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<RoundResult>()
+        .toList());
+  }
+
+  /// Reconstruye el resultado de una ronda ya cerrada. Para el backfill.
+  static Future<bool> rebuildRoundResult(Round round) async {
+    if (!round.isFinished) return false;
+    try {
+      await _saveRoundResultFor(round);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Calcula y guarda el Score Differential del jugador del usuario al finalizar una ronda.
-  /// Prioridad: jugador con linkedUserId == uid → primer jugador con scores válidos.
   static Future<void> _saveScoreDifferentialsForRound(Round round) async {
     final uid = AuthService.uid;
     if (uid == null) return;
     if (round.players.isEmpty) return;
     try {
-      // Prioridad 1: jugador con linkedUserId == uid
-      Player? target = round.players.where((p) => p.linkedUserId == uid).firstOrNull;
-      // Prioridad 2: primer jugador con scores registrados
-      if (target == null) {
-        for (final p in round.players) {
-          final hasScores = (round.scores[p.id] ?? {})
-              .values.any((s) => (s.grossScore ?? 0) > 0);
-          if (hasScores) { target = p; break; }
-        }
-      }
-      // Prioridad 3: primer jugador de la lista
-      target ??= round.players.first;
+      final target = _yoEnLaRonda(round, uid);
+      if (target == null) return;
 
       final diff = HandicapService.calculateFromRound(
         round: round,

@@ -9,6 +9,8 @@ import 'providers/auth_provider.dart';
 import 'providers/player_provider.dart';
 import 'providers/user_profile_provider.dart';
 import 'providers/handicap_provider.dart';
+import 'providers/perfil_provider.dart';
+import 'services/user_profile_service.dart';
 import 'providers/betting_group_provider.dart';
 import 'screens/capture/capture_screen.dart';
 import 'screens/home/home_screen.dart';
@@ -69,6 +71,7 @@ class _AppShellState extends State<AppShell> {
     context.read<PlayerProvider>().startListening();
     context.read<UserProfileProvider>().startListening();
     context.read<HandicapProvider>().startListening();
+    context.read<PerfilProvider>().startListening();
     context.read<BettingGroupProvider>().init();
   }
 
@@ -126,7 +129,12 @@ class _AppShellState extends State<AppShell> {
       if (_listenersStarted) {
         _listenersStarted = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) context.read<HandicapProvider>().stopListening();
+          if (mounted) {
+            context.read<HandicapProvider>().stopListening();
+            context.read<PerfilProvider>().stopListening();
+            // El siguiente usuario no hereda la identidad del anterior.
+            UserProfileService.olvidaIdentidad();
+          }
         });
       }
       return const AuthScreen();

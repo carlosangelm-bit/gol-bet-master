@@ -248,9 +248,42 @@ class UserProfileService {
         .snapshots(includeMetadataChanges: true)
         .map((snap) {
           if (!snap.exists) return null;
-          return UserProfile.fromFirestore(snap.data()!, snap.id);
+          final p = UserProfile.fromFirestore(snap.data()!, snap.id);
+          _recuerda(p);
+          return p;
         });
   }
+
+  // ── Quién eres, disponible sin await ──────────────────────────────────────
+  //
+  // El perfil ya se transmite desde el arranque (app_shell lo engancha), así que
+  // el dato está en memoria; lo que faltaba era poder leerlo desde un servicio
+  // estático sin volver a pedirlo a la red.
+  //
+  // Existe por un motivo concreto: al cerrar una ronda se persisten el
+  // diferencial de handicap y el resultado en dinero, y los dos necesitan saber
+  // cuál de los jugadores eres TÚ. Sin esto, la resolución acababa en
+  // `players.first` —una adivinanza que escribe en tu handicap—.
+  static String? _miJugadorId;
+
+  /// El jugador del directorio que eres tú, si el perfil ya se leyó.
+  ///
+  /// Null significa "todavía no lo sé", NO "no tengo". Quien lo consulte tiene
+  /// que tratar los dos casos igual: sin respuesta, no adivinar.
+  static String? get miJugadorId => _miJugadorId;
+
+  static void _recuerda(UserProfile p) {
+    final id = p.myPlayerId;
+    if (id != null && id.isNotEmpty) _miJugadorId = id;
+  }
+
+  /// Se llama al cerrar sesión: el siguiente usuario no hereda la identidad del
+  /// anterior.
+  static void olvidaIdentidad() => _miJugadorId = null;
+
+  /// Fija la identidad sin red, para los tests de widget.
+  @visibleForTesting
+  static void identidadDePrueba(String? id) => _miJugadorId = id;
 
   // ── Lectura única inmediata (fallback para cuando el stream tarda) ──────────
   // Usa get() con Source.cache primero para respuesta instantánea desde
@@ -262,7 +295,9 @@ class UserProfileService {
       try {
         final snap = await _userDoc().get(const GetOptions(source: Source.cache));
         if (snap.exists && snap.data() != null) {
-          return UserProfile.fromFirestore(snap.data()!, snap.id);
+          final p = UserProfile.fromFirestore(snap.data()!, snap.id);
+          _recuerda(p);
+          return p;
         }
       } catch (_) {
         // No hay caché — ir a la red
@@ -270,7 +305,9 @@ class UserProfileService {
       // Fallback: red
       final snap = await _userDoc().get(const GetOptions(source: Source.server));
       if (!snap.exists) return null;
-      return UserProfile.fromFirestore(snap.data()!, snap.id);
+      final p = UserProfile.fromFirestore(snap.data()!, snap.id);
+      _recuerda(p);
+      return p;
     } catch (e) {
       if (kDebugMode) debugPrint('fetchProfileOnce error: $e');
       return null;
