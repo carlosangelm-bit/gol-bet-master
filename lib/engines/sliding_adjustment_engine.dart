@@ -75,8 +75,13 @@ class DuelResult {
   bool get isWinForA => margin > 0;
   bool get isWinForB => margin < 0;
 
-  String get winnerId  => margin > 0 ? playerAId : playerBId;
-  String get loserId   => margin > 0 ? playerBId : playerAId;
+  /// Quién ganó. **null si empataron.**
+  ///
+  /// Antes devolvía playerBId con margin 0, o sea que un empate declaraba
+  /// ganador al segundo. El consumidor mira isTie primero y por eso no se veía,
+  /// pero cualquier otro que lo lea directamente se lo come.
+  String? get winnerId => margin == 0 ? null : (margin > 0 ? playerAId : playerBId);
+  String? get loserId  => margin == 0 ? null : (margin > 0 ? playerBId : playerAId);
 }
 
 /// Sugerencia de ajuste de sliding para un par de jugadores.
@@ -448,6 +453,19 @@ class SlidingAdjustmentEngine {
     return out;
   }
 
+  /// Dinero neto que se movió hacia [pid] en estas entradas.
+  ///
+  /// Se conserva aunque el resultado sea empate: sirve para elegir qué apuesta
+  /// REPRESENTA el duelo entre varias, que es otra pregunta que quién ganó.
+  static double _netoEntre(String pid, List<LedgerEntry> entries) {
+    var neto = 0.0;
+    for (final e in entries) {
+      if (e.toPlayerId == pid) neto += e.amount;
+      if (e.fromPlayerId == pid) neto -= e.amount;
+    }
+    return neto.abs();
+  }
+
   /// Precedencia cuando dos apuestas ponen el mismo dinero en juego.
   ///
   /// Los formatos de match play van antes que los de hoyo suelto: el ajuste de
@@ -472,9 +490,25 @@ class SlidingAdjustmentEngine {
       return r.contains('match') && !r.contains('press');
     }).toList();
 
-    // Si no hay entries de match principal (ronda sin hoyos suficientes para match),
-    // usar todos los entries de matchAutoPress
-    final relevant = primaryEntries.isNotEmpty ? primaryEntries : entries;
+    // Sin match principal ganado, es EMPATE. No se cae a las presiones.
+    //
+    // Antes se usaban TODAS las entradas cuando no había match principal, así
+    // que un match empatado en hoyos con una presión ganada declaraba ganador:
+    // el sliding se movía por dinero de presiones y no por el resultado.
+    //
+    // Una presión es dinero, no resultado deportivo. Si el match acabó AS, el
+    // sliding no se toca — que es justo lo que separa "ajustar por el resultado"
+    // de "ajustar por el dinero".
+    if (primaryEntries.isEmpty) {
+      return DuelResult(
+        playerAId: p1Id, playerBId: p2Id,
+        margin: 0,
+        netAmount: _netoEntre(p1Id, entries),
+        betType: BetModuleType.matchAutoPress,
+        sourceBet: 'Match empatado',
+      );
+    }
+    final relevant = primaryEntries;
 
     double p1net = 0; // cuánto recibió p1 (- cuánto pagó)
     for (final e in relevant) {
@@ -523,10 +557,28 @@ class SlidingAdjustmentEngine {
   // Margen = segmentos ganados por p1 - segmentos ganados por p2.
   static DuelResult _duelFromNassauEntries(
       String p1Id, String p2Id, List<LedgerEntry> entries) {
+    // Solo los SEGMENTOS cuentan para el resultado: Front, Back y Total. Las
+    // presiones llevan 'Press' en el reason y son dinero, no segmentos ganados.
+    //
+    // Contándolas, un Nassau empatado a segmentos con una presión ganada
+    // declaraba ganador y movía la ventaja.
+    final segmentos = entries
+        .where((e) => !e.reason.toLowerCase().contains('press'))
+        .toList();
+    if (segmentos.isEmpty) {
+      return DuelResult(
+        playerAId: p1Id, playerBId: p2Id,
+        margin: 0,
+        netAmount: _netoEntre(p1Id, entries),
+        betType: BetModuleType.nassau,
+        sourceBet: 'Nassau sin segmentos decididos',
+      );
+    }
+
     int segsGanadosP1 = 0;
     int segsGanadosP2 = 0;
 
-    for (final e in entries) {
+    for (final e in segmentos) {
       if (e.toPlayerId == p1Id) segsGanadosP1++;
       if (e.toPlayerId == p2Id) segsGanadosP2++;
     }

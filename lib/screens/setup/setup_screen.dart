@@ -172,7 +172,7 @@ class _SetupScreenState extends State<SetupScreen> {
   //
   // Los dos siguen el mismo patrón: valor registrado visible, editable solo
   // para esta ronda, ficha del grupo intacta hasta cerrar.
-  _Ventaja _ventaja = _Ventaja.handicap;
+  SistemaDeVentaja _ventaja = SistemaDeVentaja.handicap;
 
   /// Handicap con el que se juega esta ronda. Default: el registrado.
   final Map<String, double> _hcpRonda = {};
@@ -426,9 +426,9 @@ class _SetupScreenState extends State<SetupScreen> {
       final v = widget.ventajaInicial;
       if (v != null) {
         setState(() => _ventaja = switch (v) {
-              'sliding' => _Ventaja.sliding,
-              'ninguna' => _Ventaja.ninguna,
-              _ => _Ventaja.handicap,
+              'sliding' => SistemaDeVentaja.sliding,
+              'ninguna' => SistemaDeVentaja.ninguna,
+              _ => SistemaDeVentaja.handicap,
             });
       }
 
@@ -1993,9 +1993,9 @@ class _SetupScreenState extends State<SetupScreen> {
                         style: GolfType.label(t.sub)),
                   ] else
                     Text(
-                        _ventaja == _Ventaja.handicap
+                        _ventaja == SistemaDeVentaja.handicap
                             ? 'Handicap al ${(_allowance * 100).round()}%'
-                            : _ventaja == _Ventaja.sliding
+                            : _ventaja == SistemaDeVentaja.sliding
                                 ? 'Sliding del grupo'
                                 : 'Sin ventaja',
                         style: GolfType.label(t.sub)),
@@ -2203,24 +2203,24 @@ class _SetupScreenState extends State<SetupScreen> {
           icon: '📊',
           titulo: 'Handicap',
           detalle: 'Cada quien recibe golpes según su handicap registrado.',
-          activa: _ventaja == _Ventaja.handicap,
-          onTap: () => setState(() => _ventaja = _Ventaja.handicap)),
-      if (_ventaja == _Ventaja.handicap) _panelHandicap(t),
+          activa: _ventaja == SistemaDeVentaja.handicap,
+          onTap: () => setState(() => _ventaja = SistemaDeVentaja.handicap)),
+      if (_ventaja == SistemaDeVentaja.handicap) _panelHandicap(t),
 
       _opcionCompiten(t,
           icon: '📈',
           titulo: 'Sliding',
           detalle: 'La ventaja se ajusta sola según cómo terminó la anterior.',
-          activa: _ventaja == _Ventaja.sliding,
-          onTap: () => setState(() => _ventaja = _Ventaja.sliding)),
-      if (_ventaja == _Ventaja.sliding) _panelSliding(t),
+          activa: _ventaja == SistemaDeVentaja.sliding,
+          onTap: () => setState(() => _ventaja = SistemaDeVentaja.sliding)),
+      if (_ventaja == SistemaDeVentaja.sliding) _panelSliding(t),
 
       _opcionCompiten(t,
           icon: '⚖️',
           titulo: 'Sin ventaja',
           detalle: 'Todos juegan bruto, nadie recibe golpes.',
-          activa: _ventaja == _Ventaja.ninguna,
-          onTap: () => setState(() => _ventaja = _Ventaja.ninguna)),
+          activa: _ventaja == SistemaDeVentaja.ninguna,
+          onTap: () => setState(() => _ventaja = SistemaDeVentaja.ninguna)),
     ]);
   }
 
@@ -5717,9 +5717,9 @@ class _SetupScreenState extends State<SetupScreen> {
             style: GolfType.body(t.sub)),
         const SizedBox(height: 4),
         Text(
-            _ventaja == _Ventaja.handicap
+            _ventaja == SistemaDeVentaja.handicap
                 ? 'Ventaja · Handicap al ${(_allowance * 100).round()}%'
-                : _ventaja == _Ventaja.sliding
+                : _ventaja == SistemaDeVentaja.sliding
                     ? 'Ventaja · Sliding · '
                         '${_slidingRecalcula ? "recalcula al cerrar" : "congelado"}'
                     : 'Ventaja · Sin ventaja, todos brutos',
@@ -6448,7 +6448,7 @@ class _SetupScreenState extends State<SetupScreen> {
     // La respuesta no se pregunta aparte porque ya está dada: neto significa
     // "con handicap aplicado", así que la elección de ventaja la determina.
     final modo =
-        _ventaja == _Ventaja.ninguna ? GrossNetMode.gross : GrossNetMode.net;
+        _ventaja == SistemaDeVentaja.ninguna ? GrossNetMode.gross : GrossNetMode.net;
     for (var g = 0; g < _groups.length; g++) {
       _groups[g] = _groups[g].copyWith(
         modules: _groups[g]
@@ -6460,7 +6460,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
     // Con equipos el allowance vive en TeamHandicapConfig y lo aplica el motor
     // una sola vez, en GameEngine.buildTeamHcpMap. Aquí solo se guarda.
-    if (_porEquipos && _ventaja == _Ventaja.handicap && _allowance < 1) {
+    if (_porEquipos && _ventaja == SistemaDeVentaja.handicap && _allowance < 1) {
       for (var g = 0; g < _groups.length; g++) {
         _groups[g] = _groups[g].copyWith(
           modules: _groups[g].modules.map((m) {
@@ -6683,13 +6683,13 @@ class _SetupScreenState extends State<SetupScreen> {
       // el motor una sola vez desde TeamHandicapConfig, y hacerlo también aquí
       // lo multiplicaría dos veces.
       final double phcp;
-      if (_ventaja == _Ventaja.ninguna) {
+      if (_ventaja == SistemaDeVentaja.ninguna) {
         phcp = 0;
       } else if (p.isVirtual) {
         phcp = p.handicapBase;
       } else {
         final propio = _hcpDe(p.id);
-        final conAllowance = (_ventaja == _Ventaja.handicap && !_porEquipos)
+        final conAllowance = (_ventaja == SistemaDeVentaja.handicap && !_porEquipos)
             ? propio * _allowance
             : propio;
         phcp = tee.playingHandicap(conAllowance);
@@ -6717,46 +6717,16 @@ class _SetupScreenState extends State<SetupScreen> {
       return p;
     }).toList();
 
-    // ── pairSliding canónico: usar _pairSliding (mantenido en tiempo real) ────
-    // _pairSliding se actualiza en cada llamada a onEdit de _HandicapMatrix
-    // y en _applyDefaultSliding. Contiene exactamente UN valor por par,
-    // con clave '$lowId|$highId' (IDs ordenados lexicográficamente).
-    // Filtrar solo pares donde ambos jugadores están en la ronda.
-    final roundPlayerIds = allPlayersForRound.map((p) => p.id).toSet();
-    // Lo editado en el paso de Ventaja manda sobre lo que trajera el grupo. Y
-    // solo se escribe si se ELIGIÓ sliding: el motor prioriza pairSliding sobre
-    // el handicap, así que dejarlo puesto con handicap elegido aplicaría una
-    // ventaja que nadie pidió.
-    final fuenteSliding = <String, double>{
-      if (_ventaja == _Ventaja.sliding) ...{
-        ..._pairSliding,
-        for (final (a, b)
-            in BetRecipe.crucesDe(_players.map((p) => p.id).toList()))
-          BetEngine.pairKey(a, b): _slidingDe(a, b),
-      },
-      // La ventaja propia de un duelo entra SIEMPRE, sea cual sea la de la
-      // ronda: es justo el caso que no se podía expresar —la ronda va con
-      // handicap y dos jugadores acuerdan lo suyo a scratch—.
-      //
-      // Verificado ejecutando: pairSliding SUSTITUYE al handicap y un 0
-      // explícito se honra, así que delta 0 es scratch de verdad. No hizo falta
-      // modelo nuevo.
-      //
-      // El signo del mapa es recv(idMenor, idMayor), y d.delta es lo que recibe
-      // d.a de d.b: si a no es el menor, se invierte.
-      for (final d in _duelos)
-        if (d.ventajaPropia)
-          BetEngine.pairKey(d.a, d.b):
-              d.a.compareTo(d.b) <= 0 ? d.delta : -d.delta,
-    };
-
-    final pairSlidingMap = Map<String, double>.fromEntries(
-      fuenteSliding.entries.where((e) {
-        final parts = e.key.split('|');
-        return parts.length == 2 &&
-            roundPlayerIds.contains(parts[0]) &&
-            roundPlayerIds.contains(parts[1]);
-      }),
+    // La prioridad entre fuentes y el por qué de cada una viven con la función,
+    // en bet_recipe.dart, donde un test las puede contradecir.
+    final pairSlidingMap = slidingDeRonda(
+      ventaja: _ventaja,
+      acumuladoDelGrupo: _pairSliding,
+      participantIds: allPlayersForRound.map((p) => p.id).toList(),
+      editadoEnElPaso: _slidingDe,
+      duelosConVentajaPropia: _duelos
+          .where((d) => d.ventajaPropia)
+          .map((d) => (a: d.a, b: d.b, delta: d.delta)),
     );
 
     final round = Round(
@@ -6766,7 +6736,7 @@ class _SetupScreenState extends State<SetupScreen> {
       players: linkedPlayers,
       roundPlayers: roundPlayers,
       slidingRecalcula:
-          _ventaja == _Ventaja.sliding ? _slidingRecalcula : true,
+          _ventaja == SistemaDeVentaja.sliding ? _slidingRecalcula : true,
       betGroups: effectiveGroups,
       // Inicializar scores para todos los jugadores que necesitan capturar scores:
       // - Jugadores reales no-Scramble
@@ -7967,8 +7937,6 @@ class _StatChip extends StatelessWidget {
 /// Sistema de ventaja de la ronda. Excluyentes: handicap iguala por nivel
 /// declarado y sliding por historial del grupo, así que sumarlos aplicaría la
 /// ventaja dos veces.
-enum _Ventaja { handicap, sliding, ninguna }
-
 /// Un duelo pactado aparte de la apuesta de equipos.
 ///
 /// Usa el mismo motor de configuración que la ronda pero sin los ejes ya

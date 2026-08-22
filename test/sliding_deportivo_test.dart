@@ -198,6 +198,8 @@ void main() {
     });
   });
 
+  _empateConDinero();
+
   group('5 · el filtro es explícito', () {
     test('los tipos que no equilibran un enfrentamiento quedan fuera', () {
       for (final t in [BetModuleType.medal, BetModuleType.putts,
@@ -217,6 +219,98 @@ void main() {
     test('Bola Baja / Bola Alta queda fuera por ser siempre de equipos', () {
       final r = _round([_equipos(BetModuleType.nassauLowHigh)]);
       expect(_duelo(r, a1, b1), isNull);
+    });
+  });
+}
+
+// ── Empate en hoyos con dinero movido ────────────────────────────────────────
+//
+// "Persiste el problema de marcar un ganador cuando en Match o Skins hubo empate
+// en hoyos pero un jugador perdió dinero contra el otro."
+//
+// Era mi arreglo anterior: hice que el margen del match saliera del NETO, así
+// que un match empatado con una presión ganada declaraba ganador. Una presión es
+// dinero, no resultado deportivo.
+void _empateConDinero() {
+  /// Entradas de un match: el principal empatado —sin asiento— y una presión
+  /// ganada por p1. Es la forma exacta que produce el motor.
+  List<LedgerEntry> matchEmpatadoConPress() => [
+        LedgerEntry(
+            fromPlayerId: b1, toPlayerId: a1, amount: 50,
+            betType: BetModuleType.matchAutoPress,
+            reason: 'Press H10–H18'),
+      ];
+
+  /// Nassau con los segmentos repartidos 1–1 y una presión ganada por p1.
+  List<LedgerEntry> nassauEmpatadoConPress() => [
+        LedgerEntry(
+            fromPlayerId: b1, toPlayerId: a1, amount: 50,
+            betType: BetModuleType.nassau, reason: 'Nassau Front 9'),
+        LedgerEntry(
+            fromPlayerId: a1, toPlayerId: b1, amount: 50,
+            betType: BetModuleType.nassau, reason: 'Nassau Back 9'),
+        LedgerEntry(
+            fromPlayerId: b1, toPlayerId: a1, amount: 25,
+            betType: BetModuleType.nassau, reason: 'Press H4–H9 (Nassau Front 9)'),
+      ];
+
+  group('el empate en hoyos NO mueve la ventaja', () {
+    test('match sin principal ganado es empate, aunque la presión pague', () {
+      // El módulo tiene que ser de match: el gate por tipo filtra las entradas
+      // de una apuesta que esta pareja no juega uno contra uno.
+      final r = _round([_individual(BetModuleType.matchAutoPress, todos)]);
+      final d = SlidingAdjustmentEngine.computeDuelForTest(
+          p1Id: a1, p2Id: b1, round: r,
+          allEntries: matchEmpatadoConPress());
+      expect(d, isNotNull);
+      expect(d!.margin, 0, reason: 'la presión no decide el match');
+      expect(d.isTie, isTrue);
+      // Y el dinero se conserva: sirve para elegir qué apuesta representa el
+      // duelo, que es otra pregunta que quién ganó.
+      expect(d.netAmount, 50);
+    });
+
+    test('nassau empatado a segmentos es empate, aunque la presión pague', () {
+      final r = _round([_individual(BetModuleType.nassau, todos)]);
+      final d = SlidingAdjustmentEngine.computeDuelForTest(
+          p1Id: a1, p2Id: b1, round: r,
+          allEntries: nassauEmpatadoConPress());
+      expect(d, isNotNull);
+      expect(d!.margin, 0,
+          reason: 'Front y Back se reparten: 1–1 es empate');
+      expect(d.isTie, isTrue);
+    });
+
+    test('y con un segmento de ventaja SÍ hay ganador', () {
+      // Lo que da valor a los dos de arriba: si nunca hubiera ganador, pasarían
+      // por no calcular nada.
+      final r = _round([_individual(BetModuleType.nassau, todos)]);
+      final d = SlidingAdjustmentEngine.computeDuelForTest(
+          p1Id: a1, p2Id: b1, round: r,
+          allEntries: [
+            LedgerEntry(
+                fromPlayerId: b1, toPlayerId: a1, amount: 50,
+                betType: BetModuleType.nassau, reason: 'Nassau Front 9'),
+            LedgerEntry(
+                fromPlayerId: b1, toPlayerId: a1, amount: 100,
+                betType: BetModuleType.nassau, reason: 'Nassau Total 18'),
+          ]);
+      expect(d!.margin, 2);
+      expect(d.winnerId, a1);
+    });
+  });
+
+  group('winnerId con empate', () {
+    test('devuelve null, no al segundo jugador', () {
+      // Antes daba playerBId con margin 0: un empate declaraba ganador al
+      // segundo. El consumidor mira isTie primero y por eso no se veía, pero
+      // cualquier otro que lo lea directo se lo come.
+      final r = _round([_individual(BetModuleType.matchAutoPress, todos)]);
+      final d = SlidingAdjustmentEngine.computeDuelForTest(
+          p1Id: a1, p2Id: b1, round: r,
+          allEntries: matchEmpatadoConPress());
+      expect(d!.winnerId, isNull);
+      expect(d.loserId, isNull);
     });
   });
 }

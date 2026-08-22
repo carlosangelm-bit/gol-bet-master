@@ -603,3 +603,66 @@ class BetRecipe {
         _ => m,
       };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VENTAJA DE LA RONDA — de qué fuentes sale el pairSliding que se guarda
+//
+// Estaba dentro de _createAndStartRound, y por eso una regresión aquí solo se
+// notaba jugando: no había forma de contradecirla con un test.
+//
+// El bug que la saca: una ronda creada con Handicap descartaba en silencio el
+// sliding acumulado del grupo. En la tarjeta 1v1 aparecía otra ventaja —la
+// diferencia de handicap— y solo al editar el sliding a mano se aplicaba lo
+// correcto, porque ese editor escribe pairSliding directo.
+//
+// La distinción que faltaba: el acumulado NO es "el sistema de ventaja de hoy",
+// es el acuerdo bilateral que ya existía entre esas dos personas. Elegir
+// Handicap para la ronda no lo retira.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Cómo se reparte la ventaja en la ronda.
+enum SistemaDeVentaja { handicap, sliding, ninguna }
+
+/// El mapa `pairSliding` que le toca a la ronda, por prioridad creciente.
+///
+///   1. [acumuladoDelGrupo] — el acuerdo que ya existía. Entra salvo con
+///      "sin ventaja", donde la instrucción es explícita: todos brutos.
+///   2. [editadoEnElPaso]   — solo si se ELIGIÓ sliding. El motor prioriza
+///      pairSliding sobre el handicap, así que escribirlo con handicap elegido
+///      aplicaría una ventaja que nadie pidió.
+///   3. [duelosConVentajaPropia] — entra SIEMPRE, sea cual sea la de la ronda:
+///      es el caso que no se podía expresar —la ronda va con handicap y dos
+///      jugadores acuerdan lo suyo a scratch—.
+///
+/// Se filtra al final por [participantIds]: un par cuyo rival no juega hoy no
+/// tiene ventaja que aplicar.
+Map<String, double> slidingDeRonda({
+  required SistemaDeVentaja ventaja,
+  required Map<String, double> acumuladoDelGrupo,
+  required List<String> participantIds,
+  double Function(String a, String b)? editadoEnElPaso,
+  Iterable<({String a, String b, double delta})> duelosConVentajaPropia =
+      const [],
+}) {
+  final fuente = <String, double>{
+    if (ventaja != SistemaDeVentaja.ninguna) ...acumuladoDelGrupo,
+
+    if (ventaja == SistemaDeVentaja.sliding && editadoEnElPaso != null)
+      for (final (a, b) in BetRecipe.crucesDe(participantIds))
+        BetRecipe.cruceKey(a, b): editadoEnElPaso(a, b),
+
+    // El signo del mapa es recv(idMenor, idMayor), y delta es lo que recibe
+    // `a` de `b`: si `a` no es el menor, se invierte.
+    for (final d in duelosConVentajaPropia)
+      BetRecipe.cruceKey(d.a, d.b):
+          d.a.compareTo(d.b) <= 0 ? d.delta : -d.delta,
+  };
+
+  final dentro = participantIds.toSet();
+  return Map<String, double>.fromEntries(fuente.entries.where((e) {
+    final partes = e.key.split('|');
+    return partes.length == 2 &&
+        dentro.contains(partes[0]) &&
+        dentro.contains(partes[1]);
+  }));
+}
