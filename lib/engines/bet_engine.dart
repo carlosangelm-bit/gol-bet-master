@@ -4,6 +4,7 @@
 // Genera LedgerEntries. NO calcula scores ni muestra UI.
 // ─────────────────────────────────────────────────────────────────────────────
 import '../models/models.dart';
+import 'snake_engine.dart';
 import 'game_engine.dart';
 
 class BetEngine {
@@ -535,6 +536,16 @@ class BetEngine {
             'Abre la apuesta y define el Lado A y el Lado B.');
       case BetModuleType.units:
         entries.addAll(_units(round, pids, mod));
+        break;
+      case BetModuleType.snake:
+        // Rama nueva, motor aparte. No toca nada de lo de arriba.
+        //
+        // Devolver vacío cuando nadie hizo 3-putt es CORRECTO —no hay dinero
+        // que mover— y a la vez insuficiente: un cero sin explicación se lee
+        // como un fallo del cálculo. Lo que falta no es un asiento, es una
+        // frase, y esa la pone notasDeLiquidacion() desde la misma búsqueda que
+        // usa esto. Ver settlement_notes.dart.
+        entries.addAll(SnakeEngine.liquidar(round, pids, mod));
         break;
     }
     return entries;

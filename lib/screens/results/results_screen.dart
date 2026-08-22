@@ -16,6 +16,8 @@ import '../../services/auth_service.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sliding_adjustment_dialog.dart';
 import '../../services/user_profile_service.dart';
+import '../../engines/settlement_notes.dart';
+import '../../widgets/notas_liquidacion_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPER: paleta de colores sólidos por estado — sin gradientes que desaparezcan
@@ -251,6 +253,16 @@ class _ResultsScreenState extends State<ResultsScreen> {
                   if (LedgerEngine.integrityErrors(round).isNotEmpty) ...[
                     _ResultsIntegrityBanner(
                         errors: LedgerEngine.integrityErrors(round), t: t),
+                    const SizedBox(height: 20),
+                  ],
+
+                  // Lo que las apuestas DICEN sin que sea un error: la
+                  // serpiente que nadie agarró, el conejo suelto, el hoyo sin
+                  // compañero. Tarjeta aparte del banner de integridad a
+                  // propósito —ver notas_liquidacion_card.dart—.
+                  if (notasDeLiquidacion(round).isNotEmpty) ...[
+                    NotasLiquidacionCard(
+                        notas: notasDeLiquidacion(round), t: t),
                     const SizedBox(height: 20),
                   ],
 

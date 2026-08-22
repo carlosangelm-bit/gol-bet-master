@@ -30,7 +30,7 @@ import 'models.dart';
 /// Los nombres son los que usa el grupo, no los del modelo: Oyes y Unidades,
 /// no "oyeses" y "units". Un nombre que hay que traducir mentalmente ya cuesta
 /// un paso.
-enum BetCount { puntos, skins, scoreTotal, putts, oyes, unidades }
+enum BetCount { puntos, skins, scoreTotal, putts, oyes, unidades, snake }
 
 /// Si la apuesta se parte en sub-apuestas.
 ///
@@ -106,6 +106,7 @@ extension BetCountLabel on BetCount {
       BetCount.putts => 'Putts',
       BetCount.oyes => 'Oyes',
       BetCount.unidades => 'Unidades',
+      BetCount.snake => 'Snake',
       BetCount.puntos => 'Match', // inalcanzable
     };
   }
@@ -128,6 +129,7 @@ extension BetCountLabel on BetCount {
       BetCount.putts => BetModuleType.putts,
       BetCount.oyes => BetModuleType.oyeses,
       BetCount.unidades => BetModuleType.units,
+      BetCount.snake => BetModuleType.snake,
     };
   }
 
@@ -142,11 +144,17 @@ extension BetCountLabel on BetCount {
         BetCount.putts ||
         BetCount.oyes =>
           true,
-        BetCount.puntos || BetCount.unidades => false,
+        // Snake ya ES un bote: la serpiente es una y su dueño paga a todos.
+        // Ofrecer "un solo bote" contra "todos vs todos" sería un control sin
+        // efecto —_snake no lee BetFormatMode—, y un control que no hace nada
+        // enseña a no leer los que sí.
+        BetCount.puntos || BetCount.unidades || BetCount.snake => false,
       };
 
   /// Por qué no admite bote, para la opción atenuada.
   String? get sinBote => switch (this) {
+        BetCount.snake =>
+          'La serpiente es una sola y su dueño paga a todos: ya es un bote.',
         BetCount.unidades =>
           'El motor de Unidades acredita cada unidad contra cada rival por '
               'separado.',
@@ -569,6 +577,7 @@ class BetRecipe {
       puttsConfig: base.puttsConfig,
       oyesesConfig: base.oyesesConfig,
       unitsConfig: base.unitsConfig,
+      snakeConfig: base.snakeConfig,
     );
   }
 

@@ -1061,6 +1061,14 @@ class RoundProvider extends ChangeNotifier {
       );
     }
 
+    // Configuración de Snake
+    SnakeConfig? snakeCfg = mod.snakeConfig;
+    if (snakeCfg != null) {
+      snakeCfg = snakeCfg.copyWith(
+        value: (payload['snakeValue'] as num?)?.toDouble(),
+      );
+    }
+
     // Configuración de Medal
     MedalConfig? medalCfg = mod.medalConfig;
     if (medalCfg != null) {
@@ -1084,6 +1092,10 @@ class RoundProvider extends ChangeNotifier {
       puttsConfig:           puttsCfg,
       oyesesConfig:          mod.oyesesConfig,
       unitsConfig:           mod.unitsConfig,
+      // Se reconstruye campo a campo, no con copyWith, así que una config que
+      // falte aquí se BORRA en silencio al editar cualquier otra cosa del
+      // módulo. El compilador no lo caza: son parámetros con nombre opcionales.
+      snakeConfig:           snakeCfg,
       presses:               mod.presses,
       structure:             mod.structure,
       betGroupId:            mod.betGroupId,

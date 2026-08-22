@@ -493,6 +493,7 @@ class RoundDebug {
 
   static String _moduleCfgSummary(BetModuleInstance m) {
     return switch (m.type) {
+      BetModuleType.snake   => '\$${m.snake.value.toStringAsFixed(0)} umbral=${m.snake.umbral} empate=${m.snake.empate.name}',
       BetModuleType.nassau  => '\$${m.nassau.frontValue.toStringAsFixed(0)}F/\$${m.nassau.backValue.toStringAsFixed(0)}B/\$${m.nassau.totalValue.toStringAsFixed(0)}T press=${m.nassau.pressEnabled}',
       BetModuleType.medal   => '\$${m.medal.value.toStringAsFixed(0)} ${m.medal.mode.name} ${m.isAllVsAll ? 'allVsAll' : 'onePot'}',
       BetModuleType.skins   => '\$${m.skins.valuePerSkin.toStringAsFixed(0)}/skin carry=${m.skins.carryOver}',

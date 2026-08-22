@@ -27,6 +27,7 @@ import '../../services/live_round_service.dart';
 import '../../services/course_corrections_service.dart';
 import '../../providers/betting_group_provider.dart';
 import '../betting_groups/betting_groups_screen.dart';
+import '../../widgets/format_config_fields.dart';
 
 class SetupScreen extends StatefulWidget {
   /// Campo ya elegido en la pantalla de arranque rápido.
@@ -4401,6 +4402,7 @@ class _SetupScreenState extends State<SetupScreen> {
                                 puttsConfig:          effectivePutts,
                                 oyesesConfig:         effectiveOyeses,
                                 unitsConfig:          effectiveUnits,
+                                snakeConfig:          cfg.snakeConfig,
                                 // Guardar los overrides por par para que al
                                 // reabrir el editor se reconstruya el estado.
                                 pairConfigOverrides:
@@ -4626,6 +4628,13 @@ class _SetupScreenState extends State<SetupScreen> {
             style: TextStyle(color: t.sub, fontSize: 12, height: 1.4),
           ),
         ];
+      case BetModuleType.snake:
+        return snakeFields(
+          t: t,
+          cfg: cfg.snake,
+          montoCtrl: _cfgCtrl('snake.value', cfg.snake.value.toStringAsFixed(0)),
+          onChanged: (c) => update(cfg.copyWith(snakeConfig: c)),
+        );
       case BetModuleType.skins:
         final s = cfg.skins;
         final ctrl = _cfgCtrl('skins.value', s.valuePerSkin.toStringAsFixed(0));

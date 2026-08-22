@@ -64,11 +64,19 @@ void main() {
           isNotNull);
     });
 
-    test('los seis conteos a la vez, y todos liquidan en la misma ronda', () {
-      // La prueba de que no se pisan: seis apuestas conviviendo y el libro
+    test('TODOS los conteos a la vez, y todos liquidan en la misma ronda', () {
+      // La prueba de que no se pisan: todas las apuestas conviviendo y el libro
       // saliendo sin errores de integridad.
+      //
+      // Decía 6 con un literal, y la lista sale de BetCount.values: al añadir
+      // Snake el enum creció a 7 y el test cayó. Se cambia el literal por la
+      // longitud del enum, que es lo que la aserción quería decir —"cada conteo
+      // produce un módulo"— y así el siguiente formato entra sin tocar esto.
+      //
+      // El resto del test no se toca, y con el conteo nuevo cubre MÁS: Snake
+      // conviviendo con los otros seis en la misma ronda y sin errores.
       final mods = _modulos(BetCount.values.toSet());
-      expect(mods.length, 6);
+      expect(mods.length, BetCount.values.length);
       final course = CourseInfo(name: 'T',
           holes: List.generate(18,
               (i) => CourseHole(hole: i + 1, par: 4, strokeIndex: i + 1)));
@@ -89,7 +97,7 @@ void main() {
         createdAt: DateTime(2026, 1, 1), totalHoles: 18,
       );
       final c = BetEngine.safeComputeAll(r);
-      expect(c.errors, isEmpty, reason: 'seis apuestas juntas dan error');
+      expect(c.errors, isEmpty, reason: 'todas las apuestas juntas dan error');
       expect(c.entries, isNotEmpty);
     });
 

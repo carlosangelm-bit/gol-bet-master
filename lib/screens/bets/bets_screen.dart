@@ -24,6 +24,8 @@ import '../../widgets/common_widgets.dart';
 import '../../widgets/player_filter_bar.dart';
 import '../../widgets/bet_module_edit_sheet.dart';
 import '../../services/auth_service.dart';
+import '../../engines/settlement_notes.dart';
+import '../../widgets/notas_liquidacion_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Modelo de permisos por duelo
@@ -481,6 +483,14 @@ class _BetsBodyState extends State<_BetsBody> {
         if (integrityErrors.isNotEmpty)
           SliverToBoxAdapter(
             child: _IntegrityBanner(errors: integrityErrors, t: t),
+          ),
+        if (notasDeLiquidacion(round).isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: NotasLiquidacionCard(
+                  notas: notasDeLiquidacion(round), t: t),
+            ),
           ),
         if (orphans.isNotEmpty && prov.canEditBets)
           SliverToBoxAdapter(
@@ -2003,6 +2013,9 @@ class _BetRow extends StatelessWidget {
   String _buildLabel() {
     final label = mod.type.label;
     switch (mod.type) {
+      case BetModuleType.snake:
+        return '$label · \$${mod.snake.value.toStringAsFixed(0)} · '
+            '${mod.snake.umbral}+ putts';
       case BetModuleType.skins:
         return '$label · \$${mod.skins.valuePerSkin.toStringAsFixed(0)}/skin';
       case BetModuleType.nassau:
@@ -2045,6 +2058,9 @@ class _BetRow extends StatelessWidget {
       case BetModuleType.putts:
       case BetModuleType.oyeses:
       case BetModuleType.units:
+      // Snake cuenta putts, y los putts no se ajustan por handicap: no hay
+      // bruto ni neto que distinguir.
+      case BetModuleType.snake:
         return null;
     }
   }
@@ -2185,6 +2201,7 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
 
   double _currentValue() {
     switch (mod.type) {
+      case BetModuleType.snake:        return mod.snake.value;
       case BetModuleType.skins:        return mod.skins.valuePerSkin;
       case BetModuleType.nassau:       return mod.nassau.frontValue;
       case BetModuleType.matchAutoPress: return mod.matchAutoPress.matchValue;
@@ -2199,6 +2216,7 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
   Map<String, dynamic> _buildPayload() {
     final newVal = double.tryParse(_amountCtrl.text) ?? _currentValue();
     switch (mod.type) {
+      case BetModuleType.snake:        return {'snakeValue': newVal};
       case BetModuleType.skins:        return {'valuePerSkin': newVal};
       case BetModuleType.nassau:       return {'nassauFront': newVal, 'nassauBack': newVal, 'nassauTotal': newVal * 2};
       case BetModuleType.matchAutoPress: return {'matchValue': newVal};
@@ -2824,60 +2842,21 @@ class _ToggleOption extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 BetModuleInstance _buildNewModuleForType(
     BetModuleType type, String p1Id, String p2Id) {
-  final id = 'mod_${DateTime.now().millisecondsSinceEpoch}';
-  final participants = [p1Id, p2Id];
-
-  switch (type) {
-    case BetModuleType.nassauLowHigh:
-      // Formato 2 vs 2: nace sin lados y la hoja de edición pide los equipos.
-      return BetModuleInstance(
-        id: id, type: type, name: type.label,
-        participantIds: participants,
-        nassauLowHighConfig: const NassauLowHighConfig(),
-      );
-    case BetModuleType.skins:
-      return BetModuleInstance(
-        id: id, type: type, name: type.label,
-        participantIds: participants,
-        skinsConfig: SkinsConfig.def,
-      );
-    case BetModuleType.nassau:
-      return BetModuleInstance(
-        id: id, type: type, name: type.label,
-        participantIds: participants,
-        nassauConfig: NassauConfig.def,
-      );
-    case BetModuleType.matchAutoPress:
-      return BetModuleInstance(
-        id: id, type: type, name: type.label,
-        participantIds: participants,
-        matchAutoPressConfig: MatchAutoPressConfig.def,
-      );
-    case BetModuleType.medal:
-      return BetModuleInstance(
-        id: id, type: type, name: type.label,
-        participantIds: participants,
-        medalConfig: MedalConfig.def,
-      );
-    case BetModuleType.putts:
-      return BetModuleInstance(
-        id: id, type: type, name: type.label,
-        participantIds: participants,
-        puttsConfig: PuttsConfig.def,
-      );
-    case BetModuleType.oyeses:
-      return BetModuleInstance(
-        id: id, type: type, name: type.label,
-        participantIds: participants,
-        oyesesConfig: OyesesConfig.def,
-      );
-    case BetModuleType.units:
-      return BetModuleInstance(
-        id: id, type: type, name: type.label,
-        participantIds: participants,
-        unitsConfig: UnitsConfig.def,
-      );
-  }
+  // Era este switch entero, una copia de BetModuleInstance.defaultFor con los
+  // ocho tipos escritos a mano. Dos catálogos del mismo dato: al añadir un
+  // formato hay que acordarse de los dos, y el que se olvida falla en silencio
+  // —el módulo nace con la config de nadie y no liquida—.
+  //
+  // Se colapsa en la fuente. El id se mantiene con el prefijo de antes para no
+  // cambiar la forma de los ids ya guardados.
+  //
+  // nassauLowHigh sigue naciendo SIN lados a propósito: la hoja de edición es
+  // la que pide los equipos. defaultFor hace lo mismo (sides por defecto null).
+  return BetModuleInstance.defaultFor(
+    type,
+    [p1Id, p2Id],
+    id: 'mod_${DateTime.now().millisecondsSinceEpoch}',
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

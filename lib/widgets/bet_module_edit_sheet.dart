@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../core/app_theme.dart';
 import '../models/models.dart';
+import 'format_config_fields.dart';
 
 // Tipos de módulo que admiten configuración de lados (equipo vs equipo).
 // Tipos que ofrecen la sección de equipos. Es una lista explícita: al
@@ -81,6 +82,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   late final TextEditingController _medalCtrl;
   late final TextEditingController _puttsCtrl;
   late final TextEditingController _oyesCtrl, _zapatoCtrl;
+  late final TextEditingController _snakeCtrl;
   late final TextEditingController _lhSegCtrl, _lhPointCtrl;
   late final Map<UnitEventType, TextEditingController> _unitCtrls;
 
@@ -126,6 +128,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _medalCtrl  = TextEditingController(text: m.medal.value.toStringAsFixed(0));
     _puttsCtrl  = TextEditingController(text: m.putts.value.toStringAsFixed(0));
     _oyesCtrl   = TextEditingController(text: m.oyeses.value.toStringAsFixed(0));
+    _snakeCtrl  = TextEditingController(text: m.snake.value.toStringAsFixed(0));
     _lhSegCtrl   = TextEditingController(text: m.lowHigh.segmentAmount.toStringAsFixed(0));
     _lhPointCtrl = TextEditingController(text: m.lowHigh.amountPerPoint.toStringAsFixed(0));
     _zapatoCtrl = TextEditingController(
@@ -189,6 +192,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _medalCtrl.dispose();
     _puttsCtrl.dispose();
     _oyesCtrl.dispose(); _zapatoCtrl.dispose();
+    _snakeCtrl.dispose();
     _lhSegCtrl.dispose(); _lhPointCtrl.dispose();
     _unitAllCtrl.dispose();
     for (final c in _unitCtrls.values) {
@@ -415,8 +419,19 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       case BetModuleType.oyeses:        return _oyesesFields(t);
       case BetModuleType.units:         return _unitsFields(t);
       case BetModuleType.nassauLowHigh: return _lowHighFields(t);
+      case BetModuleType.snake:         return _snakeFields(t);
     }
   }
+
+  // Los campos de Snake viven en format_config_fields.dart: los mismos tres
+  // editores de la app los necesitan y triplicarlos es cómo el catálogo de
+  // tipos acabó repartido por cinco pantallas.
+  List<Widget> _snakeFields(GolfTheme t) => snakeFields(
+        t: t,
+        cfg: _current.snake,
+        montoCtrl: _snakeCtrl,
+        onChanged: (c) => _update(_current.copyWith(snakeConfig: c)),
+      );
 
   // ══════════════════════════════════════════════════════════════════════════
   // BOLA BAJA / BOLA ALTA

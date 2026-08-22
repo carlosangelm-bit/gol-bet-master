@@ -182,6 +182,7 @@ class _BettingGroupEditorScreenState
             puttsConfig:           m.puttsConfig,
             oyesesConfig:          m.oyesesConfig,
             unitsConfig:           m.unitsConfig,
+            snakeConfig:           m.snakeConfig,
           )).toList(),
         );
       }

@@ -13,6 +13,7 @@ import '../../models/models.dart';
 import '../../providers/round_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/common_widgets.dart';
+import '../../widgets/format_config_fields.dart';
 
 class GamePresetsScreen extends StatefulWidget {
   const GamePresetsScreen({super.key});
@@ -858,6 +859,16 @@ class _PresetConfigWidgets {
             style: TextStyle(color: t.sub, fontSize: 12, height: 1.4),
           ),
         ];
+      case BetModuleType.snake:
+        return snakeFields(
+          t: t,
+          cfg: cfg.snake,
+          // Controller en línea, igual que los hermanos de este archivo
+          // (ver _skinsWidgets): es el patrón local.
+          montoCtrl: TextEditingController(
+              text: cfg.snake.value.toStringAsFixed(0)),
+          onChanged: (c) => update(cfg.copyWith(snakeConfig: c)),
+        );
       case BetModuleType.skins:
         return _skinsWidgets(cfg, t, setSt, update);
       case BetModuleType.nassau:

@@ -1723,6 +1723,39 @@ class _BetInfo {
           'H16 (par 3): Carlos más cerca → empate 2-2\n'
           'Premio se divide: cada uno cobra \$25 de Rich',
     ),
+    // ── Snake ─────────────────────────────────────────────────────────────────
+    _BetInfo(
+      type: BetModuleType.snake,
+      icon: Icons.gesture_rounded,
+      color: Color(0xFF00695C),
+      tagline: 'El último 3-putt de la ronda paga a todos',
+      howItWorks:
+          'La serpiente va pasando de mano en mano: cada vez que alguien hace '
+          'tres putts en un hoyo, se la queda. Quien la tenga al terminar la '
+          'ronda —o sea, quien hizo el ÚLTIMO 3-putt— le paga a todos los '
+          'demás.\n\n'
+          'No pide nada nuevo en el campo: los putts ya se anotan en la '
+          'tarjeta. Lo único que hace la app es buscar el último hoyo con tres '
+          'putts o más.',
+      rules: [
+        'Cuenta el ÚLTIMO hoyo con 3+ putts, no el peor de la ronda',
+        'El umbral es configurable: 3 por defecto, algunos grupos usan 4',
+        'El dueño paga el monto a cada uno de los demás',
+        'Si nadie llega al umbral, la serpiente no se cobra — y se dice',
+        'Empate en el último hoyo: pagan los dos, o se reparten (configurable)',
+        'Se muestra durante la vuelta, marcada como provisional',
+        'Sin bruto ni neto: los putts no se ajustan por handicap',
+      ],
+      example:
+          'Snake \$100 · umbral 3 putts · 4 jugadores\n'
+          '───────────────────────────────\n'
+          'H4: Rafa 3 putts → la serpiente es de Rafa\n'
+          'H9: Carlos 3 putts → pasa a Carlos\n'
+          'H14: Rafa 4 putts → vuelve a Rafa\n'
+          'H16: Rich 3 putts → pasa a Rich\n'
+          'H17 y H18 sin 3-putts → Rich se la queda\n'
+          'Rich paga \$100 a cada uno: -\$300',
+    ),
     // ── Units ─────────────────────────────────────────────────────────────────
     _BetInfo(
       type: BetModuleType.units,
@@ -2633,6 +2666,8 @@ class _ActiveRoundView extends StatelessWidget {
   // ── Etiqueta de valor corta para el chip ──────────────────────────────────
   String _shortChipLabel(BetModuleInstance m) {
     switch (m.type) {
+      case BetModuleType.snake:
+        return '\$${m.snake.value.toStringAsFixed(0)}';
       case BetModuleType.skins:
         return '\$${m.skins.valuePerSkin.toStringAsFixed(0)}/skin';
       case BetModuleType.nassau:
@@ -3060,6 +3095,7 @@ class _ActiveRoundView extends StatelessWidget {
                               puttsConfig:          effPutts,
                               oyesesConfig:         effOyeses,
                               unitsConfig:          effUnits,
+                              snakeConfig:          cfg.snakeConfig,
                               pairConfigOverrides:
                                   pairOvsMap.isEmpty ? null : pairOvsMap,
                               clearPlayerOverrides: true,

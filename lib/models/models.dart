@@ -21,7 +21,7 @@ DateTime _parseDate(dynamic value) {
 }
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
-enum BetModuleType { skins, nassau, matchAutoPress, medal, putts, oyeses, units, nassauLowHigh }
+enum BetModuleType { skins, nassau, matchAutoPress, medal, putts, oyeses, units, nassauLowHigh, snake }
 
 /// Qué hacer cuando una categoría (bola baja o alta) queda empatada en un hoyo.
 enum LowHighTieRule {
@@ -141,6 +141,14 @@ extension BetModuleTypeRules on BetModuleType {
             sinEquipos: 'Las unidades premian un logro individual —birdie, '
                 'eagle, sandy— que no se atribuye a un equipo.',
             sinSegmentos: 'Las unidades se cobran cuando ocurren, no por vuelta.',
+          ),
+        BetModuleType.snake => const BetTypeRules(
+            sinEquipos: 'La serpiente la agarra una persona con sus putts: no '
+                'hay 3-putt de equipo.',
+            sinSegmentos: 'Es UNA serpiente por ronda —la última—, así que no '
+                'se reparte en Front y Back.',
+            sinMontoPorPareja: 'El dueño paga lo mismo a todos: es el precio de '
+                'la serpiente, no un duelo con cada uno.',
           ),
         // Retirado del catálogo, pero las rondas guardadas lo siguen usando.
         BetModuleType.matchAutoPress => const BetTypeRules(
@@ -407,38 +415,52 @@ class BetSide {
 }
 
 extension BetModuleLabel on BetModuleType {
-  String get label => const {
-    BetModuleType.skins:         'Skins',
-    BetModuleType.nassau:        'Nassau',  // con o sin press (pressEnabled)
-    BetModuleType.matchAutoPress:'Match + Press',
-    BetModuleType.medal:         'Medal',
-    BetModuleType.putts:         'Putts',
-    BetModuleType.oyeses:        'Oyes',
-    BetModuleType.units:         'Unidades',
-    BetModuleType.nassauLowHigh: 'Bola Baja / Bola Alta',
-  }[this]!;
+  // switch y no un mapa con [this]!.
+  //
+  // Eran tres mapas const indexados con la aserción de no-nulo. Al añadir un
+  // tipo al enum el analizador cazó los DIECISÉIS switch exhaustivos del
+  // proyecto y NO cazó estos tres: un mapa incompleto compila igual y revienta
+  // al pintar la etiqueta. Un switch sobre un enum sí es exhaustivo, así que el
+  // siguiente formato no se puede añadir a medias.
+  String get label => switch (this) {
+        BetModuleType.skins => 'Skins',
+        BetModuleType.nassau => 'Nassau', // con o sin press (pressEnabled)
+        BetModuleType.matchAutoPress => 'Match + Press',
+        BetModuleType.medal => 'Medal',
+        BetModuleType.putts => 'Putts',
+        BetModuleType.oyeses => 'Oyes',
+        BetModuleType.units => 'Unidades',
+        BetModuleType.nassauLowHigh => 'Bola Baja / Bola Alta',
+        BetModuleType.snake => 'Snake',
+      };
 
-  String get icon => const {
-    BetModuleType.skins:         '🎯',
-    BetModuleType.nassau:        '🏌️',  // ícono unificado
-    BetModuleType.matchAutoPress:'⚔️',
-    BetModuleType.medal:         '🥇',
-    BetModuleType.putts:         '⛳',
-    BetModuleType.oyeses:        '🌟',
-    BetModuleType.units:         '💫',
-    BetModuleType.nassauLowHigh: '⚖️',
-  }[this]!;
+  String get icon => switch (this) {
+        BetModuleType.skins => '🎯',
+        BetModuleType.nassau => '🏌️', // ícono unificado
+        BetModuleType.matchAutoPress => '⚔️',
+        BetModuleType.medal => '🥇',
+        BetModuleType.putts => '⛳',
+        BetModuleType.oyeses => '🌟',
+        BetModuleType.units => '💫',
+        BetModuleType.nassauLowHigh => '⚖️',
+        BetModuleType.snake => '🐍',
+      };
 
-  String get description => const {
-    BetModuleType.skins:         'Cada hoyo vale una skin. Empates acumulan.',
-    BetModuleType.nassau:        'Front 9, Back 9 y Total 18. Activa presiones automáticas opcionalmente.',
-    BetModuleType.matchAutoPress:'Match principal + presiones automáticas al llegar a X up.',
-    BetModuleType.medal:         'Score neto total más bajo gana.',
-    BetModuleType.putts:         'Menor cantidad de putts por segmento.',
-    BetModuleType.oyeses:        'Ranking en par 3s. El más cercano cobra.',
-    BetModuleType.units:         'Eagles, birdies, sandy pars y más.',
-    BetModuleType.nassauLowHigh: '2 vs 2. Cada hoyo reparte un punto por la bola baja y otro por la alta.',
-  }[this]!;
+  String get description => switch (this) {
+        BetModuleType.skins => 'Cada hoyo vale una skin. Empates acumulan.',
+        BetModuleType.nassau =>
+          'Front 9, Back 9 y Total 18. Activa presiones automáticas opcionalmente.',
+        BetModuleType.matchAutoPress =>
+          'Match principal + presiones automáticas al llegar a X up.',
+        BetModuleType.medal => 'Score neto total más bajo gana.',
+        BetModuleType.putts => 'Menor cantidad de putts por segmento.',
+        BetModuleType.oyeses => 'Ranking en par 3s. El más cercano cobra.',
+        BetModuleType.units => 'Eagles, birdies, sandy pars y más.',
+        BetModuleType.nassauLowHigh =>
+          '2 vs 2. Cada hoyo reparte un punto por la bola baja y otro por la alta.',
+        BetModuleType.snake =>
+          'El último 3-putt de la ronda se queda la serpiente y paga a todos.',
+      };
 }
 
 extension UnitEventLabel on UnitEventType {
@@ -1711,6 +1733,86 @@ class BetScope {
   int get hashCode => Object.hash(kind, Object.hashAllUnordered(playerIds));
 }
 
+
+// ── SNAKE ─────────────────────────────────────────────────────────────────────
+//
+// El último 3-putt de la ronda se queda la serpiente y paga a todos al cierre.
+//
+// No pide NADA nuevo en el campo: `HoleScore.putts` ya se captura y ya se
+// muestra en la pantalla de score. Snake es recorrer los hoyos y encontrar el
+// último que pasa del umbral.
+//
+// Con una limitación del dato que conviene saber: `putts` es un int que arranca
+// en 0, así que "no se capturaron los putts" y "hizo 0 putts" son
+// indistinguibles. El sesgo es seguro —quien no capturó putts nunca agarra la
+// serpiente por error— pero es un falso negativo real. Distinguirlos pediría un
+// campo nuevo en HoleScore, que está fuera de esta tarea a propósito.
+
+/// Qué pasa si dos jugadores pasan del umbral en el MISMO último hoyo.
+///
+/// Existe porque el resultado no puede depender del orden de la lista de
+/// jugadores. Con dos empatados hay dos respuestas defendibles y ninguna es
+/// obvia, así que se elige en vez de salir por accidente.
+enum SnakeEmpate {
+  /// Cada uno paga la serpiente completa a los demás. Es lo más común.
+  ambosPagan,
+
+  /// Se reparten: cada uno paga su parte. Para grupos que la ven como un bote.
+  dividen,
+}
+
+extension SnakeEmpateLabel on SnakeEmpate {
+  String get label => switch (this) {
+        SnakeEmpate.ambosPagan => 'Pagan los dos completo',
+        SnakeEmpate.dividen => 'Se reparten la serpiente',
+      };
+
+  String get description => switch (this) {
+        SnakeEmpate.ambosPagan =>
+          'Cada uno paga el monto completo a los demás. Lo más habitual.',
+        SnakeEmpate.dividen => 'El monto se divide entre los que empataron.',
+      };
+}
+
+class SnakeConfig {
+  /// Lo que el dueño de la serpiente paga A CADA uno de los demás.
+  ///
+  /// Con cuatro jugadores y 100, el dueño paga 300 en total. Se define por rival
+  /// y no como bote para que el importe no cambie de significado al cambiar el
+  /// número de jugadores.
+  final double value;
+
+  /// Putts a partir de los cuales cuenta. 3 por defecto; algunos grupos usan 4.
+  final int umbral;
+
+  final SnakeEmpate empate;
+
+  const SnakeConfig({
+    this.value = 100,
+    this.umbral = 3,
+    this.empate = SnakeEmpate.ambosPagan,
+  });
+
+  static const def = SnakeConfig();
+
+  SnakeConfig copyWith({double? value, int? umbral, SnakeEmpate? empate}) =>
+      SnakeConfig(
+        value: value ?? this.value,
+        umbral: umbral ?? this.umbral,
+        empate: empate ?? this.empate,
+      );
+
+  Map<String, dynamic> toJson() =>
+      {'value': value, 'umbral': umbral, 'empate': empate.name};
+
+  factory SnakeConfig.fromJson(Map<String, dynamic> j) => SnakeConfig(
+        value: (j['value'] as num?)?.toDouble() ?? 100,
+        umbral: (j['umbral'] as num?)?.toInt() ?? 3,
+        empate: SnakeEmpate.values.firstWhere((e) => e.name == j['empate'],
+            orElse: () => SnakeEmpate.ambosPagan),
+      );
+}
+
 class BetModuleInstance {
   final String id;
   final BetModuleType type;
@@ -1739,6 +1841,7 @@ class BetModuleInstance {
   final PuttsConfig?          puttsConfig;
   final OyesesConfig?         oyesesConfig;
   final UnitsConfig?          unitsConfig;
+  final SnakeConfig?          snakeConfig;
 
   // Presiones dinámicas para Match + Auto Press
   final List<PressInstance> presses;
@@ -1809,6 +1912,7 @@ class BetModuleInstance {
     this.puttsConfig,
     this.oyesesConfig,
     this.unitsConfig,
+    this.snakeConfig,
     this.presses = const [],
     this.structure = BetStructure.group,
     this.betGroupId,
@@ -1851,9 +1955,11 @@ class BetModuleInstance {
   PuttsConfig          get putts          => puttsConfig          ?? PuttsConfig.def;
   OyesesConfig         get oyeses         => oyesesConfig         ?? OyesesConfig.def;
   UnitsConfig          get units          => unitsConfig          ?? UnitsConfig.def;
+  SnakeConfig          get snake          => snakeConfig          ?? SnakeConfig.def;
 
   // ── Compatibilidad con BetEngine (valor base y flags) ──────────────────────
   double get value => switch (type) {
+    BetModuleType.snake         => snake.value,
     BetModuleType.skins         => skins.valuePerSkin,
     BetModuleType.nassau        => nassau.frontValue,
     BetModuleType.matchAutoPress=> matchAutoPress.matchValue,
@@ -1887,6 +1993,8 @@ class BetModuleInstance {
 
   // ── Summary para mostrar en el tile ──────────────────────────────────────
   String get summaryLabel => switch (type) {
+    BetModuleType.snake  => '\$${snake.value.toStringAsFixed(0)} · '
+                            '${snake.umbral}+ putts',
     BetModuleType.skins  => '\$${skins.valuePerSkin.toStringAsFixed(0)}/skin'
                             '${skins.carryOver ? ' · carry 🔥' : ''}'
                             ' · ${skins.mode == GrossNetMode.net ? 'Net' : 'Gross'}',
@@ -1936,6 +2044,7 @@ class BetModuleInstance {
     PuttsConfig?          puttsConfig,
     OyesesConfig?         oyesesConfig,
     UnitsConfig?          unitsConfig,
+    SnakeConfig?          snakeConfig,
     List<PressInstance>?  presses,
     BetStructure?                        structure,
     String?                              betGroupId,
@@ -1965,6 +2074,7 @@ class BetModuleInstance {
     puttsConfig:          puttsConfig          ?? this.puttsConfig,
     oyesesConfig:         oyesesConfig         ?? this.oyesesConfig,
     unitsConfig:          unitsConfig          ?? this.unitsConfig,
+    snakeConfig:          snakeConfig          ?? this.snakeConfig,
     presses:              presses              ?? this.presses,
     structure:             structure             ?? this.structure,
     betGroupId:            betGroupId            ?? this.betGroupId,
@@ -2017,6 +2127,7 @@ class BetModuleInstance {
     if (puttsConfig          != null) 'puttsConfig':          puttsConfig!.toJson(),
     if (oyesesConfig         != null) 'oyesesConfig':         oyesesConfig!.toJson(),
     if (unitsConfig          != null) 'unitsConfig':          unitsConfig!.toJson(),
+    if (snakeConfig          != null) 'snakeConfig':          snakeConfig!.toJson(),
     if (presses.isNotEmpty)           'presses': presses.map((p) => p.toJson()).toList(),
   };
 
@@ -2085,6 +2196,7 @@ class BetModuleInstance {
       puttsConfig:          j['puttsConfig']          != null ? PuttsConfig.fromJson(asMap(j['puttsConfig']))          : null,
       oyesesConfig:         j['oyesesConfig']         != null ? OyesesConfig.fromJson(asMap(j['oyesesConfig']))        : null,
       unitsConfig:          j['unitsConfig']          != null ? UnitsConfig.fromJson(asMap(j['unitsConfig']))          : null,
+      snakeConfig:          j['snakeConfig']          != null ? SnakeConfig.fromJson(asMap(j['snakeConfig']))          : null,
       presses: j['presses'] != null
           ? ((j['presses'] as List?) ?? []).map((p) {
               try { return PressInstance.fromJson(p is Map ? Map<String, dynamic>.from(p) : {}); }
@@ -2156,6 +2268,7 @@ class BetModuleInstance {
         puttsConfig:           puttsConfig,
         oyesesConfig:          oyesesConfig,
         unitsConfig:           unitsConfig,
+        snakeConfig:           snakeConfig,
         structure:             structure,
         betGroupId:            betGroupId,
         betGroupName:          betGroupName,
@@ -2176,6 +2289,7 @@ class BetModuleInstance {
   /// QUÉ se juega.
   String get configSignature {
     final Map<String, dynamic> cfg = switch (type) {
+      BetModuleType.snake          => snake.toJson(),
       BetModuleType.skins          => skins.toJson(),
       BetModuleType.nassau         => nassau.toJson(),
       BetModuleType.matchAutoPress => matchAutoPress.toJson(),
@@ -2347,6 +2461,7 @@ class BetModuleInstance {
       puttsConfig:          type == BetModuleType.putts         ? PuttsConfig.def          : null,
       oyesesConfig:         type == BetModuleType.oyeses        ? OyesesConfig.def         : null,
       unitsConfig:          type == BetModuleType.units         ? UnitsConfig.def          : null,
+      snakeConfig:          type == BetModuleType.snake         ? SnakeConfig.def          : null,
     );
   }
 
@@ -2383,6 +2498,7 @@ class BetModuleInstance {
     PuttsConfig?          puttsConfig,
     OyesesConfig?         oyesesConfig,
     UnitsConfig?          unitsConfig,
+    SnakeConfig?          snakeConfig,
   }) {
     final ts = DateTime.now().millisecondsSinceEpoch;
 
@@ -2406,6 +2522,7 @@ class BetModuleInstance {
         puttsConfig:          puttsConfig          ?? (type == BetModuleType.putts         ? PuttsConfig.def          : null),
         oyesesConfig:         oyesesConfig         ?? (type == BetModuleType.oyeses        ? OyesesConfig.def         : null),
         unitsConfig:          unitsConfig          ?? (type == BetModuleType.units         ? UnitsConfig.def          : null),
+        snakeConfig:          snakeConfig          ?? (type == BetModuleType.snake         ? SnakeConfig.def          : null),
       );
     }
 
@@ -2426,6 +2543,7 @@ class BetModuleInstance {
         puttsConfig:          puttsConfig          ?? (type == BetModuleType.putts         ? PuttsConfig.def          : null),
         oyesesConfig:         oyesesConfig         ?? (type == BetModuleType.oyeses        ? OyesesConfig.def         : null),
         unitsConfig:          unitsConfig          ?? (type == BetModuleType.units         ? UnitsConfig.def          : null),
+        snakeConfig:          snakeConfig          ?? (type == BetModuleType.snake         ? SnakeConfig.def          : null),
       );
     }
 
@@ -2591,6 +2709,7 @@ class BetGroup {
           if (map.containsKey('skinsConfig') || map.containsKey('nassauConfig') ||
               map.containsKey('medalConfig') || map.containsKey('puttsConfig') ||
               map.containsKey('oyesesConfig') || map.containsKey('unitsConfig') ||
+              map.containsKey('snakeConfig') ||
               map.containsKey('participantIds')) {
             return BetModuleInstance.fromJson(map);
           } else {
@@ -2632,6 +2751,7 @@ class BetGroup {
       puttsConfig: type == BetModuleType.putts ? PuttsConfig(value: value) : null,
       oyesesConfig: type == BetModuleType.oyeses ? OyesesConfig(value: value) : null,
       unitsConfig: type == BetModuleType.units ? UnitsConfig.def : null,
+      snakeConfig: type == BetModuleType.snake ? SnakeConfig.def : null,
     );
   }
 }
@@ -3412,6 +3532,7 @@ class BetModuleTemplate {
   final PuttsConfig?             puttsConfig;
   final OyesesConfig?            oyesesConfig;
   final UnitsConfig?             unitsConfig;
+  final SnakeConfig?             snakeConfig;
   final NassauLowHighConfig?     nassauLowHighConfig;
 
   const BetModuleTemplate({
@@ -3424,6 +3545,7 @@ class BetModuleTemplate {
     this.puttsConfig,
     this.oyesesConfig,
     this.unitsConfig,
+    this.snakeConfig,
     this.nassauLowHighConfig,
   });
 
@@ -3435,10 +3557,13 @@ class BetModuleTemplate {
   PuttsConfig          get putts  => puttsConfig          ?? PuttsConfig.def;
   OyesesConfig         get oyeses => oyesesConfig         ?? OyesesConfig.def;
   UnitsConfig          get units  => unitsConfig          ?? UnitsConfig.def;
+  SnakeConfig          get snake  => snakeConfig          ?? SnakeConfig.def;
 
   /// Etiqueta corta del valor principal.
   String get summaryLabel {
     switch (type) {
+      case BetModuleType.snake:
+        return '\$${snake.value.toStringAsFixed(0)} · ${snake.umbral}+ putts';
       case BetModuleType.skins:
         return '\$${skins.valuePerSkin.toStringAsFixed(0)}/skin';
       case BetModuleType.nassau:
@@ -3471,6 +3596,7 @@ class BetModuleTemplate {
     puttsConfig:          t == BetModuleType.putts         ? PuttsConfig.def          : null,
     oyesesConfig:         t == BetModuleType.oyeses        ? OyesesConfig.def         : null,
     unitsConfig:          t == BetModuleType.units         ? UnitsConfig.def          : null,
+    snakeConfig:          t == BetModuleType.snake         ? SnakeConfig.def          : null,
     nassauLowHighConfig:  t == BetModuleType.nassauLowHigh? const NassauLowHighConfig() : null,
   );
 
@@ -3494,6 +3620,7 @@ class BetModuleTemplate {
     puttsConfig:          puttsConfig,
     oyesesConfig:         oyesesConfig,
     unitsConfig:          unitsConfig,
+    snakeConfig:          snakeConfig,
     betGroupId:           betGroupId,
     betGroupName:         betGroupName,
     structure:            BetStructure.headToHead,
@@ -3509,6 +3636,7 @@ class BetModuleTemplate {
     PuttsConfig?           puttsConfig,
     OyesesConfig?          oyesesConfig,
     UnitsConfig?           unitsConfig,
+    SnakeConfig?           snakeConfig,
   }) => BetModuleTemplate(
     type:                  type                 ?? this.type,
     formatMode:            formatMode           ?? this.formatMode,
@@ -3519,6 +3647,7 @@ class BetModuleTemplate {
     puttsConfig:           puttsConfig          ?? this.puttsConfig,
     oyesesConfig:          oyesesConfig         ?? this.oyesesConfig,
     unitsConfig:           unitsConfig          ?? this.unitsConfig,
+    snakeConfig:           snakeConfig          ?? this.snakeConfig,
   );
 
   Map<String, dynamic> toJson() => {
@@ -3531,6 +3660,7 @@ class BetModuleTemplate {
     if (puttsConfig          != null) 'puttsConfig':          puttsConfig!.toJson(),
     if (oyesesConfig         != null) 'oyesesConfig':         oyesesConfig!.toJson(),
     if (unitsConfig          != null) 'unitsConfig':          unitsConfig!.toJson(),
+    if (snakeConfig          != null) 'snakeConfig':          snakeConfig!.toJson(),
   };
 
   factory BetModuleTemplate.fromJson(Map<String, dynamic> j) {
@@ -3555,6 +3685,8 @@ class BetModuleTemplate {
           ? OyesesConfig.fromJson(Map<String, dynamic>.from(j['oyesesConfig'] as Map)) : null,
       unitsConfig: j['unitsConfig'] != null
           ? UnitsConfig.fromJson(Map<String, dynamic>.from(j['unitsConfig'] as Map)) : null,
+      snakeConfig: j['snakeConfig'] != null
+          ? SnakeConfig.fromJson(Map<String, dynamic>.from(j['snakeConfig'] as Map)) : null,
     );
   }
 
@@ -3571,6 +3703,7 @@ class BetModuleTemplate {
         puttsConfig:           inst.puttsConfig,
         oyesesConfig:          inst.oyesesConfig,
         unitsConfig:           inst.unitsConfig,
+        snakeConfig:           inst.snakeConfig,
       );
 
 }
