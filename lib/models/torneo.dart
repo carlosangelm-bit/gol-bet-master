@@ -189,6 +189,14 @@ extension AcumulacionLabel on Acumulacion {
 }
 
 /// Un torneo.
+/// Lo que se enseña cuando no hay nombre para un jugador.
+///
+/// NUNCA el id. Un nombre viejo es peor que el actual, pero un id de Firestore en
+/// pantalla es peor que las dos cosas: no dice nada y parece un error. El nombre
+/// sale del directorio; esto es el último recurso, para el inscrito que ya no
+/// está en él y no ha jugado ninguna ronda.
+const sinNombre = '—';
+
 /// Liga o eliminación directa.
 ///
 /// Aditivo: [liga] es lo que había, así que un torneo guardado se lee igual. La
@@ -685,7 +693,7 @@ TablaDelTorneo tablaDe(
       // Solo los INSCRITOS. Con la lista vacía entra todo el que jugó, que es el
       // estado heredado y se marca para poder decirlo.
       if (inscritos.isNotEmpty && !inscritos.contains(pid)) continue;
-      nombreDe[pid] = nombres[pid] ?? r.playerNames[pid] ?? pid;
+      nombreDe[pid] = nombres[pid] ?? r.playerNames[pid] ?? sinNombre;
       final puesto = puestoDe[pid]!;
       final puntos = t.metodo == MetodoDePuntuacion.posicion
           ? _puntosDelPuesto(t, puesto, empatadosCon[pid]!.length)
@@ -712,7 +720,7 @@ TablaDelTorneo tablaDe(
         .fold(0.0, (s, x) => s + x.puntos);
     filas.add(FilaDelTorneo(
       playerId: entrada.key,
-      nombre: nombreDe[entrada.key] ?? entrada.key,
+      nombre: nombreDe[entrada.key] ?? sinNombre,
       rondas: marcadas,
       total: _redondea(total),
       puesto: 0, // se asigna al ordenar
@@ -728,7 +736,11 @@ TablaDelTorneo tablaDe(
     sinJugar.add(pid);
     filas.add(FilaDelTorneo(
       playerId: pid,
-      nombre: nombres[pid] ?? pid,
+      // El inscrito que no ha jugado NINGUNA ronda no tiene nombre en ningún
+      // RoundResult, así que sale del directorio o no sale. Antes caía al id y
+      // la tarjeta enseñaba "Va 6uX3jmCVlYNxCJxWBJQe": un id de Firestore en la
+      // primera pantalla dice "esto está a medias" más alto que nada.
+      nombre: nombres[pid] ?? sinNombre,
       rondas: const [],
       total: 0,
       puesto: 0,
@@ -1169,7 +1181,16 @@ class BoteDelTorneo {
 /// rondas — el bote es una expectativa mientras el torneo está abierto, y el
 /// dinero de un sábado ya está cobrado. Sumarlos daría una cifra que no
 /// significa nada.
-BoteDelTorneo boteDe(Torneo t, TablaDelTorneo tabla) {
+/// El bote del torneo.
+///
+/// [campeon] solo se usa con [FormatoDeTorneo.eliminacion], y ahí manda sobre la
+/// tabla: en un cuadro el premio es del que gana la final, no del que más dinero
+/// acumuló por el camino. Sin él, un bote de eliminación pagaba al líder de la
+/// tabla —una cifra correcta a nombre de la persona equivocada—.
+///
+/// Mientras no haya campeón nadie cobra, igual que con cero rondas jugadas: el
+/// bote existe porque pusieron; el ganador, todavía no.
+BoteDelTorneo boteDe(Torneo t, TablaDelTorneo tabla, {String? campeon}) {
   final cfg = t.bote;
   final todos = [...tabla.filas, ...tabla.bajoMinimo];
 
@@ -1210,7 +1231,11 @@ BoteDelTorneo boteDe(Torneo t, TablaDelTorneo tabla) {
   // enseñar "cobra $100" cuando no se ha jugado nada dice que pasó algo que no
   // pasó. El bote existe porque pusieron; el ganador, todavía no.
   final cobra = <String, double>{};
-  if (tabla.rondas > 0 && tabla.filas.isNotEmpty && total > 0) {
+  if (t.formato == FormatoDeTorneo.eliminacion) {
+    // El cuadro decide, no la tabla. Y no se reparte por puestos: en una
+    // eliminación no hay podio que repartir, hay un campeón.
+    if (campeon != null && total > 0) cobra[campeon] = total;
+  } else if (tabla.rondas > 0 && tabla.filas.isNotEmpty && total > 0) {
     final porcentajes = cfg.reparto == RepartoDelBote.ganadorTodo
         ? <int>[100]
         : cfg.porcentajes;
@@ -1267,8 +1292,16 @@ BoteDelTorneo boteDe(Torneo t, TablaDelTorneo tabla) {
     // ronda. Decirlo es la diferencia entre una cuenta y una promesa.
     provisional: t.cerrado
         ? null
-        : 'El torneo está abierto: el reparto cambia con cada ronda que entre. '
-            'Ciérralo cuando la temporada acabe para dejarlo fijo.',
+        : t.formato == FormatoDeTorneo.eliminacion
+            ? (campeon == null
+                // Sin campeón no hay a quién pagarle, y decirlo es la diferencia
+                // entre una cuenta y una promesa.
+                ? 'El cuadro no ha terminado: el bote se lo lleva quien gane la '
+                    'final.'
+                : 'El cuadro ya tiene campeón. Ciérralo para dejar el reparto '
+                    'fijo.')
+            : 'El torneo está abierto: el reparto cambia con cada ronda que '
+                'entre. Ciérralo cuando la temporada acabe para dejarlo fijo.',
   );
 }
 
@@ -1557,6 +1590,92 @@ String importeDelTorneo(double v) {
   return '0';
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// QUÉ APLICA A CADA FORMATO — una sola fuente, no un `if` por pantalla
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// El editor enseñaba "puntos por puesto", "si dos empatan en una ronda", "cómo se
+// acumula" y "cuántas rondas para optar al premio" con eliminación marcada. Ni una
+// aplica a un cuadro: ganas el partido y pasas, no acumulas nada, no hay puesto y
+// no hay mínimo que valga.
+//
+// Es el mismo patrón que ya se cerró varias veces en esta app: una superficie que
+// no se enteró de que hay dos formatos. La lógica estaba en el paso 1 y las
+// secciones siguientes no la consultaban. Así que la respuesta no es un `if` por
+// sección —eso es lo que se rompe la próxima vez— sino una tabla que se pueda
+// probar y que la pantalla consulte.
+
+/// Cada cosa que se configura en un torneo.
+enum SeccionDelTorneo {
+  formato,
+  siembra,
+  fuente,
+  participantes,
+  metodo,
+
+  /// La tabla de puntos por puesto. Sin puesto no hay puntos por puesto.
+  puntosPorPuesto,
+
+  /// Qué pasa si dos empatan EN UNA RONDA. En un cuadro el empate de un partido
+  /// lo resuelve una persona, y eso ya vive en el cuadro.
+  empateEnRonda,
+
+  /// Suma simple o mejores N.
+  acumulacion,
+
+  /// El mínimo de rondas para optar al premio.
+  minimoRondas,
+
+  bote,
+  botePorJornada,
+}
+
+/// Si [s] significa algo en [f].
+///
+/// Lo que se oculta NO se borra: el valor guardado sigue ahí y volver a liga lo
+/// devuelve entero. Esconder es distinto de reescribir, y reescribir la
+/// configuración de alguien porque cambió una opción es peor que enseñar un
+/// control de más.
+bool aplicaEnFormato(SeccionDelTorneo s, FormatoDeTorneo f) =>
+    switch (f) {
+      FormatoDeTorneo.liga => s != SeccionDelTorneo.siembra,
+      FormatoDeTorneo.eliminacion => switch (s) {
+          // Fuera: un cuadro no acumula, no tiene puestos y no tiene mínimo.
+          SeccionDelTorneo.puntosPorPuesto => false,
+          SeccionDelTorneo.empateEnRonda => false,
+          SeccionDelTorneo.acumulacion => false,
+          SeccionDelTorneo.minimoRondas => false,
+          // Se queda: decide QUIÉN GANA EL PARTIDO, que es lo único que hay que
+          // decidir. Y el bote se queda porque el dinero cuenta igual.
+          _ => true,
+        },
+    };
+
+/// Los métodos que se pueden elegir con [f].
+///
+/// En un cuadro no se ofrece "por posición": entre dos personas el puesto lo
+/// decide el dinero de la ronda —es literalmente lo que calcula— así que ofrecerlo
+/// sería un nombre distinto para la misma cosa, y encima el peor de los dos.
+List<MetodoDePuntuacion> metodosOfrecidos(FormatoDeTorneo f) =>
+    f == FormatoDeTorneo.eliminacion
+        ? MetodoDePuntuacion.values
+            .where((m) => m != MetodoDePuntuacion.posicion)
+            .toList()
+        : MetodoDePuntuacion.values;
+
+/// El método con el que de verdad se resuelve este torneo.
+///
+/// Se DERIVA en vez de reescribirse al guardar. Un torneo de eliminación con
+/// "por posición" guardado —los que se crearon antes de esta corrección— se
+/// resuelve por dinero, que es lo que ese método calcula en un duelo, y se
+/// enseña con ese nombre. Sin migración, sin tocar el documento y sin que ninguna
+/// pantalla diga "Por posición" de un cuadro.
+MetodoDePuntuacion metodoEfectivo(Torneo t) =>
+    t.formato == FormatoDeTorneo.eliminacion &&
+            t.metodo == MetodoDePuntuacion.posicion
+        ? MetodoDePuntuacion.dinero
+        : t.metodo;
+
 /// La clave con la que se guarda un desempate: los dos ids, ordenados.
 ///
 /// Ordenados a propósito, para que dé igual quién sea A y quién sea B: un mismo
@@ -1728,6 +1847,10 @@ LlaveDelTorneo llaveDe(Torneo t, List<RoundResult> resultados) {
 
   // Solo las rondas del torneo, y en orden. La fuente ya decide cuáles cuentan
   // —con marcas, desde la fase A— así que aquí no se vuelve a decidir.
+  // El método EFECTIVO: un cuadro guardado con "por posición" se resuelve por
+  // dinero, que es lo que ese método calcula entre dos personas.
+  final metodo = metodoEfectivo(t);
+
   final rondas = rondasDelTorneo(t, resultados)
     ..sort((x, y) => x.playedAt.compareTo(y.playedAt));
 
@@ -1756,8 +1879,14 @@ LlaveDelTorneo llaveDe(Torneo t, List<RoundResult> resultados) {
       final b = actual[i + 1];
       final pos = i ~/ 2;
 
-      // Bye: uno de los dos huecos no existe, así que el otro pasa sin jugar.
-      if ((a == null) != (b == null)) {
+      // Bye: uno de los dos huecos NO EXISTE, así que el otro pasa sin jugar.
+      //
+      // Solo en la primera ronda. Es la distinción que se me escapó: en la ronda
+      // 0 un hueco vacío significa "ese sembrado no existe" —un bye de verdad—
+      // pero en una ronda posterior significa "todavía no se sabe quién viene".
+      // Tratarlo igual hacía que, con una semifinal sin jugar, el otro finalista
+      // pasara a campeón sin jugar la final.
+      if (nivel == 0 && (a == null) != (b == null)) {
         final pasa = a ?? b;
         partidos.add(Enfrentamiento(
             ronda: nivel, posicion: pos, a: a, b: b, ganador: pasa, bye: true));
@@ -1787,7 +1916,7 @@ LlaveDelTorneo llaveDe(Torneo t, List<RoundResult> resultados) {
             (usadas[b]?.contains(r.roundId) ?? false)) {
           continue;
         }
-        final m = _medidasDe(t.metodo, r);
+        final m = _medidasDe(metodo, r);
         if (!m.containsKey(a) || !m.containsKey(b)) continue;
         decide = r;
         medidas = m;
@@ -1813,7 +1942,7 @@ LlaveDelTorneo llaveDe(Torneo t, List<RoundResult> resultados) {
         empatado = gana == null;
         aMano = gana != null;
       } else {
-        gana = (t.metodo.masEsMejor ? ma > mb : ma < mb) ? a : b;
+        gana = (metodo.masEsMejor ? ma > mb : ma < mb) ? a : b;
       }
 
       partidos.add(Enfrentamiento(
@@ -1847,6 +1976,43 @@ LlaveDelTorneo llaveDe(Torneo t, List<RoundResult> resultados) {
     plazas: plazas,
     byes: byes,
   );
+}
+
+/// En qué punto está el cuadro, en una línea.
+///
+/// La tarjeta de la lista resumía un cuadro como si fuera una liga —"0 rondas ·
+/// Por posición"— cuando en eliminación no hay rondas acumuladas ni posición: hay
+/// partidos. Lo que hace falta saber de un vistazo es a quién le toca, o quién
+/// ganó.
+///
+/// El orden importa: lo que BLOQUEA va primero. Un empate sin resolver detiene el
+/// cuadro entero, así que se dice antes que el partido que se puede jugar.
+String resumenDeLlave(LlaveDelTorneo llave, Map<String, String> nombres) {
+  String nom(String? pid) =>
+      pid == null ? sinNombre : (nombres[pid] ?? sinNombre);
+
+  if (llave.vacia) return 'Cuadro sin armar';
+
+  if (llave.pendientesDeDesempate.isNotEmpty) {
+    final e = llave.pendientesDeDesempate.first;
+    final mas = llave.pendientesDeDesempate.length - 1;
+    return 'Hay que desempatar: ${nom(e.a)} y ${nom(e.b)}'
+        '${mas > 0 ? ' · y $mas más' : ''}';
+  }
+
+  if (llave.campeon != null) return 'Campeón: ${nom(llave.campeon)}';
+
+  final jugables = llave.jugables;
+  if (jugables.isNotEmpty) {
+    final e = jugables.first;
+    final fase = nombreDeRondaDeLlave(llave.rondas[e.ronda].length);
+    final mas = jugables.length - 1;
+    return '$fase · ${nom(e.a)} vs ${nom(e.b)}'
+        '${mas > 0 ? ' · y $mas partido${mas == 1 ? '' : 's'} más' : ''}';
+  }
+
+  // Ni campeón, ni empates, ni nada jugable: todo espera que alguien acabe.
+  return '${llave.plazas} plazas · esperando resultados';
 }
 
 /// Por qué un torneo de liga no puede pasar a eliminación, si no puede.

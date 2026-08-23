@@ -629,11 +629,28 @@ class _BloqueEnJuego extends StatelessWidget {
     var enJuego = 0.0;
     final voy = <String>[];
     for (final tor in abiertos) {
+      // Sin el directorio a propósito: este bloque no enseña NINGÚN nombre de
+      // jugador —solo el del torneo— así que pedirlo sería una dependencia que
+      // no compra nada. Los nombres se resuelven donde se ven.
       final tabla = tablaDe(tor, resultados);
-      final bote = boteDe(tor, tabla);
+      // En un cuadro el bote es del campeón, no del líder de la tabla.
+      final llave = llaveDe(tor, resultados);
+      final bote = boteDe(tor, tabla, campeon: llave.campeon);
       final mia = bote.lineas.where((l) => l.playerId == miId);
       if (mia.isEmpty) continue;
       enJuego += bote.total;
+      if (tor.formato == FormatoDeTorneo.eliminacion) {
+        // "3º en Match Play" no significa nada: o sigues en el cuadro o no.
+        final sigo = llave.rondas
+            .expand((r) => r)
+            .any((e) => e.ganador == miId || e.jugable && (e.a == miId || e.b == miId));
+        voy.add(llave.campeon == miId
+            ? 'campeón de ${tor.nombre}'
+            : sigo
+                ? 'sigues en ${tor.nombre}'
+                : 'fuera de ${tor.nombre}');
+        continue;
+      }
       final fila = tabla.filas.where((f) => f.playerId == miId);
       if (fila.isNotEmpty) {
         voy.add('${fila.first.puesto}º en ${tor.nombre}');

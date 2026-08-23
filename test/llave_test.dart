@@ -63,6 +63,8 @@ Torneo _t({
     );
 
 void main() {
+  seguimiento();
+
   group('1 · el orden de siembra: el 1 y el 2 solo se cruzan en la final', () {
     test('dos, cuatro y ocho plazas', () {
       expect(ordenDeSiembra(2), [1, 2]);
@@ -290,6 +292,34 @@ void main() {
     });
   });
 
+  group('5b · un hueco "por decidir" NO es un bye', () {
+    test('con una semifinal sin jugar, el otro finalista no es campeón', () {
+      // El fallo: en la ronda 0 un hueco vacío es un bye de verdad —ese sembrado
+      // no existe— pero en una ronda posterior es "todavía no se sabe quién
+      // viene". Tratarlo igual coronaba campeón a quien no jugó la final.
+      final l = llaveDe(_t(), [
+        _r(id: 's1', dia: 7, dinero: {ana: 300, dani: -300}),
+      ]);
+      expect(l.rondas[0][0].ganador, ana);
+      expect(l.rondas[0][1].ganador, isNull, reason: 'la otra semi no se jugó');
+      final finalDelCuadro = l.rondas[1].first;
+      expect(finalDelCuadro.a, ana);
+      expect(finalDelCuadro.b, isNull);
+      expect(finalDelCuadro.bye, isFalse, reason: 'no es un bye: es una espera');
+      expect(finalDelCuadro.esperando, isTrue);
+      expect(finalDelCuadro.ganador, isNull);
+      expect(l.campeon, isNull);
+    });
+
+    test('el bye de la primera ronda sí sigue siendo un bye', () {
+      // El contrapeso: la corrección no puede haberse comido los byes.
+      final l = llaveDe(
+          _t(participantes: const [ana, beto, caro]), const []);
+      expect(l.rondas[0].where((e) => e.bye), hasLength(1));
+      expect(l.rondas[0].where((e) => e.bye).first.ganador, isNotNull);
+    });
+  });
+
   group('5 · no se puede ganar la final antes de la semifinal', () {
     test('una ronda vieja entre dos finalistas no resuelve la final', () {
       // Ana y Beto ya habían jugado en enero. Eso no es la final.
@@ -480,6 +510,254 @@ void main() {
       expect(l.campeon, pasan[0]);
       expect(l.jugables, isEmpty);
       expect(l.pendientesDeDesempate, isEmpty);
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEGUIMIENTO — las tres superficies que seguían hablando de liga
+//
+// Las tres eran la misma cosa: la lógica estaba en el formato y las superficies
+// no la consultaban. Así que lo que se prueba aquí no son las pantallas una a
+// una, sino la TABLA que ahora consultan: qué aplica a cada formato, qué método
+// se usa de verdad, y cómo se resume un cuadro.
+// ─────────────────────────────────────────────────────────────────────────────
+void seguimiento() {
+  group('11 · nunca un id crudo en pantalla', () {
+    test('el inscrito que no ha jugado sale con guion, no con su id', () {
+      // "Va 6uX3jmCVlYNxCJxWBJQe" en la primera pantalla dice "esto está a
+      // medias" más alto que cualquier otra cosa.
+      final tabla = tablaDe(
+          Torneo(
+              id: 'tor_1',
+              nombre: 'T',
+              fuente: FuenteDeRondas.marcadas,
+              participantes: const [ana, beto]),
+          const []);
+      final nombres = [...tabla.filas, ...tabla.bajoMinimo].map((f) => f.nombre);
+      expect(nombres, everyElement(sinNombre));
+      expect(nombres, isNot(contains(ana)));
+    });
+
+    test('y con el directorio sale su nombre', () {
+      // El contrapeso: sin esto, lo de arriba pasaría con una tabla vacía.
+      final tabla = tablaDe(
+          Torneo(
+              id: 'tor_1',
+              nombre: 'T',
+              fuente: FuenteDeRondas.marcadas,
+              participantes: const [ana, beto]),
+          const [],
+          nombres: const {ana: 'Rafael', beto: 'Alan'});
+      expect([...tabla.filas, ...tabla.bajoMinimo].map((f) => f.nombre),
+          containsAll(['Rafael', 'Alan']));
+    });
+
+    test('el que jugó pero ya no está en el directorio conserva su nombre', () {
+      // RoundResult guarda el nombre del día a propósito: es un registro
+      // histórico. Borrar a alguien del directorio no borra lo que jugó.
+      final tabla = tablaDe(
+          _t(participantes: const [ana, beto]),
+          [_r(id: 'r1', dia: 7, dinero: {ana: 100, beto: -100})]);
+      expect(tabla.filas.map((f) => f.nombre), isNot(contains(sinNombre)));
+    });
+  });
+
+  group('12 · qué aplica a cada formato', () {
+    test('en un cuadro no hay puestos, ni acumulación, ni mínimo', () {
+      for (final s in [
+        SeccionDelTorneo.puntosPorPuesto,
+        SeccionDelTorneo.empateEnRonda,
+        SeccionDelTorneo.acumulacion,
+        SeccionDelTorneo.minimoRondas,
+      ]) {
+        expect(aplicaEnFormato(s, FormatoDeTorneo.eliminacion), isFalse,
+            reason: s.name);
+        expect(aplicaEnFormato(s, FormatoDeTorneo.liga), isTrue,
+            reason: '${s.name} sí aplica a una liga');
+      }
+    });
+
+    test('el método y el bote se quedan en las dos', () {
+      // El método decide quién gana el partido, y el dinero cuenta igual.
+      for (final f in FormatoDeTorneo.values) {
+        expect(aplicaEnFormato(SeccionDelTorneo.metodo, f), isTrue);
+        expect(aplicaEnFormato(SeccionDelTorneo.bote, f), isTrue);
+        expect(aplicaEnFormato(SeccionDelTorneo.botePorJornada, f), isTrue);
+        expect(aplicaEnFormato(SeccionDelTorneo.participantes, f), isTrue);
+      }
+    });
+
+    test('la siembra solo en el cuadro', () {
+      expect(aplicaEnFormato(SeccionDelTorneo.siembra, FormatoDeTorneo.liga),
+          isFalse);
+      expect(
+          aplicaEnFormato(
+              SeccionDelTorneo.siembra, FormatoDeTorneo.eliminacion),
+          isTrue);
+    });
+
+    test('cada sección está decidida en los dos formatos', () {
+      // Sin esto, añadir un valor al enum dejaría una sección sin criterio y el
+      // editor la enseñaría —o la esconderia— por accidente.
+      for (final s in SeccionDelTorneo.values) {
+        for (final f in FormatoDeTorneo.values) {
+          expect(() => aplicaEnFormato(s, f), returnsNormally,
+              reason: '${s.name} en ${f.name}');
+        }
+      }
+    });
+  });
+
+  group('13 · "por posición" no existe en un duelo', () {
+    test('no se ofrece con eliminación, sí con liga', () {
+      expect(metodosOfrecidos(FormatoDeTorneo.eliminacion),
+          isNot(contains(MetodoDePuntuacion.posicion)));
+      expect(metodosOfrecidos(FormatoDeTorneo.liga),
+          MetodoDePuntuacion.values);
+      // Y los otros tres siguen estando: no se ha vaciado la lista.
+      expect(metodosOfrecidos(FormatoDeTorneo.eliminacion), hasLength(3));
+    });
+
+    test('el guardado con posición se RESUELVE por dinero, sin migrarlo', () {
+      // Es el caso de Match Play CGM, creado antes de esta corrección. No se
+      // reescribe el documento: se deriva. Sin migración no hay nada que salga
+      // mal a medias.
+      final viejo = _t(metodo: MetodoDePuntuacion.posicion);
+      expect(viejo.metodo, MetodoDePuntuacion.posicion,
+          reason: 'lo guardado no se toca');
+      expect(metodoEfectivo(viejo), MetodoDePuntuacion.dinero);
+      // Y el cuadro se resuelve con eso: gana quien más dinero sacó.
+      final l = llaveDe(
+          _t(participantes: const [ana, beto], metodo: MetodoDePuntuacion.posicion),
+          [_r(id: 'r1', dia: 7, dinero: {ana: 300, beto: -300})]);
+      expect(l.campeon, ana);
+    });
+
+    test('en una liga "por posición" sigue siendo por posición', () {
+      final liga = _t(
+          formato: FormatoDeTorneo.liga, metodo: MetodoDePuntuacion.posicion);
+      expect(metodoEfectivo(liga), MetodoDePuntuacion.posicion);
+    });
+
+    test('los otros métodos no se tocan en ningún formato', () {
+      for (final m in [
+        MetodoDePuntuacion.dinero,
+        MetodoDePuntuacion.scoreNeto,
+        MetodoDePuntuacion.stableford,
+      ]) {
+        for (final f in FormatoDeTorneo.values) {
+          expect(metodoEfectivo(_t(formato: f, metodo: m)), m);
+        }
+      }
+    });
+  });
+
+  group('14 · el resumen de un cuadro dice en qué punto está', () {
+    final nombres = {ana: 'Rafael', beto: 'Alan', caro: 'Caro', dani: 'Dani'};
+
+    test('sin armar lo dice, y no enseña rondas ni posición', () {
+      final r = resumenDeLlave(
+          llaveDe(_t(participantes: const []), const []), nombres);
+      expect(r, 'Cuadro sin armar');
+    });
+
+    test('recién armado: a quién le toca', () {
+      final r = resumenDeLlave(
+          llaveDe(_t(participantes: const [ana, beto]), const []), nombres);
+      expect(r, 'Final · Rafael vs Alan');
+    });
+
+    test('con varios partidos abiertos dice cuántos más', () {
+      final r = resumenDeLlave(llaveDe(_t(), const []), nombres);
+      expect(r, contains('Semifinales'));
+      expect(r, contains('y 1 partido más'));
+    });
+
+    test('terminado: el campeón', () {
+      final r = resumenDeLlave(
+          llaveDe(_t(participantes: const [ana, beto]),
+              [_r(id: 'r1', dia: 7, dinero: {ana: 300, beto: -300})]),
+          nombres);
+      expect(r, 'Campeón: Rafael');
+    });
+
+    test('un empate sin resolver va PRIMERO: bloquea el cuadro', () {
+      final r = resumenDeLlave(
+          llaveDe(_t(), [
+            _r(id: 'r1', dia: 7, dinero: {ana: 0, dani: 0}),
+            _r(id: 'r2', dia: 8, dinero: {beto: 100, caro: -100}),
+          ]),
+          nombres);
+      expect(r, startsWith('Hay que desempatar'));
+      expect(r, contains('Rafael'));
+    });
+
+    test('nunca sale un id, ni con el directorio vacío', () {
+      final r = resumenDeLlave(
+          llaveDe(_t(participantes: const [ana, beto]), const []), const {});
+      expect(r.contains(ana), isFalse);
+      expect(r, contains(sinNombre));
+    });
+  });
+
+  group('15 · el bote de un cuadro es del CAMPEÓN, no del líder', () {
+    Torneo conBote({double entrada = 500}) => Torneo(
+          id: 'tor_1',
+          nombre: 'Match Play',
+          formato: FormatoDeTorneo.eliminacion,
+          fuente: FuenteDeRondas.marcadas,
+          metodo: MetodoDePuntuacion.dinero,
+          participantes: const [ana, beto, caro, dani],
+          bote: BoteConfig(entrada: entrada),
+        );
+
+    test('sin campeón no cobra nadie, y se dice por qué', () {
+      final t = conBote();
+      final rondas = [_r(id: 'r1', dia: 7, dinero: {ana: 900, dani: -900})];
+      final tabla = tablaDe(t, rondas);
+      final bote = boteDe(t, tabla, campeon: llaveDe(t, rondas).campeon);
+      expect(bote.total, 2000);
+      expect(bote.lineas.every((l) => l.cobra == 0), isTrue);
+      expect(bote.provisional, contains('gane la final'));
+    });
+
+    test('el que más dinero acumuló NO cobra si no gana la final', () {
+      // Es el fallo que esto arregla: una cifra correcta a nombre de la persona
+      // equivocada. Ana gana su semifinal por mucho y luego pierde la final.
+      final t = conBote();
+      final rondas = [
+        _r(id: 's1', dia: 7, dinero: {ana: 900, dani: -900}),
+        _r(id: 's2', dia: 8, dinero: {beto: 50, caro: -50}),
+        _r(id: 'fin', dia: 20, dinero: {ana: -10, beto: 10}),
+      ];
+      final tabla = tablaDe(t, rondas);
+      final llave = llaveDe(t, rondas);
+      expect(llave.campeon, beto);
+      // Ana lidera la tabla con mucha diferencia.
+      expect(tabla.filas.first.playerId, ana);
+
+      final bote = boteDe(t, tabla, campeon: llave.campeon);
+      final cobraA = bote.lineas.firstWhere((l) => l.playerId == ana).cobra;
+      final cobraB = bote.lineas.firstWhere((l) => l.playerId == beto).cobra;
+      expect(cobraA, 0, reason: 'lidera la tabla, pero perdió la final');
+      expect(cobraB, bote.total, reason: 'el campeón se lo lleva');
+    });
+
+    test('en una liga el bote sigue repartiéndose como siempre', () {
+      // El contrapeso: la rama nueva no puede haberse comido la vieja.
+      final t = Torneo(
+        id: 'tor_1',
+        nombre: 'Liga',
+        fuente: FuenteDeRondas.marcadas,
+        metodo: MetodoDePuntuacion.dinero,
+        participantes: const [ana, beto],
+        bote: const BoteConfig(entrada: 500),
+      );
+      final rondas = [_r(id: 'r1', dia: 7, dinero: {ana: 100, beto: -100})];
+      final bote = boteDe(t, tablaDe(t, rondas));
+      expect(bote.lineas.firstWhere((l) => l.playerId == ana).cobra,
+          bote.total);
     });
   });
 }

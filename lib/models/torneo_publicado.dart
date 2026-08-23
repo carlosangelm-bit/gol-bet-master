@@ -289,10 +289,15 @@ class TorneoPublicado {
       nombre: torneo.nombre,
       emoji: torneo.emoji,
       publicadoEn: cuando,
-      comoSePuntua: torneo.metodo.descripcion,
-      comoSeAcumula: torneo.acumulacion == Acumulacion.mejoresDeN
-          ? 'Solo cuentan las ${torneo.mejoresN} mejores de cada uno.'
-          : 'Suman todas las rondas.',
+      // El método EFECTIVO, no el guardado: un cuadro con "por posición" se
+      // resuelve por dinero, y el enlace no puede decir otra cosa que la app.
+      comoSePuntua: metodoEfectivo(torneo).descripcion,
+      comoSeAcumula: torneo.formato == FormatoDeTorneo.eliminacion
+          ? 'Eliminación directa: los dos del partido juegan la misma ronda y el '
+              'que pierde queda fuera.'
+          : torneo.acumulacion == Acumulacion.mejoresDeN
+              ? 'Solo cuentan las ${torneo.mejoresN} mejores de cada uno.'
+              : 'Suman todas las rondas.',
       rondas: tabla.rondas,
       cerrado: torneo.cerrado,
       tabla: [

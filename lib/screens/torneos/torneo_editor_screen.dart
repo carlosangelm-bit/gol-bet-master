@@ -341,8 +341,15 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           const SizedBox(height: 22),
 
           // ── 3 · Cómo puntúa cada ronda ─────────────────────────────────
-          _titulo('4 · CÓMO PUNTÚA CADA RONDA', t),
-          for (final m in MetodoDePuntuacion.values)
+          _titulo(
+              _t.formato == FormatoDeTorneo.eliminacion
+                  ? '4 · QUIÉN GANA EL PARTIDO'
+                  : '4 · CÓMO PUNTÚA CADA RONDA',
+              t),
+          // En un cuadro no se ofrece "por posición": entre dos personas el
+          // puesto lo decide el dinero de la ronda —es lo que ese método
+          // calcula— así que sería otro nombre para lo mismo.
+          for (final m in metodosOfrecidos(_t.formato))
             _opcion(
               t: t,
               titulo: m.label,
@@ -350,10 +357,23 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
               // El motivo sale de torneo.dart, no de un if aquí: la pantalla no
               // decide qué es imposible.
               motivo: motivoSinMetodo(m, rondas),
-              activa: _t.metodo == m,
+              activa: metodoEfectivo(_t) == m,
               onTap: () => setState(() => _t = _t.copyWith(metodo: m)),
             ),
-          if (_t.metodo == MetodoDePuntuacion.posicion) ...[
+          // El torneo guardado con "por posición" antes de esta corrección. No se
+          // reescribe el documento: se dice qué está pasando de verdad.
+          if (_t.formato == FormatoDeTorneo.eliminacion &&
+              _t.metodo == MetodoDePuntuacion.posicion) ...[
+            const SizedBox(height: 4),
+            _nota(
+                'Este torneo se guardó con "por posición". En un cuadro el puesto '
+                'lo decide el dinero de la ronda, así que se resuelve por dinero '
+                '—y aparece marcado arriba—. Tócalo para dejarlo dicho con su '
+                'nombre.',
+                t),
+          ],
+          if (aplicaEnFormato(SeccionDelTorneo.puntosPorPuesto, _t.formato) &&
+              _t.metodo == MetodoDePuntuacion.posicion) ...[
             const SizedBox(height: 10),
             TextField(
               controller: _puntosCtrl,
@@ -382,6 +402,8 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
               ),
             ),
             const SizedBox(height: 12),
+            // El empate de un PARTIDO no se configura: lo resuelve una persona
+            // desde el cuadro, porque la app no puede jugar un hoyo 19.
             _titulo('SI DOS EMPATAN EN UNA RONDA', t),
             for (final e in ReglaDeEmpate.values)
               _opcion(
@@ -394,7 +416,12 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           ],
           const SizedBox(height: 22),
 
-          // ── 3 · Cómo se acumula ────────────────────────────────────────
+          // ── 5 · Cómo se acumula ────────────────────────────────────────
+          //
+          // Fuera con eliminación: un cuadro no acumula nada, ganas el partido y
+          // pasas. Lo guardado NO se borra —volver a liga lo devuelve entero—
+          // porque esconder y reescribir no son lo mismo.
+          if (aplicaEnFormato(SeccionDelTorneo.acumulacion, _t.formato)) ...[
           _titulo('5 · CÓMO SE ACUMULA', t),
           for (final a in Acumulacion.values)
             _opcion(
@@ -414,6 +441,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
                 (v) => setState(() => _t = _t.copyWith(mejoresN: v))),
           ],
           const SizedBox(height: 22),
+          ],
 
           // ── 5 · Cuántas rondas para optar al premio ────────────────────
           //
@@ -421,6 +449,8 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           // decide quién ENTRA —eso lo hace la lista de participantes— sino
           // quién puede COBRAR. Es lo que quería decir desde el principio, y por
           // eso se sentía insuficiente pareciendo el adecuado.
+          // Fuera con eliminación: no hay mínimo que valga, hay una final.
+          if (aplicaEnFormato(SeccionDelTorneo.minimoRondas, _t.formato)) ...[
           _titulo('6 · CUÁNTAS RONDAS PARA OPTAR AL PREMIO', t),
           _contador(t, 'Rondas jugadas mínimas', _t.minimoRondas, 0, 40,
               (v) => setState(() => _t = _t.copyWith(minimoRondas: v))),
@@ -440,8 +470,9 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
                     height: 1.35)),
           ],
           const SizedBox(height: 22),
+          ],
 
-          // ── 5 · El bote ────────────────────────────────────────────────
+          // ── 7 · El bote ────────────────────────────────────────────────
           _titulo('7 · EL BOTE', t),
           TextField(
             controller: _entradaCtrl,
@@ -518,24 +549,38 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
                     // Sin lista no hay bote, así que tampoco un total que
                     // prometerlo. Es la misma regla que aplica el modelo.
                     ? 'Sin participantes no hay bote: define la lista arriba.'
-                    : 'Total del bote final: '
+                    : 'Total del bote ${_t.formato == FormatoDeTorneo.eliminacion ? "del cuadro" : "final"}: '
                         '\$${(_t.bote.entrada * _inscritos).toStringAsFixed(0)}'
                         ' · $_inscritos inscrito${_inscritos == 1 ? '' : 's'}',
                 t),
             const SizedBox(height: 12),
-            _titulo('CÓMO SE REPARTE', t),
-            for (final r in RepartoDelBote.values)
-              _opcion(
-                t: t,
-                titulo: r.label,
-                detalle: r == RepartoDelBote.podio
-                    ? 'Porcentajes: ${_t.bote.porcentajes.join(' · ')}%'
-                    : 'Todo para el primero de la tabla.',
-                activa: _t.bote.reparto == r,
-                onTap: () => setState(
-                    () => _t = _t.copyWith(bote: _t.bote.copyWith(reparto: r))),
-              ),
-            if (_t.minimoRondas > 0) ...[
+            // En un cuadro no hay podio que repartir: hay un campeón. Así que
+            // no se ofrece el reparto —no habría nada que elegir— y se dice a
+            // quién le toca, que es la única duda razonable.
+            if (_t.formato == FormatoDeTorneo.eliminacion)
+              _nota(
+                  'El bote final se lo lleva quien gane la final. En un cuadro no '
+                  'hay podio que repartir, y mientras no haya campeón no cobra '
+                  'nadie.',
+                  t)
+            else ...[
+              _titulo('CÓMO SE REPARTE', t),
+              for (final r in RepartoDelBote.values)
+                _opcion(
+                  t: t,
+                  titulo: r.label,
+                  detalle: r == RepartoDelBote.podio
+                      ? 'Porcentajes: ${_t.bote.porcentajes.join(' · ')}%'
+                      : 'Todo para el primero de la tabla.',
+                  activa: _t.bote.reparto == r,
+                  onTap: () => setState(
+                      () => _t = _t.copyWith(bote: _t.bote.copyWith(reparto: r))),
+                ),
+            ],
+            // El mínimo de rondas no existe en un cuadro, así que tampoco lo que
+            // pasa con la entrada de quien no llega.
+            if (aplicaEnFormato(SeccionDelTorneo.minimoRondas, _t.formato) &&
+                _t.minimoRondas > 0) ...[
               const SizedBox(height: 10),
               _titulo('QUIEN NO LLEGA AL MÍNIMO (BOTE FINAL)', t),
               for (final s in EntradaSinMinimo.values)

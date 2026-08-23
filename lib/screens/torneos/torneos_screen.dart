@@ -93,7 +93,11 @@ class _TarjetaTorneo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final resultados = context.watch<PerfilProvider>().resultados;
-    final tabla = tablaDe(torneo, resultados);
+    // Los nombres del DIRECTORIO: un inscrito que todavía no ha jugado no
+    // aparece en ningún RoundResult, y sin esto la tarjeta enseñaba su id.
+    final nombres = context.watch<PlayerProvider>().nombres;
+    final tabla = tablaDe(torneo, resultados, nombres: nombres);
+    final esCuadro = torneo.formato == FormatoDeTorneo.eliminacion;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -120,17 +124,33 @@ class _TarjetaTorneo extends StatelessWidget {
                               color: t.text,
                               fontSize: 16,
                               fontWeight: FontWeight.w800)),
-                      Text(
-                          '${tabla.rondas} ronda${tabla.rondas == 1 ? '' : 's'} · '
-                          '${torneo.metodo.label}'
-                          '${torneo.acumulacion == Acumulacion.mejoresDeN ? ' · mejores ${torneo.mejoresN}' : ''}',
-                          style: TextStyle(color: t.sub, fontSize: 11.5)),
-                      if (tabla.filas.isNotEmpty)
-                        Text('Va ${tabla.filas.first.nombre}',
+                      // Un cuadro NO se resume por rondas y posición: en
+                      // eliminación no hay ninguna de las dos, hay partidos. Lo
+                      // que hace falta de un vistazo es a quién le toca.
+                      if (esCuadro) ...[
+                        Text(
+                            'Eliminación · ${torneo.participantes.length} '
+                            'inscrito${torneo.participantes.length == 1 ? '' : 's'} · '
+                            '${metodoEfectivo(torneo).label}',
+                            style: TextStyle(color: t.sub, fontSize: 11.5)),
+                        Text(resumenDeLlave(llaveDe(torneo, resultados), nombres),
                             style: TextStyle(
                                 color: t.primary,
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w700)),
+                      ] else ...[
+                        Text(
+                            '${tabla.rondas} ronda${tabla.rondas == 1 ? '' : 's'} · '
+                            '${torneo.metodo.label}'
+                            '${torneo.acumulacion == Acumulacion.mejoresDeN ? ' · mejores ${torneo.mejoresN}' : ''}',
+                            style: TextStyle(color: t.sub, fontSize: 11.5)),
+                        if (tabla.filas.isNotEmpty)
+                          Text('Va ${tabla.filas.first.nombre}',
+                              style: TextStyle(
+                                  color: t.primary,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700)),
+                      ],
                       // Lo que el método no pudo puntuar se dice AQUÍ también:
                       // una tabla corta, desde fuera, parece completa.
                       if (tabla.rondasSinDato > 0)
@@ -191,7 +211,11 @@ class TorneoTablaScreen extends StatelessWidget {
     final t = context.gt;
     final torneo = _vivo(context);
     final resultados = context.watch<PerfilProvider>().resultados;
-    final tabla = tablaDe(torneo, resultados);
+    final nombres = context.watch<PlayerProvider>().nombres;
+    final tabla = tablaDe(torneo, resultados, nombres: nombres);
+    // El cuadro se deriva una vez y se usa para todo: el bloque de arriba, y el
+    // bote —que en eliminación es del campeón, no del líder de la tabla—.
+    final llave = llaveDe(torneo, resultados);
 
     return Scaffold(
       backgroundColor: t.bg,
@@ -204,7 +228,7 @@ class TorneoTablaScreen extends StatelessWidget {
           IconButton(
             icon: Icon(Icons.ios_share, color: t.sub),
             tooltip: 'Compartir',
-            onPressed: () => _compartir(context, torneo, tabla),
+            onPressed: () => _compartir(context, torneo, tabla, llave),
           ),
           IconButton(
             icon: Icon(Icons.tune, color: t.sub),
@@ -231,17 +255,22 @@ class TorneoTablaScreen extends StatelessWidget {
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('CÓMO SE PUNTÚA',
+                  Text(
+                      torneo.formato == FormatoDeTorneo.eliminacion
+                          ? 'CÓMO SE GANA UN PARTIDO'
+                          : 'CÓMO SE PUNTÚA',
                       style: TextStyle(
                           color: t.sub,
                           fontSize: 10,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 0.8)),
                   const SizedBox(height: 6),
-                  Text(torneo.metodo.descripcion,
+                  Text(metodoEfectivo(torneo).descripcion,
                       style: TextStyle(
                           color: t.text, fontSize: 12.5, height: 1.35)),
-                  if (torneo.metodo == MetodoDePuntuacion.posicion) ...[
+                  if (aplicaEnFormato(
+                          SeccionDelTorneo.puntosPorPuesto, torneo.formato) &&
+                      torneo.metodo == MetodoDePuntuacion.posicion) ...[
                     const SizedBox(height: 4),
                     Text(
                         'Puntos: ${torneo.puntosPorPuesto.join(' · ')}'
@@ -249,15 +278,24 @@ class TorneoTablaScreen extends StatelessWidget {
                         style: TextStyle(color: t.sub, fontSize: 11.5)),
                   ],
                   const SizedBox(height: 4),
-                  Text(
-                      torneo.acumulacion == Acumulacion.mejoresDeN
-                          ? 'Solo cuentan las ${torneo.mejoresN} mejores de cada uno.'
-                          : 'Suman todas las rondas.',
-                      style: TextStyle(color: t.sub, fontSize: 11.5)),
-                  if (torneo.minimoRondas > 0)
+                  // En un cuadro no hay acumulación ni mínimo: se dice lo que sí
+                  // hay, que es que el que pierde queda fuera.
+                  if (torneo.formato == FormatoDeTorneo.eliminacion)
                     Text(
-                        'Hacen falta ${torneo.minimoRondas} rondas para clasificar.',
+                        'Eliminación directa: los dos del partido juegan la misma '
+                        'ronda y el que pierde queda fuera.',
+                        style: TextStyle(color: t.sub, fontSize: 11.5))
+                  else ...[
+                    Text(
+                        torneo.acumulacion == Acumulacion.mejoresDeN
+                            ? 'Solo cuentan las ${torneo.mejoresN} mejores de cada uno.'
+                            : 'Suman todas las rondas.',
                         style: TextStyle(color: t.sub, fontSize: 11.5)),
+                    if (torneo.minimoRondas > 0)
+                      Text(
+                          'Hacen falta ${torneo.minimoRondas} rondas para clasificar.',
+                          style: TextStyle(color: t.sub, fontSize: 11.5)),
+                  ],
                   if (tabla.rondasSinDato > 0) ...[
                     const SizedBox(height: 6),
                     Text(
@@ -284,7 +322,7 @@ class TorneoTablaScreen extends StatelessWidget {
           // primero que se lee.
           if (torneo.formato == FormatoDeTorneo.eliminacion) ...[
             LlaveDelTorneoVista(
-                torneo: torneo, llave: llaveDe(torneo, resultados)),
+                torneo: torneo, llave: llave),
             const SizedBox(height: 22),
             Text('Y LA CUENTA DE SIEMPRE', style: GolfType.label(t.sub)),
             const SizedBox(height: 8),
@@ -402,7 +440,10 @@ class TorneoTablaScreen extends StatelessWidget {
           // cobrada y el otro es una expectativa mientras el torneo esté
           // abierto: una cifra que las junte no significa nada.
           if (torneo.bote.hayBote) ...[
-            _BloqueBote(torneo: torneo, bote: boteDe(torneo, tabla), t: t),
+            _BloqueBote(
+                torneo: torneo,
+                bote: boteDe(torneo, tabla, campeon: llave.campeon),
+                t: t),
             const SizedBox(height: 14),
           ],
 
@@ -444,8 +485,8 @@ class TorneoTablaScreen extends StatelessWidget {
 /// con el sello de fecha en la vista de invitado un enlace rancio se ve. Volver a
 /// tocar aquí actualiza el MISMO enlace, así que quien ya lo tiene en WhatsApp no
 /// se queda con una copia muerta.
-Future<void> _compartir(
-    BuildContext context, Torneo torneoArg, TablaDelTorneo tabla) async {
+Future<void> _compartir(BuildContext context, Torneo torneoArg,
+    TablaDelTorneo tabla, LlaveDelTorneo llave) async {
   final t = context.gt;
   final prov = context.read<TorneoProvider>();
 
@@ -474,12 +515,12 @@ Future<void> _compartir(
     ownerUid: uid,
     torneo: torneoArg,
     tabla: tabla,
-    bote: boteDe(torneoArg, tabla),
+    bote: boteDe(torneoArg, tabla, campeon: llave.campeon),
     jornadas: botesPorJornada(torneoArg, tabla),
     cuando: ahora,
     // El cuadro entra solo si el torneo es de eliminación: llaveDe() devuelve
     // vacío en una liga, y un campo vacío no se escribe.
-    llave: llaveDe(torneoArg, context.read<PerfilProvider>().resultados),
+    llave: llave,
     nombres: {
       for (final pw in context.read<PlayerProvider>().directory)
         pw.player.id: pw.displayName,

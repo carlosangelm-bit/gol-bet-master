@@ -19,6 +19,18 @@ class PlayerProvider extends ChangeNotifier {
   String? get error   => _error;
   bool    get isEmpty => _directory.isEmpty;
 
+  /// id → nombre para mostrar, de todo el directorio.
+  ///
+  /// Es LA fuente de nombres para lo que no viene de una ronda jugada. Un
+  /// inscrito en un torneo que todavía no ha jugado no aparece en ningún
+  /// RoundResult, así que sin esto la tabla y el cuadro caían al id de Firestore.
+  ///
+  /// Se calcula en vez de guardarse porque el nombre cambia: guardarlo junto al
+  /// inscrito —como hace RoundResult, que es un registro histórico y ahí sí toca—
+  /// dejaría una copia envejeciendo en cada torneo.
+  Map<String, String> get nombres =>
+      {for (final pw in _directory) pw.player.id: pw.displayName};
+
   /// Siembra el directorio sin Firestore, para los tests de widget.
   ///
   /// La misma costura que PerfilProvider y TorneoProvider. Sin ella, una pantalla

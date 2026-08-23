@@ -70,7 +70,9 @@ Future<List<String>> republicarTorneosDe(
   final hechos = <String>[];
 
   for (final torneo in afectados) {
-    final tabla = tablaDe(torneo, resultados);
+    final tabla = tablaDe(torneo, resultados, nombres: nombres);
+    // El cuadro decide el bote en eliminación, no la tabla.
+    final llave = llaveDe(torneo, resultados);
     // Sin lista de inscritos no se publica: es el mismo criterio que el botón
     // de compartir, y publicar una tabla con gente que no se inscribió empeora
     // el problema en vez de arreglarlo.
@@ -81,10 +83,10 @@ Future<List<String>> republicarTorneosDe(
       ownerUid: uid,
       torneo: torneo,
       tabla: tabla,
-      bote: boteDe(torneo, tabla),
+      bote: boteDe(torneo, tabla, campeon: llave.campeon),
       jornadas: botesPorJornada(torneo, tabla),
       cuando: ahora,
-      llave: llaveDe(torneo, resultados),
+      llave: llave,
       nombres: nombres,
     );
     try {

@@ -27,6 +27,7 @@ import 'package:golf_bet_master/services/player_service.dart';
 import 'package:golf_bet_master/providers/round_provider.dart';
 import 'package:golf_bet_master/providers/torneo_provider.dart';
 import 'package:golf_bet_master/providers/user_profile_provider.dart';
+import 'package:golf_bet_master/screens/torneos/torneo_editor_screen.dart';
 import 'package:golf_bet_master/screens/torneos/torneos_screen.dart';
 
 const ana = 'pid_7f3a91', beto = 'pid_2c8e04';
@@ -60,13 +61,14 @@ RoundResult _r(String id, int dia, Map<String, double> dinero) => RoundResult(
 Torneo _t({
   List<String> participantes = const [ana, beto, caro, dani],
   Map<String, String> desempates = const {},
+  MetodoDePuntuacion metodo = MetodoDePuntuacion.dinero,
 }) =>
     Torneo(
       id: 'tor_1',
       nombre: 'Match Play CGM',
       formato: FormatoDeTorneo.eliminacion,
       fuente: FuenteDeRondas.marcadas,
-      metodo: MetodoDePuntuacion.dinero,
+      metodo: metodo,
       participantes: participantes,
       desempates: desempates,
     );
@@ -116,7 +118,245 @@ Future<List<String>> _montar(
   return errores;
 }
 
+/// Monta la LISTA de torneos, que es donde vive la tarjeta del resumen.
+Future<List<String>> _montarLista(
+  WidgetTester tester, {
+  required Torneo torneo,
+  List<RoundResult> res = const [],
+  bool conDirectorio = true,
+}) async {
+  tester.view.physicalSize = const Size(390, 1200);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
+  final errores = <String>[];
+  final anterior = FlutterError.onError;
+  FlutterError.onError = (d) => errores.add(d.exceptionAsString());
+
+  await tester.pumpWidget(MultiProvider(
+    providers: [
+      ChangeNotifierProvider(create: (_) => RoundProvider()),
+      ChangeNotifierProvider(create: (_) => AuthProvider()),
+      ChangeNotifierProvider(create: (_) => HandicapProvider()),
+      ChangeNotifierProvider(create: (_) => UserProfileProvider()),
+      ChangeNotifierProvider(create: (_) => BettingGroupProvider()),
+      ChangeNotifierProvider<PlayerProvider>.value(
+          value: PlayerProvider()
+            ..sembrar(conDirectorio
+                ? [
+                    for (final e in nombres.entries)
+                      PlayerWithLink(player: Player(id: e.key, name: e.value)),
+                  ]
+                : const [])),
+      ChangeNotifierProvider<PerfilProvider>.value(
+          value: PerfilProvider()..sembrar(res)),
+      ChangeNotifierProvider<TorneoProvider>.value(
+          value: TorneoProvider()..sembrar([torneo])),
+    ],
+    child: const MaterialApp(home: TorneosScreen()),
+  ));
+  await tester.pump(const Duration(milliseconds: 150));
+  FlutterError.onError = anterior;
+  return errores;
+}
+
+/// Monta el EDITOR del torneo.
+Future<List<String>> _montarEditor(
+  WidgetTester tester, {
+  required Torneo torneo,
+  Size tamano = const Size(390, 2400),
+}) async {
+  tester.view.physicalSize = tamano;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
+  final errores = <String>[];
+  final anterior = FlutterError.onError;
+  FlutterError.onError = (d) => errores.add(d.exceptionAsString());
+
+  await tester.pumpWidget(MultiProvider(
+    providers: [
+      ChangeNotifierProvider(create: (_) => RoundProvider()),
+      ChangeNotifierProvider(create: (_) => AuthProvider()),
+      ChangeNotifierProvider(create: (_) => HandicapProvider()),
+      ChangeNotifierProvider(create: (_) => UserProfileProvider()),
+      ChangeNotifierProvider(create: (_) => BettingGroupProvider()),
+      ChangeNotifierProvider<PlayerProvider>.value(
+          value: PlayerProvider()
+            ..sembrar([
+              for (final e in nombres.entries)
+                PlayerWithLink(player: Player(id: e.key, name: e.value)),
+            ])),
+      ChangeNotifierProvider<PerfilProvider>.value(
+          value: PerfilProvider()..sembrar(const [])),
+      ChangeNotifierProvider<TorneoProvider>.value(
+          value: TorneoProvider()..sembrar([torneo])),
+    ],
+    child: MaterialApp(home: TorneoEditorScreen(existente: torneo)),
+  ));
+  await tester.pump(const Duration(milliseconds: 150));
+  FlutterError.onError = anterior;
+  return errores;
+}
+
 void main() {
+  group('8 · el editor solo enseña lo que aplica al formato', () {
+    // Las secciones de liga son las que quedaron a la vista con eliminación
+    // marcada. Ninguna aplica: ganas el partido y pasas.
+    const deLiga = [
+      'Puntos por puesto',
+      'SI DOS EMPATAN EN UNA RONDA',
+      '5 · CÓMO SE ACUMULA',
+      '6 · CUÁNTAS RONDAS PARA OPTAR AL PREMIO',
+    ];
+
+    testWidgets('con eliminación no sale ninguna sección de liga',
+        (tester) async {
+      final errores = await _montarEditor(tester, torneo: _t());
+      expect(errores, isEmpty);
+      for (final txt in deLiga) {
+        expect(find.textContaining(txt), findsNothing, reason: txt);
+      }
+    });
+
+    testWidgets('con liga sí salen todas', (tester) async {
+      // El contrapeso: sin este, esconderlas siempre pasaría el test de arriba.
+      final errores = await _montarEditor(
+          tester,
+          torneo: Torneo(
+              id: 'tor_1',
+              nombre: 'Liga CGM',
+              fuente: FuenteDeRondas.marcadas,
+              metodo: MetodoDePuntuacion.posicion,
+              participantes: const [ana, beto]));
+      expect(errores, isEmpty);
+      for (final txt in deLiga) {
+        expect(find.textContaining(txt), findsWidgets, reason: txt);
+      }
+    });
+
+    testWidgets('lo que SÍ aplica se queda: método, siembra y bote',
+        (tester) async {
+      final errores = await _montarEditor(tester, torneo: _t());
+      expect(errores, isEmpty);
+      expect(find.text('4 · QUIÉN GANA EL PARTIDO'), findsOneWidget);
+      expect(find.text('LA SIEMBRA'), findsOneWidget);
+      expect(find.text('7 · EL BOTE'), findsOneWidget);
+      expect(find.text('3 · QUIÉN PARTICIPA'), findsOneWidget);
+    });
+
+    testWidgets('"por posición" no se ofrece, y se dice qué pasa con el guardado',
+        (tester) async {
+      // Match Play CGM se creó con "por posición" antes de esta corrección. No
+      // se migra el documento: se dice lo que está pasando de verdad.
+      final errores = await _montarEditor(tester,
+          torneo: _t(metodo: MetodoDePuntuacion.posicion));
+      expect(errores, isEmpty);
+      expect(find.text('Por posición'), findsNothing);
+      expect(find.textContaining('se guardó con "por posición"'),
+          findsOneWidget);
+      // Y el que se usa de verdad aparece marcado.
+      expect(find.text('Por dinero ganado'), findsOneWidget);
+    });
+
+    testWidgets('el bote del cuadro no ofrece podio: dice que es del campeón',
+        (tester) async {
+      final errores = await _montarEditor(
+          tester,
+          torneo: Torneo(
+            id: 'tor_1',
+            nombre: 'Match Play',
+            formato: FormatoDeTorneo.eliminacion,
+            fuente: FuenteDeRondas.marcadas,
+            metodo: MetodoDePuntuacion.dinero,
+            participantes: const [ana, beto, caro, dani],
+            bote: const BoteConfig(entrada: 500),
+          ));
+      expect(errores, isEmpty);
+      expect(find.text('CÓMO SE REPARTE'), findsNothing);
+      expect(find.text('Los tres primeros'), findsNothing);
+      expect(find.textContaining('quien gane la final'), findsOneWidget);
+    });
+  });
+
+  group('7 · la tarjeta de la lista: nombres y estado del cuadro', () {
+    testWidgets('un inscrito sin rondas sale con su NOMBRE, nunca con su id',
+        (tester) async {
+      // "Va 6uX3jmCVlYNxCJxWBJQe" era esto: el inscrito venía del directorio y
+      // no de una ronda jugada, así que no había playerNames donde buscarlo.
+      final errores = await _montarLista(tester,
+          torneo: Torneo(
+              id: 'tor_1',
+              nombre: 'Liga CGM',
+              fuente: FuenteDeRondas.marcadas,
+              participantes: const [ana, beto]));
+      expect(errores, isEmpty);
+      expect(find.textContaining(ana), findsNothing,
+          reason: 'un id de Firestore en la primera pantalla');
+      expect(find.textContaining(beto), findsNothing);
+    });
+
+    testWidgets('un cuadro NO se resume por rondas y posición', (tester) async {
+      final errores = await _montarLista(tester, torneo: _t());
+      expect(errores, isEmpty);
+      expect(find.textContaining('Por posición'), findsNothing);
+      expect(find.textContaining('0 rondas'), findsNothing);
+      // Lo que sí: en qué punto está el cuadro.
+      expect(find.textContaining('Semifinales'), findsOneWidget);
+      expect(find.textContaining('Eliminación · 4 inscritos'), findsOneWidget);
+    });
+
+    testWidgets('y cuando termina, el campeón', (tester) async {
+      final errores = await _montarLista(tester, torneo: _t(), res: [
+        _r('s1', 7, {ana: 300, dani: -300}),
+        _r('s2', 8, {beto: 200, caro: -200}),
+        _r('fin', 20, {ana: 500, beto: -500}),
+      ]);
+      expect(errores, isEmpty);
+      expect(find.textContaining('Campeón: ${nombres[ana]}'), findsOneWidget);
+    });
+
+    testWidgets('una liga se sigue resumiendo como liga', (tester) async {
+      // El contrapeso: la rama nueva no puede haberse comido la vieja.
+      final errores = await _montarLista(
+          tester,
+          torneo: Torneo(
+              id: 'tor_1',
+              nombre: 'Liga CGM',
+              fuente: FuenteDeRondas.marcadas,
+              participantes: const [ana, beto]),
+          res: [_r('r1', 7, {ana: 100, beto: -100})]);
+      expect(errores, isEmpty);
+      expect(find.textContaining('1 ronda'), findsOneWidget);
+      expect(find.textContaining('Va ${nombres[ana]}'), findsOneWidget);
+    });
+
+    testWidgets('sin directorio sale un guion, no el id', (tester) async {
+      final errores = await _montarLista(tester,
+          torneo: Torneo(
+              id: 'tor_1',
+              nombre: 'Liga CGM',
+              fuente: FuenteDeRondas.marcadas,
+              participantes: const [ana, beto]),
+          conDirectorio: false);
+      expect(errores, isEmpty);
+      expect(find.textContaining(ana), findsNothing);
+    });
+
+    testWidgets('cabe a 320 px con nombres largos', (tester) async {
+      final errores = await _montarLista(tester,
+          torneo: _t(),
+          res: [
+            _r('s1', 7, {ana: 300, dani: -300}),
+          ]);
+      expect(errores, isEmpty);
+      tester.view.physicalSize = const Size(320, 1200);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+
   group('1 · el cuadro se pinta', () {
     testWidgets('con cuatro inscritos salen los cruces y la final',
         (tester) async {
