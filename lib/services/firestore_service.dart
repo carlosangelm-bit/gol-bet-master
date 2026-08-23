@@ -12,6 +12,7 @@ import 'auth_service.dart';
 import 'handicap_service.dart';
 import 'user_profile_service.dart';
 import '../models/round_result.dart';
+import '../models/torneo.dart';
 
 class FirestoreService {
   static final _db = FirebaseFirestore.instance;
@@ -501,6 +502,47 @@ class FirestoreService {
       list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       return list;
     });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TORNEOS
+  // ══════════════════════════════════════════════════════════════════════════
+  //
+  // Mismo patrón que bettingGroups. Lo que se guarda es la DEFINICIÓN del
+  // torneo —qué rondas cuentan, cómo puntúa, cómo acumula— nunca la tabla: la
+  // tabla se deriva de los RoundResult cada vez que se abre.
+  //
+  // Es la lección del RoundResult desfasado. Si la tabla se guardara, corregir
+  // una ronda dejaría la clasificación vieja sin avisar a nadie.
+
+  static CollectionReference<Map<String, dynamic>> _torneos() =>
+      _db.collection('users').doc(AuthService.uid).collection('torneos');
+
+  static Future<Torneo> saveTorneo(Torneo t) async {
+    if (AuthService.uid == null) throw Exception('No autenticado');
+    final id = t.id.isEmpty ? _uuid.v4() : t.id;
+    final conId = Torneo.fromJson({...t.toJson(), 'id': id});
+    await _torneos().doc(id).set(conId.toJson(), SetOptions(merge: true));
+    return conId;
+  }
+
+  static Future<void> deleteTorneo(String id) async {
+    if (AuthService.uid == null) return;
+    await _torneos().doc(id).delete();
+  }
+
+  static Stream<List<Torneo>> torneosStream() {
+    if (AuthService.uid == null) return Stream.value(const []);
+    return _torneos().snapshots().map((snap) => snap.docs
+        .map((d) {
+          try {
+            return Torneo.fromJson({...d.data(), 'id': d.id});
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<Torneo>()
+        .toList());
   }
 
   /// Carga todos los BettingGroups una sola vez.

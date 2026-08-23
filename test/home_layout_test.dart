@@ -78,7 +78,7 @@ void main() {
   testWidgets('los dos destinos de la cabecera están y caben', (tester) async {
     _sinErroresGraves(await _montar(tester, const Size(390, 844)));
 
-    for (final tip in ['Historial', 'Ajustes']) {
+    for (final tip in ['Historial', 'Torneos', 'Ajustes']) {
       final f = find.byTooltip(tip);
       expect(f, findsOneWidget,
           reason: '$tip salió de la barra y tiene que estar aquí');
@@ -110,7 +110,7 @@ void main() {
     // 320 px es el suelo razonable. Si a ese ancho se salen, en algún teléfono
     // real también.
     _sinErroresGraves(await _montar(tester, const Size(320, 640)));
-    for (final tip in ['Historial', 'Ajustes']) {
+    for (final tip in ['Historial', 'Torneos', 'Ajustes']) {
       final r = tester.getRect(find.byTooltip(tip).first);
       expect(r.right, lessThanOrEqualTo(320), reason: '$tip a 320 px');
     }

@@ -16,10 +16,25 @@ import '../app_shell.dart';
 import '../core/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../screens/history/history_screen.dart';
+import '../screens/torneos/torneos_screen.dart';
 
 void openHistory(BuildContext context) {
   Navigator.of(context).push(MaterialPageRoute(
     builder: (_) => const HistoryScreen(),
+  ));
+}
+
+/// Torneos.
+///
+/// Va en la cabecera de Inicio con Historial y Ajustes, no en la barra: la fase
+/// 5 la dejó en cuatro destinos a propósito y un torneo no compite por atención
+/// durante una ronda.
+///
+/// Existe esta función y no un push a mano en la pantalla porque ya pasó tres
+/// veces en esta sesión: código correcto que nunca llegó a ser alcanzable.
+void openTorneos(BuildContext context) {
+  Navigator.of(context).push(MaterialPageRoute(
+    builder: (_) => const TorneosScreen(),
   ));
 }
 

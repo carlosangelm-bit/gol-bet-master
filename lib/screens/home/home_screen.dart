@@ -189,6 +189,10 @@ class _HomeHeader extends StatelessWidget {
                         tooltip: 'Historial',
                         onTap: () => openHistory(context)),
                     _HeaderAction(
+                        icon: Icons.emoji_events_rounded,
+                        tooltip: 'Torneos',
+                        onTap: () => openTorneos(context)),
+                    _HeaderAction(
                         icon: Icons.settings_rounded,
                         tooltip: 'Ajustes',
                         onTap: () => openSettings(context)),

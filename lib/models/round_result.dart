@@ -20,6 +20,7 @@
 import 'models.dart';
 import '../engines/ledger_engine.dart';
 import '../engines/bet_engine.dart';
+import '../engines/game_engine.dart';
 
 /// El resultado en dinero de una ronda cerrada.
 ///
@@ -58,6 +59,35 @@ class RoundResult {
   /// id → score bruto total. Vacío para quien no anotó.
   final Map<String, int> grossByPlayer;
 
+  // ── Lo que hacía falta para puntuar un torneo ─────────────────────────────
+  //
+  // El dinero solo sirve para el método "por dinero ganado". Puntuar por score
+  // neto o por Stableford necesita el score, y estaba solo dentro de la ronda
+  // completa. Se guarda AQUÍ, en el mismo punto donde ya se escribe el resto,
+  // para que la tabla del torneo siga siendo una consulta de documentos ligeros
+  // y no la descarga de veinte rondas enteras.
+  //
+  // Aditivos: vacíos en las rondas cerradas antes de este cambio, y hasta correr
+  // el backfill del Historial esos métodos de puntuación no las verán. Se dice
+  // en la pantalla del torneo en vez de dar una tabla corta por buena.
+
+  /// id → score NETO total, con el handicap propio descontado.
+  final Map<String, int> netByPlayer;
+
+  /// id → puntos Stableford netos, con la tabla clásica.
+  ///
+  /// Se guarda la clásica y no la configurada: es el dato de la RONDA, y un
+  /// torneo puede querer puntuar con otra tabla sin que eso reescriba lo que
+  /// pasó. Si algún día hace falta la tabla del módulo, se recalcula de
+  /// netByPlayer y los pares del campo.
+  final Map<String, int> stablefordByPlayer;
+
+  /// Los grupos de apuesta GUARDADOS de los que salió esta ronda.
+  ///
+  /// Lo que permite un torneo "todas las de Viernes CGM". Vacío si la ronda se
+  /// armó a mano.
+  final List<String> bettingGroupIds;
+
   const RoundResult({
     required this.roundId,
     required this.roundName,
@@ -69,6 +99,9 @@ class RoundResult {
     required this.balances,
     required this.pairBalances,
     required this.grossByPlayer,
+    this.netByPlayer = const {},
+    this.stablefordByPlayer = const {},
+    this.bettingGroupIds = const [],
   });
 
   /// Lo que le tocó a [pid]. Cero si no jugó —pero pregunta antes con
@@ -112,6 +145,8 @@ class RoundResult {
     }
 
     final gross = <String, int>{};
+    final neto = <String, int>{};
+    final stbl = <String, int>{};
     var hoyos = 0;
     for (final p in reales) {
       final suyos = round.scores[p.id];
@@ -126,6 +161,11 @@ class RoundResult {
       if (n > 0) {
         gross[p.id] = total;
         if (n > hoyos) hoyos = n;
+        // El neto y los puntos salen de las MISMAS primitivas que usan los
+        // motores, no de una segunda aritmética: una tabla de torneo que no
+        // cuadre con lo que la ronda enseñó sería peor que no tenerla.
+        neto[p.id] = GameEngine.netTotal(round, p.id, true);
+        stbl[p.id] = GameEngine.stablefordTotal(round, p.id, true);
       }
     }
 
@@ -143,6 +183,13 @@ class RoundResult {
       },
       pairBalances: pares,
       grossByPlayer: gross,
+      netByPlayer: neto,
+      stablefordByPlayer: stbl,
+      bettingGroupIds: round.betGroups
+          .map((g) => g.savedGroupId)
+          .whereType<String>()
+          .toSet()
+          .toList(),
     );
   }
 
@@ -157,6 +204,11 @@ class RoundResult {
         'balances': balances,
         'pairBalances': pairBalances,
         'grossByPlayer': grossByPlayer,
+        // Solo si hay algo: un documento viejo no gana claves vacías.
+        if (netByPlayer.isNotEmpty) 'netByPlayer': netByPlayer,
+        if (stablefordByPlayer.isNotEmpty)
+          'stablefordByPlayer': stablefordByPlayer,
+        if (bettingGroupIds.isNotEmpty) 'bettingGroupIds': bettingGroupIds,
       };
 
   factory RoundResult.fromJson(Map<String, dynamic> j) => RoundResult(
@@ -176,5 +228,11 @@ class RoundResult {
             .map((k, v) => MapEntry('$k', (v as num).toDouble())),
         grossByPlayer: ((j['grossByPlayer'] as Map?) ?? const {})
             .map((k, v) => MapEntry('$k', (v as num).toInt())),
+        netByPlayer: ((j['netByPlayer'] as Map?) ?? const {})
+            .map((k, v) => MapEntry('$k', (v as num).toInt())),
+        stablefordByPlayer: ((j['stablefordByPlayer'] as Map?) ?? const {})
+            .map((k, v) => MapEntry('$k', (v as num).toInt())),
+        bettingGroupIds:
+            ((j['bettingGroupIds'] as List?) ?? const []).map((e) => '$e').toList(),
       );
 }

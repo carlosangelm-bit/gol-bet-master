@@ -3267,20 +3267,33 @@ class BetGroup {
   final List<String> playerIds;
   final List<BetModuleInstance> modules;
 
+  /// El grupo de apuesta GUARDADO del que salió esta partida, si salió de uno.
+  ///
+  /// Faltaba, y sin esto un torneo no puede decir "todas las rondas de Viernes
+  /// CGM": el id de esta partida es un uuid nuevo por ronda, así que no había
+  /// forma de volver del historial al grupo. Se comparaba por nombre en el mejor
+  /// de los casos, y un renombrado habría partido el torneo en dos.
+  ///
+  /// Aditivo y opcional: null significa "esta partida se armó a mano".
+  final String? savedGroupId;
+
   const BetGroup({
     required this.id, required this.name,
     required this.format, required this.playerIds, required this.modules,
+    this.savedGroupId,
   });
 
   BetGroup copyWith({List<BetModuleInstance>? modules, List<String>? playerIds}) => BetGroup(
     id: id, name: name, format: format,
     playerIds: playerIds ?? this.playerIds,
     modules: modules ?? this.modules,
+    savedGroupId: savedGroupId,
   );
 
   Map<String, dynamic> toJson() => {
     'id': id, 'name': name, 'format': format.name,
     'playerIds': playerIds,
+    if (savedGroupId != null) 'savedGroupId': savedGroupId,
     'modules': modules.map((m) => m.toJson()).toList(),
   };
   factory BetGroup.fromJson(Map<String, dynamic> j) {
@@ -3292,6 +3305,7 @@ class BetGroup {
       format: PartidaFormat.values.firstWhere((f) => f.name == j['format'],
           orElse: () => PartidaFormat.allInOnePot),
       playerIds: pids,
+      savedGroupId: j['savedGroupId'] as String?,
       modules: (j['modules'] is List ? (j['modules'] as List) : []).map((m) {
         final map = m is Map ? Map<String, dynamic>.from(m) : <String, dynamic>{};
         // Detectar si es formato legacy (BetModule antiguo) o nuevo (BetModuleInstance)

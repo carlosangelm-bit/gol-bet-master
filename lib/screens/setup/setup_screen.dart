@@ -3141,6 +3141,9 @@ class _SetupScreenState extends State<SetupScreen> {
       format:    PartidaFormat.allInOnePot,
       playerIds: presentIds.toList(),
       modules:   modules,
+      // El enlace de vuelta al grupo guardado. Sin él, un torneo no puede decir
+      // "todas las rondas de Viernes CGM": bgId es un uuid nuevo por ronda.
+      savedGroupId: bg.id,
     );
     setState(() => _groups.add(newGroup));
   }

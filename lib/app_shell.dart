@@ -10,6 +10,7 @@ import 'providers/player_provider.dart';
 import 'providers/user_profile_provider.dart';
 import 'providers/handicap_provider.dart';
 import 'providers/perfil_provider.dart';
+import 'providers/torneo_provider.dart';
 import 'services/user_profile_service.dart';
 import 'providers/betting_group_provider.dart';
 import 'screens/capture/capture_screen.dart';
@@ -72,6 +73,7 @@ class _AppShellState extends State<AppShell> {
     context.read<UserProfileProvider>().startListening();
     context.read<HandicapProvider>().startListening();
     context.read<PerfilProvider>().startListening();
+    context.read<TorneoProvider>().startListening();
     context.read<BettingGroupProvider>().init();
   }
 
@@ -132,6 +134,7 @@ class _AppShellState extends State<AppShell> {
           if (mounted) {
             context.read<HandicapProvider>().stopListening();
             context.read<PerfilProvider>().stopListening();
+            context.read<TorneoProvider>().stopListening();
             // El siguiente usuario no hereda la identidad del anterior.
             UserProfileService.olvidaIdentidad();
           }
