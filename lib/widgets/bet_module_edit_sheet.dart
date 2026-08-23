@@ -449,6 +449,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         cfg: _current.wolf,
         montoCtrl: _wolfCtrl,
         onChanged: (c) => _update(_current.copyWith(wolfConfig: c)),
+        jugadores: _current.participantIds.length,
       );
 
   // ══════════════════════════════════════════════════════════════════════════

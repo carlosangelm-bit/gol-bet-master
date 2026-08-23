@@ -4636,6 +4636,7 @@ class _SetupScreenState extends State<SetupScreen> {
           cfg: cfg.wolf,
           montoCtrl: _cfgCtrl('wolf.value', cfg.wolf.value.toStringAsFixed(0)),
           onChanged: (c) => update(cfg.copyWith(wolfConfig: c)),
+          jugadores: cfg.participantIds.length,
         );
       case BetModuleType.rabbit:
         return rabbitFields(

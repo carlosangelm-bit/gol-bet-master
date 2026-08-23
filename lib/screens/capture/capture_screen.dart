@@ -38,6 +38,100 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
   static bool _tieneWolf(Round round) => _wolfMods(round).isNotEmpty;
 
+  /// Ancla del bloque de Wolf, para poder traerlo a pantalla.
+  ///
+  /// Se MIDIÓ que el bloque queda por debajo del borde: los botones van de y=886
+  /// a 930 con cuatro jugadores y de 995 a 1039 con cinco, en un viewport de
+  /// 844. Subirlo antes de la tabla lo arregla y empeora otra cosa —la zona de
+  /// captura de scores pasa de 624 a 906, o sea de dentro a fuera— y esa se usa
+  /// cuatro o cinco veces por hoyo contra una de Wolf. Cambiar un elemento fuera
+  /// de pantalla por otro peor no es un arreglo.
+  ///
+  /// Así que el bloque se queda donde está y el aviso LLEVA hasta él. Un aviso
+  /// que dice "falta algo" y te deja buscándolo hace la mitad del trabajo.
+  final _wolfKey = GlobalKey();
+
+  /// Pasa al hoyo [destino], pero avisa si se deja Wolf sin contestar.
+  ///
+  /// El riesgo real de Wolf no es que el hoyo no liquide —eso ya se dice en las
+  /// notas— es el OLVIDO: reconstruir con quién jugó el Wolf en el hoyo 7 al
+  /// final de la ronda es imposible. Nadie se acuerda, y no hay dato del que
+  /// deducirlo. El aviso va al salir del hoyo porque es el último momento en que
+  /// la respuesta está fresca.
+  ///
+  /// Solo avisa si el hoyo SE JUGÓ: hay al menos un score capturado y no hay
+  /// elección. Navegar entre hoyos para mirar no puede dar la lata, y sin esa
+  /// condición el aviso saltaría en los diecisiete que quedan por delante.
+  Future<void> _irAlHoyo(int destino, Round round) async {
+    final mods = _wolfMods(round);
+    if (mods.isEmpty) {
+      _jumpToHole(destino);
+      return;
+    }
+
+    final (grupo, mod) = mods.first;
+    final orden = round.participantesDe(mod, grupo.playerIds);
+    final jugado = orden.any((pid) => round.getScore(pid, _currentHole).hasScore);
+    final faltaElegir = round.getWolfCall(_currentHole) == null;
+
+    if (!jugado ||
+        !faltaElegir ||
+        BetModuleType.wolf.motivoNoDisponible(orden.length) != null) {
+      _jumpToHole(destino);
+      return;
+    }
+
+    final wolf = WolfEngine.wolfDelHoyo(orden, _currentHole);
+    final nombre = round.players
+        .firstWhere((p) => p.id == wolf, orElse: () => Player(id: wolf, name: wolf))
+        .name
+        .split(' ')
+        .first;
+    final t = context.gt;
+
+    final seguir = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: t.card,
+        title: Text('Falta el compañero del Wolf',
+            style: TextStyle(color: t.text, fontSize: 17,
+                fontWeight: FontWeight.w800)),
+        content: Text(
+          'El hoyo $_currentHole ya tiene score, pero no dice con quién jugó '
+          '$nombre. Sin eso el hoyo no liquida, y al terminar la ronda no habrá '
+          'forma de reconstruirlo.',
+          style: TextStyle(color: t.sub, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Seguir sin elegir',
+                style: TextStyle(color: t.sub, fontWeight: FontWeight.w700)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Elegir ahora',
+                style:
+                    TextStyle(color: t.primary, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    if (seguir == true) {
+      _jumpToHole(destino);
+      return;
+    }
+    // "Elegir ahora": se queda en el hoyo Y se lleva el bloque a pantalla. Sin
+    // esto el aviso mandaría a buscar algo que está por debajo del borde.
+    final ctx = _wolfKey.currentContext;
+    if (ctx != null) {
+      await Scrollable.ensureVisible(ctx,
+          duration: const Duration(milliseconds: 280), alignment: 0.5);
+    }
+  }
+
   int _currentHole = 1; // Se corrige en initState via postFrameCallback
   String? _activePlayerId; // jugador seleccionado en la tabla
   final ScrollController _holeScroll = ScrollController();
@@ -191,6 +285,24 @@ class _CaptureScreenState extends State<CaptureScreen> {
                       LowHighHoleBlock(
                           round: round, mod: m, hole: _currentHole, t: t),
 
+                // ── Wolf: con quién jugó ───────────────────────────────
+                //
+                // ARRIBA, antes de la tabla. Estaba al final del cuerpo y
+                // MEDIDO quedaba fuera de pantalla: con cuatro jugadores el
+                // bloque iba de y=671 a y=943 con un viewport de 844, así que
+                // los botones caían por debajo del borde; con cinco, de 730 a
+                // 1052. En el campo eso convierte un toque en un gesto y medio.
+                //
+                // Va antes de la tabla y no después porque es un dato DEL HOYO,
+                // como el bloque de Bola Baja que ya estaba aquí, y porque en
+                // Wolf la respuesta se sabe antes de anotar: el Wolf elige
+                // compañero en el tee, viendo los primeros golpes.
+                if (_tieneWolf(round)) ...[
+                  _WolfCallSection(
+                      key: _wolfKey, hole: _currentHole, t: t),
+                  const SizedBox(height: 10),
+                ],
+
                 // ── Tabla de jugadores ─────────────────────────────────
                 _PlayerTable(
                   round: round,
@@ -215,16 +327,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 if (ch.isPar3) ...[
                   const SizedBox(height: 10),
                   _OyesRankingSection(hole: _currentHole, t: t),
-                ],
-
-                // ── Wolf: con quién jugó ───────────────────────────────
-                //
-                // La única pregunta del formato, y va aquí porque es aquí
-                // donde se anota el score. Solo aparece si la ronda tiene
-                // una apuesta Wolf: quien no la juega no ve nada.
-                if (_tieneWolf(round)) ...[
-                  const SizedBox(height: 10),
-                  _WolfCallSection(hole: _currentHole, t: t),
                 ],
 
                 const SizedBox(height: 10),
@@ -268,8 +370,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     isVeryLast: isVeryLast,
                     isLast9: isLast9,
                     t: t,
+                    // Al RETROCEDER no se avisa: se vuelve justamente a
+                    // arreglar algo, y un diálogo ahí estorbaría el arreglo.
                     onPrev: hasPrev ? () => _jumpToHole(playOrder[curIdx - 1]) : null,
-                    onNext: hasNext ? () => _jumpToHole(playOrder[curIdx + 1]) : null,
+                    onNext: hasNext
+                        ? () => _irAlHoyo(playOrder[curIdx + 1], round)
+                        : null,
                     onContinueTo18: isLast9
                         ? () => _jumpToHole(firstSecond)
                         : null,
@@ -1872,7 +1978,7 @@ class LowHighHoleBlock extends StatelessWidget {
 class _WolfCallSection extends StatelessWidget {
   final int hole;
   final GolfTheme t;
-  const _WolfCallSection({required this.hole, required this.t});
+  const _WolfCallSection({super.key, required this.hole, required this.t});
 
   @override
   Widget build(BuildContext context) {
@@ -1883,12 +1989,13 @@ class _WolfCallSection extends StatelessWidget {
 
     final (grupo, mod) = mods.first;
     final orden = round.participantesDe(mod, grupo.playerIds);
-    if (orden.length != 4) {
-      // No debería pasar —el selector atenúa Wolf sin 4— pero una ronda
-      // guardada a la que se le saca un jugador llega aquí, y quedarse mudo
-      // sería peor que decirlo.
-      return _aviso(
-          'Wolf necesita 4 jugadores y esta apuesta tiene ${orden.length}.');
+    final motivoTamano = BetModuleType.wolf.motivoNoDisponible(orden.length);
+    if (motivoTamano != null) {
+      // No debería pasar —el selector lo atenúa— pero una ronda guardada a la
+      // que se le saca un jugador llega aquí, y quedarse mudo sería peor que
+      // decirlo. El texto sale de la tabla, así que coincide con el del
+      // selector.
+      return _aviso(motivoTamano);
     }
 
     final wolf = WolfEngine.wolfDelHoyo(orden, hole);

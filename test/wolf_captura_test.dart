@@ -88,6 +88,8 @@ Future<({List<String> errores, RoundProvider prov})> _montar(
 }
 
 void main() {
+  _avisoAlPasarDeHoyo();
+
   testWidgets('la pregunta está en la pantalla donde se anota el score',
       (tester) async {
     final r = await _montar(tester, _round(), const Size(390, 900));
@@ -186,5 +188,156 @@ void main() {
     await _montar(tester, _round(conWolf: false), const Size(390, 900));
     expect(find.textContaining('WOLF:'), findsNothing);
     expect(find.text('¿Con quién jugó?'), findsNothing);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EL AVISO AL PASAR DE HOYO
+//
+// El riesgo real de Wolf no es que un hoyo no liquide —eso ya lo dicen las
+// notas— es el OLVIDO. Reconstruir con quién jugó el Wolf en el hoyo 7 al final
+// de la ronda es imposible: nadie se acuerda y no hay dato del que deducirlo.
+//
+// Por eso el aviso va al SALIR del hoyo, que es el último momento en que la
+// respuesta está fresca. Y por eso tiene dos condiciones que importan tanto como
+// el aviso mismo: solo si el hoyo se jugó, y no al retroceder.
+// ─────────────────────────────────────────────────────────────────────────────
+void _avisoAlPasarDeHoyo() {
+  /// Ronda con score en el hoyo 1 y nada más. Así el 1 "se jugó" y el 2 no.
+  Round soloPrimerHoyo({Map<int, WolfCall> calls = const {}}) {
+    final course = CourseInfo(
+        name: 'T',
+        holes: List.generate(
+            18, (i) => CourseHole(hole: i + 1, par: 4, strokeIndex: i + 1)));
+    return Round(
+      id: 'r', name: 'R', course: course,
+      players: orden.map((i) => Player(id: i, name: nombres[i]!)).toList(),
+      roundPlayers:
+          orden.map((i) => RoundPlayer(playerId: i, handicapEnRonda: 0)).toList(),
+      betGroups: [
+        BetGroup(
+            id: 'g', name: 'G',
+            format: PartidaFormat.allInOnePot,
+            playerIds: orden,
+            modules: [
+              BetModuleInstance.defaultFor(BetModuleType.wolf, orden, id: 'wf'),
+            ]),
+      ],
+      scores: {
+        for (final pid in orden)
+          pid: {1: HoleScore(playerId: pid, hole: 1, grossScore: 4)},
+      },
+      events: const {}, oyeseRankings: const {}, sliding: const [],
+      wolfCalls: calls,
+      createdAt: DateTime(2026, 1, 1), totalHoles: 18,
+    );
+  }
+
+  /// Pulsa el botón de "hoyo siguiente", sea el hoyo que sea.
+  ///
+  /// Se busca por la FORMA de la etiqueta y no por "Hoyo 2": la pantalla se
+  /// coloca sola en el primer hoyo sin score al abrirse, así que fijar el número
+  /// ataba el test a ese detalle. Lo descubrió el propio test.
+  Future<void> pulsaSiguiente(WidgetTester tester) async {
+    final btn = find.byWidgetPredicate((w) =>
+        w is Text && (w.data ?? '').startsWith('Hoyo ') &&
+        (w.data ?? '').endsWith('→'));
+    expect(btn, findsWidgets, reason: 'el botón de siguiente hoyo');
+    await tester.ensureVisible(btn.first);
+    await tester.pump();
+    await tester.tap(btn.first);
+    await tester.pumpAndSettle();
+  }
+
+  /// Retrocede hasta el hoyo 1. Al RETROCEDER no se avisa a propósito: se vuelve
+  /// justamente a arreglar algo y un diálogo ahí estorbaría el arreglo — así que
+  /// este helper además comprueba esa decisión de paso.
+  Future<void> volverAlHoyo1(WidgetTester tester) async {
+    for (var i = 0; i < 4; i++) {
+      final atras = find.byWidgetPredicate(
+          (w) => w is Text && (w.data ?? '').startsWith('← Hoyo '));
+      if (atras.evaluate().isEmpty) break;
+      await tester.ensureVisible(atras.first);
+      await tester.pump();
+      await tester.tap(atras.first);
+      await tester.pumpAndSettle();
+      expect(find.text('Falta el compañero del Wolf'), findsNothing,
+          reason: 'retroceder no debe preguntar');
+    }
+  }
+
+  group('5 · avisa antes de dejar el hoyo sin contestar', () {
+    testWidgets('con score y sin elección, pregunta', (tester) async {
+      // La pantalla arranca en el primer hoyo sin score. Con score SOLO en el
+      // 1, arranca en el 2 y ahí no hay nada que avisar; hay que volver al 1.
+      final r = await _montar(tester, soloPrimerHoyo(), const Size(390, 900));
+      await volverAlHoyo1(tester);
+      await pulsaSiguiente(tester);
+      expect(find.text('Falta el compañero del Wolf'), findsOneWidget);
+      // Nombra al Wolf del hoyo: sin el nombre hay que ir a buscar quién era.
+      expect(find.textContaining('Rafa'), findsWidgets);
+      // Y dice POR QUÉ importa, no solo que falta.
+      expect(find.textContaining('no habrá forma de reconstruirlo'),
+          findsOneWidget);
+      expect(r.prov.round, isNotNull);
+    });
+
+    testWidgets('"Seguir sin elegir" avanza', (tester) async {
+      await _montar(tester, soloPrimerHoyo(), const Size(390, 900));
+      await volverAlHoyo1(tester);
+      await pulsaSiguiente(tester);
+      await tester.tap(find.text('Seguir sin elegir'));
+      await tester.pumpAndSettle();
+      // Se fue al hoyo 2: el aviso informa, no bloquea.
+      expect(find.text('Falta el compañero del Wolf'), findsNothing);
+      expect(find.textContaining('Hoyo 1'), findsWidgets,
+          reason: 'ahora el botón de atrás apunta al 1');
+    });
+
+    testWidgets('"Elegir ahora" se queda en el hoyo', (tester) async {
+      await _montar(tester, soloPrimerHoyo(), const Size(390, 900));
+      await volverAlHoyo1(tester);
+      await pulsaSiguiente(tester);
+      await tester.tap(find.text('Elegir ahora'));
+      await tester.pumpAndSettle();
+      expect(find.text('Falta el compañero del Wolf'), findsNothing);
+      // Y el bloque está a mano, no por debajo del borde: es la mitad del
+      // trabajo que un aviso sin destino deja sin hacer.
+      final caja = tester.getRect(find.byKey(const Key('wolfOpt_solo')));
+      expect(caja.bottom, lessThanOrEqualTo(900.0));
+      expect(caja.top, greaterThanOrEqualTo(0.0));
+    });
+
+    testWidgets('con la elección hecha NO pregunta', (tester) async {
+      // El contrapeso. Sin este, el aviso podría estar saltando siempre y los
+      // tres de arriba pasarían igual.
+      await _montar(
+          tester,
+          soloPrimerHoyo(calls: {1: const WolfCall(hole: 1, partnerId: 'y')}),
+          const Size(390, 900));
+      await volverAlHoyo1(tester);
+      await pulsaSiguiente(tester);
+      expect(find.text('Falta el compañero del Wolf'), findsNothing);
+    });
+
+    testWidgets('sin score en el hoyo tampoco: navegar no da la lata',
+        (tester) async {
+      // Recorrer los hoyos para mirar es normal, y sin esta condición el aviso
+      // saltaría en los diecisiete que quedan por delante.
+      final r = _round(); // todos los hoyos con score... se limpia el 1
+      r.scores['w']!.remove(1);
+      r.scores['x']!.remove(1);
+      r.scores['y']!.remove(1);
+      r.scores['z']!.remove(1);
+      await _montar(tester, r, const Size(390, 900));
+      await pulsaSiguiente(tester);
+      expect(find.text('Falta el compañero del Wolf'), findsNothing);
+    });
+
+    testWidgets('y quien no juega Wolf nunca lo ve', (tester) async {
+      await _montar(tester, _round(conWolf: false), const Size(390, 900));
+      await pulsaSiguiente(tester);
+      expect(find.text('Falta el compañero del Wolf'), findsNothing);
+    });
   });
 }

@@ -145,11 +145,11 @@ void main() {
     });
   });
 
-  group('3 · Wolf se atenúa con su motivo cuando no hay cuatro', () {
+  group('3 · Wolf se atenúa con su motivo cuando el número no encaja', () {
     testWidgets('con 4 jugadores se ofrece', (tester) async {
       await _abrirHoja(tester, _round());
       expect(find.text('Wolf'), findsWidgets);
-      expect(find.textContaining('exactamente con 4'), findsNothing,
+      expect(find.textContaining('4 o 5 jugadores'), findsNothing,
           reason: 'con cuatro no hay nada que explicar');
     });
 
@@ -158,7 +158,7 @@ void main() {
       // enseña el modelo. Es la misma convención del selector de Setup.
       await _abrirHoja(tester, _round(pids: const ['a', 'b', 'c']));
       expect(find.text('Wolf'), findsWidgets);
-      expect(find.textContaining('exactamente con 4'), findsWidgets);
+      expect(find.textContaining('4 o 5 jugadores'), findsWidgets);
     });
 
     testWidgets('y los demás siguen ofreciéndose con 3', (tester) async {

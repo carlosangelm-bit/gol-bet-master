@@ -240,15 +240,12 @@ List<NotaDeLiquidacion> _wolf(
   NotaDeLiquidacion nota(String texto, TonoNota tono) => NotaDeLiquidacion(
       moduleId: mod.id, tipo: BetModuleType.wolf, texto: texto, tono: tono);
 
-  if (pids.length != 4) {
+  final motivoTamano = BetModuleType.wolf.motivoNoDisponible(pids.length);
+  if (motivoTamano != null) {
     // No debería poder crearse —el selector lo atenúa— pero una ronda guardada
     // a la que se le saca un jugador acaba aquí, y quedarse mudo sería lo peor.
-    return [
-      nota(
-          'Wolf se juega exactamente con 4 y esta apuesta tiene ${pids.length}. '
-          'No liquida.',
-          TonoNota.faltaDato)
-    ];
+    // El motivo sale de la tabla para que diga lo mismo que el selector.
+    return [nota('$motivoTamano No liquida.', TonoNota.faltaDato)];
   }
 
   final hoyos = WolfEngine.recorrido(round, pids, mod.wolf);

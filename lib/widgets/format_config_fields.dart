@@ -254,13 +254,21 @@ List<Widget> rabbitFields({
 /// Y lo importante: el diseño de captura —una pregunta por hoyo— no depende de
 /// ninguna de las tres. Añadir cualquiera después es una opción más, no rehacer
 /// el formato.
+///
+/// [jugadores] es cuántas personas juegan, si se sabe. Solo se usa para redactar
+/// las notas con el número real —"contra los otros tres" o "los otros cuatro"—
+/// y para avisar de que con cinco el multiplicador suele subirse. Null en una
+/// configuración guardada, que no tiene jugadores.
 List<Widget> wolfFields({
   required GolfTheme t,
   required WolfConfig cfg,
   required TextEditingController montoCtrl,
   required ValueChanged<WolfConfig> onChanged,
-}) =>
-    [
+  int? jugadores,
+}) {
+  final rivalesDelSolo = jugadores == null ? null : jugadores - 1;
+  final cinco = jugadores == 5;
+  return [
       _etiqueta('MONTO POR HOYO', t),
       const SizedBox(height: 8),
       _monto('Monto', montoCtrl, t,
@@ -268,10 +276,23 @@ List<Widget> wolfFields({
       const SizedBox(height: 6),
       _nota(
           'Cada perdedor del hoyo paga esto a cada ganador. El hoyo se decide '
-          'por la mejor bola neta de la pareja del Wolf contra la de los otros '
-          'dos.',
+          'por la mejor bola neta de la pareja del Wolf contra la de los '
+          'demás.',
           t),
       const SizedBox(height: 18),
+
+      // Con cinco jugadores el lado del Wolf es 2 contra 3. Se dice aquí porque
+      // es lo que explica un importe al doble en el resultado.
+      if (cinco) ...[
+        _etiqueta('CON CINCO JUGADORES', t),
+        const SizedBox(height: 6),
+        _nota(
+            'El Wolf y su compañero juegan 2 contra 3, así que van en minoría: '
+            'si ganan el hoyo, cobran el doble. Es la regla del formato, no una '
+            'opción.',
+            t),
+        const SizedBox(height: 18),
+      ],
 
       _etiqueta('LONE WOLF QUE GANA', t),
       const SizedBox(height: 8),
@@ -282,18 +303,33 @@ List<Widget> wolfFields({
           (i) => onChanged(cfg.copyWith(loneMultiplier: [2.0, 3.0, 4.0][i]))),
       const SizedBox(height: 6),
       _nota(
-          'Ir solo contra los otros tres y ganar paga '
-          '×${cfg.loneMultiplier.toStringAsFixed(0)}. Si pierde, paga sencillo '
-          'a cada rival — eso es lo estándar y no se cambia.',
+          'Ir solo contra '
+          '${rivalesDelSolo == null ? 'los demás' : 'los otros $rivalesDelSolo'} '
+          'y ganar paga ×${cfg.loneMultiplier.toStringAsFixed(0)}. Si pierde, '
+          'paga sencillo a cada rival — eso es lo estándar y no se cambia.',
           t),
+      // Se AVISA en vez de cambiar el valor por defecto según el tamaño. Ir solo
+      // contra cuatro es más duro que contra tres y muchos grupos lo suben, pero
+      // un default distinto por número de jugadores es una regla que nadie pidió
+      // y que sorprendería a quien ya tenía su valor elegido.
+      if (cinco) ...[
+        const SizedBox(height: 4),
+        _nota(
+            'Con cinco se va solo contra cuatro, y muchos grupos suben el '
+            'multiplicador por eso. Se deja como lo tengas: tú sabes cómo lo '
+            'juega el tuyo.',
+            t),
+      ],
       const SizedBox(height: 18),
 
       _etiqueta('QUIÉN ES EL WOLF', t),
       const SizedBox(height: 6),
       _nota(
           'Se deriva del orden de salida y rota un hoyo por jugador: el 1 le '
-          'toca al primero, el 2 al segundo, y así. No hay nada que elegir ni '
+          'toca al primero, el 2 al segundo, y así. Con cuatro el ciclo cierra '
+          'cada cuatro hoyos y con cinco cada cinco. No hay nada que elegir ni '
           'que ver durante el hoyo — la app solo pregunta con quién jugó al '
           'anotar el score.',
           t),
-    ];
+  ];
+}

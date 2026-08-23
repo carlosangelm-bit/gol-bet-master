@@ -348,9 +348,10 @@ class BetRecipe {
     // ── ¿Cuántos jugadores necesita? ───────────────────────────────────────
     // Mecanismo existente, no uno nuevo: devolver `no(motivo)` es lo que ya
     // atenúa la opción en el selector con su explicación.
-    final exactos = tipo.rules.jugadoresExactos;
-    if (exactos != null && participantIds.length != exactos) {
-      return BetRecipeResult.no(tipo.rules.sinEseNumero!);
+    final motivoCardinalidad =
+        tipo.motivoNoDisponible(participantIds.length);
+    if (motivoCardinalidad != null) {
+      return BetRecipeResult.no(motivoCardinalidad);
     }
 
     final div = divisionDe(cuenta,

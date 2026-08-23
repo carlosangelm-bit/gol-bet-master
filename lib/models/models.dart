@@ -129,15 +129,25 @@ class BetTypeRules {
   /// cerrar, con los números viejos—. Para eso está el backfill del Historial.
   final bool soloPersonas;
 
-  /// Cuántos jugadores necesita EXACTAMENTE. Null = cualquier número.
+  /// Con cuántos jugadores se puede jugar. Null = cualquier número.
   ///
-  /// Wolf es el primero que lo usa: con 3 la rotación cambia y con 5 o más el
-  /// formato no existe. Se atenúa en el selector con su motivo, igual que las
-  /// combinaciones incoherentes —un usuario que ve la opción en gris con "Wolf
-  /// se juega exactamente con 4" entiende el modelo; uno que la elige y recibe
-  /// un error, no—.
-  final int? jugadoresExactos;
-  final String? sinEseNumero;
+  /// Era un único número exacto —Wolf con 4— y resultó estrecho: Wolf también se
+  /// juega con 5, y lo que cambia es UNA regla de reparto, no el formato. Un
+  /// conjunto admite eso sin inventar nada, y el día que entre otro tamaño es
+  /// una entrada más aquí.
+  ///
+  /// Se atenúa en el selector con su motivo, igual que las combinaciones
+  /// incoherentes: un usuario que ve la opción en gris con la explicación
+  /// entiende el modelo; uno que la elige y recibe un error, no.
+  final Set<int>? jugadoresAdmitidos;
+
+  /// Por qué no vale con MENOS de los admitidos, y por qué no vale con MÁS.
+  ///
+  /// Dos campos porque son dos razones distintas y decirlas juntas no informa:
+  /// con 3 jugadores Wolf tiene un problema de rotación, y con 6 tiene un
+  /// problema de falta de dato. Un mensaje único tendría que hablar de los dos.
+  final String? sinEseNumeroPocos;
+  final String? sinEseNumeroMuchos;
 
   const BetTypeRules({
     this.teams = false,
@@ -147,8 +157,9 @@ class BetTypeRules {
     this.sinSegmentos,
     this.perPairAmount = false,
     this.sinMontoPorPareja,
-    this.jugadoresExactos,
-    this.sinEseNumero,
+    this.jugadoresAdmitidos,
+    this.sinEseNumeroPocos,
+    this.sinEseNumeroMuchos,
     this.soloPersonas = false,
   });
 }
@@ -211,10 +222,13 @@ extension BetModuleTypeRules on BetModuleType {
           ),
         BetModuleType.wolf => const BetTypeRules(
             soloPersonas: true,
-            jugadoresExactos: 4,
-            sinEseNumero: 'Wolf se juega exactamente con 4: el Wolf rota uno '
-                'por hoyo y elige compañero entre los otros tres. Con 3 la '
-                'rotación cambia y con 5 o más el formato no existe.',
+            jugadoresAdmitidos: {4, 5},
+            sinEseNumeroPocos:
+                'Con 3 la rotación cambia —cada uno sería Wolf uno de cada tres '
+                'hoyos— y no queda un lado de dos contra dos.',
+            sinEseNumeroMuchos:
+                'Con 6 o más no hay una regla estándar que suponer, y '
+                'suponerla sería inventar cómo se reparten los puntos.',
             sinEquipos: 'Wolf arma SUS PROPIOS equipos, distintos en cada '
                 'hoyo: el Wolf elige compañero al llegar al green. Unos lados '
                 'fijos de ronda serían otra apuesta.',
@@ -323,9 +337,21 @@ extension BetModuleFamilyOf on BetModuleType {
   /// Hoy solo lo usa la cardinalidad de Wolf. Vive aquí y no en un `if` dentro
   /// de cada hoja para que las tres digan lo mismo.
   String? motivoNoDisponible(int jugadores) {
-    final exactos = rules.jugadoresExactos;
-    if (exactos != null && jugadores != exactos) return rules.sinEseNumero;
-    return null;
+    final admitidos = rules.jugadoresAdmitidos;
+    if (admitidos == null || admitidos.contains(jugadores)) return null;
+
+    // El prefijo se GENERA del conjunto, así que ampliar los tamaños admitidos
+    // no deja un texto desactualizado hablando de otro número.
+    final orden = admitidos.toList()..sort();
+    final cuales = orden.length == 1
+        ? '${orden.first}'
+        : '${orden.take(orden.length - 1).join(', ')} o ${orden.last}';
+    final detalle = jugadores < orden.first
+        ? rules.sinEseNumeroPocos
+        : rules.sinEseNumeroMuchos;
+
+    return '$label se juega con $cuales jugadores, y esta partida tiene '
+        '$jugadores.${detalle == null ? '' : ' $detalle'}';
   }
 }
 
@@ -2107,6 +2133,22 @@ class WolfCall {
   ///
   /// Que el hoyo no esté en el mapa es otra cosa: significa que nadie eligió
   /// todavía, y ese hoyo no liquida. No se inventa un compañero.
+  ///
+  /// ── Sobre Dump, que se valoró y no se construyó ───────────────────────────
+  ///
+  /// Dump es que el compañero elegido rechace y deje al Wolf solo. El ESTADO ya
+  /// cabe aquí sin lógica nueva —se registra "Solo" y el reparto sale correcto
+  /// bajo la lectura natural: quedarse solo es quedarse solo—, así que en
+  /// dinero no hace falta nada.
+  ///
+  /// Lo que falta es lo que NO se puede deducir: si el que rechaza paga una
+  /// penalización, y si el Wolf abandonado cobra el multiplicador del que eligió
+  /// ir solo o otro. Eso es inventar cómo se reparten los puntos, que es
+  /// justamente la línea que no se cruza.
+  ///
+  /// Lo único que se perdería construyéndolo a medias es la NARRACIÓN —"CAV lo
+  /// dejó tirado en el 7"— y eso es una etiqueta, no dinero. Cuando alguien lo
+  /// pida con las reglas de su grupo, es un campo aquí y una frase en las notas.
   final String? partnerId;
 
   const WolfCall({required this.hole, this.partnerId});

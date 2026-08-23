@@ -255,39 +255,64 @@ void main() {
     });
   });
 
-  group('5 · solo con 4 jugadores', () {
-    test('con 3 no se ofrece, y el motivo se puede leer', () {
+  group('5 · con cuatro o con cinco, no con otros números', () {
+    // Este grupo decía "solo con 4 jugadores" y fijaba `jugadoresExactos == 4`.
+    // Se actualiza porque la regla era demasiado estrecha, no porque estorbara:
+    // Wolf también se juega con cinco, y lo que cambia es UNA regla de reparto.
+    test('con 3 no se ofrece, y el motivo habla de la rotación', () {
       final res = BetRecipe.build(
           cuenta: BetCount.wolf, participantIds: const [w, x, y]);
       expect(res.ok, isFalse);
-      expect(res.rechazo, contains('exactamente con 4'));
+      expect(res.rechazo, contains('4 o 5'));
+      expect(res.rechazo, contains('rotación'),
+          reason: 'con pocos el problema es la rotación');
     });
 
-    test('con 5 tampoco', () {
+    test('con 6 tampoco, y el motivo es otro: falta el dato', () {
+      // Dos motivos distintos a propósito. Decirlos juntos no informa: con 3 hay
+      // un problema de rotación y con 6 uno de falta de dato.
       final res = BetRecipe.build(
           cuenta: BetCount.wolf,
-          participantIds: const [w, x, y, z, 'e']);
+          participantIds: const [w, x, y, z, 'e', 'f']);
       expect(res.ok, isFalse);
+      expect(res.rechazo, contains('4 o 5'));
+      expect(res.rechazo, contains('no hay una regla estándar'));
+      expect(res.rechazo, isNot(contains('rotación')));
     });
 
     test('con 4 sí', () {
-      // El contrapeso: sin este, la puerta podría estar cerrada siempre.
       final res =
           BetRecipe.build(cuenta: BetCount.wolf, participantIds: orden);
       expect(res.ok, isTrue);
       expect(res.module!.type, BetModuleType.wolf);
     });
 
+    test('y con 5 también', () {
+      // El criterio 1 del encargo. Antes esto devolvía `no`.
+      final res = BetRecipe.build(
+          cuenta: BetCount.wolf, participantIds: const [w, x, y, z, 'e']);
+      expect(res.ok, isTrue);
+      expect(res.module!.participantIds, hasLength(5));
+    });
+
     test('la regla vive en la tabla, no en un if suelto', () {
-      expect(BetModuleType.wolf.rules.jugadoresExactos, 4);
-      expect(BetModuleType.wolf.rules.sinEseNumero, isNotNull);
+      expect(BetModuleType.wolf.rules.jugadoresAdmitidos, {4, 5});
+      expect(BetModuleType.wolf.rules.sinEseNumeroPocos, isNotNull);
+      expect(BetModuleType.wolf.rules.sinEseNumeroMuchos, isNotNull);
+    });
+
+    test('el prefijo del motivo se genera del conjunto', () {
+      // Si mañana entra el 6, el texto no se queda diciendo "4 o 5".
+      final motivo = BetModuleType.wolf.motivoNoDisponible(3)!;
+      expect(motivo, contains('4 o 5 jugadores'));
+      expect(motivo, contains('tiene 3'));
     });
 
     test('una ronda guardada que se queda en 3 lo dice en vez de callarse', () {
       final r = _round(participantes: const [w, x, y]);
       final notas = notasDeLiquidacion(r);
       expect(notas, hasLength(1));
-      expect(notas.single.texto, contains('exactamente con 4'));
+      expect(notas.single.texto, contains('4 o 5'));
       expect(BetEngine.computeAll(r), isEmpty);
     });
   });
