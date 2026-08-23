@@ -21,7 +21,7 @@ DateTime _parseDate(dynamic value) {
 }
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
-enum BetModuleType { skins, nassau, matchAutoPress, medal, putts, oyeses, units, nassauLowHigh, snake, rabbit, wolf }
+enum BetModuleType { skins, nassau, matchAutoPress, medal, putts, oyeses, units, nassauLowHigh, snake, rabbit, wolf, stableford }
 
 /// Qué hacer cuando una categoría (bola baja o alta) queda empatada en un hoyo.
 enum LowHighTieRule {
@@ -248,6 +248,14 @@ extension BetModuleTypeRules on BetModuleType {
                 'eagle, sandy— que no se atribuye a un equipo.',
             sinSegmentos: 'Las unidades se cobran cuando ocurren, no por vuelta.',
           ),
+        BetModuleType.stableford => const BetTypeRules(
+            soloPersonas: true,
+            perPairAmount: true,
+            sinEquipos: 'Los puntos Stableford son de una tarjeta individual: '
+                'no hay una bola de equipo que puntuar.',
+            sinSegmentos: 'Stableford ya elige entre la vuelta entera y los '
+                'nueve en su detalle.',
+          ),
         BetModuleType.wolf => const BetTypeRules(
             soloPersonas: true,
             deLaPartida: true,
@@ -367,7 +375,8 @@ extension BetModuleFamilyOf on BetModuleType {
         BetModuleType.units ||
         BetModuleType.snake ||
         BetModuleType.rabbit ||
-        BetModuleType.wolf =>
+        BetModuleType.wolf ||
+        BetModuleType.stableford =>
           BetFamily.otras,
       };
 
@@ -701,6 +710,7 @@ extension BetModuleLabel on BetModuleType {
         BetModuleType.snake => 'Snake',
         BetModuleType.rabbit => 'Rabbit',
         BetModuleType.wolf => 'Wolf',
+        BetModuleType.stableford => 'Stableford',
       };
 
   String get icon => switch (this) {
@@ -715,6 +725,7 @@ extension BetModuleLabel on BetModuleType {
         BetModuleType.snake => '🐍',
         BetModuleType.rabbit => '🐇',
         BetModuleType.wolf => '🐺',
+        BetModuleType.stableford => '📊',
       };
 
   String get description => switch (this) {
@@ -737,6 +748,9 @@ extension BetModuleLabel on BetModuleType {
         BetModuleType.wolf =>
           'Cada hoyo un jugador es el Wolf y elige compañero, o va solo por el '
               'doble.',
+        BetModuleType.stableford =>
+          'Cada hoyo da puntos según el neto: birdie 3, par 2, bogey 1. Gana '
+              'quien más sume.',
       };
 }
 
@@ -2255,6 +2269,83 @@ class WolfConfig {
       );
 }
 
+
+// ── STABLEFORD ────────────────────────────────────────────────────────────────
+//
+// Gana quien más puntos acumule. Cada hoyo vale según su neto relativo al par,
+// con la tabla clásica: birdie 3, par 2, bogey 1, doble o peor 0.
+//
+// El cálculo ya existía —GameEngine lo produce por hoyo desde siempre para la
+// tarjeta— así que esto no construye la aritmética, la EXPONE como apuesta.
+//
+// Y una distinción que importa: los puntos Stableford son ABSOLUTOS. Salen del
+// handicap propio distribuido por stroke index, no del acuerdo bilateral de
+// pairSliding que usan Medal, Skins y Nassau. Es lo correcto para este formato
+// —es una competición individual de puntos, no un duelo— pero significa que una
+// ronda con ventajas solo por pareja no las verá reflejadas aquí. El interruptor
+// bruto/neto sí se respeta, así que "sin ventaja" da Stableford bruto.
+
+class StablefordConfig {
+  /// Lo que paga el ganador de la apuesta.
+  final double value;
+
+  final GrossNetMode mode;
+
+  /// Cuántos puntos vale el par. La tabla entera se desplaza con él.
+  final int puntosDelPar;
+
+  /// Suelo y techo de la tabla. Con piso negativo se penalizan los desastres.
+  final int piso;
+  final int techo;
+
+  const StablefordConfig({
+    this.value = 100,
+    this.mode = GrossNetMode.net,
+    this.puntosDelPar = 2,
+    this.piso = 0,
+    this.techo = 5,
+  });
+
+  static const def = StablefordConfig();
+
+  /// true si la tabla es la clásica. Para poder decirlo en pantalla sin
+  /// enumerar los tres números.
+  bool get tablaClasica => puntosDelPar == 2 && piso == 0 && techo == 5;
+
+  StablefordConfig copyWith({
+    double? value,
+    GrossNetMode? mode,
+    int? puntosDelPar,
+    int? piso,
+    int? techo,
+  }) =>
+      StablefordConfig(
+        value: value ?? this.value,
+        mode: mode ?? this.mode,
+        puntosDelPar: puntosDelPar ?? this.puntosDelPar,
+        piso: piso ?? this.piso,
+        techo: techo ?? this.techo,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'value': value,
+        'mode': mode.name,
+        // Solo lo que se aparta de la tabla clásica: una ronda guardada antes de
+        // que la tabla fuera configurable se lee igual.
+        if (puntosDelPar != 2) 'puntosDelPar': puntosDelPar,
+        if (piso != 0) 'piso': piso,
+        if (techo != 5) 'techo': techo,
+      };
+
+  factory StablefordConfig.fromJson(Map<String, dynamic> j) => StablefordConfig(
+        value: (j['value'] as num?)?.toDouble() ?? 100,
+        mode: j['mode'] == 'gross' ? GrossNetMode.gross : GrossNetMode.net,
+        puntosDelPar: (j['puntosDelPar'] as num?)?.toInt() ?? 2,
+        piso: (j['piso'] as num?)?.toInt() ?? 0,
+        techo: (j['techo'] as num?)?.toInt() ?? 5,
+      );
+}
+
 class BetModuleInstance {
   final String id;
   final BetModuleType type;
@@ -2286,6 +2377,7 @@ class BetModuleInstance {
   final SnakeConfig?          snakeConfig;
   final RabbitConfig?         rabbitConfig;
   final WolfConfig?           wolfConfig;
+  final StablefordConfig?     stablefordConfig;
 
   // Presiones dinámicas para Match + Auto Press
   final List<PressInstance> presses;
@@ -2359,6 +2451,7 @@ class BetModuleInstance {
     this.snakeConfig,
     this.rabbitConfig,
     this.wolfConfig,
+    this.stablefordConfig,
     this.presses = const [],
     this.structure = BetStructure.group,
     this.betGroupId,
@@ -2404,12 +2497,14 @@ class BetModuleInstance {
   SnakeConfig          get snake          => snakeConfig          ?? SnakeConfig.def;
   RabbitConfig         get rabbit         => rabbitConfig         ?? RabbitConfig.def;
   WolfConfig           get wolf           => wolfConfig           ?? WolfConfig.def;
+  StablefordConfig     get stableford     => stablefordConfig     ?? StablefordConfig.def;
 
   // ── Compatibilidad con BetEngine (valor base y flags) ──────────────────────
   double get value => switch (type) {
     BetModuleType.snake         => snake.value,
     BetModuleType.rabbit        => rabbit.value,
     BetModuleType.wolf          => wolf.value,
+    BetModuleType.stableford    => stableford.value,
     BetModuleType.skins         => skins.valuePerSkin,
     BetModuleType.nassau        => nassau.frontValue,
     BetModuleType.matchAutoPress=> matchAutoPress.matchValue,
@@ -2428,6 +2523,9 @@ class BetModuleInstance {
     BetModuleType.nassauLowHigh => lowHigh.mode == GrossNetMode.net,
     BetModuleType.matchAutoPress=> matchAutoPress.mode == GrossNetMode.net,
     BetModuleType.medal         => medal.mode == GrossNetMode.net,
+    // Sin esta rama Stableford calcularía BRUTO en silencio: el default del
+    // switch es false. Es la trampa que el encargo pedía comprobar.
+    BetModuleType.stableford    => stableford.mode == GrossNetMode.net,
     _                           => false,
   };
 
@@ -2445,6 +2543,9 @@ class BetModuleInstance {
   String get summaryLabel => switch (type) {
     BetModuleType.snake  => '\$${snake.value.toStringAsFixed(0)} · '
                             '${snake.umbral}+ putts',
+    BetModuleType.stableford => '\$${stableford.value.toStringAsFixed(0)} · '
+                            '${stableford.mode == GrossNetMode.net ? 'Net' : 'Gross'}'
+                            '${stableford.tablaClasica ? '' : ' · tabla propia'}',
     BetModuleType.wolf   => '\$${wolf.value.toStringAsFixed(0)}/hoyo · '
                             'solo ×${wolf.loneMultiplier.toStringAsFixed(0)}',
     BetModuleType.rabbit => '\$${rabbit.value.toStringAsFixed(0)}/nueve'
@@ -2502,6 +2603,7 @@ class BetModuleInstance {
     SnakeConfig?          snakeConfig,
     RabbitConfig?         rabbitConfig,
     WolfConfig?           wolfConfig,
+    StablefordConfig?     stablefordConfig,
     List<PressInstance>?  presses,
     BetStructure?                        structure,
     String?                              betGroupId,
@@ -2534,6 +2636,7 @@ class BetModuleInstance {
     snakeConfig:          snakeConfig          ?? this.snakeConfig,
     rabbitConfig:         rabbitConfig         ?? this.rabbitConfig,
     wolfConfig:           wolfConfig           ?? this.wolfConfig,
+    stablefordConfig:     stablefordConfig     ?? this.stablefordConfig,
     presses:              presses              ?? this.presses,
     structure:             structure             ?? this.structure,
     betGroupId:            betGroupId            ?? this.betGroupId,
@@ -2589,6 +2692,7 @@ class BetModuleInstance {
     if (snakeConfig          != null) 'snakeConfig':          snakeConfig!.toJson(),
     if (rabbitConfig         != null) 'rabbitConfig':         rabbitConfig!.toJson(),
     if (wolfConfig           != null) 'wolfConfig':           wolfConfig!.toJson(),
+    if (stablefordConfig     != null) 'stablefordConfig':     stablefordConfig!.toJson(),
     if (presses.isNotEmpty)           'presses': presses.map((p) => p.toJson()).toList(),
   };
 
@@ -2660,6 +2764,7 @@ class BetModuleInstance {
       snakeConfig:          j['snakeConfig']          != null ? SnakeConfig.fromJson(asMap(j['snakeConfig']))          : null,
       rabbitConfig:         j['rabbitConfig']         != null ? RabbitConfig.fromJson(asMap(j['rabbitConfig']))        : null,
       wolfConfig:           j['wolfConfig']           != null ? WolfConfig.fromJson(asMap(j['wolfConfig']))            : null,
+      stablefordConfig:     j['stablefordConfig']     != null ? StablefordConfig.fromJson(asMap(j['stablefordConfig'])): null,
       presses: j['presses'] != null
           ? ((j['presses'] as List?) ?? []).map((p) {
               try { return PressInstance.fromJson(p is Map ? Map<String, dynamic>.from(p) : {}); }
@@ -2734,6 +2839,7 @@ class BetModuleInstance {
         snakeConfig:           snakeConfig,
         rabbitConfig:          rabbitConfig,
         wolfConfig:            wolfConfig,
+        stablefordConfig:      stablefordConfig,
         structure:             structure,
         betGroupId:            betGroupId,
         betGroupName:          betGroupName,
@@ -2757,6 +2863,7 @@ class BetModuleInstance {
       BetModuleType.snake          => snake.toJson(),
       BetModuleType.rabbit         => rabbit.toJson(),
       BetModuleType.wolf           => wolf.toJson(),
+      BetModuleType.stableford     => stableford.toJson(),
       BetModuleType.skins          => skins.toJson(),
       BetModuleType.nassau         => nassau.toJson(),
       BetModuleType.matchAutoPress => matchAutoPress.toJson(),
@@ -2883,6 +2990,8 @@ class BetModuleInstance {
           copyWith(puttsConfig: putts.copyWith(value: v)),
         BetModuleType.medal =>
           copyWith(medalConfig: medal.copyWith(value: v)),
+        BetModuleType.stableford =>
+          copyWith(stablefordConfig: stableford.copyWith(value: v)),
         BetModuleType.units =>
           copyWith(unitsConfig: units.withAllEventsValue(v)),
         _ => null,
@@ -2895,7 +3004,8 @@ class BetModuleInstance {
         BetModuleType.skins ||
         BetModuleType.oyeses ||
         BetModuleType.putts ||
-        BetModuleType.medal =>
+        BetModuleType.medal ||
+        BetModuleType.stableford =>
           'value',
         _ => null,
       };
@@ -2906,7 +3016,8 @@ class BetModuleInstance {
       type == BetModuleType.oyeses  ||
       type == BetModuleType.units   ||
       type == BetModuleType.putts   ||
-      type == BetModuleType.medal;
+      type == BetModuleType.medal   ||
+      type == BetModuleType.stableford;
 
   // ── Factory helpers para crear instancias por defecto ─────────────────────
   static BetModuleInstance defaultFor(
@@ -2931,6 +3042,7 @@ class BetModuleInstance {
       snakeConfig:          type == BetModuleType.snake         ? SnakeConfig.def          : null,
       rabbitConfig:         type == BetModuleType.rabbit        ? RabbitConfig.def         : null,
       wolfConfig:           type == BetModuleType.wolf          ? WolfConfig.def           : null,
+      stablefordConfig:     type == BetModuleType.stableford    ? StablefordConfig.def     : null,
     );
   }
 
@@ -2970,6 +3082,7 @@ class BetModuleInstance {
     SnakeConfig?          snakeConfig,
     RabbitConfig?         rabbitConfig,
     WolfConfig?           wolfConfig,
+    StablefordConfig?     stablefordConfig,
   }) {
     final ts = DateTime.now().millisecondsSinceEpoch;
 
@@ -2996,6 +3109,7 @@ class BetModuleInstance {
         snakeConfig:          snakeConfig          ?? (type == BetModuleType.snake         ? SnakeConfig.def          : null),
         rabbitConfig:         rabbitConfig         ?? (type == BetModuleType.rabbit        ? RabbitConfig.def         : null),
         wolfConfig:           wolfConfig           ?? (type == BetModuleType.wolf          ? WolfConfig.def           : null),
+        stablefordConfig:     stablefordConfig     ?? (type == BetModuleType.stableford    ? StablefordConfig.def     : null),
       );
     }
 
@@ -3019,6 +3133,7 @@ class BetModuleInstance {
         snakeConfig:          snakeConfig          ?? (type == BetModuleType.snake         ? SnakeConfig.def          : null),
         rabbitConfig:         rabbitConfig         ?? (type == BetModuleType.rabbit        ? RabbitConfig.def         : null),
         wolfConfig:           wolfConfig           ?? (type == BetModuleType.wolf          ? WolfConfig.def           : null),
+        stablefordConfig:     stablefordConfig     ?? (type == BetModuleType.stableford    ? StablefordConfig.def     : null),
       );
     }
 
@@ -3184,7 +3299,7 @@ class BetGroup {
           if (map.containsKey('skinsConfig') || map.containsKey('nassauConfig') ||
               map.containsKey('medalConfig') || map.containsKey('puttsConfig') ||
               map.containsKey('oyesesConfig') || map.containsKey('unitsConfig') ||
-              map.containsKey('snakeConfig') || map.containsKey('rabbitConfig') || map.containsKey('wolfConfig') ||
+              map.containsKey('snakeConfig') || map.containsKey('rabbitConfig') || map.containsKey('wolfConfig') || map.containsKey('stablefordConfig') ||
               map.containsKey('participantIds')) {
             return BetModuleInstance.fromJson(map);
           } else {
@@ -3229,6 +3344,7 @@ class BetGroup {
       snakeConfig: type == BetModuleType.snake ? SnakeConfig.def : null,
       rabbitConfig: type == BetModuleType.rabbit ? RabbitConfig.def : null,
       wolfConfig: type == BetModuleType.wolf ? WolfConfig.def : null,
+      stablefordConfig: type == BetModuleType.stableford ? StablefordConfig.def : null,
     );
   }
 }
@@ -4049,6 +4165,7 @@ class BetModuleTemplate {
   final SnakeConfig?             snakeConfig;
   final RabbitConfig?            rabbitConfig;
   final WolfConfig?              wolfConfig;
+  final StablefordConfig?        stablefordConfig;
   final NassauLowHighConfig?     nassauLowHighConfig;
 
   const BetModuleTemplate({
@@ -4064,6 +4181,7 @@ class BetModuleTemplate {
     this.snakeConfig,
     this.rabbitConfig,
     this.wolfConfig,
+    this.stablefordConfig,
     this.nassauLowHighConfig,
   });
 
@@ -4078,6 +4196,7 @@ class BetModuleTemplate {
   SnakeConfig          get snake  => snakeConfig          ?? SnakeConfig.def;
   RabbitConfig         get rabbit => rabbitConfig         ?? RabbitConfig.def;
   WolfConfig           get wolf   => wolfConfig           ?? WolfConfig.def;
+  StablefordConfig     get stableford => stablefordConfig ?? StablefordConfig.def;
 
   /// Etiqueta corta del valor principal.
   String get summaryLabel {
@@ -4088,6 +4207,8 @@ class BetModuleTemplate {
         return '\$${rabbit.value.toStringAsFixed(0)}/nueve';
       case BetModuleType.wolf:
         return '\$${wolf.value.toStringAsFixed(0)}/hoyo';
+      case BetModuleType.stableford:
+        return '\$${stableford.value.toStringAsFixed(0)}';
       case BetModuleType.skins:
         return '\$${skins.valuePerSkin.toStringAsFixed(0)}/skin';
       case BetModuleType.nassau:
@@ -4123,6 +4244,7 @@ class BetModuleTemplate {
     snakeConfig:          t == BetModuleType.snake         ? SnakeConfig.def          : null,
     rabbitConfig:         t == BetModuleType.rabbit        ? RabbitConfig.def         : null,
     wolfConfig:           t == BetModuleType.wolf          ? WolfConfig.def           : null,
+    stablefordConfig:     t == BetModuleType.stableford    ? StablefordConfig.def     : null,
     nassauLowHighConfig:  t == BetModuleType.nassauLowHigh? const NassauLowHighConfig() : null,
   );
 
@@ -4149,6 +4271,7 @@ class BetModuleTemplate {
     snakeConfig:          snakeConfig,
     rabbitConfig:         rabbitConfig,
     wolfConfig:           wolfConfig,
+    stablefordConfig:     stablefordConfig,
     betGroupId:           betGroupId,
     betGroupName:         betGroupName,
     structure:            BetStructure.headToHead,
@@ -4167,6 +4290,7 @@ class BetModuleTemplate {
     SnakeConfig?           snakeConfig,
     RabbitConfig?          rabbitConfig,
     WolfConfig?            wolfConfig,
+    StablefordConfig?      stablefordConfig,
   }) => BetModuleTemplate(
     type:                  type                 ?? this.type,
     formatMode:            formatMode           ?? this.formatMode,
@@ -4180,6 +4304,7 @@ class BetModuleTemplate {
     snakeConfig:           snakeConfig          ?? this.snakeConfig,
     rabbitConfig:          rabbitConfig         ?? this.rabbitConfig,
     wolfConfig:            wolfConfig           ?? this.wolfConfig,
+    stablefordConfig:      stablefordConfig     ?? this.stablefordConfig,
   );
 
   Map<String, dynamic> toJson() => {
@@ -4195,6 +4320,7 @@ class BetModuleTemplate {
     if (snakeConfig          != null) 'snakeConfig':          snakeConfig!.toJson(),
     if (rabbitConfig         != null) 'rabbitConfig':         rabbitConfig!.toJson(),
     if (wolfConfig           != null) 'wolfConfig':           wolfConfig!.toJson(),
+    if (stablefordConfig     != null) 'stablefordConfig':     stablefordConfig!.toJson(),
   };
 
   factory BetModuleTemplate.fromJson(Map<String, dynamic> j) {
@@ -4225,6 +4351,8 @@ class BetModuleTemplate {
           ? RabbitConfig.fromJson(Map<String, dynamic>.from(j['rabbitConfig'] as Map)) : null,
       wolfConfig: j['wolfConfig'] != null
           ? WolfConfig.fromJson(Map<String, dynamic>.from(j['wolfConfig'] as Map)) : null,
+      stablefordConfig: j['stablefordConfig'] != null
+          ? StablefordConfig.fromJson(Map<String, dynamic>.from(j['stablefordConfig'] as Map)) : null,
     );
   }
 
@@ -4244,6 +4372,7 @@ class BetModuleTemplate {
         snakeConfig:           inst.snakeConfig,
         rabbitConfig:          inst.rabbitConfig,
         wolfConfig:            inst.wolfConfig,
+        stablefordConfig:      inst.stablefordConfig,
       );
 
 }

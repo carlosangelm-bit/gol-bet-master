@@ -333,3 +333,77 @@ List<Widget> wolfFields({
           t),
   ];
 }
+
+// ── STABLEFORD ───────────────────────────────────────────────────────────────
+
+/// Los campos de Stableford: el monto, bruto/neto y la tabla de puntos.
+///
+/// La tabla es configurable porque sale gratis: la clásica es exactamente
+/// `clamp(puntosDelPar - relativoAlPar, piso, techo)` con 2/0/5, comprobado
+/// valor por valor contra la implementación anterior. Cambiar cuánto vale un par
+/// o dónde está el suelo es mover un número, no otra función.
+///
+/// Lo que NO cabe, y queda dicho aquí en vez de inventado: el **Stableford
+/// Modificado** —8/5/2/0/−1/−3— no es lineal, así que necesitaría una tabla
+/// explícita hoyo por resultado. Un grupo que penalice el doble bogey con −1
+/// tampoco es expresable con estos tres números. Cuando alguien lo pida con las
+/// reglas concretas de su grupo, es un mapa aquí y nada más.
+List<Widget> stablefordFields({
+  required GolfTheme t,
+  required StablefordConfig cfg,
+  required TextEditingController montoCtrl,
+  required ValueChanged<StablefordConfig> onChanged,
+}) =>
+    [
+      _etiqueta('MONTO', t),
+      const SizedBox(height: 8),
+      _monto('Monto', montoCtrl, t,
+          onChanged: (v) => onChanged(cfg.copyWith(value: v))),
+      const SizedBox(height: 6),
+      _nota('Lo paga quien pierde a quien gana. Gana el que más puntos sume.', t),
+      const SizedBox(height: 18),
+
+      _etiqueta('BRUTO O NETO', t),
+      const SizedBox(height: 8),
+      _opciones(['Neto', 'Bruto'], cfg.mode == GrossNetMode.gross ? 1 : 0, t,
+          (i) => onChanged(cfg.copyWith(
+              mode: i == 1 ? GrossNetMode.gross : GrossNetMode.net))),
+      const SizedBox(height: 6),
+      _nota(
+          cfg.mode == GrossNetMode.net
+              ? 'Neto: se descuentan los golpes que recibe cada uno por stroke '
+                  'index antes de contar los puntos. Es el Stableford habitual.'
+              : 'Bruto: los puntos salen del score sin ventaja.',
+          t),
+      const SizedBox(height: 18),
+
+      _etiqueta('TABLA DE PUNTOS', t),
+      const SizedBox(height: 6),
+      // La tabla se enseña resuelta, no como tres números sueltos: "el par vale
+      // 2" no dice qué vale un birdie, y es lo que el jugador quiere saber.
+      _nota(_tablaEnPalabras(cfg), t),
+      const SizedBox(height: 10),
+      _opciones(['Par vale 2', 'Par vale 1'], cfg.puntosDelPar == 1 ? 1 : 0, t,
+          (i) => onChanged(cfg.copyWith(puntosDelPar: i == 1 ? 1 : 2))),
+      const SizedBox(height: 6),
+      _opciones(['Suelo 0', 'Suelo −1', 'Suelo −2'],
+          cfg.piso <= -2 ? 2 : (cfg.piso == -1 ? 1 : 0), t,
+          (i) => onChanged(cfg.copyWith(piso: [0, -1, -2][i]))),
+      const SizedBox(height: 6),
+      _nota(
+          cfg.piso == 0
+              ? 'Con suelo 0 un desastre no resta: simplemente no suma.'
+              : 'Con suelo ${cfg.piso} los hoyos malos restan puntos.',
+          t),
+    ];
+
+/// La tabla resuelta, de albatros a desastre.
+String _tablaEnPalabras(StablefordConfig cfg) {
+  int p(int rel) {
+    final bruto = cfg.puntosDelPar - rel;
+    return bruto < cfg.piso ? cfg.piso : (bruto > cfg.techo ? cfg.techo : bruto);
+  }
+
+  return 'Eagle ${p(-2)} · Birdie ${p(-1)} · Par ${p(0)} · '
+      'Bogey ${p(1)} · Doble ${p(2)} · Peor ${p(3)}';
+}

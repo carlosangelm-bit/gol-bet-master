@@ -852,6 +852,14 @@ class _PresetConfigWidgets {
             style: TextStyle(color: t.sub, fontSize: 12, height: 1.4),
           ),
         ];
+      case BetModuleType.stableford:
+        return stablefordFields(
+          t: t,
+          cfg: cfg.stableford,
+          montoCtrl: TextEditingController(
+              text: cfg.stableford.value.toStringAsFixed(0)),
+          onChanged: (c) => update(cfg.copyWith(stablefordConfig: c)),
+        );
       case BetModuleType.wolf:
         return wolfFields(
           t: t,

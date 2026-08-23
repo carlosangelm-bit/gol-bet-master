@@ -1120,6 +1120,14 @@ class RoundProvider extends ChangeNotifier {
       );
     }
 
+    // Configuración de Stableford
+    StablefordConfig? stablefordCfg = mod.stablefordConfig;
+    if (stablefordCfg != null) {
+      stablefordCfg = stablefordCfg.copyWith(
+        value: (payload['stablefordValue'] as num?)?.toDouble(),
+      );
+    }
+
     // Configuración de Medal
     MedalConfig? medalCfg = mod.medalConfig;
     if (medalCfg != null) {
@@ -1149,6 +1157,7 @@ class RoundProvider extends ChangeNotifier {
       snakeConfig:           snakeCfg,
       rabbitConfig:          rabbitCfg,
       wolfConfig:            wolfCfg,
+      stablefordConfig:      stablefordCfg,
       presses:               mod.presses,
       structure:             mod.structure,
       betGroupId:            mod.betGroupId,

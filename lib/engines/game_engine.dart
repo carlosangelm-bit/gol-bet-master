@@ -244,14 +244,29 @@ class GameEngine {
     );
   }
 
-  static int _stableford(int rel) {
-    if (rel >= 2)  return 0;
-    if (rel ==  1) return 1;
-    if (rel ==  0) return 2;
-    if (rel == -1) return 3;
-    if (rel == -2) return 4;
-    return 5;
+  /// Puntos Stableford de un hoyo, dado el neto RELATIVO AL PAR.
+  ///
+  /// La tabla clásica es exactamente `clamp(puntosDelPar - rel, piso, techo)`
+  /// con 2 / 0 / 5, y eso se comprobó contra la implementación anterior valor
+  /// por valor antes de sustituirla:
+  ///
+  ///   albatros −3 → 5 · eagle −2 → 4 · birdie −1 → 3
+  ///   par 0 → 2 · bogey +1 → 1 · doble o peor → 0
+  ///
+  /// Parametrizada porque algunos grupos cambian cuánto vale un par o dónde
+  /// está el suelo, y sale gratis: es una sola línea. Lo que NO cabe aquí es el
+  /// Stableford Modificado —8/5/2/0/−1/−3— que no es lineal y necesitaría una
+  /// tabla explícita; queda reportado en vez de inventado.
+  static int stablefordPuntos(int rel,
+      {int puntosDelPar = 2, int piso = 0, int techo = 5}) {
+    final bruto = puntosDelPar - rel;
+    if (bruto < piso) return piso;
+    if (bruto > techo) return techo;
+    return bruto;
   }
+
+  /// La tabla estándar, que es la que usa [contextForHole].
+  static int _stableford(int rel) => stablefordPuntos(rel);
 
   // ── ganador único de un hoyo (neto) ──────────────────────────────────────
   static String? holeWinner(Round round, List<String> playerIds, int holeNum, bool useHandicap) {

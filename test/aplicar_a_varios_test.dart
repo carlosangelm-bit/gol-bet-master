@@ -25,7 +25,11 @@ import 'package:golf_bet_master/models/bet_recipe.dart';
 
 void main() {
   group('1 · qué se pacta por duelo, y qué no', () {
-    test('exactamente Skins, Nassau, Medal y Putts', () {
+    test('Skins, Nassau, Medal, Putts y Stableford', () {
+      // La lista es EXPLÍCITA a propósito, y ya hizo su trabajo: al añadir
+      // Stableford cayó, y la respuesta había cambiado de verdad —comparar
+      // puntos entre dos personas es un duelo perfectamente válido—. Una lista
+      // derivada de la propia implementación no habría dicho nada.
       final porDuelo =
           creatableBetTypes.where((t) => t.sePactaPorDuelo).toSet();
       expect(porDuelo, {
@@ -33,6 +37,7 @@ void main() {
         BetModuleType.nassau,
         BetModuleType.medal,
         BetModuleType.putts,
+        BetModuleType.stableford,
       });
     });
 

@@ -83,6 +83,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   late final TextEditingController _puttsCtrl;
   late final TextEditingController _oyesCtrl, _zapatoCtrl;
   late final TextEditingController _snakeCtrl, _rabbitCtrl, _wolfCtrl;
+  late final TextEditingController _stablefordCtrl;
   late final TextEditingController _lhSegCtrl, _lhPointCtrl;
   late final Map<UnitEventType, TextEditingController> _unitCtrls;
 
@@ -131,6 +132,8 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _snakeCtrl  = TextEditingController(text: m.snake.value.toStringAsFixed(0));
     _rabbitCtrl = TextEditingController(text: m.rabbit.value.toStringAsFixed(0));
     _wolfCtrl   = TextEditingController(text: m.wolf.value.toStringAsFixed(0));
+    _stablefordCtrl =
+        TextEditingController(text: m.stableford.value.toStringAsFixed(0));
     _lhSegCtrl   = TextEditingController(text: m.lowHigh.segmentAmount.toStringAsFixed(0));
     _lhPointCtrl = TextEditingController(text: m.lowHigh.amountPerPoint.toStringAsFixed(0));
     _zapatoCtrl = TextEditingController(
@@ -195,6 +198,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _puttsCtrl.dispose();
     _oyesCtrl.dispose(); _zapatoCtrl.dispose();
     _snakeCtrl.dispose(); _rabbitCtrl.dispose(); _wolfCtrl.dispose();
+    _stablefordCtrl.dispose();
     _lhSegCtrl.dispose(); _lhPointCtrl.dispose();
     _unitAllCtrl.dispose();
     for (final c in _unitCtrls.values) {
@@ -424,6 +428,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       case BetModuleType.snake:         return _snakeFields(t);
       case BetModuleType.rabbit:        return _rabbitFields(t);
       case BetModuleType.wolf:          return _wolfFields(t);
+      case BetModuleType.stableford:    return _stablefordFields(t);
     }
   }
 
@@ -442,6 +447,13 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         cfg: _current.rabbit,
         montoCtrl: _rabbitCtrl,
         onChanged: (c) => _update(_current.copyWith(rabbitConfig: c)),
+      );
+
+  List<Widget> _stablefordFields(GolfTheme t) => stablefordFields(
+        t: t,
+        cfg: _current.stableford,
+        montoCtrl: _stablefordCtrl,
+        onChanged: (c) => _update(_current.copyWith(stablefordConfig: c)),
       );
 
   List<Widget> _wolfFields(GolfTheme t) => wolfFields(

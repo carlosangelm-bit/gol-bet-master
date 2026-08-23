@@ -235,6 +235,7 @@ class _BettingGroupEditorScreenState
             snakeConfig:           m.snakeConfig,
             rabbitConfig:          m.rabbitConfig,
             wolfConfig:            m.wolfConfig,
+            stablefordConfig:      m.stablefordConfig,
           )).toList(),
         );
       }

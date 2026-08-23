@@ -1723,6 +1723,37 @@ class _BetInfo {
           'H16 (par 3): Carlos más cerca → empate 2-2\n'
           'Premio se divide: cada uno cobra \$25 de Rich',
     ),
+    // ── Stableford ────────────────────────────────────────────────────────────
+    _BetInfo(
+      type: BetModuleType.stableford,
+      icon: Icons.bar_chart_rounded,
+      color: Color(0xFF1565C0),
+      tagline: 'Puntos por hoyo — gana quien más sume',
+      howItWorks:
+          'Cada hoyo da puntos según cómo te fue contra el par, ya con tus '
+          'golpes de ventaja descontados: birdie 3, par 2, bogey 1, doble o '
+          'peor 0. Al final gana quien más puntos acumule.\n\n'
+          'Es el formato de casi todos los torneos, y tiene una gracia: un hoyo '
+          'desastroso no te hunde la ronda, simplemente no suma. Puedes '
+          'levantar la bola y seguir.',
+      rules: [
+        'Eagle 4 · Birdie 3 · Par 2 · Bogey 1 · Doble o peor 0',
+        'Los puntos salen del NETO: los golpes se descuentan por stroke index',
+        'Se puede jugar bruto, y entonces no se descuenta nada',
+        'La tabla es configurable: cuánto vale el par y dónde está el suelo',
+        'Con suelo negativo los hoyos malos restan en vez de no sumar',
+        'Un solo bote —el mejor cobra a todos— o todos contra todos',
+        'Empate arriba: nadie paga',
+      ],
+      example:
+          'Stableford \$100 · neto · 4 jugadores\n'
+          '───────────────────────────────\n'
+          'RAFA  38 pts   ← más puntos\n'
+          'CAM   35 pts\n'
+          'CAV   31 pts\n'
+          'AAM   29 pts\n'
+          'Un bote: los tres pagan \$100 a Rafa (+\$300)',
+    ),
     // ── Wolf ──────────────────────────────────────────────────────────────────
     _BetInfo(
       type: BetModuleType.wolf,
@@ -2738,6 +2769,7 @@ class _ActiveRoundView extends StatelessWidget {
       case BetModuleType.snake:
       case BetModuleType.rabbit:
       case BetModuleType.wolf:
+      case BetModuleType.stableford:
         return '\$${m.value.toStringAsFixed(0)}';
       case BetModuleType.skins:
         return '\$${m.skins.valuePerSkin.toStringAsFixed(0)}/skin';
@@ -3169,6 +3201,7 @@ class _ActiveRoundView extends StatelessWidget {
                               snakeConfig:          cfg.snakeConfig,
                               rabbitConfig:         cfg.rabbitConfig,
                               wolfConfig:           cfg.wolfConfig,
+                              stablefordConfig:     cfg.stablefordConfig,
                               pairConfigOverrides:
                                   pairOvsMap.isEmpty ? null : pairOvsMap,
                               clearPlayerOverrides: true,

@@ -6,6 +6,7 @@
 import '../models/models.dart';
 import 'snake_engine.dart';
 import 'rabbit_engine.dart';
+import 'stableford_engine.dart';
 import 'wolf_engine.dart';
 import 'game_engine.dart';
 
@@ -563,6 +564,11 @@ class BetEngine {
         // CADA HOYO, y BetSide es de la ronda. Por eso Wolf no puede usar los
         // ejes de composición existentes y arma su enfrentamiento hoyo a hoyo.
         entries.addAll(WolfEngine.liquidar(round, pids, mod));
+        break;
+      case BetModuleType.stableford:
+        // El más pequeño de los motores nuevos: la aritmética ya existía en
+        // GameEngine para pintar la tarjeta. Esto la expone como apuesta.
+        entries.addAll(StablefordEngine.liquidar(round, pids, mod));
         break;
     }
     return entries;

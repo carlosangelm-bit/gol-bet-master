@@ -30,7 +30,7 @@ import 'models.dart';
 /// Los nombres son los que usa el grupo, no los del modelo: Oyes y Unidades,
 /// no "oyeses" y "units". Un nombre que hay que traducir mentalmente ya cuesta
 /// un paso.
-enum BetCount { puntos, skins, scoreTotal, putts, oyes, unidades, snake, rabbit, wolf }
+enum BetCount { puntos, skins, scoreTotal, putts, oyes, unidades, snake, rabbit, wolf, stableford }
 
 /// Si la apuesta se parte en sub-apuestas.
 ///
@@ -109,6 +109,7 @@ extension BetCountLabel on BetCount {
       BetCount.snake => 'Snake',
       BetCount.rabbit => 'Rabbit',
       BetCount.wolf => 'Wolf',
+      BetCount.stableford => 'Stableford',
       BetCount.puntos => 'Match', // inalcanzable
     };
   }
@@ -134,6 +135,7 @@ extension BetCountLabel on BetCount {
       BetCount.snake => BetModuleType.snake,
       BetCount.rabbit => BetModuleType.rabbit,
       BetCount.wolf => BetModuleType.wolf,
+      BetCount.stableford => BetModuleType.stableford,
     };
   }
 
@@ -146,7 +148,10 @@ extension BetCountLabel on BetCount {
         BetCount.skins ||
         BetCount.scoreTotal ||
         BetCount.putts ||
-        BetCount.oyes =>
+        BetCount.oyes ||
+        // Stableford consume BetFormatMode igual que Medal: un solo ganador que
+        // cobra a todos, o cada par con su duelo.
+        BetCount.stableford =>
           true,
         // Snake ya ES un bote: la serpiente es una y su dueño paga a todos.
         // Ofrecer "un solo bote" contra "todos vs todos" sería un control sin
@@ -621,6 +626,7 @@ class BetRecipe {
       snakeConfig: base.snakeConfig,
       rabbitConfig: base.rabbitConfig,
       wolfConfig: base.wolfConfig,
+      stablefordConfig: base.stablefordConfig,
     );
   }
 

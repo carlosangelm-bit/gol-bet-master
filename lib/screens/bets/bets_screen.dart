@@ -2012,6 +2012,8 @@ class _BetRow extends StatelessWidget {
   String _buildLabel() {
     final label = mod.type.label;
     switch (mod.type) {
+      case BetModuleType.stableford:
+        return '$label · \$${mod.stableford.value.toStringAsFixed(0)}';
       case BetModuleType.wolf:
         return '$label · \$${mod.wolf.value.toStringAsFixed(0)}/hoyo';
       case BetModuleType.rabbit:
@@ -2058,6 +2060,8 @@ class _BetRow extends StatelessWidget {
         return mod.medal.mode == GrossNetMode.gross ? 'Gross' : 'Net';
       case BetModuleType.nassauLowHigh:
         return mod.lowHigh.mode == GrossNetMode.gross ? 'Gross' : 'Net';
+      case BetModuleType.stableford:
+        return mod.stableford.mode == GrossNetMode.gross ? 'Gross' : 'Net';
       case BetModuleType.putts:
       case BetModuleType.oyeses:
       case BetModuleType.units:
@@ -2214,6 +2218,7 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
       case BetModuleType.snake:        return mod.snake.value;
       case BetModuleType.rabbit:       return mod.rabbit.value;
       case BetModuleType.wolf:         return mod.wolf.value;
+      case BetModuleType.stableford:   return mod.stableford.value;
       case BetModuleType.skins:        return mod.skins.valuePerSkin;
       case BetModuleType.nassau:       return mod.nassau.frontValue;
       case BetModuleType.matchAutoPress: return mod.matchAutoPress.matchValue;
@@ -2231,6 +2236,7 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
       case BetModuleType.snake:        return {'snakeValue': newVal};
       case BetModuleType.rabbit:       return {'rabbitValue': newVal};
       case BetModuleType.wolf:         return {'wolfValue': newVal};
+      case BetModuleType.stableford:   return {'stablefordValue': newVal};
       case BetModuleType.skins:        return {'valuePerSkin': newVal};
       case BetModuleType.nassau:       return {'nassauFront': newVal, 'nassauBack': newVal, 'nassauTotal': newVal * 2};
       case BetModuleType.matchAutoPress: return {'matchValue': newVal};
