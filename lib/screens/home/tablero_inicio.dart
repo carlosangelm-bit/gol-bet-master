@@ -26,7 +26,10 @@ import '../../core/app_theme.dart';
 import '../../models/perfil_resumen.dart';
 import '../../providers/handicap_provider.dart';
 import '../../providers/perfil_provider.dart';
+import '../../providers/torneo_provider.dart';
+import '../../models/torneo.dart';
 import '../../providers/user_profile_provider.dart';
+import '../../services/user_profile_service.dart';
 import '../../widgets/app_destinations.dart';
 import '../../widgets/common_widgets.dart';
 
@@ -94,6 +97,18 @@ class HistoricoInicio extends StatelessWidget {
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _BloqueBalance(t: t, estado: estado, r: resumen),
+      // ── Lo que hay EN JUEGO, en su propio bloque ──────────────────────────
+      //
+      // Separado del balance y NUNCA sumado a él. El dinero de las rondas está
+      // cobrado; el bote de un torneo abierto es una expectativa. Un total que
+      // los junte no significa nada: ni es lo que tienes ni es lo que vas a
+      // tener.
+      //
+      // Y no se esconde: si tienes dinero puesto en tres torneos, quieres
+      // saberlo sin ir a buscarlo.
+      _BloqueEnJuego(
+          t: t,
+          miId: perfil?.myPlayerId ?? UserProfileService.miJugadorId),
       if (estado == EstadoTablero.listo) ...[
         if (resumen.rival != null) ...[
           const SizedBox(height: 14),
@@ -273,28 +288,33 @@ class _Cifra extends StatelessWidget {
                 fontWeight: FontWeight.w800,
                 letterSpacing: 1.2)),
         const SizedBox(height: 6),
-        Row(crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic, children: [
-          Text(importe(r.balanceTotal),
-              style: TextStyle(
-                  color: c,
-                  fontSize: 38,
-                  height: 1.0,
-                  fontWeight: FontWeight.w900,
-                  fontFeatures: const [FontFeature.tabularFigures()])),
-          const SizedBox(width: 10),
-          if (r.racha != 0)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: _Chip(
+        // Wrap y no Row, por lo mismo que la fila de contadores: medido, la
+        // cifra a 38 px más el chip de racha se salían 120 px. Y no lo cazó
+        // ningún test durante dos tareas porque los fixtures de geometría
+        // tenían racha 0 —el chip no se dibujaba— así que el caso más ancho era
+        // justo el que no se probaba. Ahora hay test con racha.
+        Wrap(
+          spacing: 10,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(importe(r.balanceTotal),
+                style: TextStyle(
+                    color: c,
+                    fontSize: 38,
+                    height: 1.0,
+                    fontWeight: FontWeight.w900,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
+            if (r.racha != 0)
+              _Chip(
                 t: t,
                 texto: r.racha > 0
                     ? '${r.racha} seguidas ganando'
                     : '${-r.racha} seguidas perdiendo',
                 color: r.racha > 0 ? t.profit : t.loss,
               ),
-            ),
-        ]),
+          ],
+        ),
         const SizedBox(height: 12),
         Divider(color: t.divider, height: 1),
         const SizedBox(height: 10),
@@ -586,4 +606,79 @@ class _Chip extends StatelessWidget {
             style: TextStyle(
                 color: color, fontSize: 10.5, fontWeight: FontWeight.w800)),
       );
+}
+
+// ── El bote de los torneos abiertos ──────────────────────────────────────────
+//
+// Dos bloques, dos totales, nunca una suma. La etiqueta dice "no cobrado"
+// porque es exactamente la diferencia: el balance de arriba ya pasó por el
+// bolsillo de alguien y esto todavía no.
+class _BloqueEnJuego extends StatelessWidget {
+  final GolfTheme t;
+  final String? miId;
+  const _BloqueEnJuego({required this.t, required this.miId});
+
+  @override
+  Widget build(BuildContext context) {
+    final torneos = context.watch<TorneoProvider>().torneos;
+    final resultados = context.watch<PerfilProvider>().resultados;
+
+    final abiertos = torneos.where((x) => !x.cerrado && x.bote.hayBote).toList();
+    if (abiertos.isEmpty || miId == null) return const SizedBox.shrink();
+
+    var enJuego = 0.0;
+    final voy = <String>[];
+    for (final tor in abiertos) {
+      final tabla = tablaDe(tor, resultados);
+      final bote = boteDe(tor, tabla);
+      final mia = bote.lineas.where((l) => l.playerId == miId);
+      if (mia.isEmpty) continue;
+      enJuego += bote.total;
+      final fila = tabla.filas.where((f) => f.playerId == miId);
+      if (fila.isNotEmpty) {
+        voy.add('${fila.first.puesto}º en ${tor.nombre}');
+      }
+    }
+    if (enJuego <= 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: t.accent.withValues(alpha: 0.45)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text('🏆 EN JUEGO',
+                style: TextStyle(
+                    color: t.accent,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.1)),
+            const SizedBox(width: 6),
+            Text('· no cobrado',
+                style: TextStyle(color: t.sub, fontSize: 10)),
+          ]),
+          const SizedBox(height: 6),
+          Text('\$${enJuego.toStringAsFixed(0)}',
+              style: TextStyle(
+                  color: t.text,
+                  fontSize: 26,
+                  height: 1.0,
+                  fontWeight: FontWeight.w900,
+                  fontFeatures: const [FontFeature.tabularFigures()])),
+          const SizedBox(height: 4),
+          Text(
+              'en ${abiertos.length} torneo${abiertos.length == 1 ? '' : 's'} '
+              'abierto${abiertos.length == 1 ? '' : 's'}'
+              '${voy.isEmpty ? '' : ' · vas ${voy.join(', ')}'}',
+              style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.3)),
+        ]),
+      ),
+    );
+  }
 }

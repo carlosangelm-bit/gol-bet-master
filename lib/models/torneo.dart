@@ -184,7 +184,13 @@ class Torneo {
   /// Rondas mínimas para salir en la tabla. 0 = todos.
   final int minimoRondas;
 
+  /// El bote, si el grupo pone uno. Aditivo: por defecto no hay.
+  final BoteConfig bote;
+
   /// Si el torneo está cerrado y liquidado.
+  ///
+  /// Cerrado no significa "pagado" —la app no procesa pagos— significa que la
+  /// tabla ya no va a cambiar y el reparto es el definitivo.
   final bool cerrado;
 
   const Torneo({
@@ -202,6 +208,7 @@ class Torneo {
     this.acumulacion = Acumulacion.sumaSimple,
     this.mejoresN = 10,
     this.minimoRondas = 0,
+    this.bote = BoteConfig.def,
     this.cerrado = false,
   });
 
@@ -221,6 +228,7 @@ class Torneo {
     Acumulacion? acumulacion,
     int? mejoresN,
     int? minimoRondas,
+    BoteConfig? bote,
     bool? cerrado,
   }) =>
       Torneo(
@@ -238,6 +246,7 @@ class Torneo {
         acumulacion: acumulacion ?? this.acumulacion,
         mejoresN: mejoresN ?? this.mejoresN,
         minimoRondas: minimoRondas ?? this.minimoRondas,
+        bote: bote ?? this.bote,
         cerrado: cerrado ?? this.cerrado,
       );
 
@@ -256,6 +265,7 @@ class Torneo {
         'acumulacion': acumulacion.name,
         'mejoresN': mejoresN,
         if (minimoRondas > 0) 'minimoRondas': minimoRondas,
+        if (bote.hayBote) 'bote': bote.toJson(),
         if (cerrado) 'cerrado': true,
       };
 
@@ -283,6 +293,9 @@ class Torneo {
             orElse: () => Acumulacion.sumaSimple),
         mejoresN: (j['mejoresN'] as num?)?.toInt() ?? 10,
         minimoRondas: (j['minimoRondas'] as num?)?.toInt() ?? 0,
+        bote: j['bote'] == null
+            ? BoteConfig.def
+            : BoteConfig.fromJson(Map<String, dynamic>.from(j['bote'] as Map)),
         cerrado: j['cerrado'] == true,
       );
 }
@@ -664,3 +677,292 @@ String? motivoSinMinimo(int minimo, int rondas) =>
         ? 'El torneo tiene $rondas rondas: con un mínimo de $minimo nadie '
             'saldría en la tabla.'
         : null;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EL BOTE
+//
+// ══════════════════════════════════════════════════════════════════════════════
+// LA APP NO PROCESA PAGOS. NUNCA.
+//
+// El bote es CONTABILIDAD, exactamente igual que las apuestas de cada ronda: la
+// app lleva la cuenta de quién puso qué y a quién le toca cobrar, y el dinero se
+// mueve entre las personas fuera de aquí.
+//
+// Y no es una limitación técnica que alguien pueda "arreglar" más adelante: es la
+// línea que separa "llevar la cuenta entre amigos" de "facilitar apuestas con
+// dinero real". La segunda cosa cambia lo que la app ES —para las tiendas de
+// aplicaciones y para la ley— así que si algún día alguien propone cobrar la
+// entrada desde la app, la respuesta está aquí y es no.
+//
+// Consecuencia de diseño, no accidente: no hay estado "pagado", no hay pasarela,
+// no hay saldo. Hay una cuenta.
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Cómo se reparte el bote.
+enum RepartoDelBote {
+  /// El primero se lo lleva todo.
+  ganadorTodo,
+
+  /// Los tres primeros, con porcentajes configurables.
+  podio,
+}
+
+extension RepartoLabel on RepartoDelBote {
+  String get label => switch (this) {
+        RepartoDelBote.ganadorTodo => 'El primero se lo lleva todo',
+        RepartoDelBote.podio => 'Los tres primeros',
+      };
+}
+
+/// Qué pasa con la entrada de quien no llega al mínimo de rondas.
+///
+/// Es una decisión DEL GRUPO, así que va configurable. El default es el más
+/// común en ligas, y se dice al configurar el mínimo en vez de descubrirse en
+/// noviembre.
+enum EntradaSinMinimo {
+  /// Se queda en el bote y engorda el premio de los que sí clasificaron.
+  pierde,
+
+  /// Se le devuelve: si no clasifica, no juega el bote.
+  devolver,
+
+  /// Aporta en proporción a las rondas que jugó, y le vuelve el resto.
+  prorratear,
+}
+
+extension EntradaSinMinimoLabel on EntradaSinMinimo {
+  String get label => switch (this) {
+        EntradaSinMinimo.pierde => 'Se queda en el bote',
+        EntradaSinMinimo.devolver => 'Se le devuelve',
+        EntradaSinMinimo.prorratear => 'Aporta lo proporcional',
+      };
+
+  String get descripcion => switch (this) {
+        EntradaSinMinimo.pierde =>
+          'Su entrada engorda el premio de los que sí clasificaron. Es lo más '
+              'común en ligas.',
+        EntradaSinMinimo.devolver =>
+          'Si no clasifica no juega el bote y su dinero vuelve. El premio final '
+              'es menor que el que se ve durante la temporada.',
+        EntradaSinMinimo.prorratear =>
+          'Puso por toda la temporada y jugó una parte: aporta esa parte y le '
+              'vuelve el resto.',
+      };
+}
+
+class BoteConfig {
+  /// Lo que pone cada jugador. 0 = sin bote.
+  final double entrada;
+
+  final RepartoDelBote reparto;
+
+  /// Porcentajes del podio. Deben sumar 100; si no, se normalizan al calcular.
+  final List<int> porcentajes;
+
+  final EntradaSinMinimo sinMinimo;
+
+  const BoteConfig({
+    this.entrada = 0,
+    this.reparto = RepartoDelBote.ganadorTodo,
+    this.porcentajes = const [60, 30, 10],
+    this.sinMinimo = EntradaSinMinimo.pierde,
+  });
+
+  static const def = BoteConfig();
+
+  bool get hayBote => entrada > 0;
+
+  BoteConfig copyWith({
+    double? entrada,
+    RepartoDelBote? reparto,
+    List<int>? porcentajes,
+    EntradaSinMinimo? sinMinimo,
+  }) =>
+      BoteConfig(
+        entrada: entrada ?? this.entrada,
+        reparto: reparto ?? this.reparto,
+        porcentajes: porcentajes ?? this.porcentajes,
+        sinMinimo: sinMinimo ?? this.sinMinimo,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'entrada': entrada,
+        'reparto': reparto.name,
+        if (reparto == RepartoDelBote.podio) 'porcentajes': porcentajes,
+        if (sinMinimo != EntradaSinMinimo.pierde) 'sinMinimo': sinMinimo.name,
+      };
+
+  factory BoteConfig.fromJson(Map<String, dynamic> j) => BoteConfig(
+        entrada: (j['entrada'] as num?)?.toDouble() ?? 0,
+        reparto: RepartoDelBote.values.firstWhere(
+            (r) => r.name == j['reparto'],
+            orElse: () => RepartoDelBote.ganadorTodo),
+        porcentajes: ((j['porcentajes'] as List?) ?? const [60, 30, 10])
+            .map((e) => (e as num).toInt())
+            .toList(),
+        sinMinimo: EntradaSinMinimo.values.firstWhere(
+            (s) => s.name == j['sinMinimo'],
+            orElse: () => EntradaSinMinimo.pierde),
+      );
+}
+
+/// Lo que un jugador pone y cobra del bote.
+class LineaDelBote {
+  final String playerId;
+  final String nombre;
+
+  /// Lo que aporta al bote.
+  final double aporta;
+
+  /// Lo que se le devuelve sin jugar.
+  final double devuelto;
+
+  /// Lo que cobra del reparto.
+  final double cobra;
+
+  /// Su puesto en la tabla, o null si no clasificó.
+  final int? puesto;
+
+  const LineaDelBote({
+    required this.playerId,
+    required this.nombre,
+    required this.aporta,
+    required this.devuelto,
+    required this.cobra,
+    required this.puesto,
+  });
+
+  /// El neto del bote para esta persona. Positivo, sale ganando.
+  double get neto => cobra + devuelto - (aporta + devuelto);
+
+  /// Lo que de verdad queda: cobra menos lo que puso de su bolsillo.
+  double get saldo => cobra - aporta;
+}
+
+/// El bote resuelto.
+class BoteDelTorneo {
+  /// Lo que hay en el bote, ya descontado lo devuelto.
+  final double total;
+
+  /// Lo que entró en bruto, antes de devoluciones.
+  final double recaudado;
+
+  final List<LineaDelBote> lineas;
+
+  /// True si el torneo está cerrado y el reparto es definitivo.
+  final bool cerrado;
+
+  /// Por qué el reparto todavía no es definitivo. Null si lo es.
+  final String? provisional;
+
+  const BoteDelTorneo({
+    required this.total,
+    required this.recaudado,
+    required this.lineas,
+    required this.cerrado,
+    required this.provisional,
+  });
+
+  bool get hayBote => recaudado > 0;
+}
+
+/// Resuelve el bote de [t] con la [tabla] ya calculada.
+///
+/// Puro, como la tabla: no se guarda nada. Y no se mezcla con el balance de las
+/// rondas — el bote es una expectativa mientras el torneo está abierto, y el
+/// dinero de un sábado ya está cobrado. Sumarlos daría una cifra que no
+/// significa nada.
+BoteDelTorneo boteDe(Torneo t, TablaDelTorneo tabla) {
+  final cfg = t.bote;
+  final todos = [...tabla.filas, ...tabla.bajoMinimo];
+
+  if (!cfg.hayBote || todos.isEmpty) {
+    return BoteDelTorneo(
+      total: 0, recaudado: 0, lineas: const [], cerrado: t.cerrado,
+      provisional: null,
+    );
+  }
+
+  final recaudado = cfg.entrada * todos.length;
+
+  // Cuánto aporta cada uno de los que no clasificaron.
+  double aportaDe(FilaDelTorneo f) {
+    if (!f.bajoMinimo) return cfg.entrada;
+    return switch (cfg.sinMinimo) {
+      EntradaSinMinimo.pierde => cfg.entrada,
+      EntradaSinMinimo.devolver => 0,
+      // Proporcional a las rondas que jugó sobre las del torneo. Con cero
+      // rondas en el torneo no se divide por cero.
+      EntradaSinMinimo.prorratear => tabla.rondas == 0
+          ? 0
+          : _redondea(cfg.entrada * (f.jugadas / tabla.rondas)
+              .clamp(0.0, 1.0)),
+    };
+  }
+
+  final aportes = {for (final f in todos) f.playerId: aportaDe(f)};
+  final total = _redondea(aportes.values.fold(0.0, (s, v) => s + v));
+
+  // El reparto, solo entre los clasificados.
+  final cobra = <String, double>{};
+  if (tabla.filas.isNotEmpty && total > 0) {
+    final porcentajes = cfg.reparto == RepartoDelBote.ganadorTodo
+        ? <int>[100]
+        : cfg.porcentajes;
+    // Se normaliza: unos porcentajes que no suman 100 repartirían más o menos
+    // dinero del que hay, y eso no puede pasar con un bote.
+    final suma = porcentajes.fold(0, (s, v) => s + v);
+    if (suma > 0) {
+      // Los premios por PUESTO, no por posición en la lista: los empatados
+      // comparten puesto y se reparten sus premios, igual que los puntos.
+      final porPuesto = <int, double>{};
+      for (var i = 0; i < porcentajes.length; i++) {
+        porPuesto[i + 1] = total * porcentajes[i] / suma;
+      }
+      // Agrupar por puesto.
+      final porPuestoJugadores = <int, List<String>>{};
+      for (final f in tabla.filas) {
+        (porPuestoJugadores[f.puesto] ??= []).add(f.playerId);
+      }
+      for (final entrada in porPuestoJugadores.entries) {
+        final puesto = entrada.key;
+        final empatados = entrada.value;
+        // Los premios de los puestos que este grupo de empatados ocupa.
+        var premio = 0.0;
+        for (var p = puesto; p < puesto + empatados.length; p++) {
+          premio += porPuesto[p] ?? 0;
+        }
+        if (premio <= 0) continue;
+        final cada = _redondea(premio / empatados.length);
+        for (final pid in empatados) {
+          cobra[pid] = cada;
+        }
+      }
+    }
+  }
+
+  final lineas = [
+    for (final f in todos)
+      LineaDelBote(
+        playerId: f.playerId,
+        nombre: f.nombre,
+        aporta: aportes[f.playerId] ?? 0,
+        devuelto: _redondea(cfg.entrada - (aportes[f.playerId] ?? 0)),
+        cobra: cobra[f.playerId] ?? 0,
+        puesto: f.bajoMinimo ? null : f.puesto,
+      ),
+  ];
+
+  return BoteDelTorneo(
+    total: total,
+    recaudado: _redondea(recaudado),
+    lineas: lineas,
+    cerrado: t.cerrado,
+    // Mientras el torneo esté abierto el reparto puede cambiar con la siguiente
+    // ronda. Decirlo es la diferencia entre una cuenta y una promesa.
+    provisional: t.cerrado
+        ? null
+        : 'El torneo está abierto: el reparto cambia con cada ronda que entre. '
+            'Ciérralo cuando la temporada acabe para dejarlo fijo.',
+  );
+}

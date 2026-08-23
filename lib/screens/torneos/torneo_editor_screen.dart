@@ -35,6 +35,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
   late Torneo _t;
   late final TextEditingController _nombreCtrl;
   late final TextEditingController _puntosCtrl;
+  late final TextEditingController _entradaCtrl;
   bool _guardando = false;
 
   @override
@@ -44,12 +45,15 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
     _nombreCtrl = TextEditingController(text: _t.nombre);
     _puntosCtrl =
         TextEditingController(text: _t.puntosPorPuesto.join(', '));
+    _entradaCtrl = TextEditingController(
+        text: _t.bote.hayBote ? _t.bote.entrada.toStringAsFixed(0) : '');
   }
 
   @override
   void dispose() {
     _nombreCtrl.dispose();
     _puntosCtrl.dispose();
+    _entradaCtrl.dispose();
     super.dispose();
   }
 
@@ -58,6 +62,11 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
   /// había al abrir.
   List<RoundResult> get _rondas =>
       rondasDelTorneo(_t, context.read<PerfilProvider>().resultados);
+
+  /// Cuántos jugadores tendría la tabla con estas rondas. Para poder decir el
+  /// total del bote mientras se configura, en vez de al guardar.
+  int _jugadoresEnTabla(List<RoundResult> rondas) =>
+      rondas.expand((r) => r.playerIds).toSet().length;
 
   @override
   Widget build(BuildContext context) {
@@ -238,6 +247,85 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
                     fontSize: 11.5,
                     height: 1.35)),
           ],
+          const SizedBox(height: 22),
+
+          // ── 5 · El bote ────────────────────────────────────────────────
+          _titulo('5 · EL BOTE', t),
+          TextField(
+            controller: _entradaCtrl,
+            keyboardType: TextInputType.number,
+            style: TextStyle(color: t.text),
+            onChanged: (v) {
+              final n = double.tryParse(v) ?? 0;
+              setState(() => _t = _t.copyWith(bote: _t.bote.copyWith(entrada: n)));
+            },
+            decoration: InputDecoration(
+              labelText: 'Entrada por jugador',
+              prefixText: '\$ ',
+              helperText: '0 = sin bote',
+              helperStyle: TextStyle(color: t.sub, fontSize: 11),
+              labelStyle: TextStyle(color: t.sub),
+              filled: true,
+              fillColor: t.surface,
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: t.divider)),
+            ),
+          ),
+          if (_t.bote.hayBote) ...[
+            const SizedBox(height: 6),
+            _nota(
+                'Total del bote con las rondas de ahora: '
+                '\$${(_t.bote.entrada * _jugadoresEnTabla(rondas)).toStringAsFixed(0)}',
+                t),
+            const SizedBox(height: 12),
+            _titulo('CÓMO SE REPARTE', t),
+            for (final r in RepartoDelBote.values)
+              _opcion(
+                t: t,
+                titulo: r.label,
+                detalle: r == RepartoDelBote.podio
+                    ? 'Porcentajes: ${_t.bote.porcentajes.join(' · ')}%'
+                    : 'Todo para el primero de la tabla.',
+                activa: _t.bote.reparto == r,
+                onTap: () => setState(
+                    () => _t = _t.copyWith(bote: _t.bote.copyWith(reparto: r))),
+              ),
+            if (_t.minimoRondas > 0) ...[
+              const SizedBox(height: 10),
+              _titulo('QUIEN NO LLEGA AL MÍNIMO', t),
+              for (final s in EntradaSinMinimo.values)
+                _opcion(
+                  t: t,
+                  titulo: s.label,
+                  detalle: s.descripcion,
+                  activa: _t.bote.sinMinimo == s,
+                  onTap: () => setState(() =>
+                      _t = _t.copyWith(bote: _t.bote.copyWith(sinMinimo: s))),
+                ),
+            ],
+            const SizedBox(height: 10),
+            // La restricción, dicha donde se configura el bote.
+            _nota(
+                'La app lleva la cuenta del bote; no cobra ni paga nada. El '
+                'dinero se mueve entre ustedes.',
+                t),
+          ],
+          const SizedBox(height: 18),
+
+          // ── Cerrar el torneo ───────────────────────────────────────────
+          _opcion(
+            t: t,
+            titulo: _t.cerrado ? 'Torneo cerrado' : 'Torneo abierto',
+            detalle: _t.cerrado
+                ? 'La tabla ya no cambia y el reparto es el definitivo. Cerrado '
+                    'no significa pagado: la app no cobra nada.'
+                : 'Sigue contando rondas nuevas. El reparto del bote es '
+                    'provisional mientras esté abierto.',
+            activa: _t.cerrado,
+            onTap: () => setState(() => _t = _t.copyWith(cerrado: !_t.cerrado)),
+          ),
+
           const SizedBox(height: 26),
 
           SizedBox(

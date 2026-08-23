@@ -236,6 +236,16 @@ class TorneoTablaScreen extends StatelessWidget {
           ),
           const SizedBox(height: 14),
 
+          // ── El bote ────────────────────────────────────────────────
+          //
+          // Su propio total, separado del balance de las rondas. Una está
+          // cobrada y el otro es una expectativa mientras el torneo esté
+          // abierto: una cifra que las junte no significa nada.
+          if (torneo.bote.hayBote) ...[
+            _BloqueBote(torneo: torneo, bote: boteDe(torneo, tabla), t: t),
+            const SizedBox(height: 14),
+          ],
+
           if (tabla.vacia)
             Text(
                 'Todavía no hay rondas en este torneo. Cuando cierres una que '
@@ -375,6 +385,143 @@ class _FilaState extends State<_Fila> {
           ],
         ]),
       ),
+    );
+  }
+}
+
+// ── El bote ──────────────────────────────────────────────────────────────────
+//
+// LA APP NO PROCESA PAGOS: esto es una cuenta, no un cobro. No hay botón de
+// pagar, no hay estado "pagado", no hay saldo. Hay quién puso, quién cobra y si
+// el reparto ya es definitivo. La razón está escrita en torneo.dart, donde se
+// decide.
+//
+// Y va con su propio total, nunca sumado al balance de las rondas: el dinero de
+// un sábado está cobrado y el bote es una expectativa mientras el torneo esté
+// abierto.
+class _BloqueBote extends StatelessWidget {
+  final Torneo torneo;
+  final BoteDelTorneo bote;
+  final GolfTheme t;
+  const _BloqueBote(
+      {required this.torneo, required this.bote, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.accent.withValues(alpha: 0.45)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+            child: Text('EL BOTE',
+                style: TextStyle(
+                    color: t.accent,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8)),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: (bote.cerrado ? t.primary : t.sub).withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(bote.cerrado ? 'CERRADO' : 'ABIERTO',
+                style: TextStyle(
+                    color: bote.cerrado ? t.primary : t.sub,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6)),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Row(crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic, children: [
+          Text('\$${bote.total.toStringAsFixed(0)}',
+              style: TextStyle(
+                  color: t.text,
+                  fontSize: 30,
+                  height: 1.0,
+                  fontWeight: FontWeight.w900,
+                  fontFeatures: const [FontFeature.tabularFigures()])),
+          const SizedBox(width: 8),
+          Text(
+              '\$${torneo.bote.entrada.toStringAsFixed(0)} por jugador · '
+              '${bote.lineas.length}',
+              style: TextStyle(color: t.sub, fontSize: 11.5)),
+        ]),
+        if (bote.recaudado != bote.total) ...[
+          const SizedBox(height: 2),
+          Text(
+              'Entraron \$${bote.recaudado.toStringAsFixed(0)}; el resto se '
+              'devuelve a quien no llegó al mínimo.',
+              style: TextStyle(color: t.sub, fontSize: 11)),
+        ],
+        const SizedBox(height: 8),
+        Text(torneo.bote.reparto.label,
+            style: TextStyle(color: t.sub, fontSize: 11.5)),
+        if (bote.provisional != null) ...[
+          const SizedBox(height: 6),
+          Text(bote.provisional!,
+              style: TextStyle(
+                  color: t.accent, fontSize: 11.5, height: 1.35)),
+        ],
+        const SizedBox(height: 10),
+        Divider(color: t.divider, height: 1),
+        const SizedBox(height: 8),
+        for (final l in bote.lineas)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              SizedBox(
+                width: 24,
+                child: Text(l.puesto == null ? '—' : '${l.puesto}',
+                    style: TextStyle(color: t.sub, fontSize: 12)),
+              ),
+              Expanded(
+                child: Text(l.nombre,
+                    style: TextStyle(
+                        color: t.text,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
+              ),
+              if (l.devuelto > 0)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text('vuelve \$${l.devuelto.toStringAsFixed(0)}',
+                      style: TextStyle(color: t.sub, fontSize: 10.5)),
+                ),
+              // El saldo del BOTE, no el de la ronda. Se dice en la etiqueta de
+              // arriba para que nadie lo lea como lo que ganó el sábado.
+              Text(
+                  l.saldo > 0.005
+                      ? '+\$${l.saldo.toStringAsFixed(0)}'
+                      : (l.saldo < -0.005
+                          ? '−\$${l.saldo.abs().toStringAsFixed(0)}'
+                          : '\$0'),
+                  style: TextStyle(
+                      color: l.saldo > 0.005
+                          ? t.profit
+                          : (l.saldo < -0.005 ? t.loss : t.sub),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()])),
+            ]),
+          ),
+        const SizedBox(height: 8),
+        // La restricción, dicha al usuario y no solo en el código. Si algún día
+        // alguien espera un botón de pagar, aquí está por qué no lo hay.
+        Text(
+            'La app lleva la cuenta; el dinero se mueve entre ustedes. No se '
+            'cobra nada desde aquí.',
+            style: TextStyle(
+                color: t.sub, fontSize: 10.5, fontStyle: FontStyle.italic)),
+      ]),
     );
   }
 }

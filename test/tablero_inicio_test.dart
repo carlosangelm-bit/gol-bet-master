@@ -21,6 +21,7 @@ import 'package:golf_bet_master/core/app_theme.dart';
 import 'package:golf_bet_master/models/round_result.dart';
 import 'package:golf_bet_master/providers/handicap_provider.dart';
 import 'package:golf_bet_master/providers/perfil_provider.dart';
+import 'package:golf_bet_master/providers/torneo_provider.dart';
 import 'package:golf_bet_master/providers/user_profile_provider.dart';
 import 'package:golf_bet_master/screens/home/tablero_inicio.dart';
 import 'package:golf_bet_master/services/user_profile_service.dart';
@@ -64,6 +65,8 @@ Future<List<String>> _montar(
       ChangeNotifierProvider<PerfilProvider>.value(value: perfil),
       ChangeNotifierProvider(create: (_) => HandicapProvider()),
       ChangeNotifierProvider(create: (_) => UserProfileProvider()),
+      // El tablero enseña lo que hay EN JUEGO en los torneos abiertos.
+      ChangeNotifierProvider(create: (_) => TorneoProvider()),
     ],
     child: MaterialApp(
       home: Scaffold(
@@ -162,6 +165,23 @@ void main() {
           identidad: yo);
       expect(errores.where((e) => e.contains('overflowed')), isEmpty,
           reason: errores.join('\n'));
+    });
+
+    testWidgets('con RACHA, que es el caso más ancho y el que faltaba',
+        (tester) async {
+      // Los fixtures de arriba acaban en tablas, así que la racha era 0 y el
+      // chip no se dibujaba: el caso más ancho era justo el que no se probaba.
+      // Lo descubrió un test del bote, dos tareas después.
+      for (final ancho in [390.0, 320.0]) {
+        final errores = await _montar(tester,
+            resultados: [
+              for (var i = 1; i <= 4; i++) _r(i, -120, gross: 88),
+            ],
+            identidad: yo,
+            tamano: Size(ancho, 900));
+        expect(errores.where((e) => e.contains('overflowed')), isEmpty,
+            reason: 'a $ancho px:\n${errores.join('\n')}');
+      }
     });
 
     testWidgets('y a 320 px, que es el teléfono más estrecho que existe',

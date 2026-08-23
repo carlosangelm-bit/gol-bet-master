@@ -20,6 +20,7 @@ import 'package:golf_bet_master/providers/auth_provider.dart';
 import 'package:golf_bet_master/providers/player_provider.dart';
 import 'package:golf_bet_master/providers/handicap_provider.dart';
 import 'package:golf_bet_master/providers/perfil_provider.dart';
+import 'package:golf_bet_master/providers/torneo_provider.dart';
 import 'package:golf_bet_master/providers/user_profile_provider.dart';
 import 'package:golf_bet_master/screens/home/home_screen.dart';
 
@@ -43,6 +44,8 @@ Future<List<String>> _montar(WidgetTester tester, Size tamano) async {
       ChangeNotifierProvider(create: (_) => HandicapProvider()),
       ChangeNotifierProvider(create: (_) => PerfilProvider()),
       ChangeNotifierProvider(create: (_) => UserProfileProvider()),
+      // El tablero enseña lo que hay EN JUEGO en los torneos abiertos.
+      ChangeNotifierProvider(create: (_) => TorneoProvider()),
     ],
     child: const MaterialApp(home: HomeScreen()),
   ));
