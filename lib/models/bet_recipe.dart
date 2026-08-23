@@ -197,12 +197,14 @@ extension BetCountLabel on BetCount {
   ///
   /// Oyes y Unidades no se pactan en un duelo suelto: quien no juegue sale en
   /// el paso de participantes.
-  bool get esDeGrupo => this == BetCount.oyes || this == BetCount.unidades;
+  /// true si este conteo solo tiene sentido entre todo el grupo.
+  ///
+  /// DERIVADO de la tabla de reglas, no repetido: era una lista de dos —Oyes y
+  /// Unidades— escrita a mano, y con Snake, Rabbit y Wolf habría quedado corta
+  /// sin que nada fallara. Es el mismo patrón que ya costó siete superficies.
+  bool get esDeGrupo => !tipoCon(null).sePactaPorDuelo;
 
-  String? get soloDeGrupo => esDeGrupo
-      ? 'Se juega entre todo el grupo. Configúrala como apuesta de la ronda y '
-          'saca a quien no entre en el paso de participantes.'
-      : null;
+  String? get soloDeGrupo => tipoCon(null).motivoSinDuelo;
 }
 
 /// Importe pactado en una celda `enfrentamiento × apuesta × segmento`.

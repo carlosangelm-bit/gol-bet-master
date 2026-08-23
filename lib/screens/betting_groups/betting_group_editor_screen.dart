@@ -164,6 +164,53 @@ class _BettingGroupEditorScreenState
     });
   }
 
+  /// Añade UNA apuesta a los duelos elegidos.
+  ///
+  /// No reemplaza nunca. Un duelo que ya tiene ese tipo se SALTA, porque
+  /// pisarlo en silencio borraría un monto pactado —y un monto pactado entre dos
+  /// personas es justo el dato que este editor existe para guardar—.
+  ///
+  /// Y se dice cuántos se saltaron. "Añadida a 12 de 15" es un resultado;
+  /// "aplicado" a secas deja al usuario sin saber si funcionó.
+  void _applyTipoToRules(
+      BetModuleType tipo, double? monto, List<int> targetIndices) {
+    // El monto se aplica con withBaseValue, así que no hace falta duplicar por
+    // cuarta vez los constructores de campos de cada tipo. Nassau devuelve null
+    // —tiene tres importes y uno solo no lo describe— y entra con su default.
+    var base = BetModuleInstance.defaultFor(tipo, const ['a', 'b'], id: 'tmp');
+    if (monto != null && monto > 0) {
+      base = base.withBaseValue(monto) ?? base;
+    }
+    final plantilla = BetModuleTemplate.fromInstance(base);
+
+    var anadidos = 0, yaLaTenian = 0;
+    setState(() {
+      for (final idx in targetIndices) {
+        final actuales = List<BetModuleTemplate>.from(_rules[idx].modules);
+        if (actuales.any((m) => m.type == tipo)) {
+          yaLaTenian++;
+          continue;
+        }
+        actuales.add(plantilla);
+        _rules[idx] = _rules[idx].copyWith(modules: actuales);
+        anadidos++;
+      }
+    });
+
+    if (!mounted) return;
+    final total = targetIndices.length;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(anadidos == 0
+          ? '${tipo.label}: los $total duelos ya la tenían, no se cambió nada.'
+          : yaLaTenian == 0
+              ? '${tipo.label} añadida a $anadidos duelo${anadidos == 1 ? '' : 's'}.'
+              : '${tipo.label} añadida a $anadidos de $total · '
+                  '$yaLaTenian ya la ${yaLaTenian == 1 ? 'tenía' : 'tenían'} y '
+                  'no se ${yaLaTenian == 1 ? 'tocó' : 'tocaron'}.'),
+      duration: const Duration(seconds: 4),
+    ));
+  }
+
   // ── Copiar módulos de un duelo a otros duelos seleccionados ───────────────
   void _copyRuleToOthers(int sourceIdx, List<int> targetIndices) {
     final sourceMods = _rules[sourceIdx].modules;
@@ -331,6 +378,10 @@ class _BettingGroupEditorScreenState
                       // Botón global "Aplicar a múltiples duelos"
                       _SmallButton(
                         icon:  Icons.bolt,
+                        // Antes decía 'Aplicar a varios' y solo ofrecía
+                        // configuraciones guardadas: se leía como "elige una
+                        // apuesta y ponla en todos" y era otra cosa. Con las
+                        // dos vías dentro, el nombre ya es cierto.
                         label: 'Aplicar a varios',
                         t:     t,
                         color: t.primary,
@@ -405,14 +456,11 @@ class _BettingGroupEditorScreenState
 
   // ── Sheet "Aplicar partida guardada a múltiples duelos" ───────────────────
   void _showApplyToManySheet(BuildContext context, GolfTheme t) {
+    // Ya NO se exige tener configuraciones guardadas para abrir. Con la vía de
+    // "una apuesta" la hoja es útil sin ninguna, y el mensaje de "crea una en
+    // Ajustes" mandaba a dar un rodeo para algo que ahora se hace aquí.
     _loadPresets().then((presets) {
       if (!mounted) return;
-      if (presets.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No hay partidas guardadas. Crea una en Ajustes → Mis Configuraciones.'),
-        ));
-        return;
-      }
       showModalBottomSheet(
         context: context,
         backgroundColor: Colors.transparent,
@@ -424,6 +472,10 @@ class _BettingGroupEditorScreenState
           onApply:    (preset, selectedIndices, replace) {
             Navigator.pop(context);
             _applyPresetToRules(preset, selectedIndices, replace: replace);
+          },
+          onApplyTipo: (tipo, monto, selectedIndices) {
+            Navigator.pop(context);
+            _applyTipoToRules(tipo, monto, selectedIndices);
           },
         ),
       );
@@ -1404,26 +1456,75 @@ class _PresetPickerSheet extends StatelessWidget {
 }
 
 // ── Sheet "Aplicar a múltiples duelos" ───────────────────────────────────────
+/// Las dos maneras de aplicar algo a varios duelos.
+///
+/// Responden a preguntas distintas: "quiero meter Putts en todos" y "quiero el
+/// paquete de los viernes". Antes solo existía la segunda, y el botón se llamaba
+/// como si hiciera la primera.
+enum _ViaAplicar { unaApuesta, configuracion }
+
 class _ApplyToManySheet extends StatefulWidget {
   const _ApplyToManySheet({
     required this.presets,
     required this.rules,
     required this.t,
     required this.onApply,
+    required this.onApplyTipo,
   });
   final List<GamePreset>     presets;
   final List<PairBetRule>    rules;
   final GolfTheme            t;
   final void Function(GamePreset preset, List<int> indices, bool replace) onApply;
+  final void Function(BetModuleType tipo, double? monto, List<int> indices)
+      onApplyTipo;
 
   @override
   State<_ApplyToManySheet> createState() => _ApplyToManySheetState();
 }
 
 class _ApplyToManySheetState extends State<_ApplyToManySheet> {
+  _ViaAplicar  _via = _ViaAplicar.unaApuesta;
   GamePreset?  _selected;
+  BetModuleType? _tipo;
+  final _montoCtrl = TextEditingController();
   Set<int>     _targetIndices = {};
   bool         _replaceMode   = false;   // false = añadir, true = reemplazar
+
+  @override
+  void dispose() {
+    _montoCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Qué falta para poder aplicar, en orden de lectura.
+  ///
+  /// El primer hueco manda: decir "selecciona duelos" cuando aún no se ha
+  /// elegido QUÉ aplicar manda a hacer el segundo paso antes del primero.
+  String get _etiquetaBoton {
+    if (_via == _ViaAplicar.configuracion && _selected == null) {
+      return 'Elige una configuración';
+    }
+    if (_via == _ViaAplicar.unaApuesta && _tipo == null) {
+      return 'Elige una apuesta';
+    }
+    if (_targetIndices.isEmpty) return 'Elige los duelos';
+    final n = _targetIndices.length;
+    return 'Aplicar a $n duelo${n == 1 ? '' : 's'}';
+  }
+
+  bool get _listoParaAplicar =>
+      _targetIndices.isNotEmpty &&
+      (_via == _ViaAplicar.configuracion ? _selected != null : _tipo != null);
+
+  /// true si este tipo acepta un importe único.
+  ///
+  /// Se PREGUNTA al modelo con withBaseValue en vez de mantener una lista:
+  /// Nassau devuelve null porque tiene tres importes y uno solo no lo describe,
+  /// y esa es la misma razón por la que su regla no admite monto por pareja.
+  bool _aceptaMonto(BetModuleType t) =>
+      BetModuleInstance.defaultFor(t, const ['a', 'b'], id: 'x')
+          .withBaseValue(1) !=
+      null;
 
   @override
   Widget build(BuildContext context) {
@@ -1458,7 +1559,7 @@ class _ApplyToManySheetState extends State<_ApplyToManySheet> {
                   Text('Aplicar a múltiples duelos',
                       style: TextStyle(color: t.text,
                           fontWeight: FontWeight.w800, fontSize: 17)),
-                  Text('Elige partida + duelos',
+                  Text('Una apuesta o una configuración, y a qué duelos',
                       style: TextStyle(color: t.sub, fontSize: 12)),
                 ],
               )),
@@ -1476,11 +1577,128 @@ class _ApplyToManySheetState extends State<_ApplyToManySheet> {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
               children: [
 
-                // ── 1. Elegir partida ──────────────────────────────────
-                Text('1. Elige la partida guardada',
+                // ── 1. Qué se aplica ───────────────────────────────────
+                Text('1. Qué se aplica',
                     style: TextStyle(color: t.text,
                         fontWeight: FontWeight.w700, fontSize: 13)),
                 const SizedBox(height: 8),
+                Row(children: [
+                  for (final v in _ViaAplicar.values)
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => setState(() => _via = v),
+                        child: Container(
+                          margin: const EdgeInsets.only(right: 6),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          decoration: BoxDecoration(
+                            color: _via == v
+                                ? t.primary.withValues(alpha: 0.12)
+                                : t.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: _via == v ? t.primary : t.divider,
+                                width: _via == v ? 1.6 : 1),
+                          ),
+                          child: Text(
+                            v == _ViaAplicar.unaApuesta
+                                ? 'Una apuesta'
+                                : 'Una configuración',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: _via == v ? t.primary : t.sub,
+                              fontSize: 12.5,
+                              fontWeight: _via == v
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ]),
+                const SizedBox(height: 12),
+
+                // ── Vía A: una apuesta suelta ──────────────────────────
+                //
+                // Los tipos salen de betTypeSections, la misma fuente que las
+                // tres hojas de "Agregar apuesta". Ni una lista literal.
+                if (_via == _ViaAplicar.unaApuesta) ...[
+                  for (final sec in betTypeSections) ...[
+                    Text(sec.familia.label,
+                        style: TextStyle(color: t.sub, fontSize: 10,
+                            fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+                    const SizedBox(height: 6),
+                    ...sec.tipos.map((bt) => _FilaTipo(
+                          tipo: bt,
+                          seleccionada: _tipo == bt,
+                          t: t,
+                          onTap: () => setState(() {
+                            _tipo = bt;
+                            _montoCtrl.text = _aceptaMonto(bt)
+                                ? BetModuleInstance
+                                    .defaultFor(bt, const ['a', 'b'], id: 'x')
+                                    .value
+                                    .toStringAsFixed(0)
+                                : '';
+                          }),
+                        )),
+                    const SizedBox(height: 12),
+                  ],
+                  // El importe, solo donde un número único describe la apuesta.
+                  // Sin esto, aplicar Putts a quince duelos con el valor por
+                  // defecto obliga a entrar en los quince: no resuelve nada.
+                  if (_tipo != null && _aceptaMonto(_tipo!)) ...[
+                    Text('Importe', style: TextStyle(color: t.sub,
+                        fontSize: 11, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _montoCtrl,
+                      keyboardType: TextInputType.number,
+                      style: TextStyle(color: t.text),
+                      decoration: InputDecoration(
+                        prefixText: '\$ ',
+                        isDense: true,
+                        fillColor: t.surface, filled: true,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: t.divider)),
+                        enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: t.divider)),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text('Se aplica el mismo importe a todos los duelos '
+                        'elegidos. Después se puede ajustar duelo a duelo.',
+                        style: TextStyle(color: t.sub, fontSize: 11,
+                            fontStyle: FontStyle.italic)),
+                  ] else if (_tipo == BetModuleType.nassau) ...[
+                    Text('Nassau tiene tres importes —Front, Back y Total— así '
+                        'que entra con su configuración por defecto y se ajusta '
+                        'en cada duelo.',
+                        style: TextStyle(color: t.sub, fontSize: 11,
+                            fontStyle: FontStyle.italic)),
+                  ],
+                  const SizedBox(height: 8),
+                ],
+
+                // ── Vía B: una configuración guardada ──────────────────
+                if (_via == _ViaAplicar.configuracion && widget.presets.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: t.card,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: t.divider),
+                    ),
+                    child: Text(
+                        'No tienes configuraciones guardadas. Se crean en '
+                        'Ajustes → Mis Configuraciones. Para meter UNA apuesta '
+                        'en varios duelos no hace falta: usa la otra vía.',
+                        style: TextStyle(color: t.sub, fontSize: 12, height: 1.4)),
+                  ),
+                if (_via == _ViaAplicar.configuracion)
                 ...widget.presets.map((p) {
                   final sel = _selected?.id == p.id;
                   return GestureDetector(
@@ -1606,15 +1824,27 @@ class _ApplyToManySheetState extends State<_ApplyToManySheet> {
                 const SizedBox(height: 20),
 
                 // ── 3. Modo de aplicación ─────────────────────────────
-                Text('3. Modo de aplicación',
-                    style: TextStyle(color: t.text,
-                        fontWeight: FontWeight.w700, fontSize: 13)),
-                const SizedBox(height: 8),
-                _ModeToggle(
-                  replace: _replaceMode,
-                  t: t,
-                  onChange: (v) => setState(() { _replaceMode = v; }),
-                ),
+                //
+                // Solo para la vía de configuración. Una apuesta suelta NUNCA
+                // reemplaza: un duelo que ya la tiene se salta, porque pisarlo
+                // borraría un monto pactado entre dos personas, que es justo el
+                // dato que este editor existe para guardar. Y se dice cuántos se
+                // saltaron al terminar.
+                if (_via == _ViaAplicar.configuracion) ...[
+                  Text('3. Modo de aplicación',
+                      style: TextStyle(color: t.text,
+                          fontWeight: FontWeight.w700, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  _ModeToggle(
+                    replace: _replaceMode,
+                    t: t,
+                    onChange: (v) => setState(() { _replaceMode = v; }),
+                  ),
+                ] else
+                  Text('Los duelos que ya tengan esa apuesta se dejan como '
+                      'están: no se pisa un monto ya pactado.',
+                      style: TextStyle(color: t.sub, fontSize: 11,
+                          fontStyle: FontStyle.italic)),
 
                 const SizedBox(height: 24),
 
@@ -1622,18 +1852,21 @@ class _ApplyToManySheetState extends State<_ApplyToManySheet> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: (_selected == null || _targetIndices.isEmpty)
+                    onPressed: !_listoParaAplicar
                         ? null
-                        : () => widget.onApply(
-                            _selected!, _targetIndices.toList(), _replaceMode),
+                        : () {
+                            if (_via == _ViaAplicar.configuracion) {
+                              widget.onApply(_selected!,
+                                  _targetIndices.toList(), _replaceMode);
+                            } else {
+                              widget.onApplyTipo(
+                                  _tipo!,
+                                  double.tryParse(_montoCtrl.text),
+                                  _targetIndices.toList());
+                            }
+                          },
                     icon: const Icon(Icons.bolt, size: 16),
-                    label: Text(
-                      _targetIndices.isEmpty
-                          ? 'Selecciona duelos'
-                          : _selected == null
-                              ? 'Selecciona partida'
-                              : 'Aplicar a ${_targetIndices.length} duelo${_targetIndices.length > 1 ? 's' : ''}',
-                    ),
+                    label: Text(_etiquetaBoton),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: t.primary,
                       foregroundColor: t.onPrimary,
@@ -1788,4 +2021,86 @@ class _OptionTile extends StatelessWidget {
     trailing: Icon(Icons.arrow_forward_ios, color: t.sub, size: 14),
     onTap: onTap,
   );
+}
+
+// ── Una fila de tipo de apuesta en "Aplicar a varios" ────────────────────────
+//
+// Los tipos que NO se pactan por duelo salen atenuados con su motivo, y el
+// motivo dice DÓNDE sí funcionan. Es la diferencia entre "no puedes" —que deja
+// al usuario sin salida— y "no aquí, allí sí".
+//
+// Y es más de la mitad del catálogo: de los diez tipos creables solo cuatro se
+// pactan cruce a cruce. Un grupo de apuesta es por dentro una lista de duelos
+// —BettingGroup.pairRules, y toBetModuleInstancesForToday crea cada módulo con
+// exactamente dos participantes— así que Snake, Rabbit, Wolf, Oyes y Unidades no
+// caben ahí de ninguna forma. Enseñarlos apagados y explicados es la única
+// respuesta honesta: esconderlos haría buscar en un sitio donde tampoco están.
+class _FilaTipo extends StatelessWidget {
+  const _FilaTipo({
+    required this.tipo,
+    required this.seleccionada,
+    required this.t,
+    required this.onTap,
+  });
+  final BetModuleType tipo;
+  final bool seleccionada;
+  final GolfTheme t;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final motivo = tipo.motivoSinDuelo;
+    final bloqueada = motivo != null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: bloqueada ? null : onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: bloqueada
+                ? t.surface
+                : seleccionada
+                    ? t.primary.withValues(alpha: 0.1)
+                    : t.card,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: seleccionada && !bloqueada ? t.primary : t.divider,
+                width: seleccionada && !bloqueada ? 1.5 : 1),
+          ),
+          child: Row(children: [
+            Text(tipo.icon, style: const TextStyle(fontSize: 18)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(tipo.label,
+                      style: TextStyle(
+                          color: bloqueada ? t.sub : t.text,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13)),
+                  Text(motivo ?? tipo.description,
+                      style: TextStyle(
+                          color: t.sub,
+                          fontSize: 10.5,
+                          height: 1.3,
+                          fontStyle:
+                              bloqueada ? FontStyle.italic : FontStyle.normal)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (bloqueada)
+              Icon(Icons.block, color: t.sub, size: 16)
+            else if (seleccionada)
+              Icon(Icons.check_circle, color: t.primary, size: 18)
+            else
+              Icon(Icons.add_circle_outline, color: t.sub, size: 18),
+          ]),
+        ),
+      ),
+    );
+  }
 }

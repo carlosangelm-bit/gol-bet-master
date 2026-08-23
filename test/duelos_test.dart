@@ -181,11 +181,19 @@ void main() {
 
   group('Oyes y Unidades no se pactan en un duelo', () {
     test('son de grupo, y lo dicen', () {
+      // Este test fijaba la frase literal 'todo el grupo', que era UNA para las
+      // dos. Ahora el motivo es POR TIPO y más concreto —Oyes habla del ranking
+      // del par 3, Unidades de acreditar contra todos— así que la aserción pasa
+      // a la intención: que se declaren de grupo y digan dónde ponerlas. Eso es
+      // lo que el test quería comprobar, y aguanta el siguiente formato.
       for (final c in [BetCount.oyes, BetCount.unidades]) {
         expect(c.esDeGrupo, isTrue, reason: c.label);
-        expect(c.soloDeGrupo, contains('todo el grupo'));
-        // El motivo apunta a dónde configurarlas.
-        expect(c.soloDeGrupo, contains('participantes'));
+        final motivo = c.soloDeGrupo;
+        expect(motivo, isNotNull, reason: c.label);
+        expect(motivo!.toLowerCase().contains('partida') ||
+                motivo.toLowerCase().contains('ronda'),
+            isTrue,
+            reason: '${c.label} no dice dónde ponerla: $motivo');
       }
     });
 

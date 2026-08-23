@@ -129,6 +129,25 @@ class BetTypeRules {
   /// cerrar, con los números viejos—. Para eso está el backfill del Historial.
   final bool soloPersonas;
 
+  /// La apuesta es UNA para toda la partida, no se pacta cruce a cruce.
+  ///
+  /// La distinción importa porque un grupo de apuesta guardado es, por dentro,
+  /// una lista de duelos: [BettingGroup.pairRules], y
+  /// toBetModuleInstancesForToday crea CADA módulo con exactamente dos
+  /// participantes. Así que un formato de partida no cabe ahí —pactar Snake por
+  /// duelo daría una serpiente por pareja, que no es el juego— y hay que decirlo
+  /// en vez de ofrecerlo y liquidar algo distinto.
+  ///
+  /// Ya existía la idea, en BetCount.esDeGrupo, cubriendo solo Oyes y Unidades.
+  /// Ahora vive aquí y esa la deriva, para que no haya dos respuestas.
+  final bool deLaPartida;
+
+  /// Por qué no se puede pactar por duelo, y DÓNDE sí se puede poner.
+  ///
+  /// La segunda mitad es la que convierte una opción atenuada en algo útil: "no
+  /// puedes" deja al usuario sin salida, "no aquí, allí sí" le dice qué hacer.
+  final String? sinDuelo;
+
   /// Con cuántos jugadores se puede jugar. Null = cualquier número.
   ///
   /// Era un único número exacto —Wolf con 4— y resultó estrecho: Wolf también se
@@ -157,6 +176,8 @@ class BetTypeRules {
     this.sinSegmentos,
     this.perPairAmount = false,
     this.sinMontoPorPareja,
+    this.deLaPartida = false,
+    this.sinDuelo,
     this.jugadoresAdmitidos,
     this.sinEseNumeroPocos,
     this.sinEseNumeroMuchos,
@@ -201,6 +222,10 @@ extension BetModuleTypeRules on BetModuleType {
             sinSegmentos: 'Putts ya elige entre total y hoyo a hoyo en su detalle.',
           ),
         BetModuleType.oyeses => const BetTypeRules(
+            deLaPartida: true,
+            sinDuelo: 'El ranking de cada par 3 es UNO para todos, no uno por '
+                'pareja. Ponla como apuesta de la partida y saca a quien no '
+                'entre en el paso de participantes.',
             // Oyes ya se comportaba bien —medido: 6 asientos y ninguno contra un
             // equipo, porque el ranking solo contiene personas— y lleva la marca
             // igual. No por simetría: dejar UNO de los siete formatos sin
@@ -214,6 +239,9 @@ extension BetModuleTypeRules on BetModuleType {
             sinSegmentos: 'Se juegan en los par 3, que no caen por vuelta.',
           ),
         BetModuleType.units => const BetTypeRules(
+            deLaPartida: true,
+            sinDuelo: 'Cada unidad se acredita contra todos los rivales a la '
+                'vez. Ponla como apuesta de la partida.',
             soloPersonas: true,
             perPairAmount: true,
             sinEquipos: 'Las unidades premian un logro individual —birdie, '
@@ -222,6 +250,10 @@ extension BetModuleTypeRules on BetModuleType {
           ),
         BetModuleType.wolf => const BetTypeRules(
             soloPersonas: true,
+            deLaPartida: true,
+            sinDuelo: 'El Wolf rota entre 4 o 5 jugadores: no existe en un '
+                'duelo de dos. Añádelo a la partida desde "Agregar apuesta" en '
+                'la ronda.',
             jugadoresAdmitidos: {4, 5},
             sinEseNumeroPocos:
                 'Con 3 la rotación cambia —cada uno sería Wolf uno de cada tres '
@@ -239,6 +271,10 @@ extension BetModuleTypeRules on BetModuleType {
           ),
         BetModuleType.rabbit => const BetTypeRules(
             soloPersonas: true,
+            deLaPartida: true,
+            sinDuelo: 'Hay UN conejo, y lo captura quien gana el hoyo entre '
+                'todos. Por duelo saldría un conejo por pareja. Añádelo a la '
+                'partida desde "Agregar apuesta" en la ronda.',
             // Sí liquida por segmentos —cierre del 9 y del 18— pero NO son los
             // Front/Back/Total configurables del Nassau: son los dos cierres de
             // la caza, y no hay un tercer importe "total". Por eso segments
@@ -252,6 +288,10 @@ extension BetModuleTypeRules on BetModuleType {
           ),
         BetModuleType.snake => const BetTypeRules(
             soloPersonas: true,
+            deLaPartida: true,
+            sinDuelo: 'Hay UNA serpiente por ronda. Pactada por duelo saldría '
+                'una serpiente por pareja, que no es el juego. Añádela a la '
+                'partida desde "Agregar apuesta" en la ronda.',
             sinEquipos: 'La serpiente la agarra una persona con sus putts: no '
                 'hay 3-putt de equipo.',
             sinSegmentos: 'Es UNA serpiente por ronda —la última—, así que no '
@@ -336,6 +376,23 @@ extension BetModuleFamilyOf on BetModuleType {
   ///
   /// Hoy solo lo usa la cardinalidad de Wolf. Vive aquí y no en un `if` dentro
   /// de cada hoja para que las tres digan lo mismo.
+  /// true si tiene sentido pactar esta apuesta en UN duelo de dos personas.
+  ///
+  /// Tres formas de no tenerlo, y cada una con su motivo:
+  ///   · es de la partida entera —Snake, Rabbit, Wolf, Oyes, Unidades—
+  ///   · necesita dos equipos —Bola Baja / Bola Alta—
+  ///   · necesita un número de jugadores que no es dos —Wolf—
+  bool get sePactaPorDuelo => motivoSinDuelo == null;
+
+  /// Por qué no se puede pactar por duelo. Null si sí se puede.
+  String? get motivoSinDuelo {
+    if (rules.deLaPartida) return rules.sinDuelo;
+    if (rules.requiresTeams) {
+      return 'Se juega 2 vs 2: un duelo de dos personas no tiene dos lados.';
+    }
+    return motivoNoDisponible(2);
+  }
+
   String? motivoNoDisponible(int jugadores) {
     final admitidos = rules.jugadoresAdmitidos;
     if (admitidos == null || admitidos.contains(jugadores)) return null;
