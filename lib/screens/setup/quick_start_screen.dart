@@ -108,6 +108,12 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
                 '$_duelosHoy duelos con apuesta'),
             _fila(t, Icons.paid_outlined,
                 '$_apuestasHoy apuestas con sus montos'),
+            // Las apuestas de partida van en su propia línea: no son "una más"
+            // de las de duelo, aplican a todos a la vez.
+            if (_partidaJugables.isNotEmpty)
+              _fila(t, Icons.groups_outlined,
+                  '${_partidaJugables.length} de partida: '
+                  '${_partidaJugables.map((a) => a.plantilla.type.label).join(', ')}'),
             const SizedBox(height: 4),
             GestureDetector(
               onTap: () => setState(() => _abierto = !_abierto),
@@ -119,6 +125,50 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
           ]),
         ),
         const SizedBox(height: 18),
+
+        // Lo que el grupo trae y hoy NO se puede jugar.
+        //
+        // Va aquí, antes del botón, y no en "falta decidir": no hay nada que
+        // decidir —la apuesta está guardada— lo que pasa es que con esta gente
+        // no entra. Descubrirlo en el hoyo 1 es peor que leerlo aquí, y es el
+        // mismo criterio de las tarjetas: decir qué falta, no encontrarlo
+        // después.
+        if (_partidaFuera.isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: t.card,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.scoreOver.withValues(alpha: 0.45)),
+            ),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('HOY NO ENTRA', style: GolfType.label(t.sub)),
+                  const SizedBox(height: 6),
+                  for (final a in _partidaFuera) ...[
+                    Text('${a.plantilla.type.icon} ${a.plantilla.type.label}',
+                        style: TextStyle(
+                            color: t.text,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700)),
+                    Text(a.motivo!,
+                        style: TextStyle(
+                            color: t.sub, fontSize: 11.5, height: 1.35)),
+                    const SizedBox(height: 4),
+                  ],
+                  Text(
+                      'La ronda empieza sin ${_partidaFuera.length == 1 ? 'ella' : 'ellas'}. '
+                      'Sigue guardada en el grupo para la próxima.',
+                      style: TextStyle(
+                          color: t.sub,
+                          fontSize: 11,
+                          fontStyle: FontStyle.italic)),
+                ]),
+          ),
+          const SizedBox(height: 18),
+        ],
 
         if (_pendientes.isEmpty)
           Text('No falta nada por decidir.', style: GolfType.body(t.sub))
@@ -161,6 +211,18 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
   int get _duelosHoy => _reglasHoy.where((r) => r.modules.isNotEmpty).length;
   int get _apuestasHoy =>
       _reglasHoy.fold(0, (s, r) => s + r.modules.length);
+
+  /// Las apuestas de partida del grupo, mirando quién viene hoy.
+  ///
+  /// Derivadas de _hoy, así que marcar o desmarcar a alguien recalcula en vivo:
+  /// quitar un jugador puede volver jugable un Wolf que con seis no entraba, y
+  /// eso se ve al momento.
+  List<ApuestaDePartidaHoy> get _partidaHoy =>
+      widget.grupo.modulosDePartidaHoy(_hoy);
+  List<ApuestaDePartidaHoy> get _partidaJugables =>
+      _partidaHoy.where((a) => a.jugable).toList();
+  List<ApuestaDePartidaHoy> get _partidaFuera =>
+      _partidaHoy.where((a) => !a.jugable).toList();
 
   /// Qué falta, en una frase que se lee sola.
   String get _queFaltaFrase {

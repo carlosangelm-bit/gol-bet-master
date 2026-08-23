@@ -4347,6 +4347,30 @@ class PatronDeGrupo {
           'patrón que heredar. Añádele su apuesta en «Revisar todo».';
 }
 
+/// Una apuesta de partida del grupo, mirada contra la nómina de HOY.
+///
+/// Existe porque las apuestas de partida se comportan distinto de los duelos y
+/// eso hay que poder decirlo: un duelo simplemente no se activa si falta uno de
+/// los dos, mientras una apuesta de partida puede dejar de ser JUGABLE según
+/// cuántos vengan. Wolf necesita exactamente 4 o 5; si el grupo es de seis y hoy
+/// van los seis, no se puede jugar.
+///
+/// Se descartó prohibir guardar los formatos con requisito de tamaño. El grupo de
+/// los viernes puede ser de seis habituales y jugar Wolf casi todos los sábados
+/// porque suelen faltar dos: prohibirlo por lo que pasa cuando vienen todos sería
+/// quitarle el formato el resto de las veces. Se guarda, y el arranque rápido
+/// dice si hoy entra o no y por qué.
+class ApuestaDePartidaHoy {
+  final BetModuleTemplate plantilla;
+
+  /// Por qué NO se juega hoy. Null si sí.
+  final String? motivo;
+
+  const ApuestaDePartidaHoy({required this.plantilla, this.motivo});
+
+  bool get jugable => motivo == null;
+}
+
 /// Grupo habitual de golf/apuestas.
 /// NO representa una ronda. Solo define el ecosistema de jugadores habituales
 /// y las reglas de apuesta que existen entre ellos por duelo.
@@ -4357,6 +4381,20 @@ class BettingGroup {
   final String          emoji;
   final List<String>    playerIds;   // IDs de los jugadores habituales
   final List<PairBetRule> pairRules; // reglas por duelo
+
+  /// Apuestas del grupo ENTERO, no de un duelo.
+  ///
+  /// Snake, Rabbit, Wolf, Oyes y Unidades no caben en pairRules: cada regla de
+  /// ahí produce un módulo con exactamente dos participantes, y una serpiente
+  /// por pareja no es el juego. Los tipos que van aquí son los que declaran
+  /// [BetTypeRules.deLaPartida], y el editor los saca de esa marca en vez de
+  /// enumerarlos.
+  ///
+  /// ADITIVO Y OPCIONAL: ausente significa "no hay apuestas de partida", así que
+  /// los grupos guardados antes de que existiera el campo se comportan igual que
+  /// siempre. Solo se serializa cuando hay alguna.
+  final List<BetModuleTemplate> modulosDePartida;
+
   final DateTime        updatedAt;
 
   const BettingGroup({
@@ -4366,6 +4404,7 @@ class BettingGroup {
     this.emoji        = '⛳',
     this.playerIds    = const [],
     this.pairRules    = const [],
+    this.modulosDePartida = const [],
     required this.updatedAt,
   });
 
@@ -4373,9 +4412,10 @@ class BettingGroup {
   int get activeRulesCount =>
       pairRules.where((r) => r.modules.isNotEmpty).length;
 
-  /// Número total de módulos de apuesta en el grupo.
+  /// Número total de módulos de apuesta en el grupo, de duelo y de partida.
   int get totalModules =>
-      pairRules.fold(0, (sum, r) => sum + r.modules.length);
+      pairRules.fold(0, (sum, r) => sum + r.modules.length) +
+      modulosDePartida.length;
 
   /// Las reglas para la nómina de HOY, con los invitados incluidos.
   ///
@@ -4418,6 +4458,20 @@ class BettingGroup {
     return salida;
   }
 
+  /// Las apuestas de partida contra la nómina de HOY, con su motivo si no entran.
+  ///
+  /// El motivo sale de [BetModuleType.motivoNoDisponible], la misma función que
+  /// atenúa el tipo en los selectores. Una sola respuesta a "¿se puede jugar
+  /// esto con esta gente?", así que el grupo no puede decir una cosa y la ronda
+  /// otra.
+  List<ApuestaDePartidaHoy> modulosDePartidaHoy(List<String> presentes) => [
+        for (final tpl in modulosDePartida)
+          ApuestaDePartidaHoy(
+            plantilla: tpl,
+            motivo: tpl.type.motivoNoDisponible(presentes.length),
+          ),
+      ];
+
   /// Los módulos para la nómina de HOY, invitados incluidos.
   List<BetModuleInstance> toBetModuleInstancesForToday({
     required List<String> presentes,
@@ -4437,6 +4491,29 @@ class BettingGroup {
         counter++;
       }
     }
+
+    // ── Las apuestas de partida ────────────────────────────────────────────
+    //
+    // Participantes = TODOS los presentes, no una pareja. Es la diferencia que
+    // hacía imposible guardarlas: cada regla de pairRules produce un módulo de
+    // dos y punto.
+    //
+    // Solo entran las JUGABLES. Crear un módulo de Wolf con seis participantes
+    // daría una apuesta que aparece configurada, con su monto, y no liquida
+    // nada — el mismo fallo que Medal y Putts tenían con los equipos. Lo que se
+    // deja fuera se dice en el arranque rápido, antes de empezar.
+    for (final apuesta in modulosDePartidaHoy(presentes)) {
+      if (!apuesta.jugable) continue;
+      final tpl = apuesta.plantilla;
+      result.add(tpl.toInstance(
+        id: '${betGroupId}_partida_${tpl.type.name}_$counter',
+        participantIds: List.of(presentes),
+        betGroupId: '${betGroupId}_partida_${tpl.type.name}',
+        betGroupName: betGroupName,
+      ));
+      counter++;
+    }
+
     return result;
   }
 
@@ -4510,6 +4587,7 @@ class BettingGroup {
     String?             emoji,
     List<String>?       playerIds,
     List<PairBetRule>?  pairRules,
+    List<BetModuleTemplate>? modulosDePartida,
     DateTime?           updatedAt,
   }) => BettingGroup(
     id:          id          ?? this.id,
@@ -4518,6 +4596,7 @@ class BettingGroup {
     emoji:       emoji       ?? this.emoji,
     playerIds:   playerIds   ?? this.playerIds,
     pairRules:   pairRules   ?? this.pairRules,
+    modulosDePartida: modulosDePartida ?? this.modulosDePartida,
     updatedAt:   updatedAt   ?? this.updatedAt,
   );
 
@@ -4528,6 +4607,10 @@ class BettingGroup {
     'emoji':       emoji,
     'playerIds':   playerIds,
     'pairRules':   pairRules.map((r) => r.toJson()).toList(),
+    // Solo si hay alguna: un grupo sin apuestas de partida no gana una clave
+    // vacía, y los guardados antes de que existiera el campo se leen igual.
+    if (modulosDePartida.isNotEmpty)
+      'modulosDePartida': modulosDePartida.map((m) => m.toJson()).toList(),
     'updatedAt':   updatedAt.toIso8601String(),
   };
 
@@ -4542,6 +4625,10 @@ class BettingGroup {
     pairRules:   (j['pairRules'] as List? ?? [])
         .map((r) => PairBetRule.fromJson(
             Map<String, dynamic>.from(r as Map)))
+        .toList(),
+    modulosDePartida: (j['modulosDePartida'] as List? ?? [])
+        .map((m) => BetModuleTemplate.fromJson(
+            Map<String, dynamic>.from(m as Map)))
         .toList(),
     updatedAt: j['updatedAt'] is String
         ? (DateTime.tryParse(j['updatedAt'] as String) ?? DateTime.now())

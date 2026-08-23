@@ -49,6 +49,7 @@ class _BettingGroupEditorScreenState
   late String            _emoji;
   late List<String>      _playerIds;
   late List<PairBetRule> _rules;
+  late List<BetModuleTemplate> _dePartida;
 
   bool _saving = false;
 
@@ -65,6 +66,7 @@ class _BettingGroupEditorScreenState
     _emoji     = g?.emoji ?? '⛳';
     _playerIds = List<String>.from(g?.playerIds ?? []);
     _rules     = List<PairBetRule>.from(g?.pairRules ?? []);
+    _dePartida = List<BetModuleTemplate>.from(g?.modulosDePartida ?? []);
   }
 
   @override
@@ -123,6 +125,7 @@ class _BettingGroupEditorScreenState
       emoji:       _emoji,
       playerIds:   _playerIds,
       pairRules:   _rules,
+      modulosDePartida: _dePartida,
       updatedAt:   DateTime.now(),
     );
     final saved = await bgProv.save(group);
@@ -355,7 +358,99 @@ class _BettingGroupEditorScreenState
 
                   const SizedBox(height: 24),
 
-                  // ── 3. Pair rules ─────────────────────────────────────
+                  // ── 3. Apuestas de partida ────────────────────────────
+                  //
+                  // ANTES de los duelos, y el orden es la explicación: una
+                  // apuesta de partida aplica a todos, así que es el caso
+                  // general; los duelos son las excepciones. General primero,
+                  // excepciones después.
+                  Row(children: [
+                    Expanded(
+                        child: GSectionHeader(title: 'APUESTAS DE LA PARTIDA')),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _showPartidaSheet(context, t),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: t.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text('Añadir',
+                            style: TextStyle(
+                                color: t.primary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 6),
+                  Text(
+                      'Se juegan entre todos los que vengan, no por duelo. '
+                      'Snake, Rabbit, Oyes, Unidades y Wolf.',
+                      style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
+                  const SizedBox(height: 10),
+                  if (_dePartida.isEmpty)
+                    Text('Ninguna todavía.',
+                        style: TextStyle(color: t.sub, fontSize: 12))
+                  else
+                    ..._dePartida.asMap().entries.map((e) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: t.card,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: t.divider),
+                            ),
+                            child: Row(children: [
+                              Text(e.value.type.icon,
+                                  style: const TextStyle(fontSize: 18)),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(e.value.type.label,
+                                          style: TextStyle(
+                                              color: t.text,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 13)),
+                                      Text(e.value.summaryLabel,
+                                          style: TextStyle(
+                                              color: t.sub, fontSize: 11)),
+                                      // Si el tipo exige un número de
+                                      // jugadores, se dice contra los
+                                      // habituales del grupo. No es un error
+                                      // —puede faltar gente y volverse
+                                      // jugable— pero conviene saberlo al
+                                      // guardarlo, no el sábado.
+                                      if (_avisoTamano(e.value.type) != null)
+                                        Text(_avisoTamano(e.value.type)!,
+                                            style: TextStyle(
+                                                color: t.scoreOver
+                                                    .withValues(alpha: 0.9),
+                                                fontSize: 10.5,
+                                                height: 1.3)),
+                                    ]),
+                              ),
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => setState(
+                                    () => _dePartida.removeAt(e.key)),
+                                child: Icon(Icons.delete_outline,
+                                    color: t.sub, size: 18),
+                              ),
+                            ]),
+                          ),
+                        )),
+
+                  const SizedBox(height: 24),
+
+                  // ── 4. Pair rules ─────────────────────────────────────
                   Row(children: [
                     Expanded(child: GSectionHeader(title: 'DUELOS Y APUESTAS')),
                     if (_rules.isNotEmpty) ...[
@@ -455,6 +550,119 @@ class _BettingGroupEditorScreenState
   // ══════════════════════════════════════════════════════════════════════════
 
   // ── Sheet "Aplicar partida guardada a múltiples duelos" ───────────────────
+  /// Aviso si este tipo no sería jugable con los habituales del grupo.
+  ///
+  /// Se calcula con la MISMA función que atenúa el tipo en los selectores y que
+  /// decide si entra en la ronda, así que el editor no puede decir una cosa y el
+  /// arranque otra.
+  ///
+  /// Es un AVISO y no un bloqueo: el grupo de los viernes puede ser de seis y
+  /// jugar Wolf casi todos los sábados porque suelen faltar dos. Prohibirlo por
+  /// lo que pasa cuando vienen todos sería quitarle el formato el resto de las
+  /// veces.
+  String? _avisoTamano(BetModuleType tipo) {
+    final motivo = tipo.motivoNoDisponible(_playerIds.length);
+    if (motivo == null) return null;
+    return 'Con los ${_playerIds.length} habituales no entra. Se juega los días '
+        'que venga el número que pide.';
+  }
+
+  /// Hoja para añadir una apuesta de partida.
+  ///
+  /// Los tipos salen de la marca deLaPartida, no de una lista: es lo que impide
+  /// que el próximo formato de partida se quede fuera sin que nada falle.
+  void _showPartidaSheet(BuildContext context, GolfTheme t) {
+    final candidatos = creatableBetTypes
+        .where((tipo) => tipo.rules.deLaPartida)
+        .where((tipo) => !_dePartida.any((m) => m.type == tipo))
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.bg,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(children: [
+              Expanded(
+                child: Text('Apuesta de la partida',
+                    style: TextStyle(
+                        color: t.text,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 17)),
+              ),
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: Icon(Icons.close, color: t.sub),
+              ),
+            ]),
+            const SizedBox(height: 4),
+            Text('Se juega entre todos los presentes, con su monto guardado.',
+                style: TextStyle(color: t.sub, fontSize: 12)),
+            const SizedBox(height: 14),
+            if (candidatos.isEmpty)
+              Text('Ya están todas añadidas.',
+                  style: TextStyle(color: t.sub, fontSize: 12))
+            else
+              ...candidatos.map((tipo) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        setState(() => _dePartida
+                            .add(BetModuleTemplate.defaultFor(tipo)));
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 11),
+                        decoration: BoxDecoration(
+                          color: t.card,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: t.divider),
+                        ),
+                        child: Row(children: [
+                          Text(tipo.icon,
+                              style: const TextStyle(fontSize: 18)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(tipo.label,
+                                      style: TextStyle(
+                                          color: t.text,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 13)),
+                                  Text(tipo.description,
+                                      style: TextStyle(
+                                          color: t.sub,
+                                          fontSize: 10.5,
+                                          height: 1.3)),
+                                  if (_avisoTamano(tipo) != null)
+                                    Text(_avisoTamano(tipo)!,
+                                        style: TextStyle(
+                                            color: t.scoreOver
+                                                .withValues(alpha: 0.9),
+                                            fontSize: 10.5,
+                                            height: 1.3)),
+                                ]),
+                          ),
+                          Icon(Icons.add_circle_outline, color: t.sub, size: 18),
+                        ]),
+                      ),
+                    ),
+                  )),
+          ]),
+        ),
+      ),
+    );
+  }
+
   void _showApplyToManySheet(BuildContext context, GolfTheme t) {
     // Ya NO se exige tener configuraciones guardadas para abrir. Con la vía de
     // "una apuesta" la hoja es útil sin ninguna, y el mensaje de "crea una en

@@ -3120,8 +3120,18 @@ class _SetupScreenState extends State<SetupScreen> {
       betGroupName: bg.name,
     );
     if (modules.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('No hay duelos activos para los jugadores seleccionados'),
+      // El motivo importa: un grupo que solo trae una apuesta de partida no
+      // jugable con esta gente —Wolf con seis— llegaba aquí y el mensaje mandaba
+      // a mirar los duelos, que no era el problema.
+      final fuera = bg.modulosDePartidaHoy(presentIds.toList())
+          .where((a) => !a.jugable)
+          .toList();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(fuera.isEmpty
+            ? 'No hay duelos activos para los jugadores seleccionados'
+            : '${fuera.map((a) => a.plantilla.type.label).join(', ')}: '
+                '${fuera.first.motivo}'),
+        duration: const Duration(seconds: 5),
       ));
       return;
     }
