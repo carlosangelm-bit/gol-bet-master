@@ -2016,6 +2016,8 @@ class _BetRow extends StatelessWidget {
         return '$label · \$${mod.stableford.value.toStringAsFixed(0)}';
       case BetModuleType.wolf:
         return '$label · \$${mod.wolf.value.toStringAsFixed(0)}/hoyo';
+      case BetModuleType.sixes:
+        return '$label · \$${mod.sixes.value.toStringAsFixed(0)}/bloque';
       case BetModuleType.rabbit:
         return '$label · \$${mod.rabbit.value.toStringAsFixed(0)}/nueve';
       case BetModuleType.snake:
@@ -2075,6 +2077,8 @@ class _BetRow extends StatelessWidget {
       // Wolf también es siempre neto: el enfrentamiento del hoyo se decide por
       // la mejor bola NETA de cada lado.
       case BetModuleType.wolf:
+      // Y Sixes igual: cada bloque es un best ball neto entre las dos parejas.
+      case BetModuleType.sixes:
         return null;
     }
   }
@@ -2218,6 +2222,7 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
       case BetModuleType.snake:        return mod.snake.value;
       case BetModuleType.rabbit:       return mod.rabbit.value;
       case BetModuleType.wolf:         return mod.wolf.value;
+      case BetModuleType.sixes:        return mod.sixes.value;
       case BetModuleType.stableford:   return mod.stableford.value;
       case BetModuleType.skins:        return mod.skins.valuePerSkin;
       case BetModuleType.nassau:       return mod.nassau.frontValue;
@@ -2236,6 +2241,7 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
       case BetModuleType.snake:        return {'snakeValue': newVal};
       case BetModuleType.rabbit:       return {'rabbitValue': newVal};
       case BetModuleType.wolf:         return {'wolfValue': newVal};
+      case BetModuleType.sixes:        return {'sixesValue': newVal};
       case BetModuleType.stableford:   return {'stablefordValue': newVal};
       case BetModuleType.skins:        return {'valuePerSkin': newVal};
       case BetModuleType.nassau:       return {'nassauFront': newVal, 'nassauBack': newVal, 'nassauTotal': newVal * 2};

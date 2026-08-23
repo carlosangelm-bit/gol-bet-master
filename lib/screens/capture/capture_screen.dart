@@ -20,6 +20,7 @@ import '../torneos/republicar_al_cerrar.dart';
 import '../../providers/round_provider.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sliding_adjustment_dialog.dart';
+import '../../engines/sixes_engine.dart';
 import '../../engines/wolf_engine.dart';
 
 class CaptureScreen extends StatefulWidget {
@@ -38,6 +39,15 @@ class _CaptureScreenState extends State<CaptureScreen> {
       ];
 
   static bool _tieneWolf(Round round) => _wolfMods(round).isNotEmpty;
+
+  /// Módulos Sixes de la ronda. Vacío = no se juega y no se enseña nada.
+  static List<(BetGroup, BetModuleInstance)> _sixesMods(Round round) => [
+        for (final g in round.betGroups)
+          for (final m in g.modules)
+            if (m.type == BetModuleType.sixes) (g, m),
+      ];
+
+  static bool _tieneSixes(Round round) => _sixesMods(round).isNotEmpty;
 
   /// Ancla del bloque de Wolf, para poder traerlo a pantalla.
   ///
@@ -304,6 +314,18 @@ class _CaptureScreenState extends State<CaptureScreen> {
                   const SizedBox(height: 10),
                 ],
 
+                // ── Con quién vas en este bloque ──────────────────────
+                //
+                // Sixes no pregunta nada: las parejas se derivan del bloque.
+                // Pero en el hoyo 7 alguien va a preguntar "¿con quién voy
+                // ahora?", y contar bloques mentalmente es justo lo que la app
+                // está para evitar. Misma decisión que en Wolf: se deriva, y se
+                // ENSEÑA.
+                if (_tieneSixes(round)) ...[
+                  _SixesBloqueSection(hole: _currentHole, t: t),
+                  const SizedBox(height: 10),
+                ],
+
                 // ── Tabla de jugadores ─────────────────────────────────
                 _PlayerTable(
                   round: round,
@@ -561,18 +583,33 @@ class _HoleInfoBar extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        Expanded(child: Row(children: [
-          _chip('Par ${ch.par}', t.primary, t),
-          const SizedBox(width: 6),
-          _chip('SI ${ch.strokeIndex}', t.sub, t),
-          const SizedBox(width: 6),
-          _chip(ch.hole <= 9 ? 'Front 9' : 'Back 9',
-              ch.hole <= 9 ? t.primary : t.accent, t),
-          if (ch.isPar3) ...[
-            const SizedBox(width: 6),
-            _chip('⛳ Oyes', t.accent, t, accent: true),
-          ],
-        ])),
+        // Los chips ruedan en horizontal en vez de recortarse.
+        //
+        // Se salían 10 px a 320 px con los cuatro —par, SI, la vuelta y el Oyés
+        // de los par 3—. Con Wrap dejaban de recortarse pero costaban una línea
+        // de alto, y MEDIDO eso empujaba la quinta fila de la tabla de 844 a 871:
+        // fuera de pantalla. Cambiar un recorte por una fila invisible no es un
+        // arreglo, y el test de Wolf lo cazó.
+        //
+        // Rodando no cuestan alto ninguno, y son información —par, índice— no
+        // controles: nadie los toca.
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              _chip('Par ${ch.par}', t.primary, t),
+              const SizedBox(width: 6),
+              _chip('SI ${ch.strokeIndex}', t.sub, t),
+              const SizedBox(width: 6),
+              _chip(ch.hole <= 9 ? 'Front 9' : 'Back 9',
+                  ch.hole <= 9 ? t.primary : t.accent, t),
+              if (ch.isPar3) ...[
+                const SizedBox(width: 6),
+                _chip('⛳ Oyes', t.accent, t, accent: true),
+              ],
+            ]),
+          ),
+        ),
       ]),
     );
   }
@@ -696,8 +733,20 @@ class _PlayerTable extends StatelessWidget {
                 const SizedBox(width: 8),
 
                 // Nombre + HCP
+                //
+                // 56 y no 64, y el divisor con la mitad de margen: la fila se
+                // salía 15 px a 390 px —MEDIDO— y había que recuperarlos de algún
+                // sitio. Se recuperan del CROMO, no de los steppers: esos se
+                // tocan cinco veces por hoyo y con guante, y uno recortado
+                // convierte un toque en dos.
+                //
+                // Probado y descartado: Expanded en esta columna. Quita el
+                // desborde pero se queda todo el hueco libre, así que los
+                // steppers se estrechan, algo se parte dentro y la fila crece 27
+                // px —MEDIDO: la quinta pasaba de 844 a 871, o sea fuera de
+                // pantalla—. Lo cazó el test de geometría de Wolf.
                 SizedBox(
-                  width: 64,
+                  width: 56,
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(
                       shortName,
@@ -718,7 +767,13 @@ class _PlayerTable extends StatelessWidget {
                 const SizedBox(width: 4),
 
                 // Progreso vs par (bruto acumulado)
-                if (progress.isNotEmpty)
+                //
+                // Se cae en pantallas estrechas, y es una decisión: a 320 px los
+                // dos steppers, el divisor y este chip no caben —MEDIDO, 21 px
+                // de más— y algo tiene que ceder. Cede el chip porque INFORMA,
+                // mientras que los steppers se TOCAN cinco veces por hoyo y con
+                // guante. Un stepper recortado convierte un toque en dos.
+                if (progress.isNotEmpty && MediaQuery.of(context).size.width >= 360)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
@@ -735,10 +790,8 @@ class _PlayerTable extends StatelessWidget {
                       ),
                     ),
                   )
-                else
+                else if (MediaQuery.of(context).size.width >= 360)
                   const SizedBox(width: 32),
-
-                const Spacer(),
 
                 // Score del hoyo: − valor +
                 // Cuando no hay score, el par se muestra como placeholder.
@@ -771,7 +824,7 @@ class _PlayerTable extends StatelessWidget {
                 // Divisor vertical
                 Container(
                   width: 1, height: 36,
-                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
                   color: t.divider,
                 ),
 
@@ -986,9 +1039,15 @@ class _ActivePlayerZoneState extends State<_ActivePlayerZone> {
         Row(children: [
           GAvatar(name: player.name, colorIndex: player.colorIndex, size: 22),
           const SizedBox(width: 6),
-          Text(
-            shortName,
-            style: TextStyle(color: t.primary, fontWeight: FontWeight.w800, fontSize: 14),
+          // Flexible: con la etiqueta y "Borrar" al lado, un nombre largo se
+          // salía 10 px a 320 px. Enésima vez que sale la misma forma.
+          Flexible(
+            child: Text(
+              shortName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: t.primary, fontWeight: FontWeight.w800, fontSize: 14),
+            ),
           ),
           const SizedBox(width: 6),
           Container(
@@ -1990,6 +2049,114 @@ class LowHighHoleBlock extends StatelessWidget {
 // El nombre del Wolf se ENSEÑA porque orienta —"Wolf: RAFA"— pero no se pide. Y
 // "Solo" es una opción más de la misma fila: ir en solitario es una de las
 // cuatro respuestas posibles, no una pantalla aparte.
+/// El bloque de Sixes del hoyo actual: quién juega con quién, y desde dónde.
+///
+/// Solo informa. No hay nada que tocar aquí, y por eso no lleva borde de aviso
+/// como el de Wolf: no puede faltar una respuesta que nadie tiene que dar.
+class _SixesBloqueSection extends StatelessWidget {
+  final int hole;
+  final GolfTheme t;
+  const _SixesBloqueSection({required this.hole, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final prov = context.watch<RoundProvider>();
+    final round = prov.round!;
+    final mods = _CaptureScreenState._sixesMods(round);
+    if (mods.isEmpty) return const SizedBox.shrink();
+
+    final (grupo, mod) = mods.first;
+    final orden = round.participantesDe(mod, grupo.playerIds);
+    // Una ronda guardada a la que se le saca un jugador llega aquí. El texto
+    // sale de la misma tabla que atenúa el selector, así que no puede discrepar.
+    final motivo = BetModuleType.sixes.motivoNoDisponible(orden.length);
+    if (motivo != null) {
+      return Container(
+        key: const Key('sixesBloqueSection'),
+        width: double.infinity,
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: t.scoreOver.withValues(alpha: 0.55)),
+        ),
+        child: Text(motivo,
+            style: TextStyle(color: t.text, fontSize: 11.5, height: 1.35)),
+      );
+    }
+
+    final n = mod.sixes.hoyosPorBloque;
+    final bloque = SixesEngine.bloqueDelHoyo(hole, n);
+
+    String nombre(String pid) => round.players
+        .firstWhere((p) => p.id == pid, orElse: () => Player(id: pid, name: pid))
+        .name
+        .split(' ')
+        .first;
+
+    if (bloque == null) {
+      // Los hoyos que sobran cuando la ronda no es múltiplo de tres bloques. No
+      // se callan: un hoyo que no cuenta para la apuesta hay que saberlo.
+      return Container(
+        key: const Key('sixesBloqueSection'),
+        width: double.infinity,
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: t.divider),
+        ),
+        child: Text(
+            'Este hoyo no cuenta para Sixes: los tres bloques de $n hoyos '
+            'acaban en el ${n * 3}.',
+            style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
+      );
+    }
+
+    final (a, b) = SixesEngine.parejasDelBloque(orden, bloque);
+    final desde = (bloque - 1) * n + 1;
+    final hasta = bloque * n;
+
+    return Container(
+      key: const Key('sixesBloqueSection'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.divider),
+      ),
+      // Wrap y no Row: dos parejas de nombres con el "vs" en medio es
+      // exactamente la forma que ya desbordó cuatro veces en esta app.
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: t.text.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text('🔄 BLOQUE $bloque · HOYOS $desde-$hasta',
+                style: TextStyle(
+                    color: t.text,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3)),
+          ),
+          Text(
+              '${a.map(nombre).join(' + ').toUpperCase()}  vs  '
+              '${b.map(nombre).join(' + ').toUpperCase()}',
+              style: TextStyle(
+                  color: t.text, fontSize: 12.5, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+}
+
 class _WolfCallSection extends StatelessWidget {
   final int hole;
   final GolfTheme t;

@@ -21,7 +21,7 @@ DateTime _parseDate(dynamic value) {
 }
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
-enum BetModuleType { skins, nassau, matchAutoPress, medal, putts, oyeses, units, nassauLowHigh, snake, rabbit, wolf, stableford }
+enum BetModuleType { skins, nassau, matchAutoPress, medal, putts, oyeses, units, nassauLowHigh, snake, rabbit, wolf, stableford, sixes }
 
 /// Qué hacer cuando una categoría (bola baja o alta) queda empatada en un hoyo.
 enum LowHighTieRule {
@@ -277,6 +277,32 @@ extension BetModuleTypeRules on BetModuleType {
             sinMontoPorPareja: 'El importe es del hoyo y se reparte entre los '
                 'cruces del enfrentamiento de ese hoyo, que cambia cada vez.',
           ),
+        BetModuleType.sixes => const BetTypeRules(
+            soloPersonas: true,
+            deLaPartida: true,
+            sinDuelo: 'Sixes rota las parejas entre cuatro: no existe en un '
+                'duelo de dos. Añádelo a la partida desde "Agregar apuesta" en '
+                'la ronda.',
+            // Cuatro y solo cuatro: son las tres únicas maneras de partir a
+            // cuatro en dos parejas, y por eso tres bloques cierran la rotación.
+            jugadoresAdmitidos: {4},
+            sinEseNumeroPocos:
+                'Con tres no hay dos parejas que rotar: alguien juega solo cada '
+                'bloque, y eso es otro formato.',
+            sinEseNumeroMuchos:
+                'Con cinco o más la rotación no cierra: en tres bloques no da '
+                'tiempo a que cada uno juegue con todos, y el manual lo resuelve '
+                'con un jugador que va rotando —el swing man— que es otra '
+                'apuesta, no una opción de esta.',
+            sinEquipos: 'Sixes arma SUS PROPIAS parejas, y cambian en cada '
+                'bloque: es el formato entero. Unos lados fijos de ronda serían '
+                'otra apuesta.',
+            sinSegmentos: 'Los tres bloques YA son su partición, y se cobran por '
+                'separado. Un Front y un Back encima partirían los bloques por '
+                'la mitad.',
+            sinMontoPorPareja: 'El importe es del bloque y se reparte entre los '
+                'cruces de las parejas de ese bloque, que cambian.',
+          ),
         BetModuleType.rabbit => const BetTypeRules(
             soloPersonas: true,
             deLaPartida: true,
@@ -376,7 +402,8 @@ extension BetModuleFamilyOf on BetModuleType {
         BetModuleType.snake ||
         BetModuleType.rabbit ||
         BetModuleType.wolf ||
-        BetModuleType.stableford =>
+        BetModuleType.stableford ||
+        BetModuleType.sixes =>
           BetFamily.otras,
       };
 
@@ -710,6 +737,7 @@ extension BetModuleLabel on BetModuleType {
         BetModuleType.snake => 'Snake',
         BetModuleType.rabbit => 'Rabbit',
         BetModuleType.wolf => 'Wolf',
+        BetModuleType.sixes => 'Sixes',
         BetModuleType.stableford => 'Stableford',
       };
 
@@ -725,6 +753,7 @@ extension BetModuleLabel on BetModuleType {
         BetModuleType.snake => '🐍',
         BetModuleType.rabbit => '🐇',
         BetModuleType.wolf => '🐺',
+        BetModuleType.sixes => '🔄',
         BetModuleType.stableford => '📊',
       };
 
@@ -748,6 +777,9 @@ extension BetModuleLabel on BetModuleType {
         BetModuleType.wolf =>
           'Cada hoyo un jugador es el Wolf y elige compañero, o va solo por el '
               'doble.',
+        BetModuleType.sixes =>
+          'Tres bloques y las parejas rotan: al acabar has jugado un bloque con '
+              'cada uno. Se cobra por bloque ganado.',
         BetModuleType.stableford =>
           'Cada hoyo da puntos según el neto: birdie 3, par 2, bogey 1. Gana '
               'quien más sume.',
@@ -2235,6 +2267,67 @@ class WolfCall {
       );
 }
 
+/// Sixes / Hollywood: tres bloques y las parejas rotan.
+///
+/// Carlos no juega Sixes. Igual que con Wolf, lo que el manual no fija va
+/// configurable con su valor habitual por defecto, en vez de decidirse a ciegas.
+///
+/// Lo que el manual SÍ fija y por eso no se configura: qué cuenta en cada bloque
+/// —mejor bola— y que hay tres bloques. Tres es lo que hace que la rotación
+/// cierre con cuatro jugadores; con dos o cuatro bloques alguien repetiría
+/// compañero y otro se quedaría sin jugar con alguien.
+class SixesConfig {
+  /// Lo que vale CADA bloque ganado, en total.
+  ///
+  /// En total y no por jugador: el bloque es un duelo entre dos parejas y el
+  /// dinero se reparte entre los cruces, igual que un Nassau por equipos.
+  final double value;
+
+  /// Cuántos hoyos dura cada bloque.
+  ///
+  /// 6 es el estándar con cuatro jugadores —tres bloques en 18— y 3 es lo que
+  /// usa el fivesome. El valor por defecto se ajusta a la longitud de la ronda
+  /// al crear la apuesta (ver BetRecipe.build), así que una ronda de 9 sale con
+  /// bloques de 3 sin que nadie lo toque.
+  final int hoyosPorBloque;
+
+  /// Qué pasa si un bloque queda empatado en hoyos ganados.
+  ///
+  /// [TieRule.push] por defecto, que es lo coherente con el resto de la app: no
+  /// se cobra. Acumular al bloque siguiente sería raro aquí y no otra opción
+  /// más: el bloque siguiente tiene OTRAS PAREJAS, así que arrastrar el importe
+  /// lo cobraría gente que no jugó esa apuesta.
+  final TieRule tieRule;
+
+  const SixesConfig({
+    this.value = 50,
+    this.hoyosPorBloque = 6,
+    this.tieRule = TieRule.push,
+  });
+
+  static const def = SixesConfig();
+
+  SixesConfig copyWith({double? value, int? hoyosPorBloque, TieRule? tieRule}) =>
+      SixesConfig(
+        value: value ?? this.value,
+        hoyosPorBloque: hoyosPorBloque ?? this.hoyosPorBloque,
+        tieRule: tieRule ?? this.tieRule,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'value': value,
+        if (hoyosPorBloque != 6) 'hoyosPorBloque': hoyosPorBloque,
+        if (tieRule != TieRule.push) 'tieRule': tieRule.name,
+      };
+
+  factory SixesConfig.fromJson(Map<String, dynamic> j) => SixesConfig(
+        value: (j['value'] as num?)?.toDouble() ?? 50,
+        hoyosPorBloque: (j['hoyosPorBloque'] as num?)?.toInt() ?? 6,
+        tieRule: TieRule.values.firstWhere((t) => t.name == j['tieRule'],
+            orElse: () => TieRule.push),
+      );
+}
+
 class WolfConfig {
   /// Lo que cada perdedor paga a cada ganador en un hoyo.
   ///
@@ -2377,6 +2470,7 @@ class BetModuleInstance {
   final SnakeConfig?          snakeConfig;
   final RabbitConfig?         rabbitConfig;
   final WolfConfig?           wolfConfig;
+  final SixesConfig?          sixesConfig;
   final StablefordConfig?     stablefordConfig;
 
   // Presiones dinámicas para Match + Auto Press
@@ -2451,6 +2545,7 @@ class BetModuleInstance {
     this.snakeConfig,
     this.rabbitConfig,
     this.wolfConfig,
+    this.sixesConfig,
     this.stablefordConfig,
     this.presses = const [],
     this.structure = BetStructure.group,
@@ -2497,6 +2592,7 @@ class BetModuleInstance {
   SnakeConfig          get snake          => snakeConfig          ?? SnakeConfig.def;
   RabbitConfig         get rabbit         => rabbitConfig         ?? RabbitConfig.def;
   WolfConfig           get wolf           => wolfConfig           ?? WolfConfig.def;
+  SixesConfig          get sixes          => sixesConfig          ?? SixesConfig.def;
   StablefordConfig     get stableford     => stablefordConfig     ?? StablefordConfig.def;
 
   // ── Compatibilidad con BetEngine (valor base y flags) ──────────────────────
@@ -2504,6 +2600,7 @@ class BetModuleInstance {
     BetModuleType.snake         => snake.value,
     BetModuleType.rabbit        => rabbit.value,
     BetModuleType.wolf          => wolf.value,
+    BetModuleType.sixes         => sixes.value,
     BetModuleType.stableford    => stableford.value,
     BetModuleType.skins         => skins.valuePerSkin,
     BetModuleType.nassau        => nassau.frontValue,
@@ -2548,6 +2645,8 @@ class BetModuleInstance {
                             '${stableford.tablaClasica ? '' : ' · tabla propia'}',
     BetModuleType.wolf   => '\$${wolf.value.toStringAsFixed(0)}/hoyo · '
                             'solo ×${wolf.loneMultiplier.toStringAsFixed(0)}',
+    BetModuleType.sixes  => '\$${sixes.value.toStringAsFixed(0)}/bloque · '
+                            'bloques de ${sixes.hoyosPorBloque}',
     BetModuleType.rabbit => '\$${rabbit.value.toStringAsFixed(0)}/nueve'
                             '${rabbit.robable ? ' · robable' : ''}'
                             '${rabbit.squirrel ? ' · squirrel' : ''}',
@@ -2603,6 +2702,7 @@ class BetModuleInstance {
     SnakeConfig?          snakeConfig,
     RabbitConfig?         rabbitConfig,
     WolfConfig?           wolfConfig,
+    SixesConfig?          sixesConfig,
     StablefordConfig?     stablefordConfig,
     List<PressInstance>?  presses,
     BetStructure?                        structure,
@@ -2636,6 +2736,7 @@ class BetModuleInstance {
     snakeConfig:          snakeConfig          ?? this.snakeConfig,
     rabbitConfig:         rabbitConfig         ?? this.rabbitConfig,
     wolfConfig:           wolfConfig           ?? this.wolfConfig,
+    sixesConfig:          sixesConfig          ?? this.sixesConfig,
     stablefordConfig:     stablefordConfig     ?? this.stablefordConfig,
     presses:              presses              ?? this.presses,
     structure:             structure             ?? this.structure,
@@ -2692,6 +2793,7 @@ class BetModuleInstance {
     if (snakeConfig          != null) 'snakeConfig':          snakeConfig!.toJson(),
     if (rabbitConfig         != null) 'rabbitConfig':         rabbitConfig!.toJson(),
     if (wolfConfig           != null) 'wolfConfig':           wolfConfig!.toJson(),
+    if (sixesConfig          != null) 'sixesConfig':          sixesConfig!.toJson(),
     if (stablefordConfig     != null) 'stablefordConfig':     stablefordConfig!.toJson(),
     if (presses.isNotEmpty)           'presses': presses.map((p) => p.toJson()).toList(),
   };
@@ -2764,6 +2866,7 @@ class BetModuleInstance {
       snakeConfig:          j['snakeConfig']          != null ? SnakeConfig.fromJson(asMap(j['snakeConfig']))          : null,
       rabbitConfig:         j['rabbitConfig']         != null ? RabbitConfig.fromJson(asMap(j['rabbitConfig']))        : null,
       wolfConfig:           j['wolfConfig']           != null ? WolfConfig.fromJson(asMap(j['wolfConfig']))            : null,
+      sixesConfig:          j['sixesConfig']          != null ? SixesConfig.fromJson(asMap(j['sixesConfig']))           : null,
       stablefordConfig:     j['stablefordConfig']     != null ? StablefordConfig.fromJson(asMap(j['stablefordConfig'])): null,
       presses: j['presses'] != null
           ? ((j['presses'] as List?) ?? []).map((p) {
@@ -2839,6 +2942,7 @@ class BetModuleInstance {
         snakeConfig:           snakeConfig,
         rabbitConfig:          rabbitConfig,
         wolfConfig:            wolfConfig,
+        sixesConfig:           sixesConfig,
         stablefordConfig:      stablefordConfig,
         structure:             structure,
         betGroupId:            betGroupId,
@@ -2863,6 +2967,7 @@ class BetModuleInstance {
       BetModuleType.snake          => snake.toJson(),
       BetModuleType.rabbit         => rabbit.toJson(),
       BetModuleType.wolf           => wolf.toJson(),
+      BetModuleType.sixes          => sixes.toJson(),
       BetModuleType.stableford     => stableford.toJson(),
       BetModuleType.skins          => skins.toJson(),
       BetModuleType.nassau         => nassau.toJson(),
@@ -3042,6 +3147,7 @@ class BetModuleInstance {
       snakeConfig:          type == BetModuleType.snake         ? SnakeConfig.def          : null,
       rabbitConfig:         type == BetModuleType.rabbit        ? RabbitConfig.def         : null,
       wolfConfig:           type == BetModuleType.wolf          ? WolfConfig.def           : null,
+      sixesConfig:          type == BetModuleType.sixes         ? SixesConfig.def          : null,
       stablefordConfig:     type == BetModuleType.stableford    ? StablefordConfig.def     : null,
     );
   }
@@ -3082,6 +3188,7 @@ class BetModuleInstance {
     SnakeConfig?          snakeConfig,
     RabbitConfig?         rabbitConfig,
     WolfConfig?           wolfConfig,
+    SixesConfig?          sixesConfig,
     StablefordConfig?     stablefordConfig,
   }) {
     final ts = DateTime.now().millisecondsSinceEpoch;
@@ -3109,6 +3216,7 @@ class BetModuleInstance {
         snakeConfig:          snakeConfig          ?? (type == BetModuleType.snake         ? SnakeConfig.def          : null),
         rabbitConfig:         rabbitConfig         ?? (type == BetModuleType.rabbit        ? RabbitConfig.def         : null),
         wolfConfig:           wolfConfig           ?? (type == BetModuleType.wolf          ? WolfConfig.def           : null),
+        sixesConfig:          sixesConfig          ?? (type == BetModuleType.sixes         ? SixesConfig.def          : null),
         stablefordConfig:     stablefordConfig     ?? (type == BetModuleType.stableford    ? StablefordConfig.def     : null),
       );
     }
@@ -3133,6 +3241,7 @@ class BetModuleInstance {
         snakeConfig:          snakeConfig          ?? (type == BetModuleType.snake         ? SnakeConfig.def          : null),
         rabbitConfig:         rabbitConfig         ?? (type == BetModuleType.rabbit        ? RabbitConfig.def         : null),
         wolfConfig:           wolfConfig           ?? (type == BetModuleType.wolf          ? WolfConfig.def           : null),
+        sixesConfig:          sixesConfig          ?? (type == BetModuleType.sixes         ? SixesConfig.def          : null),
         stablefordConfig:     stablefordConfig     ?? (type == BetModuleType.stableford    ? StablefordConfig.def     : null),
       );
     }
@@ -3313,7 +3422,7 @@ class BetGroup {
           if (map.containsKey('skinsConfig') || map.containsKey('nassauConfig') ||
               map.containsKey('medalConfig') || map.containsKey('puttsConfig') ||
               map.containsKey('oyesesConfig') || map.containsKey('unitsConfig') ||
-              map.containsKey('snakeConfig') || map.containsKey('rabbitConfig') || map.containsKey('wolfConfig') || map.containsKey('stablefordConfig') ||
+              map.containsKey('snakeConfig') || map.containsKey('rabbitConfig') || map.containsKey('wolfConfig') || map.containsKey('sixesConfig') || map.containsKey('stablefordConfig') ||
               map.containsKey('participantIds')) {
             return BetModuleInstance.fromJson(map);
           } else {
@@ -3358,6 +3467,7 @@ class BetGroup {
       snakeConfig: type == BetModuleType.snake ? SnakeConfig.def : null,
       rabbitConfig: type == BetModuleType.rabbit ? RabbitConfig.def : null,
       wolfConfig: type == BetModuleType.wolf ? WolfConfig.def : null,
+      sixesConfig: type == BetModuleType.sixes ? SixesConfig.def : null,
       stablefordConfig: type == BetModuleType.stableford ? StablefordConfig.def : null,
     );
   }
@@ -4194,6 +4304,7 @@ class BetModuleTemplate {
   final SnakeConfig?             snakeConfig;
   final RabbitConfig?            rabbitConfig;
   final WolfConfig?              wolfConfig;
+  final SixesConfig?             sixesConfig;
   final StablefordConfig?        stablefordConfig;
   final NassauLowHighConfig?     nassauLowHighConfig;
 
@@ -4210,6 +4321,7 @@ class BetModuleTemplate {
     this.snakeConfig,
     this.rabbitConfig,
     this.wolfConfig,
+    this.sixesConfig,
     this.stablefordConfig,
     this.nassauLowHighConfig,
   });
@@ -4225,6 +4337,7 @@ class BetModuleTemplate {
   SnakeConfig          get snake  => snakeConfig          ?? SnakeConfig.def;
   RabbitConfig         get rabbit => rabbitConfig         ?? RabbitConfig.def;
   WolfConfig           get wolf   => wolfConfig           ?? WolfConfig.def;
+  SixesConfig          get sixes  => sixesConfig          ?? SixesConfig.def;
   StablefordConfig     get stableford => stablefordConfig ?? StablefordConfig.def;
 
   /// Etiqueta corta del valor principal.
@@ -4236,6 +4349,8 @@ class BetModuleTemplate {
         return '\$${rabbit.value.toStringAsFixed(0)}/nueve';
       case BetModuleType.wolf:
         return '\$${wolf.value.toStringAsFixed(0)}/hoyo';
+      case BetModuleType.sixes:
+        return '\$${sixes.value.toStringAsFixed(0)}/bloque';
       case BetModuleType.stableford:
         return '\$${stableford.value.toStringAsFixed(0)}';
       case BetModuleType.skins:
@@ -4319,6 +4434,7 @@ class BetModuleTemplate {
     SnakeConfig?           snakeConfig,
     RabbitConfig?          rabbitConfig,
     WolfConfig?            wolfConfig,
+    SixesConfig?           sixesConfig,
     StablefordConfig?      stablefordConfig,
   }) => BetModuleTemplate(
     type:                  type                 ?? this.type,
@@ -4333,6 +4449,7 @@ class BetModuleTemplate {
     snakeConfig:           snakeConfig          ?? this.snakeConfig,
     rabbitConfig:          rabbitConfig         ?? this.rabbitConfig,
     wolfConfig:            wolfConfig           ?? this.wolfConfig,
+    sixesConfig:           sixesConfig          ?? this.sixesConfig,
     stablefordConfig:      stablefordConfig     ?? this.stablefordConfig,
   );
 
@@ -4349,6 +4466,7 @@ class BetModuleTemplate {
     if (snakeConfig          != null) 'snakeConfig':          snakeConfig!.toJson(),
     if (rabbitConfig         != null) 'rabbitConfig':         rabbitConfig!.toJson(),
     if (wolfConfig           != null) 'wolfConfig':           wolfConfig!.toJson(),
+    if (sixesConfig          != null) 'sixesConfig':          sixesConfig!.toJson(),
     if (stablefordConfig     != null) 'stablefordConfig':     stablefordConfig!.toJson(),
   };
 

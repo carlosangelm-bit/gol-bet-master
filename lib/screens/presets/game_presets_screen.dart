@@ -860,6 +860,16 @@ class _PresetConfigWidgets {
               text: cfg.stableford.value.toStringAsFixed(0)),
           onChanged: (c) => update(cfg.copyWith(stablefordConfig: c)),
         );
+      case BetModuleType.sixes:
+        // Sin ronda: un preset no tiene hoyos ni nombres, así que los campos
+        // suponen 18 y no dibujan las parejas. Es lo mismo que hace el resto.
+        return sixesFields(
+          t: t,
+          cfg: cfg.sixes,
+          montoCtrl:
+              TextEditingController(text: cfg.sixes.value.toStringAsFixed(0)),
+          onChanged: (c) => update(cfg.copyWith(sixesConfig: c)),
+        );
       case BetModuleType.wolf:
         return wolfFields(
           t: t,

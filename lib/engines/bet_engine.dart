@@ -8,6 +8,7 @@ import 'snake_engine.dart';
 import 'rabbit_engine.dart';
 import 'stableford_engine.dart';
 import 'wolf_engine.dart';
+import 'sixes_engine.dart';
 import 'game_engine.dart';
 
 class BetEngine {
@@ -564,6 +565,13 @@ class BetEngine {
         // CADA HOYO, y BetSide es de la ronda. Por eso Wolf no puede usar los
         // ejes de composición existentes y arma su enfrentamiento hoyo a hoyo.
         entries.addAll(WolfEngine.liquidar(round, pids, mod));
+        break;
+      case BetModuleType.sixes:
+        // Mismo caso que Wolf: los lados cambian DURANTE la ronda —aquí por
+        // bloque en vez de por hoyo— y BetSide es de la ronda entera. Por eso
+        // arma su enfrentamiento por su cuenta; el best ball de cada bloque sí
+        // sale de GameEngine, para no tener dos formas de resolver un hoyo.
+        entries.addAll(SixesEngine.liquidar(round, pids, mod));
         break;
       case BetModuleType.stableford:
         // El más pequeño de los motores nuevos: la aritmética ya existía en

@@ -495,6 +495,7 @@ class RoundDebug {
     return switch (m.type) {
       BetModuleType.stableford => '\$${m.stableford.value.toStringAsFixed(0)} ${m.stableford.mode.name} tabla=${m.stableford.puntosDelPar}/${m.stableford.piso}/${m.stableford.techo}',
       BetModuleType.wolf    => '\$${m.wolf.value.toStringAsFixed(0)}/hoyo lone×${m.wolf.loneMultiplier}',
+      BetModuleType.sixes   => '\$${m.sixes.value.toStringAsFixed(0)}/bloque de ${m.sixes.hoyosPorBloque} empate=${m.sixes.tieRule.name}',
       BetModuleType.rabbit  => '\$${m.rabbit.value.toStringAsFixed(0)}/9 robable=${m.rabbit.robable} acum=${m.rabbit.acumula} squirrel=${m.rabbit.squirrel}',
       BetModuleType.snake   => '\$${m.snake.value.toStringAsFixed(0)} umbral=${m.snake.umbral} empate=${m.snake.empate.name}',
       BetModuleType.nassau  => '\$${m.nassau.frontValue.toStringAsFixed(0)}F/\$${m.nassau.backValue.toStringAsFixed(0)}B/\$${m.nassau.totalValue.toStringAsFixed(0)}T press=${m.nassau.pressEnabled}',

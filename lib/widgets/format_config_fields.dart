@@ -259,6 +259,88 @@ List<Widget> rabbitFields({
 /// las notas con el número real —"contra los otros tres" o "los otros cuatro"—
 /// y para avisar de que con cinco el multiplicador suele subirse. Null en una
 /// configuración guardada, que no tiene jugadores.
+/// Los campos de Sixes.
+///
+/// Dos decisiones y ninguna más: cuánto vale el bloque y cuántos hoyos dura. Lo
+/// que el manual fija —tres bloques, mejor bola, la rotación— no se ofrece,
+/// porque ofrecerlo sugeriría que hay algo que elegir.
+///
+/// [holesInRound] sirve para decir cómo quedan los tres bloques con el número
+/// real de hoyos, y para avisar cuando no caben. Un "bloques de 6" en una ronda
+/// de 9 no es un error del usuario: es un default que ya no aplica.
+List<Widget> sixesFields({
+  required GolfTheme t,
+  required SixesConfig cfg,
+  required TextEditingController montoCtrl,
+  required ValueChanged<SixesConfig> onChanged,
+  int? holesInRound,
+  List<String> nombres = const [],
+}) {
+  final hoyos = holesInRound ?? 18;
+  final cubre = cfg.hoyosPorBloque * 3;
+  final sobran = hoyos - cubre;
+  return [
+    _etiqueta('MONTO POR BLOQUE', t),
+    const SizedBox(height: 8),
+    _monto('Monto', montoCtrl, t,
+        onChanged: (v) => onChanged(cfg.copyWith(value: v))),
+    const SizedBox(height: 6),
+    _nota(
+        'Cada bloque ganado vale esto EN TOTAL, como un duelo por equipos: se '
+        'reparte entre los cruces de las dos parejas. Un bloque empatado no se '
+        'cobra.',
+        t),
+    const SizedBox(height: 18),
+
+    _etiqueta('HOYOS POR BLOQUE', t),
+    const SizedBox(height: 8),
+    // 6 es el estándar con cuatro jugadores; 3 es lo del fivesome. Se ofrecen
+    // los dos y nada más: un contador libre dejaría poner 7 y romper el cuadre.
+    _opciones(const ['3', '6'], cfg.hoyosPorBloque == 3 ? 0 : 1, t,
+        (i) => onChanged(cfg.copyWith(hoyosPorBloque: i == 0 ? 3 : 6))),
+    const SizedBox(height: 8),
+    // Cómo quedan los tres bloques, con el número real. Es la respuesta a "¿con
+    // quién voy en el hoyo 7?" antes de empezar.
+    for (var b = 1; b <= 3; b++)
+      Padding(
+        padding: const EdgeInsets.only(bottom: 3),
+        child: _nota(
+            'Bloque $b · hoyos ${(b - 1) * cfg.hoyosPorBloque + 1}-'
+            '${b * cfg.hoyosPorBloque}'
+            '${nombres.length >= 4 ? ' · ${_parejaTexto(nombres, b)}' : ''}',
+            t),
+      ),
+    if (sobran > 0) ...[
+      const SizedBox(height: 6),
+      _nota(
+          'La ronda es de $hoyos hoyos y los tres bloques cubren $cubre: los '
+          '$sobran últimos no cuentan para esta apuesta. Con bloques de '
+          '${hoyos ~/ 3} se cubre la ronda entera.',
+          t),
+    ],
+    if (sobran < 0) ...[
+      const SizedBox(height: 6),
+      _nota(
+          'Tres bloques de ${cfg.hoyosPorBloque} necesitan $cubre hoyos y la '
+          'ronda es de $hoyos: el último bloque se queda sin jugar. Baja a '
+          'bloques de ${hoyos ~/ 3}.',
+          t),
+    ],
+    const SizedBox(height: 18),
+  ];
+}
+
+/// "RAFA+ALAN vs MEMO+BETO" para el bloque [b], con los nombres en orden.
+String _parejaTexto(List<String> nombres, int b) {
+  final p = nombres.take(4).toList();
+  final (a, bb) = switch (b) {
+    1 => ([p[0], p[1]], [p[2], p[3]]),
+    2 => ([p[0], p[2]], [p[1], p[3]]),
+    _ => ([p[0], p[3]], [p[1], p[2]]),
+  };
+  return '${a.join('+')} vs ${bb.join('+')}';
+}
+
 List<Widget> wolfFields({
   required GolfTheme t,
   required WolfConfig cfg,

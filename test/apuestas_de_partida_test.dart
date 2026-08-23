@@ -239,6 +239,10 @@ void main() {
         BetModuleType.snake,
         BetModuleType.rabbit,
         BetModuleType.wolf,
+        // Sixes: rota las parejas entre los cuatro de la partida, así que no
+        // existe como pacto entre dos. Entró aquí porque este test lo exigió al
+        // añadirlo —que es para lo que está—.
+        BetModuleType.sixes,
       });
     });
 

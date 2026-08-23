@@ -23,6 +23,7 @@
 // Ese rechazo es el punto de la pieza. Las combinaciones imposibles aparecen
 // aquí, en una función testeable, y no a mitad de una pantalla.
 // ─────────────────────────────────────────────────────────────────────────────
+import '../engines/sixes_engine.dart';
 import 'models.dart';
 
 /// Qué se cuenta. Eje independiente de si la apuesta se parte.
@@ -30,7 +31,7 @@ import 'models.dart';
 /// Los nombres son los que usa el grupo, no los del modelo: Oyes y Unidades,
 /// no "oyeses" y "units". Un nombre que hay que traducir mentalmente ya cuesta
 /// un paso.
-enum BetCount { puntos, skins, scoreTotal, putts, oyes, unidades, snake, rabbit, wolf, stableford }
+enum BetCount { puntos, skins, scoreTotal, putts, oyes, unidades, snake, rabbit, wolf, stableford, sixes }
 
 /// Si la apuesta se parte en sub-apuestas.
 ///
@@ -109,6 +110,7 @@ extension BetCountLabel on BetCount {
       BetCount.snake => 'Snake',
       BetCount.rabbit => 'Rabbit',
       BetCount.wolf => 'Wolf',
+      BetCount.sixes => 'Sixes',
       BetCount.stableford => 'Stableford',
       BetCount.puntos => 'Match', // inalcanzable
     };
@@ -135,6 +137,7 @@ extension BetCountLabel on BetCount {
       BetCount.snake => BetModuleType.snake,
       BetCount.rabbit => BetModuleType.rabbit,
       BetCount.wolf => BetModuleType.wolf,
+      BetCount.sixes => BetModuleType.sixes,
       BetCount.stableford => BetModuleType.stableford,
     };
   }
@@ -164,7 +167,10 @@ extension BetCountLabel on BetCount {
         BetCount.rabbit ||
         // Wolf tampoco: el enfrentamiento del hoyo ya define quién cobra a
         // quién, y cambia cada hoyo.
-        BetCount.wolf =>
+        BetCount.wolf ||
+        // Sixes tampoco: el bloque es un duelo entre dos parejas, así que quién
+        // cobra a quién ya está dicho.
+        BetCount.sixes =>
           false,
       };
 
@@ -190,6 +196,8 @@ extension BetCountLabel on BetCount {
         BetCount.wolf =>
           'Cada hoyo enfrenta a la pareja del Wolf contra los demás: el '
               'reparto ya está definido.',
+        BetCount.sixes =>
+          'Cada bloque enfrenta a dos parejas: el reparto ya está definido.',
         BetCount.unidades =>
           'El motor de Unidades acredita cada unidad contra cada rival por '
               'separado.',
@@ -379,6 +387,18 @@ class BetRecipe {
 
     var mod = BetModuleInstance.defaultFor(tipo, participantIds,
         id: id, sides: sides);
+
+    // Sixes: los bloques se dimensionan con la RONDA. defaultFor no la conoce
+    // —y darle la longitud a defaultFor sería tocar la fábrica de todos los
+    // tipos— así que se ajusta aquí, en la misma costura que ya usa Bola Baja /
+    // Bola Alta. Consecuencia visible: una ronda de 9 sale con bloques de 3 sin
+    // que nadie lo toque, y sigue siendo el mismo formato a mitad de largo.
+    if (tipo == BetModuleType.sixes) {
+      mod = mod.copyWith(
+        sixesConfig: mod.sixes
+            .copyWith(hoyosPorBloque: SixesEngine.bloqueSugerido(holesInRound)),
+      );
+    }
 
     // Solo Bola Baja / Bola Alta necesita ajuste: es la única con flags de
     // segmento. Nassau y los conteos que no segmentan ya salen bien de

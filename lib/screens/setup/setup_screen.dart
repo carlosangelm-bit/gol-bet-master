@@ -4791,6 +4791,20 @@ class _SetupScreenState extends State<SetupScreen> {
               'stableford.value', cfg.stableford.value.toStringAsFixed(0)),
           onChanged: (c) => update(cfg.copyWith(stablefordConfig: c)),
         );
+      case BetModuleType.sixes:
+        return sixesFields(
+          t: t,
+          cfg: cfg.sixes,
+          montoCtrl: _cfgCtrl('sixes.value', cfg.sixes.value.toStringAsFixed(0)),
+          onChanged: (c) => update(cfg.copyWith(sixesConfig: c)),
+          // La longitud REAL de la ronda: es lo que decide si los bloques son
+          // de 6 o de 3, y el paso de campo ya la tiene.
+          holesInRound: _totalHoles,
+          nombres: [
+            for (final pid in cfg.participantIds)
+              _players.where((p) => p.id == pid).firstOrNull?.name ?? pid,
+          ],
+        );
       case BetModuleType.wolf:
         return wolfFields(
           t: t,

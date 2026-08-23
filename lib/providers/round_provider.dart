@@ -1124,6 +1124,14 @@ class RoundProvider extends ChangeNotifier {
       );
     }
 
+    // Configuración de Sixes
+    SixesConfig? sixesCfg = mod.sixesConfig;
+    if (sixesCfg != null) {
+      sixesCfg = sixesCfg.copyWith(
+        value: (payload['sixesValue'] as num?)?.toDouble(),
+      );
+    }
+
     // Configuración de Stableford
     StablefordConfig? stablefordCfg = mod.stablefordConfig;
     if (stablefordCfg != null) {
@@ -1161,6 +1169,7 @@ class RoundProvider extends ChangeNotifier {
       snakeConfig:           snakeCfg,
       rabbitConfig:          rabbitCfg,
       wolfConfig:            wolfCfg,
+      sixesConfig:           sixesCfg,
       stablefordConfig:      stablefordCfg,
       presses:               mod.presses,
       structure:             mod.structure,

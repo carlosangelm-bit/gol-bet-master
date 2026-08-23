@@ -53,11 +53,19 @@ class BetModuleEditSheet extends StatefulWidget {
   /// puede no coincidir con lo que se liquida.
   final Map<String, double>? roundHandicaps;
 
+  /// Cuántos hoyos tiene la RONDA, si se sabe.
+  ///
+  /// No el campo: una ronda de 9 en un campo de 18 son cosas distintas, y es
+  /// justo el caso donde Sixes cambia de bloques de 6 a bloques de 3. Null en un
+  /// editor de configuración guardada, que no tiene ronda; ahí se supone 18.
+  final int? holesInRound;
+
   const BetModuleEditSheet({
     super.key,
     required this.group,
     required this.mod,
     required this.t,
+    this.holesInRound,
     required this.onSave,
     this.courseInfo,
     this.players,
@@ -82,7 +90,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   late final TextEditingController _medalCtrl;
   late final TextEditingController _puttsCtrl;
   late final TextEditingController _oyesCtrl, _zapatoCtrl;
-  late final TextEditingController _snakeCtrl, _rabbitCtrl, _wolfCtrl;
+  late final TextEditingController _snakeCtrl, _rabbitCtrl, _wolfCtrl, _sixesCtrl;
   late final TextEditingController _stablefordCtrl;
   late final TextEditingController _lhSegCtrl, _lhPointCtrl;
   late final Map<UnitEventType, TextEditingController> _unitCtrls;
@@ -132,6 +140,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _snakeCtrl  = TextEditingController(text: m.snake.value.toStringAsFixed(0));
     _rabbitCtrl = TextEditingController(text: m.rabbit.value.toStringAsFixed(0));
     _wolfCtrl   = TextEditingController(text: m.wolf.value.toStringAsFixed(0));
+    _sixesCtrl  = TextEditingController(text: m.sixes.value.toStringAsFixed(0));
     _stablefordCtrl =
         TextEditingController(text: m.stableford.value.toStringAsFixed(0));
     _lhSegCtrl   = TextEditingController(text: m.lowHigh.segmentAmount.toStringAsFixed(0));
@@ -198,6 +207,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _puttsCtrl.dispose();
     _oyesCtrl.dispose(); _zapatoCtrl.dispose();
     _snakeCtrl.dispose(); _rabbitCtrl.dispose(); _wolfCtrl.dispose();
+    _sixesCtrl.dispose();
     _stablefordCtrl.dispose();
     _lhSegCtrl.dispose(); _lhPointCtrl.dispose();
     _unitAllCtrl.dispose();
@@ -428,6 +438,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       case BetModuleType.snake:         return _snakeFields(t);
       case BetModuleType.rabbit:        return _rabbitFields(t);
       case BetModuleType.wolf:          return _wolfFields(t);
+      case BetModuleType.sixes:         return _sixesFields(t);
       case BetModuleType.stableford:    return _stablefordFields(t);
     }
   }
@@ -454,6 +465,22 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         cfg: _current.stableford,
         montoCtrl: _stablefordCtrl,
         onChanged: (c) => _update(_current.copyWith(stablefordConfig: c)),
+      );
+
+  List<Widget> _sixesFields(GolfTheme t) => sixesFields(
+        t: t,
+        cfg: _current.sixes,
+        montoCtrl: _sixesCtrl,
+        onChanged: (c) => _update(_current.copyWith(sixesConfig: c)),
+        holesInRound: widget.holesInRound,
+        nombres: [
+          for (final pid in _current.participantIds)
+            (widget.players ?? const [])
+                    .where((p) => p.id == pid)
+                    .firstOrNull
+                    ?.name ??
+                pid,
+        ],
       );
 
   List<Widget> _wolfFields(GolfTheme t) => wolfFields(

@@ -1759,6 +1759,37 @@ class _BetInfo {
           'AAM   29 pts\n'
           'Un bote: los tres pagan \$100 a Rafa (+\$300)',
     ),
+    // ── Sixes ─────────────────────────────────────────────────────────────────
+    _BetInfo(
+      type: BetModuleType.sixes,
+      icon: Icons.sync_rounded,
+      color: Color(0xFF00695C),
+      tagline: 'Tres bloques, y las parejas rotan: juegas con todos',
+      howItWorks:
+          'La ronda se parte en tres bloques de seis hoyos y las parejas cambian '
+          'en cada uno, así que al acabar el 18 has jugado un bloque con cada uno '
+          'de los otros tres. Se cobra por bloque ganado.\n\n'
+          'La app no te pregunta nada: las parejas salen del orden de salida y del '
+          'bloque. Lo que sí hace es DECIRTE con quién vas, arriba de la pantalla '
+          'de captura, para que en el hoyo 7 nadie tenga que contar bloques.',
+      rules: [
+        'Se juega con 4: son las tres únicas maneras de partir cuatro en parejas',
+        'Bloque 1 hoyos 1-6, bloque 2 del 7 al 12, bloque 3 del 13 al 18',
+        'Las parejas salen del orden de salida — no se preguntan',
+        'Cada bloque se decide por mejor bola neta, hoyo a hoyo',
+        'Cada bloque vale el monto EN TOTAL, repartido entre los cruces',
+        'Bloque empatado: nadie paga, y no se acumula al siguiente',
+        'En una ronda de 9 los bloques bajan a 3 hoyos solos',
+      ],
+      example:
+          'Sixes \$50/bloque · orden RAFA, CAM, CAV, AAM\n'
+          '───────────────────────────────\n'
+          'B1 (1-6)   RAFA+CAM  vs CAV+AAM → 4-2 RAFA+CAM\n'
+          'B2 (7-12)  RAFA+CAV  vs CAM+AAM → 3-3 empate\n'
+          'B3 (13-18) RAFA+AAM  vs CAM+CAV → 2-4 CAM+CAV\n'
+          'RAFA +\$25 −\$25 = 0 · CAM +\$25 +\$25 = +\$50\n'
+          'El bloque empatado no se cobra',
+    ),
     // ── Wolf ──────────────────────────────────────────────────────────────────
     _BetInfo(
       type: BetModuleType.wolf,
@@ -2774,6 +2805,7 @@ class _ActiveRoundView extends StatelessWidget {
       case BetModuleType.snake:
       case BetModuleType.rabbit:
       case BetModuleType.wolf:
+      case BetModuleType.sixes:
       case BetModuleType.stableford:
         return '\$${m.value.toStringAsFixed(0)}';
       case BetModuleType.skins:
