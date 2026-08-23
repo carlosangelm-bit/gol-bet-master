@@ -25,7 +25,7 @@ import 'package:golf_bet_master/providers/torneo_provider.dart';
 import 'package:golf_bet_master/providers/user_profile_provider.dart';
 import 'package:golf_bet_master/screens/home/home_screen.dart';
 
-const ana = 'ana', beto = 'beto', caro = 'caro';
+const ana = 'ana', beto = 'beto', caro = 'caro', dani = 'dani';
 
 RoundResult _r({
   required String id,
@@ -74,6 +74,8 @@ Torneo _t({
     );
 
 void main() {
+  _participantes();
+
   _alcanzable();
 
   group('1 · el criterio 3: mejores N clasifica DISTINTO que suma simple', () {
@@ -518,6 +520,156 @@ void _alcanzable() {
       expect(find.text('CÓMO SE PUNTÚA'), findsOneWidget);
       expect(find.text('ANA'), findsWidgets);
       expect(find.text('BETO'), findsWidgets);
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PARTICIPA QUIEN SE INSCRIBE, NO QUIEN JUEGUE
+//
+// La raíz del problema de los 55 participantes: el modelo asumía "participa
+// quien juegue". Con un bote de por medio deja de ser cosmético — poner $500 es
+// una decisión, no algo que te pase por jugar un sábado.
+//
+// Y el mínimo de rondas no lo resolvía porque filtra por COMPORTAMIENTO cuando
+// hacía falta filtrar por DECISIÓN. Ahora significa lo que quería decir: cuántas
+// rondas hay que jugar para optar al premio.
+//
+// La decisión de fondo, y es la que estos tests fijan: RESULTADOS sin lista se
+// pueden enseñar —son útiles— pero DINERO sin lista no. Apuntar $500 a nombre de
+// trece personas que nunca dijeron que entraban es peor que no apuntar nada.
+// ─────────────────────────────────────────────────────────────────────────────
+void _participantes() {
+  List<RoundResult> rondas() => [
+        _r(id: 'r1', dia: 1, quienes: const [ana, beto, caro],
+            dinero: {ana: 200, beto: -100, caro: -100}),
+        _r(id: 'r2', dia: 2, quienes: const [ana, beto],
+            dinero: {ana: -50, beto: 50}),
+      ];
+
+  Torneo conLista(List<String> quienes, {double entrada = 0, int minimo = 0}) =>
+      Torneo(
+        id: 't', nombre: 'T',
+        fuente: FuenteDeRondas.rango,
+        metodo: MetodoDePuntuacion.dinero,
+        participantes: quienes,
+        minimoRondas: minimo,
+        bote: BoteConfig(entrada: entrada),
+      );
+
+  group('10 · la tabla es de los inscritos', () {
+    test('quien jugó pero no está inscrito NO sale', () {
+      final tabla = tablaDe(conLista(const [ana, beto]), rondas());
+      expect(tabla.filas.map((f) => f.playerId).toSet(), {ana, beto});
+      expect(tabla.filas.map((f) => f.playerId), isNot(contains(caro)));
+    });
+
+    test('un inscrito que no ha jugado sale con cero rondas', () {
+      // Estar inscrito es un hecho aunque no hayas ido, y no verte en la lista
+      // después de poner el bote sería raro.
+      final tabla = tablaDe(conLista(const [ana, beto, dani]), rondas());
+      final deDani = tabla.filas.firstWhere((f) => f.playerId == dani);
+      expect(deDani.jugadas, 0);
+      expect(deDani.total, 0);
+      expect(tabla.inscritosSinJugar, [dani]);
+    });
+
+    test('con mínimo, el que no ha jugado nada no clasifica', () {
+      final tabla = tablaDe(
+          conLista(const [ana, beto, dani], minimo: 1), rondas());
+      expect(tabla.filas.map((f) => f.playerId), isNot(contains(dani)));
+      expect(tabla.bajoMinimo.map((f) => f.playerId), contains(dani));
+    });
+
+    test('sin lista sigue entrando quien juegue, y se MARCA', () {
+      // El estado heredado. No se rompe —los resultados son útiles— pero deja de
+      // ser invisible.
+      final tabla = tablaDe(conLista(const []), rondas());
+      expect(tabla.filas, hasLength(3));
+      expect(tabla.sinListaDeParticipantes, isTrue);
+    });
+  });
+
+  group('11 · sin lista no se apunta dinero de nadie', () {
+    test('el bote final no se calcula', () {
+      final t = conLista(const [], entrada: 500);
+      final bote = boteDe(t, tablaDe(t, rondas()));
+      expect(bote.hayBote, isFalse);
+      expect(bote.total, 0);
+      expect(bote.lineas, isEmpty);
+    });
+
+    test('ni los de jornada', () {
+      final t = Torneo(
+        id: 't', nombre: 'T',
+        fuente: FuenteDeRondas.rango,
+        metodo: MetodoDePuntuacion.dinero,
+        bote: const BoteConfig(entradaPorJornada: 100),
+      );
+      expect(botesPorJornada(t, tablaDe(t, rondas())), isEmpty);
+    });
+
+    test('con lista SÍ, y solo sobre los inscritos', () {
+      // El contrapeso: si nunca se calculara, los dos de arriba pasarían igual.
+      // Caro jugó pero no está inscrito, así que su entrada no está en el bote.
+      final t = conLista(const [ana, beto], entrada: 500);
+      final bote = boteDe(t, tablaDe(t, rondas()));
+      expect(bote.total, 1000, reason: 'dos inscritos × 500, no tres');
+    });
+
+    test('y se DICE por qué no hay bote, con el número', () {
+      final t = conLista(const [], entrada: 500);
+      final motivo = motivoSinLista(t, tablaDe(t, rondas()));
+      expect(motivo, isNotNull);
+      expect(motivo, contains('3 personas'));
+      expect(motivo, contains('El bote no se calcula'));
+    });
+
+    test('con lista no hay nada que decir', () {
+      final t = conLista(const [ana, beto], entrada: 500);
+      expect(motivoSinLista(t, tablaDe(t, rondas())), isNull);
+    });
+  });
+
+  group('12 · la propuesta de participantes', () {
+    test('por fechas propone a quien haya jugado', () {
+      final t = conLista(const []);
+      expect(participantesPropuestos(t, rondas()).toSet(), {ana, beto, caro});
+    });
+
+    test('de un grupo propone sus habituales, no quien jugó', () {
+      // Los habituales son los que se inscribirían; quien jugó una ronda suelta
+      // del grupo no necesariamente entra al torneo.
+      final t = Torneo(
+        id: 't', nombre: 'T',
+        fuente: FuenteDeRondas.grupo,
+        bettingGroupId: 'g',
+        metodo: MetodoDePuntuacion.dinero,
+      );
+      expect(
+          participantesPropuestos(t, rondas(),
+              habitualesDelGrupo: const [ana, dani]),
+          [ana, dani]);
+    });
+
+    test('es una propuesta, no la lista: el torneo sigue sin ella', () {
+      final t = conLista(const []);
+      participantesPropuestos(t, rondas());
+      expect(t.participantes, isEmpty);
+    });
+  });
+
+  group('13 · el mínimo ya no decide quién entra', () {
+    test('decide quién OPTA AL PREMIO, y son cosas distintas', () {
+      // Caro no está inscrito: no entra ni con mínimo 0. Beto sí, y con mínimo 3
+      // entra en la tabla pero no clasifica.
+      final t = conLista(const [ana, beto, caro].sublist(0, 2), minimo: 3);
+      final tabla = tablaDe(t, rondas());
+      expect([...tabla.filas, ...tabla.bajoMinimo].map((f) => f.playerId).toSet(),
+          {ana, beto});
+      expect(tabla.filas, isEmpty, reason: 'ninguno llega a 3 rondas');
+      expect(tabla.bajoMinimo, hasLength(2),
+          reason: 'pero los dos están inscritos y salen con su cuenta');
     });
   });
 }

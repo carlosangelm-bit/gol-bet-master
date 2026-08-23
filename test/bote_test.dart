@@ -43,6 +43,10 @@ RoundResult _r(String id, int dia, Map<String, double> dinero) => RoundResult(
     );
 
 Torneo _t({
+  // Los cuatro del fixture estan INSCRITOS. Antes no hacia falta declararlo
+  // porque el bote se calculaba sobre quien apareciera; ahora sin lista no hay
+  // bote, asi que el montaje tiene que decirlo. Las aserciones no cambian.
+  List<String> participantes = const [ana, beto, caro, dani],
   double entrada = 100,
   RepartoDelBote reparto = RepartoDelBote.ganadorTodo,
   List<int> porcentajes = const [60, 30, 10],
@@ -57,6 +61,7 @@ Torneo _t({
       id: 't', nombre: 'T',
       fuente: FuenteDeRondas.rango,
       metodo: MetodoDePuntuacion.dinero,
+      participantes: participantes,
       minimoRondas: minimoRondas,
       cerrado: cerrado,
       bote: sinMinimo == null
@@ -98,8 +103,20 @@ void main() {
       expect(bote.lineas, isEmpty);
     });
 
-    test('un torneo sin rondas no inventa un bote', () {
-      final t = _t();
+    test('con inscritos y sin rondas, el bote SÍ existe', () {
+      // Este test decía que sin rondas no había bote, y con la lista de
+      // participantes la respuesta cambió: pusieron el dinero al inscribirse,
+      // así que el bote está aunque no se haya jugado nada. Lo que no hay es
+      // ganador.
+      final t = _t(entrada: 100);
+      final bote = boteDe(t, tablaDe(t, const []));
+      expect(bote.total, 400, reason: 'cuatro inscritos × 100');
+      expect(bote.lineas.every((l) => l.cobra == 0), isTrue,
+          reason: 'nadie ha ganado nada todavía');
+    });
+
+    test('sin inscritos y sin rondas no hay nada', () {
+      final t = _t(participantes: const []);
       expect(boteDe(t, tablaDe(t, const [])).hayBote, isFalse);
     });
   });
@@ -153,7 +170,10 @@ void main() {
       final rondas = [
         _r('1', 1, {ana: 100, beto: 100, caro: -200}),
       ];
+      // Solo los tres que juegan esa ronda: si dani entrara inscrito sin jugar,
+      // saldría 3º con 0 puntos y cambiaría el reparto.
       final t = _t(
+          participantes: const [ana, beto, caro],
           entrada: 90,
           reparto: RepartoDelBote.podio,
           porcentajes: const [60, 30, 10]);
@@ -413,6 +433,7 @@ void _enInicio() {
 // ─────────────────────────────────────────────────────────────────────────────
 void _dosBotes() {
   Torneo conJornada({
+    List<String> participantes = const [ana, beto, caro, dani],
     double temporada = 500,
     double jornada = 100,
     RepartoDelBote repartoJornada = RepartoDelBote.ganadorTodo,
@@ -422,6 +443,7 @@ void _dosBotes() {
         id: 't', nombre: 'T',
         fuente: FuenteDeRondas.rango,
         metodo: MetodoDePuntuacion.dinero,
+        participantes: participantes,
         minimoRondas: minimoRondas,
         bote: BoteConfig(
             entrada: temporada,
@@ -563,8 +585,15 @@ void _dosBotes() {
   });
 
   group('10 · el aviso de arrastre', () {
-    test('con pocos jugadores no avisa', () {
+    test('con lista de participantes NO avisa nunca', () {
+      // El aviso existía porque la fuente arrastraba gente. Con lista, el número
+      // lo decide el organizador y no hay nada que avisar.
       final t = conJornada();
+      expect(avisoDeArrastre(t, tablaDe(t, _temporada())), isNull);
+    });
+
+    test('sin lista y con pocos jugadores tampoco', () {
+      final t = conJornada(participantes: const []);
       expect(avisoDeArrastre(t, tablaDe(t, _temporada())), isNull);
     });
 
@@ -574,7 +603,8 @@ void _dosBotes() {
         for (var i = 0; i < 30; i++)
           _r('x$i', 1 + (i % 20), {'p$i': 10, 'q$i': -10}),
       ];
-      final t = conJornada(temporada: 500);
+      // Sin lista: es el estado heredado en el que el problema aparecía.
+      final t = conJornada(participantes: const [], temporada: 500);
       final aviso = avisoDeArrastre(t, tablaDe(t, muchas));
       expect(aviso, isNotNull);
       expect(aviso, contains('60 jugadores'));
@@ -588,7 +618,7 @@ void _dosBotes() {
         for (var i = 0; i < 30; i++)
           _r('x$i', 1 + (i % 20), {'p$i': 10, 'q$i': -10}),
       ];
-      final t = conJornada(temporada: 0, jornada: 0);
+      final t = conJornada(participantes: const [], temporada: 0, jornada: 0);
       final aviso = avisoDeArrastre(t, tablaDe(t, muchas));
       expect(aviso, contains('60 jugadores'));
       expect(aviso, isNot(contains('\$')));
@@ -609,7 +639,7 @@ void _dosBotes() {
           pairBalances: const {}, grossByPlayer: const {},
         ),
       ];
-      final t = conJornada();
+      final t = conJornada(participantes: const ['id_dir', 'id_mano']);
       final tabla = tablaDe(t, rondas);
       expect(tabla.nombresDuplicados.keys, ['CAM']);
       expect(tabla.nombresDuplicados['CAM'], ['id_dir', 'id_mano']);
@@ -628,7 +658,7 @@ void _dosBotes() {
           pairBalances: const {}, grossByPlayer: const {},
         ),
       ];
-      final t = conJornada();
+      final t = conJornada(participantes: const ['id_dir', 'id_mano']);
       final tabla = tablaDe(t, rondas);
       expect(tabla.filas, hasLength(2));
       expect(tabla.filas.map((f) => f.nombre).toSet(), {'CAM'});

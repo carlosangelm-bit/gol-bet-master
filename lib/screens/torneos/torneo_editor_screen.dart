@@ -17,10 +17,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../../models/models.dart';
 import '../../models/round_result.dart';
 import '../../models/torneo.dart';
 import '../../providers/betting_group_provider.dart';
 import '../../providers/perfil_provider.dart';
+import '../../providers/player_provider.dart';
 import '../../providers/torneo_provider.dart';
 
 class TorneoEditorScreen extends StatefulWidget {
@@ -180,8 +182,104 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           ],
           const SizedBox(height: 22),
 
-          // ── 2 · Cómo puntúa cada ronda ─────────────────────────────────
-          _titulo('2 · CÓMO PUNTÚA CADA RONDA', t),
+          // ── 2 · Quién participa ────────────────────────────────────────
+          //
+          // La lista explícita. Participa quien SE INSCRIBE, no quien juegue: con
+          // un bote de por medio, poner $500 es una decisión y no algo que te
+          // pase por jugar un sábado.
+          _titulo('2 · QUIÉN PARTICIPA', t),
+          if (_t.participantes.isEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: t.card,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: t.scoreOver.withValues(alpha: 0.5)),
+              ),
+              child: Text(
+                  motivoSinLista(_t, tablaDe(_t, _todos)) ??
+                      'Sin lista de participantes.',
+                  style: TextStyle(color: t.text, fontSize: 12, height: 1.4)),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () => setState(() => _t = _t.copyWith(
+                    participantes: participantesPropuestos(_t, _todos,
+                        habitualesDelGrupo: _habitualesDelGrupo(grupos)))),
+                style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: t.primary),
+                    foregroundColor: t.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 12)),
+                child: Text(
+                    _t.fuente == FuenteDeRondas.grupo &&
+                            _habitualesDelGrupo(grupos).isNotEmpty
+                        ? 'Proponer los habituales del grupo'
+                        : 'Proponer a quien ha jugado',
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ] else ...[
+            _nota(
+                '${_t.participantes.length} inscrito'
+                '${_t.participantes.length == 1 ? '' : 's'}. '
+                'Toca para sacar a alguien.',
+                t),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final pid in _t.participantes)
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(() => _t = _t.copyWith(
+                        participantes: _t.participantes
+                            .where((x) => x != pid)
+                            .toList())),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: t.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: t.primary),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Text(_nombreDe(pid),
+                            style: TextStyle(
+                                color: t.text,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700)),
+                        const SizedBox(width: 5),
+                        Icon(Icons.close, color: t.sub, size: 13),
+                      ]),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 8),
+          // Añadir a alguien del directorio que no ha jugado ninguna: se puede
+          // estar inscrito sin haber ido todavía.
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _abrirDirectorio(t),
+              style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: t.divider),
+                  foregroundColor: t.text,
+                  padding: const EdgeInsets.symmetric(vertical: 12)),
+              icon: Icon(Icons.person_add_alt, size: 17, color: t.sub),
+              label: const Text('Añadir del directorio',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+            ),
+          ),
+          const SizedBox(height: 22),
+
+          // ── 3 · Cómo puntúa cada ronda ─────────────────────────────────
+          _titulo('3 · CÓMO PUNTÚA CADA RONDA', t),
           for (final m in MetodoDePuntuacion.values)
             _opcion(
               t: t,
@@ -235,7 +333,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           const SizedBox(height: 22),
 
           // ── 3 · Cómo se acumula ────────────────────────────────────────
-          _titulo('3 · CÓMO SE ACUMULA', t),
+          _titulo('4 · CÓMO SE ACUMULA', t),
           for (final a in Acumulacion.values)
             _opcion(
               t: t,
@@ -255,15 +353,21 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           ],
           const SizedBox(height: 22),
 
-          // ── 4 · Quién entra en la tabla ────────────────────────────────
-          _titulo('4 · QUIÉN ENTRA EN LA TABLA', t),
-          _contador(t, 'Rondas mínimas', _t.minimoRondas, 0, 40,
+          // ── 5 · Cuántas rondas para optar al premio ────────────────────
+          //
+          // La etiqueta cambió porque el campo cambió de significado: ya no
+          // decide quién ENTRA —eso lo hace la lista de participantes— sino
+          // quién puede COBRAR. Es lo que quería decir desde el principio, y por
+          // eso se sentía insuficiente pareciendo el adecuado.
+          _titulo('5 · CUÁNTAS RONDAS PARA OPTAR AL PREMIO', t),
+          _contador(t, 'Rondas jugadas mínimas', _t.minimoRondas, 0, 40,
               (v) => setState(() => _t = _t.copyWith(minimoRondas: v))),
           const SizedBox(height: 6),
           _nota(
               _t.minimoRondas == 0
-                  ? 'Con 0 entran todos, aunque hayan jugado una sola.'
-                  : 'Quien no llegue sale aparte, con su cuenta: no desaparece.',
+                  ? 'Con 0, todos los inscritos optan al premio.'
+                  : 'Los inscritos que no lleguen salen aparte con su cuenta: no '
+                      'desaparecen, pero no cobran.',
               t),
           if (motivoSinMinimo(_t.minimoRondas, rondas.length) != null) ...[
             const SizedBox(height: 6),
@@ -276,7 +380,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           const SizedBox(height: 22),
 
           // ── 5 · El bote ────────────────────────────────────────────────
-          _titulo('5 · EL BOTE', t),
+          _titulo('6 · EL BOTE', t),
           TextField(
             controller: _entradaCtrl,
             keyboardType: TextInputType.number,
@@ -566,6 +670,89 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
               child: Icon(Icons.close, color: t.sub, size: 16),
             ),
         ]),
+      ),
+    );
+  }
+
+  List<String> _habitualesDelGrupo(List<BettingGroup> grupos) {
+    if (_t.bettingGroupId == null) return const [];
+    final g = grupos.where((x) => x.id == _t.bettingGroupId);
+    return g.isEmpty ? const [] : g.first.playerIds;
+  }
+
+  String _nombreDe(String pid) {
+    final dir = context.read<PlayerProvider>().directory;
+    final p = dir.where((x) => x.player.id == pid);
+    if (p.isNotEmpty) return p.first.player.name.split(' ').first;
+    // Cae al nombre que guardó alguna ronda: el del día. Y al id si no hay ni
+    // eso, que un id feo dice más que un hueco.
+    for (final r in _todos) {
+      final n = r.playerNames[pid];
+      if (n != null) return n;
+    }
+    return pid;
+  }
+
+  /// Añadir del directorio a alguien que aún no ha jugado ninguna ronda.
+  void _abrirDirectorio(GolfTheme t) {
+    final dir = context.read<PlayerProvider>().directory;
+    final ya = _t.participantes.toSet();
+    final candidatos =
+        dir.where((x) => !ya.contains(x.player.id)).toList();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.bg,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(children: [
+              Expanded(
+                child: Text('Añadir participantes',
+                    style: TextStyle(
+                        color: t.text,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 17)),
+              ),
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: Icon(Icons.close, color: t.sub),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            if (candidatos.isEmpty)
+              Text('Todos los del directorio ya están inscritos.',
+                  style: TextStyle(color: t.sub, fontSize: 12))
+            else
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final c in candidatos)
+                      ListTile(
+                        dense: true,
+                        title: Text(c.player.name,
+                            style: TextStyle(color: t.text, fontSize: 14)),
+                        trailing:
+                            Icon(Icons.add_circle_outline, color: t.primary),
+                        onTap: () {
+                          setState(() => _t = _t.copyWith(
+                              participantes: [
+                                ..._t.participantes,
+                                c.player.id
+                              ]));
+                          Navigator.pop(ctx);
+                        },
+                      ),
+                  ],
+                ),
+              ),
+          ]),
+        ),
       ),
     );
   }

@@ -137,6 +137,11 @@ class _TarjetaTorneo extends StatelessWidget {
                             style: TextStyle(
                                 color: t.scoreOver.withValues(alpha: 0.9),
                                 fontSize: 10.5)),
+                      if (tabla.sinListaDeParticipantes)
+                        Text('Sin lista de participantes · el bote no se calcula',
+                            style: TextStyle(
+                                color: t.scoreOver.withValues(alpha: 0.9),
+                                fontSize: 10.5)),
                     ]),
               ),
               Icon(Icons.chevron_right_rounded, color: t.sub),
@@ -235,6 +240,52 @@ class TorneoTablaScreen extends StatelessWidget {
                 ]),
           ),
           const SizedBox(height: 14),
+
+          // ── Sin lista de participantes ─────────────────────────────
+          //
+          // Va arriba de todo y con el número: la tabla que se ve debajo NO es
+          // el torneo que se cree, y el bote no se está calculando. Enterarse al
+          // entrar a editar sería tarde.
+          if (motivoSinLista(torneo, tabla) != null) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: t.card,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: t.scoreOver.withValues(alpha: 0.6)),
+              ),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('FALTA LA LISTA DE PARTICIPANTES',
+                        style: TextStyle(
+                            color: t.sub,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8)),
+                    const SizedBox(height: 6),
+                    Text(motivoSinLista(torneo, tabla)!,
+                        style: TextStyle(
+                            color: t.text, fontSize: 12, height: 1.4)),
+                    const SizedBox(height: 6),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  TorneoEditorScreen(existente: torneo))),
+                      child: Text('Definir participantes',
+                          style: TextStyle(
+                              color: t.primary,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800)),
+                    ),
+                  ]),
+            ),
+            const SizedBox(height: 14),
+          ],
 
           // ── Nombres que aparecen dos veces ─────────────────────────
           //

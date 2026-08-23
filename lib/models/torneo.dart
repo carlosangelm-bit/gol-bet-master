@@ -181,7 +181,27 @@ class Torneo {
   /// Cuántas cuentan con [Acumulacion.mejoresDeN].
   final int mejoresN;
 
-  /// Rondas mínimas para salir en la tabla. 0 = todos.
+  /// Quién está INSCRITO en el torneo.
+  ///
+  /// ── La raíz del problema de los 55 participantes ──────────────────────────
+  ///
+  /// El modelo asumía "participa quien juegue" cuando lo real es "participa
+  /// quien se inscribe". Con un bote de por medio deja de ser cosmético: poner
+  /// $500 es una decisión, no algo que te pase por jugar un sábado.
+  ///
+  /// Y [minimoRondas] no lo resolvía porque filtra por COMPORTAMIENTO —cuántas
+  /// jugaste— cuando hacía falta filtrar por DECISIÓN. Por eso el campo se
+  /// sentía insuficiente pareciendo el adecuado.
+  ///
+  /// Vacía significa "sin definir", no "todos": la tabla sigue enseñando
+  /// resultados —son útiles— pero el BOTE no se calcula, porque apuntar dinero a
+  /// nombre de quien no dijo que entraba es el fallo que esto arregla.
+  final List<String> participantes;
+
+  /// Cuántas rondas hay que jugar para OPTAR AL PREMIO. 0 = ninguna.
+  ///
+  /// Ya no decide quién entra —eso lo hace [participantes]— sino quién puede
+  /// cobrar. Es lo que el campo quería decir desde el principio.
   final int minimoRondas;
 
   /// El bote, si el grupo pone uno. Aditivo: por defecto no hay.
@@ -207,6 +227,7 @@ class Torneo {
     this.empate = ReglaDeEmpate.reparten,
     this.acumulacion = Acumulacion.sumaSimple,
     this.mejoresN = 10,
+    this.participantes = const [],
     this.minimoRondas = 0,
     this.bote = BoteConfig.def,
     this.cerrado = false,
@@ -227,6 +248,7 @@ class Torneo {
     ReglaDeEmpate? empate,
     Acumulacion? acumulacion,
     int? mejoresN,
+    List<String>? participantes,
     int? minimoRondas,
     BoteConfig? bote,
     bool? cerrado,
@@ -245,6 +267,7 @@ class Torneo {
         empate: empate ?? this.empate,
         acumulacion: acumulacion ?? this.acumulacion,
         mejoresN: mejoresN ?? this.mejoresN,
+        participantes: participantes ?? this.participantes,
         minimoRondas: minimoRondas ?? this.minimoRondas,
         bote: bote ?? this.bote,
         cerrado: cerrado ?? this.cerrado,
@@ -264,6 +287,7 @@ class Torneo {
         'empate': empate.name,
         'acumulacion': acumulacion.name,
         'mejoresN': mejoresN,
+        if (participantes.isNotEmpty) 'participantes': participantes,
         if (minimoRondas > 0) 'minimoRondas': minimoRondas,
         if (bote.hayBote) 'bote': bote.toJson(),
         if (cerrado) 'cerrado': true,
@@ -292,6 +316,9 @@ class Torneo {
             (a) => a.name == j['acumulacion'],
             orElse: () => Acumulacion.sumaSimple),
         mejoresN: (j['mejoresN'] as num?)?.toInt() ?? 10,
+        participantes: ((j['participantes'] as List?) ?? const [])
+            .map((e) => '$e')
+            .toList(),
         minimoRondas: (j['minimoRondas'] as num?)?.toInt() ?? 0,
         bote: j['bote'] == null
             ? BoteConfig.def
@@ -377,6 +404,18 @@ class TablaDelTorneo {
   /// Cuántas rondas entran en el torneo.
   final int rondas;
 
+  /// True si el torneo NO tiene lista de participantes.
+  ///
+  /// Con la lista vacía la tabla enseña a todo el que jugó —los resultados son
+  /// útiles— pero el bote no se calcula. Verlo es lo que empuja a definirla.
+  final bool sinListaDeParticipantes;
+
+  /// Inscritos que todavía no han jugado ninguna ronda del torneo.
+  ///
+  /// Salen en la tabla con cero rondas: estar inscrito es un hecho aunque no
+  /// hayas ido, y no verte en la lista después de poner el bote sería raro.
+  final List<String> inscritosSinJugar;
+
   /// Nombres que aparecen con MÁS DE UN id: nombre → los ids.
   ///
   /// Pasa de verdad y afectaría a cualquier torneo real: si alguien creó a
@@ -403,6 +442,8 @@ class TablaDelTorneo {
     required this.rondas,
     required this.rondasSinDato,
     this.nombresDuplicados = const {},
+    this.sinListaDeParticipantes = false,
+    this.inscritosSinJugar = const [],
   });
 
   /// Cuántos jugadores distintos aparecen, clasifiquen o no.
@@ -453,6 +494,8 @@ TablaDelTorneo tablaDe(
   List<RoundResult> resultados, {
   Map<String, String> nombres = const {},
 }) {
+  final inscritos = t.participantes.toSet();
+
   final rondas = rondasDelTorneo(t, resultados)
     ..sort((a, b) => b.playedAt.compareTo(a.playedAt));
 
@@ -493,6 +536,9 @@ TablaDelTorneo tablaDe(
     }
 
     for (final pid in orden) {
+      // Solo los INSCRITOS. Con la lista vacía entra todo el que jugó, que es el
+      // estado heredado y se marca para poder decirlo.
+      if (inscritos.isNotEmpty && !inscritos.contains(pid)) continue;
       nombreDe[pid] = nombres[pid] ?? r.playerNames[pid] ?? pid;
       final puesto = puestoDe[pid]!;
       final puntos = t.metodo == MetodoDePuntuacion.posicion
@@ -528,6 +574,26 @@ TablaDelTorneo tablaDe(
     ));
   }
 
+  // Los inscritos que no han jugado ninguna: estar inscrito es un hecho aunque
+  // no hayas ido, y no verte en la lista después de poner el bote sería raro.
+  final sinJugar = <String>[];
+  for (final pid in t.participantes) {
+    if (porJugador.containsKey(pid)) continue;
+    sinJugar.add(pid);
+    filas.add(FilaDelTorneo(
+      playerId: pid,
+      nombre: nombres[pid] ?? pid,
+      rondas: const [],
+      total: 0,
+      puesto: 0,
+      // Con mínimo 0 clasifica igual; con mínimo, no. Es coherente: no ha
+      // jugado nada.
+      bajoMinimo: t.minimoRondas > 0,
+    ));
+  }
+
+  // Va ANTES de ordenar y de partir clasificados/fuera. Estaba después, y esas
+  // filas no llegaban a la salida: el inscrito que no había jugado desaparecía.
   // El orden de la TABLA. Con score neto, menos es mejor.
   filas.sort((a, b) => t.metodo.masEsMejor
       ? b.total.compareTo(a.total)
@@ -552,6 +618,8 @@ TablaDelTorneo tablaDe(
     rondas: rondas.length - sinDato,
     rondasSinDato: sinDato,
     nombresDuplicados: duplicados,
+    sinListaDeParticipantes: t.participantes.isEmpty,
+    inscritosSinJugar: sinJugar,
   );
 }
 
@@ -959,7 +1027,10 @@ BoteDelTorneo boteDe(Torneo t, TablaDelTorneo tabla) {
   final cfg = t.bote;
   final todos = [...tabla.filas, ...tabla.bajoMinimo];
 
-  if (!cfg.hayBote || todos.isEmpty) {
+  // Sin lista de participantes no hay bote. Apuntar dinero a nombre de quien no
+  // dijo que entraba es exactamente el fallo que la lista arregla, y calcularlo
+  // "de mientras" lo dejaría a la vista como si fuera cierto.
+  if (tabla.sinListaDeParticipantes || !cfg.hayBote || todos.isEmpty) {
     return BoteDelTorneo(
       total: 0, recaudado: 0, lineas: const [], cerrado: t.cerrado,
       provisional: null,
@@ -987,8 +1058,13 @@ BoteDelTorneo boteDe(Torneo t, TablaDelTorneo tabla) {
   final total = _redondea(aportes.values.fold(0.0, (s, v) => s + v));
 
   // El reparto, solo entre los clasificados.
+  //
+  // Con CERO rondas jugadas no hay reparto. Matemáticamente todos empatan a 0 y
+  // la regla de empate les devolvería su entrada a cada uno —consistente— pero
+  // enseñar "cobra $100" cuando no se ha jugado nada dice que pasó algo que no
+  // pasó. El bote existe porque pusieron; el ganador, todavía no.
   final cobra = <String, double>{};
-  if (tabla.filas.isNotEmpty && total > 0) {
+  if (tabla.rondas > 0 && tabla.filas.isNotEmpty && total > 0) {
     final porcentajes = cfg.reparto == RepartoDelBote.ganadorTodo
         ? <int>[100]
         : cfg.porcentajes;
@@ -1109,7 +1185,9 @@ class BoteDeJornada {
 /// mismos datos.
 List<BoteDeJornada> botesPorJornada(Torneo t, TablaDelTorneo tabla) {
   final cfg = t.bote;
-  if (!cfg.hayBoteJornada) return const [];
+  // Mismo criterio que el bote final: sin lista de inscritos no se apunta
+  // dinero de nadie.
+  if (tabla.sinListaDeParticipantes || !cfg.hayBoteJornada) return const [];
 
   // Quién jugó cada ronda y en qué puesto quedó, desde las filas de la tabla.
   // Entran TODOS los que jugaron ese día, clasifiquen o no en la temporada: el
@@ -1198,12 +1276,51 @@ double saldoDeJornadas(String pid, List<BoteDeJornada> jornadas) {
 // el mismo criterio del resto de la app.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Por qué falta la lista de participantes, si falta. Null si está.
+///
+/// Con la lista vacía la tabla enseña resultados pero el bote no se calcula, y
+/// eso hay que decirlo con el número: "entran 55" es lo que hace evidente que el
+/// torneo no es lo que se creía.
+String? motivoSinLista(Torneo t, TablaDelTorneo tabla) {
+  if (!tabla.sinListaDeParticipantes) return null;
+  final n = tabla.jugadores;
+  return 'Este torneo no tiene lista de participantes, así que entra cualquiera '
+      'que haya jugado una ronda de la fuente: ahora mismo $n '
+      '${n == 1 ? 'persona' : 'personas'}.'
+      '${t.bote.hayAlgunBote ? ' El bote no se calcula hasta que la definas: '
+          'apuntar dinero a nombre de quien no dijo que entraba sería peor que '
+          'no apuntarlo.' : ''}';
+}
+
+/// A quién proponer como participante, según la fuente.
+///
+/// Es una PROPUESTA, no la lista: el organizador ajusta. Con fuente de grupo
+/// salen sus habituales —los que se inscribirían— y con las demás, quien haya
+/// jugado, que es lo único que se sabe.
+List<String> participantesPropuestos(
+  Torneo t,
+  List<RoundResult> resultados, {
+  List<String> habitualesDelGrupo = const [],
+}) {
+  if (t.fuente == FuenteDeRondas.grupo && habitualesDelGrupo.isNotEmpty) {
+    return List.of(habitualesDelGrupo);
+  }
+  final vistos = <String>{};
+  for (final r in rondasDelTorneo(t, resultados)) {
+    vistos.addAll(r.playerIds);
+  }
+  return vistos.toList()..sort();
+}
+
 /// Aviso si la configuración arrastra más gente de la que parece. Null si no.
 ///
 /// [umbral] es a partir de cuántos jugadores conviene decirlo. Ocho es una
 /// partida grande; más que eso en un torneo casi siempre significa que la fuente
 /// está cogiendo rondas que no son de este grupo.
 String? avisoDeArrastre(Torneo t, TablaDelTorneo tabla, {int umbral = 8}) {
+  // Con lista de participantes el número lo decide el organizador, así que no
+  // hay nada que avisar: el aviso existía porque la fuente arrastraba gente.
+  if (!tabla.sinListaDeParticipantes) return null;
   if (tabla.jugadores <= umbral) return null;
 
   final bote = t.bote.hayBote
