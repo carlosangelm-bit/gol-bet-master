@@ -2041,7 +2041,25 @@ class _WolfCallSection extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.3)),
           ),
-          const Spacer(),
+          const SizedBox(width: 8),
+          // El estado va EN la cabecera, no en su propia línea.
+          //
+          // Medido: con cinco jugadores la última fila de la tabla se salía 17
+          // px por abajo —841..861 con el viewport en 844— y esta línea con su
+          // separación costaba justo eso. Plegarla la devuelve dentro sin tocar
+          // el tamaño de los botones, que se usan con guante y no se recortan.
+          Expanded(
+            child: Text(
+              call == null
+                  ? '¿con quién jugó?'
+                  : (esSolo
+                      ? 'solo contra los otros ${orden.length - 1}'
+                      : 'con ${nombre(elegido!)}'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: t.sub, fontSize: 11.5),
+            ),
+          ),
           if (call != null)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -2050,15 +2068,6 @@ class _WolfCallSection extends StatelessWidget {
                   Text('Limpiar', style: TextStyle(color: t.sub, fontSize: 10)),
             ),
         ]),
-        const SizedBox(height: 4),
-        Text(
-          call == null
-              ? '¿Con quién jugó?'
-              : (esSolo
-                  ? 'Fue solo contra los otros tres.'
-                  : 'Jugó con ${nombre(elegido!)}.'),
-          style: TextStyle(color: t.sub, fontSize: 11.5),
-        ),
         const SizedBox(height: 10),
         // Wrap y no Row: son cuatro opciones con nombres de persona, y a 320 px
         // un Row las recorta. Es la misma lección que la fila de contadores del

@@ -1714,7 +1714,7 @@ class _SetupScreenState extends State<SetupScreen> {
               ),
           ])
         else
-          Text('Uno contra uno · ${cuenta.sinBote}',
+          Text('Uno contra uno · ${cuenta.sinBoteCon(_players.length)}',
               style: GolfType.label(t.sub)),
       ]),
     );

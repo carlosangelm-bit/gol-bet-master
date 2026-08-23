@@ -1732,15 +1732,16 @@ class _BetInfo {
       howItWorks:
           'Cada hoyo le toca a uno ser el Wolf, por turnos según el orden de '
           'salida: el 1 al primero, el 2 al segundo, y así. El Wolf juega con '
-          'un compañero contra los otros dos, o se va SOLO contra los tres por '
-          'el doble.\n\n'
+          'un compañero contra los demás, o se va SOLO contra todos por el '
+          'doble.\n\n'
           'La app no te pregunta quién es el Wolf —eso lo sabes en el tee— ni '
           'te hace ir tocando durante el hoyo. Al anotar el score te pide UNA '
           'cosa: con quién jugó.',
       rules: [
-        'Se juega exactamente con 4: el Wolf rota uno por hoyo',
+        'Se juega con 4 o 5: el Wolf rota un hoyo por jugador',
         'El Wolf sale del orden de salida — no se pregunta',
-        'Su pareja contra los otros dos, mejor bola neta de cada lado',
+        'Su pareja contra el resto, mejor bola neta de cada lado',
+        'Con 5 el Wolf y su pareja van 2 contra 3: si ganan, cobran el doble',
         'Cada perdedor del hoyo paga al monto a cada ganador',
         'Lone Wolf que gana: ×2 por defecto, configurable a ×3 o ×4',
         'Lone Wolf que pierde: paga sencillo a cada rival',

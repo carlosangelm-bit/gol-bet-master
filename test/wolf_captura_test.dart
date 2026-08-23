@@ -88,6 +88,8 @@ Future<({List<String> errores, RoundProvider prov})> _montar(
 }
 
 void main() {
+  _geometriaConGuante();
+
   _avisoAlPasarDeHoyo();
 
   testWidgets('la pregunta está en la pantalla donde se anota el score',
@@ -95,7 +97,7 @@ void main() {
     final r = await _montar(tester, _round(), const Size(390, 900));
     expect(find.textContaining('WOLF:'), findsOneWidget,
         reason: 'el Wolf se ENSEÑA porque orienta, pero no se pide');
-    expect(find.text('¿Con quién jugó?'), findsOneWidget);
+    expect(find.text('¿con quién jugó?'), findsOneWidget);
     // Los tres candidatos y "Solo": cuatro respuestas posibles.
     expect(find.byKey(const Key('wolfOpt_solo')), findsOneWidget);
     // Rafa es el Wolf del hoyo 1, así que NO puede ser su propio compañero.
@@ -127,7 +129,7 @@ void main() {
     await tester.tap(opcion);
     await tester.pump();
     expect(r.prov.round!.getWolfCall(1)?.partnerId, 'y');
-    expect(find.text('Jugó con Cavazos.'), findsOneWidget);
+    expect(find.text('con Cavazos'), findsOneWidget);
   });
 
   testWidgets('"Solo" es una opción de la misma fila, no otra pantalla',
@@ -141,7 +143,8 @@ void main() {
     final call = r.prov.round!.getWolfCall(1);
     expect(call, isNotNull);
     expect(call!.solo, isTrue);
-    expect(find.text('Fue solo contra los otros tres.'), findsOneWidget);
+    expect(find.text('solo contra los otros 3'), findsOneWidget,
+        reason: 'el número sale del tamaño de la partida, no fijo');
   });
 
   testWidgets('y se puede deshacer: limpiar deja el hoyo sin elección',
@@ -187,7 +190,7 @@ void main() {
     // inútil para la mayoría de las rondas.
     await _montar(tester, _round(conWolf: false), const Size(390, 900));
     expect(find.textContaining('WOLF:'), findsNothing);
-    expect(find.text('¿Con quién jugó?'), findsNothing);
+    expect(find.text('¿con quién jugó?'), findsNothing);
   });
 }
 
@@ -339,5 +342,107 @@ void _avisoAlPasarDeHoyo() {
       await pulsaSiguiente(tester);
       expect(find.text('Falta el compañero del Wolf'), findsNothing);
     });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GEOMETRÍA: EL TOQUE Y LOS SCORES CABEN A LA VEZ
+//
+// El test que faltaba, y el que habría cazado el problema en vez de dejarlo para
+// la verificación en pantalla.
+//
+// La historia, porque explica por qué la aserción es ESTA: el bloque de Wolf
+// estaba al final del cuerpo y sus botones caían fuera —886 con cuatro
+// jugadores, 995 con cinco, viewport 844—. Subirlo antes de la tabla los mete
+// dentro pero empuja la tabla, y con cinco jugadores la última fila se salía 17
+// px. O sea: la posición sola no es el criterio. El criterio es que quepan LAS
+// DOS COSAS, porque son las dos que se usan en cada hoyo.
+//
+// Se mide a 844 —el alto útil de un teléfono corriente— y no a 900, que es lo
+// que usan los tests de arriba y da margen de sobra.
+// ─────────────────────────────────────────────────────────────────────────────
+void _geometriaConGuante() {
+  const cinco = ['w', 'x', 'y', 'z', 'v'];
+  const nombresCinco = {
+    'w': 'Rafa', 'x': 'Carlos', 'y': 'Cavazos', 'z': 'Alejandro', 'v': 'Memo',
+  };
+
+  Round ronda(int n) {
+    final pids = cinco.take(n).toList();
+    final course = CourseInfo(
+        name: 'T',
+        holes: List.generate(
+            18, (i) => CourseHole(hole: i + 1, par: 4, strokeIndex: i + 1)));
+    return Round(
+      id: 'r', name: 'R', course: course,
+      players: pids.map((i) => Player(id: i, name: nombresCinco[i]!)).toList(),
+      roundPlayers:
+          pids.map((i) => RoundPlayer(playerId: i, handicapEnRonda: 0)).toList(),
+      betGroups: [
+        BetGroup(
+            id: 'g', name: 'G',
+            format: PartidaFormat.allInOnePot,
+            playerIds: pids,
+            modules: [
+              BetModuleInstance.defaultFor(BetModuleType.wolf, pids, id: 'wf'),
+            ]),
+      ],
+      scores: {
+        for (final p in pids)
+          p: {
+            for (var h = 1; h <= 18; h++)
+              h: HoleScore(playerId: p, hole: h, grossScore: 4, putts: 2),
+          },
+      },
+      events: const {}, oyeseRankings: const {}, sliding: const [],
+      createdAt: DateTime(2026, 1, 1), totalHoles: 18,
+    );
+  }
+
+  /// El borde inferior más bajo de todas las apariciones de [f].
+  double _fondo(WidgetTester tester, Finder f) {
+    var peor = 0.0;
+    for (final e in f.evaluate()) {
+      final r = tester.getRect(find.byWidget(e.widget));
+      if (r.bottom > peor) peor = r.bottom;
+    }
+    return peor;
+  }
+
+  for (final n in [4, 5]) {
+    testWidgets('con $n jugadores caben el toque de Wolf Y toda la tabla',
+        (tester) async {
+      await _montar(tester, ronda(n), const Size(390, 844));
+
+      final solo = find.byKey(const Key('wolfOpt_solo'));
+      expect(solo, findsOneWidget);
+      final cajaSolo = tester.getRect(solo);
+      expect(cajaSolo.bottom, lessThanOrEqualTo(844.0),
+          reason: 'el botón de Wolf se sale por abajo');
+      expect(cajaSolo.height, greaterThanOrEqualTo(40),
+          reason: 'y sigue siendo tocable con guante');
+
+      // TODAS las filas de la tabla: es donde se anotan los scores, cuatro o
+      // cinco veces por hoyo contra una de Wolf.
+      for (final pid in cinco.take(n)) {
+        final fondo = _fondo(tester, find.text(nombresCinco[pid]!));
+        expect(fondo, lessThanOrEqualTo(844.0),
+            reason: 'la fila de ${nombresCinco[pid]} se sale por abajo');
+      }
+    });
+  }
+
+  testWidgets('el candidato con el nombre más largo no se recorta',
+      (tester) async {
+    // "Alejandro" en un chip de ancho fijo se convertiría en "Alej…", y con dos
+    // nombres que empiecen igual eso deja de identificar a nadie.
+    await _montar(tester, ronda(5), const Size(320, 844));
+    final chip = find.byKey(const ValueKey('wolfOpt_z'));
+    expect(chip, findsOneWidget);
+    final caja = tester.getRect(chip);
+    expect(caja.right, lessThanOrEqualTo(320.0));
+    final texto = tester.widget<Text>(
+        find.descendant(of: chip, matching: find.byType(Text)));
+    expect(texto.data, 'Alejandro');
   });
 }

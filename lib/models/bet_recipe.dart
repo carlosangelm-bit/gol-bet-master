@@ -164,13 +164,26 @@ extension BetCountLabel on BetCount {
       };
 
   /// Por qué no admite bote, para la opción atenuada.
+  ///
+  /// [jugadores] permite decir el número REAL en vez de uno fijo. Wolf decía
+  /// "contra los otros dos" y con cinco jugadores son tres: el mismo fallo que
+  /// el prefijo de elegibilidad, que sí se genera del conjunto {4, 5} y por eso
+  /// no quedó hablando de otro número. Aquí estaba en la descripción en vez de
+  /// en el motivo.
+  String? sinBoteCon(int? jugadores) => switch (this) {
+        BetCount.wolf => 'Cada hoyo enfrenta a la pareja del Wolf contra '
+            '${jugadores == null ? 'los demás' : 'los otros ${jugadores - 2}'}: '
+            'el reparto ya está definido.',
+        _ => sinBote,
+      };
+
   String? get sinBote => switch (this) {
         BetCount.snake =>
           'La serpiente es una sola y su dueño paga a todos: ya es un bote.',
         BetCount.rabbit =>
           'El conejo es uno y su dueño cobra a todos: ya es un bote.',
         BetCount.wolf =>
-          'Cada hoyo enfrenta a la pareja del Wolf contra los otros dos: el '
+          'Cada hoyo enfrenta a la pareja del Wolf contra los demás: el '
               'reparto ya está definido.',
         BetCount.unidades =>
           'El motor de Unidades acredita cada unidad contra cada rival por '
