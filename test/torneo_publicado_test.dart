@@ -207,6 +207,150 @@ void main() {
     });
   });
 
+  group('6 · el cuadro publicado: nombres, y el por qué', () {
+    Torneo cuadro() => Torneo(
+          id: 't1',
+          nombre: 'Match Play CGM',
+          formato: FormatoDeTorneo.eliminacion,
+          fuente: FuenteDeRondas.marcadas,
+          metodo: MetodoDePuntuacion.dinero,
+          participantes: const [ana, beto],
+        );
+
+    RoundResult marcada() => RoundResult(
+          roundId: 'ronda_secreta_1',
+          roundName: 'Sábado 7',
+          courseName: 'Los Encinos',
+          playedAt: DateTime(2026, 3, 7),
+          holesPlayed: 18,
+          playerIds: const [ana, beto],
+          playerNames: const {ana: 'ANA', beto: 'BETO'},
+          balances: const {ana: 300, beto: -300},
+          pairBalances: const {},
+          grossByPlayer: const {},
+          netByPlayer: const {},
+          stablefordByPlayer: const {},
+          bettingGroupIds: const [],
+          torneoIds: const ['t1'],
+        );
+
+    TorneoPublicado publicada() {
+      final t = cuadro();
+      final rondas = [marcada()];
+      final tabla = tablaDe(t, rondas);
+      return TorneoPublicado.desde(
+        token: 'tok_x',
+        ownerUid: 'uid_org',
+        torneo: t,
+        tabla: tabla,
+        bote: boteDe(t, tabla),
+        jornadas: botesPorJornada(t, tabla),
+        cuando: DateTime(2026, 4, 1, 12),
+        llave: llaveDe(t, rondas),
+      );
+    }
+
+    test('el cuadro va con NOMBRES, nunca con ids', () {
+      final copia = publicada();
+      expect(copia.llave, hasLength(1));
+      expect(copia.llave.first.a, 'ANA');
+      expect(copia.llave.first.ganador, 'ANA');
+      expect(copia.campeon, 'ANA');
+      final json = copia.toJson().toString();
+      for (final prohibido in [ana, beto]) {
+        expect(json.contains(prohibido), isFalse, reason: prohibido);
+      }
+    });
+
+    test('el roundId NO se publica; el nombre de la ronda sí', () {
+      // Al invitado el id no le sirve —no puede abrir esa ronda— y publicarlo
+      // enseñaría la forma interna. El nombre es el "por qué pasó quien pasó".
+      final json = publicada().toJson().toString();
+      expect(json.contains('ronda_secreta_1'), isFalse);
+      expect(json.contains('Sábado 7'), isTrue);
+      expect(publicada().llave.first.enRonda, 'Sábado 7');
+    });
+
+    test('una liga no publica cuadro ni campeón', () {
+      final claves = _publicar(_t(), _rondas()).toJson().keys.toSet();
+      expect(claves, isNot(contains('llave')));
+      expect(claves, isNot(contains('campeon')));
+    });
+
+    test('la copia del cuadro sobrevive el JSON', () {
+      final ida = TorneoPublicado.fromJson('tok_x', publicada().toJson());
+      expect(ida.campeon, 'ANA');
+      expect(ida.llave, hasLength(1));
+      expect(ida.llave.first.faseNombre, 'Final');
+      expect(ida.llave.first.cuando, DateTime(2026, 3, 7));
+    });
+
+    test('un empate publicado se ve como empate, sin ganador inventado', () {
+      final t = cuadro();
+      final rondas = [
+        RoundResult(
+          roundId: 'r1',
+          roundName: 'Sábado 7',
+          courseName: 'C',
+          playedAt: DateTime(2026, 3, 7),
+          holesPlayed: 18,
+          playerIds: const [ana, beto],
+          playerNames: const {ana: 'ANA', beto: 'BETO'},
+          balances: const {ana: 0, beto: 0},
+          pairBalances: const {},
+          grossByPlayer: const {},
+          netByPlayer: const {},
+          stablefordByPlayer: const {},
+          bettingGroupIds: const [],
+          torneoIds: const ['t1'],
+        ),
+      ];
+      final tabla = tablaDe(t, rondas);
+      final copia = TorneoPublicado.desde(
+        token: 'tok_x',
+        ownerUid: 'uid_org',
+        torneo: t,
+        tabla: tabla,
+        bote: boteDe(t, tabla),
+        jornadas: botesPorJornada(t, tabla),
+        cuando: DateTime(2026, 4, 1),
+        llave: llaveDe(t, rondas),
+      );
+      expect(copia.llave.first.empatado, isTrue);
+      expect(copia.llave.first.ganador, isNull);
+      expect(copia.campeon, isNull);
+    });
+
+    test('el que pasa con bye tiene nombre, no un guion', () {
+      // No aparece en ninguna fila de la tabla —no jugó— así que sin el mapa de
+      // nombres saldría como '—' en el cuadro publicado.
+      final t = Torneo(
+        id: 't1',
+        nombre: 'Match Play',
+        formato: FormatoDeTorneo.eliminacion,
+        fuente: FuenteDeRondas.marcadas,
+        metodo: MetodoDePuntuacion.dinero,
+        participantes: const [ana, beto, caro],
+      );
+      final tabla = tablaDe(t, const []);
+      final copia = TorneoPublicado.desde(
+        token: 'tok_x',
+        ownerUid: 'uid_org',
+        torneo: t,
+        tabla: tabla,
+        bote: boteDe(t, tabla),
+        jornadas: botesPorJornada(t, tabla),
+        cuando: DateTime(2026, 4, 1),
+        llave: llaveDe(t, const []),
+        nombres: const {ana: 'ANA', beto: 'BETO', caro: 'CARO'},
+      );
+      final bye = copia.llave.where((p) => p.bye).toList();
+      expect(bye, isNotEmpty);
+      expect(bye.first.ganador, isNotNull);
+      expect(bye.first.ganador, isNot('—'));
+    });
+  });
+
   group('5 · el token identifica el documento, no va dentro', () {
     test('revocar es borrar: el token no lleva estado', () {
       // Si el token llevara un "activo: true" dentro, revocar sería un update y

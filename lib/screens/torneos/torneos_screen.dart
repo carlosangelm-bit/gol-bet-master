@@ -15,15 +15,14 @@ import '../../services/auth_service.dart';
 import '../../models/torneo_publicado.dart';
 import 'package:flutter/services.dart';
 import '../../providers/perfil_provider.dart';
+import '../../providers/player_provider.dart';
 import '../../providers/torneo_provider.dart';
 import 'torneo_editor_screen.dart';
+import 'llave_screen.dart';
 
-String importePuntos(double v) {
-  final s = v.abs().toStringAsFixed(v == v.roundToDouble() ? 0 : 1);
-  if (v > 0.005) return '+$s';
-  if (v < -0.005) return '−$s';
-  return '0';
-}
+/// La cifra con signo la define el modelo: la usan la tabla, el cuadro y la
+/// vista de invitado, y tres copias habrían acabado dando tres formatos.
+String importePuntos(double v) => importeDelTorneo(v);
 
 class TorneosScreen extends StatelessWidget {
   const TorneosScreen({super.key});
@@ -277,6 +276,20 @@ class TorneoTablaScreen extends StatelessWidget {
           ),
           const SizedBox(height: 14),
 
+          // ── El cuadro, si es de eliminación ────────────────────────
+          //
+          // Va ANTES de la tabla porque en un cuadro la pregunta es a quién te
+          // toca, no cuánto acumulas. La tabla se sigue enseñando debajo —son
+          // las mismas rondas y el dinero cuenta igual— pero deja de ser lo
+          // primero que se lee.
+          if (torneo.formato == FormatoDeTorneo.eliminacion) ...[
+            LlaveDelTorneoVista(
+                torneo: torneo, llave: llaveDe(torneo, resultados)),
+            const SizedBox(height: 22),
+            Text('Y LA CUENTA DE SIEMPRE', style: GolfType.label(t.sub)),
+            const SizedBox(height: 8),
+          ],
+
           // ── Sin lista de participantes ─────────────────────────────
           //
           // Va arriba de todo y con el número: la tabla que se ve debajo NO es
@@ -464,6 +477,13 @@ Future<void> _compartir(
     bote: boteDe(torneoArg, tabla),
     jornadas: botesPorJornada(torneoArg, tabla),
     cuando: ahora,
+    // El cuadro entra solo si el torneo es de eliminación: llaveDe() devuelve
+    // vacío en una liga, y un campo vacío no se escribe.
+    llave: llaveDe(torneoArg, context.read<PerfilProvider>().resultados),
+    nombres: {
+      for (final pw in context.read<PlayerProvider>().directory)
+        pw.player.id: pw.displayName,
+    },
   );
 
   try {

@@ -189,6 +189,37 @@ extension AcumulacionLabel on Acumulacion {
 }
 
 /// Un torneo.
+/// Liga o eliminación directa.
+///
+/// Aditivo: [liga] es lo que había, así que un torneo guardado se lee igual. La
+/// diferencia no está en cómo se juega —eso no lo cambia un torneo— sino en QUÉ
+/// se enseña: una tabla acumulada, o una llave donde cada partido elimina.
+enum FormatoDeTorneo {
+  /// La tabla de siempre: todos suman, gana quien más acumula.
+  liga,
+
+  /// Eliminación directa. Los dos del partido juegan LA MISMA ronda —siempre—,
+  /// así que el partido se resuelve comparando lo que esa ronda ya produjo. Es
+  /// lo que hace que Stableford deje de ser un caso especial: es un método de
+  /// puntuación más, no un formato aparte.
+  eliminacion,
+}
+
+extension FormatoInfo on FormatoDeTorneo {
+  String get label => switch (this) {
+        FormatoDeTorneo.liga => 'Liga · todos suman',
+        FormatoDeTorneo.eliminacion => 'Eliminación directa',
+      };
+
+  String get descripcion => switch (this) {
+        FormatoDeTorneo.liga =>
+          'Cada ronda suma a una tabla. Gana quien más acumula.',
+        FormatoDeTorneo.eliminacion =>
+          'Cuadro de partidos. Los dos del partido juegan la misma ronda y el '
+              'que pierde queda fuera.',
+      };
+}
+
 class Torneo {
   final String id;
   final String nombre;
@@ -258,6 +289,32 @@ class Torneo {
   /// Cuándo se publicó la última copia. Null si nunca.
   final DateTime? publicadoEn;
 
+  /// Liga o eliminación directa. Por defecto liga: es lo que había.
+  final FormatoDeTorneo formato;
+
+  /// El orden del cuadro, solo con [FormatoDeTorneo.eliminacion].
+  ///
+  /// Es lo ÚNICO del cuadro que se guarda: quién se cruza con quién en la
+  /// primera ronda. Todo lo demás —quién pasa, quién juega la semifinal, quién
+  /// es campeón— se deriva de las rondas marcadas. Misma regla que la tabla, y
+  /// por el mismo motivo: si el cuadro se guardara resuelto, corregir una ronda
+  /// dejaría un campeón viejo sin avisar a nadie.
+  ///
+  /// Vacía significa "usa el orden de [participantes]".
+  final List<String> siembra;
+
+  /// Los empates que el organizador resolvió a mano.
+  ///
+  /// Clave: los dos ids ordenados y unidos por '|' —ver [parKey]—. Valor: quién
+  /// pasa. Se guarda por PAREJA y no por posición en el cuadro para que
+  /// reordenar la siembra no le adjudique el desempate a otros dos.
+  ///
+  /// Existe porque la app no puede jugar un hoyo 19: cuando dos empatan, el
+  /// partido se queda sin resolver a la vista y alguien lo decide. Inventar un
+  /// criterio —el de mejor score bruto, el mejor sembrado— sería inventarse una
+  /// regla que el grupo no pactó.
+  final Map<String, String> desempates;
+
   /// Si el torneo está cerrado y liquidado.
   ///
   /// Cerrado no significa "pagado" —la app no procesa pagos— significa que la
@@ -284,6 +341,9 @@ class Torneo {
     this.tokenCompartido,
     this.publicadoEn,
     this.cerrado = false,
+    this.formato = FormatoDeTorneo.liga,
+    this.siembra = const [],
+    this.desempates = const {},
   });
 
   Torneo copyWith({
@@ -308,6 +368,9 @@ class Torneo {
     DateTime? publicadoEn,
     bool limpiarCompartido = false,
     bool? cerrado,
+    FormatoDeTorneo? formato,
+    List<String>? siembra,
+    Map<String, String>? desempates,
   }) =>
       Torneo(
         id: id,
@@ -331,6 +394,9 @@ class Torneo {
         publicadoEn:
             limpiarCompartido ? null : (publicadoEn ?? this.publicadoEn),
         cerrado: cerrado ?? this.cerrado,
+        formato: formato ?? this.formato,
+        siembra: siembra ?? this.siembra,
+        desempates: desempates ?? this.desempates,
       );
 
   Map<String, dynamic> toJson() => {
@@ -353,6 +419,11 @@ class Torneo {
         if (tokenCompartido != null) 'tokenCompartido': tokenCompartido,
         if (publicadoEn != null) 'publicadoEn': publicadoEn!.toIso8601String(),
         if (cerrado) 'cerrado': true,
+        // Aditivos: solo se escriben cuando hay algo que decir, así que un
+        // torneo de liga guardado hoy se lee igual que ayer.
+        if (formato != FormatoDeTorneo.liga) 'formato': formato.name,
+        if (siembra.isNotEmpty) 'siembra': siembra,
+        if (desempates.isNotEmpty) 'desempates': desempates,
       };
 
   factory Torneo.fromJson(Map<String, dynamic> j) => Torneo(
@@ -388,6 +459,13 @@ class Torneo {
         tokenCompartido: j['tokenCompartido'] as String?,
         publicadoEn: DateTime.tryParse((j['publicadoEn'] as String?) ?? ''),
         cerrado: j['cerrado'] == true,
+        formato: FormatoDeTorneo.values.firstWhere(
+            (f) => f.name == j['formato'],
+            orElse: () => FormatoDeTorneo.liga),
+        siembra:
+            ((j['siembra'] as List?) ?? const []).map((e) => '$e').toList(),
+        desempates: ((j['desempates'] as Map?) ?? const {})
+            .map((k, v) => MapEntry('$k', '$v')),
       );
 }
 
@@ -1441,3 +1519,354 @@ List<Torneo> torneosARepublicar(Round round, List<Torneo> torneos) => torneos
 List<Torneo> torneosMarcables(List<Torneo> torneos) => torneos
     .where((t) => !t.cerrado && t.fuente == FuenteDeRondas.marcadas)
     .toList();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LA LLAVE — eliminación directa, derivada de las rondas marcadas
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Lo único que se guarda es la SIEMBRA: quién se cruza con quién al empezar. El
+// resto —quién pasó, quién juega la semifinal, quién es campeón— se calcula aquí
+// cada vez. Es la misma regla que la tabla, y por el mismo motivo: un cuadro
+// guardado resuelto dejaría un campeón viejo cuando se corrija una ronda.
+//
+// Cómo se resuelve un partido, y por qué así:
+//
+//   · Los dos juegan LA MISMA ronda. No hay que cuadrar dos tarjetas de días
+//     distintos ni decidir qué hacer si uno jugó un campo más fácil.
+//   · Gana quien va mejor según el MÉTODO del torneo, el que ya existe. Por eso
+//     Stableford deja de ser un caso especial: es un método, no un formato.
+//   · Una ronda de cuatro puede resolver DOS partidos a la vez. Es el caso
+//     normal entre amigos, y sale gratis: cada partido lee sus dos jugadores.
+//   · Un partido solo lo puede decidir una ronda jugada DESPUÉS de las que
+//     clasificaron a los dos. Sin esto, una ronda antigua entre dos que se
+//     cruzan en la final resolvería la final antes de las semis.
+//   · Si empatan, el partido se queda SIN RESOLVER y se ve. La app no puede
+//     jugar un hoyo 19; el desempate lo pone una persona.
+//
+// Y lo que no se hace: elegir la ronda "más favorable", promediar varias, o
+// inventar un criterio de desempate. Las tres serían reglas que nadie pactó.
+
+/// Una cifra del torneo con su signo, para pantalla.
+///
+/// Vive aquí y no en una pantalla porque la usan la tabla, el cuadro y la vista
+/// de invitado: tres copias de esto habrían acabado dando tres formatos.
+String importeDelTorneo(double v) {
+  final s = v.abs().toStringAsFixed(v == v.roundToDouble() ? 0 : 1);
+  if (v > 0.005) return '+$s';
+  if (v < -0.005) return '−$s';
+  return '0';
+}
+
+/// La clave con la que se guarda un desempate: los dos ids, ordenados.
+///
+/// Ordenados a propósito, para que dé igual quién sea A y quién sea B: un mismo
+/// partido tiene una sola clave, la reordene el cuadro como quiera.
+String parKey(String a, String b) => ([a, b]..sort()).join('|');
+
+/// Un partido del cuadro.
+class Enfrentamiento {
+  /// 0 = primera ronda del cuadro.
+  final int ronda;
+
+  /// Índice dentro de su ronda, de arriba abajo.
+  final int posicion;
+
+  /// Los dos lados. Null = plaza todavía por decidir.
+  final String? a;
+  final String? b;
+
+  /// Quién pasa. Null si aún no está resuelto.
+  final String? ganador;
+
+  /// Pasa sin jugar porque le tocó bye.
+  final bool bye;
+
+  /// Jugaron y quedaron iguales. Hace falta que alguien lo decida.
+  final bool empatado;
+
+  /// El desempate lo puso una persona, no el resultado.
+  final bool desempatadoAMano;
+
+  /// La ronda que lo resolvió, y cuándo. Para poder decir POR QUÉ pasó.
+  final String? roundId;
+  final String? roundName;
+  final DateTime? cuando;
+
+  /// Lo que sacó cada uno en esa ronda, con el método del torneo.
+  final double? medidaA;
+  final double? medidaB;
+
+  const Enfrentamiento({
+    required this.ronda,
+    required this.posicion,
+    this.a,
+    this.b,
+    this.ganador,
+    this.bye = false,
+    this.empatado = false,
+    this.desempatadoAMano = false,
+    this.roundId,
+    this.roundName,
+    this.cuando,
+    this.medidaA,
+    this.medidaB,
+  });
+
+  /// Los dos están puestos y todavía no hay resultado: se puede jugar ya.
+  bool get jugable => a != null && b != null && ganador == null && !empatado;
+
+  /// Falta que alguien acabe su partido anterior.
+  bool get esperando => (a == null || b == null) && !bye;
+
+  /// Quién queda fuera. Null mientras no haya ganador.
+  String? get perdedor => ganador == null
+      ? null
+      : ganador == a
+          ? b
+          : a;
+}
+
+/// El cuadro resuelto hasta donde las rondas jugadas permiten.
+class LlaveDelTorneo {
+  /// Los partidos por ronda: `rondas[0]` es la primera, la última es la final.
+  final List<List<Enfrentamiento>> rondas;
+
+  /// Quién ganó la final. Null mientras no se juegue.
+  final String? campeon;
+
+  /// Plazas del cuadro: 2, 4, 8, 16… Con byes es mayor que los inscritos.
+  final int plazas;
+
+  /// Cuántos pasan sin jugar la primera ronda.
+  final int byes;
+
+  /// Por qué no hay cuadro, si no lo hay.
+  final String? motivo;
+
+  const LlaveDelTorneo({
+    this.rondas = const [],
+    this.campeon,
+    this.plazas = 0,
+    this.byes = 0,
+    this.motivo,
+  });
+
+  bool get vacia => rondas.isEmpty;
+
+  /// Los partidos que se pueden jugar ya. Es lo que la pantalla enseña arriba:
+  /// un cuadro entero es difícil de leer, y "a quién te toca" es la pregunta.
+  List<Enfrentamiento> get jugables =>
+      rondas.expand((r) => r).where((e) => e.jugable).toList();
+
+  /// Los que esperan que alguien decida un empate.
+  List<Enfrentamiento> get pendientesDeDesempate =>
+      rondas.expand((r) => r).where((e) => e.empatado).toList();
+}
+
+/// El nombre de una ronda del cuadro, contando desde el final.
+///
+/// Se nombra por lo que FALTA, que es como se llaman de verdad: la ronda con dos
+/// partidos es la semifinal, tenga el cuadro ocho plazas o treinta y dos.
+String nombreDeRondaDeLlave(int partidos) => switch (partidos) {
+      1 => 'Final',
+      2 => 'Semifinales',
+      4 => 'Cuartos de final',
+      8 => 'Octavos de final',
+      16 => 'Dieciseisavos',
+      _ => 'Ronda de ${partidos * 2}',
+    };
+
+/// El orden estándar de siembra para un cuadro de [plazas].
+///
+/// Devuelve los NÚMEROS de sembrado por hueco: para ocho, `[1,8,4,5,2,7,3,6]`.
+/// Así el 1 y el 2 solo se cruzan en la final, que es para lo que sirve sembrar.
+/// Se genera en vez de escribirse a mano para que valga con cualquier tamaño.
+List<int> ordenDeSiembra(int plazas) {
+  var orden = <int>[1];
+  var tam = 1;
+  while (tam < plazas) {
+    tam *= 2;
+    orden = [
+      for (final s in orden) ...[s, tam + 1 - s],
+    ];
+  }
+  return orden;
+}
+
+/// El cuadro del torneo, resuelto con las rondas que ya se jugaron.
+LlaveDelTorneo llaveDe(Torneo t, List<RoundResult> resultados) {
+  if (t.formato != FormatoDeTorneo.eliminacion) {
+    return const LlaveDelTorneo(motivo: 'Este torneo es una liga, no un cuadro.');
+  }
+
+  // La siembra manda; sin ella, el orden de la lista de inscritos. Un cuadro no
+  // puede armarse con quien no se inscribió: es la misma decisión que el bote.
+  final base = t.siembra.isNotEmpty
+      ? t.siembra.where(t.participantes.contains).toList()
+      : t.participantes;
+  final plazasReales = base.length;
+
+  if (plazasReales < 2) {
+    return LlaveDelTorneo(
+        motivo: t.participantes.isEmpty
+            ? 'Define primero los participantes: un cuadro se arma con quien se '
+                'inscribió, no con quien juegue.'
+            : 'Hacen falta al menos dos inscritos para un cuadro.');
+  }
+
+  var plazas = 2;
+  while (plazas < plazasReales) {
+    plazas *= 2;
+  }
+  final byes = plazas - plazasReales;
+
+  // Los huecos de la primera ronda, en orden de siembra. El sembrado que se sale
+  // de los inscritos queda vacío, y eso ES el bye del de enfrente.
+  final huecos = ordenDeSiembra(plazas)
+      .map((s) => s <= plazasReales ? base[s - 1] : null)
+      .toList();
+
+  // Solo las rondas del torneo, y en orden. La fuente ya decide cuáles cuentan
+  // —con marcas, desde la fase A— así que aquí no se vuelve a decidir.
+  final rondas = rondasDelTorneo(t, resultados)
+    ..sort((x, y) => x.playedAt.compareTo(y.playedAt));
+
+  // Desde cuándo cada jugador está clasificado. Un partido no se puede resolver
+  // con una ronda anterior a la que metió a los dos en él.
+  final listoDesde = <String, DateTime>{};
+  // Qué rondas ya gastó cada jugador. Una ronda de cuatro resuelve DOS partidos
+  // —A contra B, C contra D— y eso está bien; lo que no puede es resolver
+  // también la semifinal entre A y C, porque ese golf ya se jugó. Sin esto, un
+  // cuadro de cuatro amigos en una sola ronda se resolvía entero de una vez.
+  //
+  // Va por jugador y no por ronda porque el criterio es el jugador: dos partidos
+  // que no comparten a nadie sí pueden salir de la misma tarjeta.
+  final usadas = <String, Set<String>>{};
+  final salida = <List<Enfrentamiento>>[];
+
+  var actual = huecos;
+  var nivel = 0;
+
+  while (actual.length >= 2) {
+    final partidos = <Enfrentamiento>[];
+    final siguiente = <String?>[];
+
+    for (var i = 0; i < actual.length; i += 2) {
+      final a = actual[i];
+      final b = actual[i + 1];
+      final pos = i ~/ 2;
+
+      // Bye: uno de los dos huecos no existe, así que el otro pasa sin jugar.
+      if ((a == null) != (b == null)) {
+        final pasa = a ?? b;
+        partidos.add(Enfrentamiento(
+            ronda: nivel, posicion: pos, a: a, b: b, ganador: pasa, bye: true));
+        siguiente.add(pasa);
+        continue;
+      }
+
+      // Todavía no se sabe quién viene. Se enseña vacío, que es información.
+      if (a == null || b == null) {
+        partidos.add(Enfrentamiento(ronda: nivel, posicion: pos, a: a, b: b));
+        siguiente.add(null);
+        continue;
+      }
+
+      final desde = [listoDesde[a], listoDesde[b]]
+          .whereType<DateTime>()
+          .fold<DateTime?>(null, (m, d) => m == null || d.isAfter(m) ? d : m);
+
+      RoundResult? decide;
+      Map<String, double> medidas = const {};
+      for (final r in rondas) {
+        if (!r.playerIds.contains(a) || !r.playerIds.contains(b)) continue;
+        if (desde != null && r.playedAt.isBefore(desde)) continue;
+        // Ninguno de los dos puede haber gastado ya esta ronda en un partido
+        // anterior del cuadro. La fecha no basta: se juegan dos el mismo día.
+        if ((usadas[a]?.contains(r.roundId) ?? false) ||
+            (usadas[b]?.contains(r.roundId) ?? false)) {
+          continue;
+        }
+        final m = _medidasDe(t.metodo, r);
+        if (!m.containsKey(a) || !m.containsKey(b)) continue;
+        decide = r;
+        medidas = m;
+        break; // La PRIMERA vez que se cruzan. Un partido se juega una vez.
+      }
+
+      if (decide == null) {
+        partidos.add(Enfrentamiento(ronda: nivel, posicion: pos, a: a, b: b));
+        siguiente.add(null);
+        continue;
+      }
+
+      final ma = medidas[a]!;
+      final mb = medidas[b]!;
+      String? gana;
+      var empatado = false;
+      var aMano = false;
+      if (ma == mb) {
+        // Empataron. Solo pasa quien el organizador diga, y si no ha dicho nada
+        // el partido se queda a la vista sin resolver.
+        gana = t.desempates[parKey(a, b)];
+        if (gana != a && gana != b) gana = null;
+        empatado = gana == null;
+        aMano = gana != null;
+      } else {
+        gana = (t.metodo.masEsMejor ? ma > mb : ma < mb) ? a : b;
+      }
+
+      partidos.add(Enfrentamiento(
+        ronda: nivel,
+        posicion: pos,
+        a: a,
+        b: b,
+        ganador: gana,
+        empatado: empatado,
+        desempatadoAMano: aMano,
+        roundId: decide.roundId,
+        roundName: decide.roundName,
+        cuando: decide.playedAt,
+        medidaA: ma,
+        medidaB: mb,
+      ));
+      siguiente.add(gana);
+      (usadas[a] ??= {}).add(decide.roundId);
+      (usadas[b] ??= {}).add(decide.roundId);
+      if (gana != null) listoDesde[gana] = decide.playedAt;
+    }
+
+    salida.add(partidos);
+    actual = siguiente;
+    nivel++;
+  }
+
+  return LlaveDelTorneo(
+    rondas: salida,
+    campeon: salida.isEmpty ? null : salida.last.first.ganador,
+    plazas: plazas,
+    byes: byes,
+  );
+}
+
+/// Por qué un torneo de liga no puede pasar a eliminación, si no puede.
+///
+/// El cuadro se alimenta de rondas MARCADAS: con otra fuente, los partidos no se
+/// pueden emparejar con la ronda que los resolvió.
+///
+/// [exigirInscritos] separa dos cosas que no son iguales. La fuente es un NO —el
+/// cuadro no puede funcionar así— pero la falta de inscritos es un TODAVÍA NO, y
+/// bloquear por eso obligaría a bajar tres secciones a rellenar la lista y volver
+/// a subir. El editor lo pone en false y deja que el bloque de la siembra diga lo
+/// que falta.
+String? motivoSinCuadro(Torneo t, {bool exigirInscritos = true}) {
+  if (t.fuente != FuenteDeRondas.marcadas) {
+    return 'Un cuadro necesita rondas marcadas: cada partido se resuelve con la '
+        'ronda que jugaron los dos, y hay que saber cuál es. Cambia la fuente a '
+        '"Marcadas al configurar la ronda".';
+  }
+  if (exigirInscritos && t.participantes.length < 2) {
+    return 'Un cuadro se arma con los inscritos, y hacen falta al menos dos.';
+  }
+  return null;
+}

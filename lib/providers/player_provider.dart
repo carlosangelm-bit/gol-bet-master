@@ -19,6 +19,18 @@ class PlayerProvider extends ChangeNotifier {
   String? get error   => _error;
   bool    get isEmpty => _directory.isEmpty;
 
+  /// Siembra el directorio sin Firestore, para los tests de widget.
+  ///
+  /// La misma costura que PerfilProvider y TorneoProvider. Sin ella, una pantalla
+  /// que resuelve nombres contra el directorio se prueba con el directorio vacío
+  /// —o sea, se prueba el camino de respaldo y no el real—.
+  @visibleForTesting
+  void sembrar(List<PlayerWithLink> dir) {
+    _directory = dir;
+    _loading = false;
+    notifyListeners();
+  }
+
   // ── Suscripción en tiempo real ──────────────────────────────────────────────
   void startListening() {
     _sub?.cancel();

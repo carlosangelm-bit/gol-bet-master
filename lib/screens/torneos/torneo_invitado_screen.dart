@@ -86,6 +86,67 @@ class TorneoInvitadoScreen extends StatelessWidget {
                 const SizedBox(height: 14),
               ],
 
+              // El cuadro, si lo hay. Va antes de la clasificación por lo mismo
+              // que dentro de la app: en una eliminación la pregunta es quién
+              // pasó, no quién acumula más.
+              if (copia.llave.isNotEmpty) ...[
+                if (copia.campeon != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(15),
+                    decoration: BoxDecoration(
+                      color: t.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(color: t.primary),
+                    ),
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 10,
+                      runSpacing: 4,
+                      children: [
+                        const Text('🏆', style: TextStyle(fontSize: 24)),
+                        Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('CAMPEÓN',
+                                  style: TextStyle(
+                                      color: t.sub,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.8)),
+                              Text(copia.campeon!,
+                                  style: TextStyle(
+                                      color: t.text,
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.w800)),
+                            ]),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                Text('EL CUADRO',
+                    style: TextStyle(
+                        color: t.sub,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8)),
+                const SizedBox(height: 8),
+                for (final fase in _fases()) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, bottom: 5),
+                    child: Text(fase.first.faseNombre.toUpperCase(),
+                        style: TextStyle(
+                            color: t.sub,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6)),
+                  ),
+                  for (final p in fase) _partido(t, p),
+                ],
+                const SizedBox(height: 18),
+              ],
+
               Text('CLASIFICACIÓN',
                   style: TextStyle(
                       color: t.sub,
@@ -111,6 +172,66 @@ class TorneoInvitadoScreen extends StatelessWidget {
           ),
         ),
         _CintillaDescarga(t: t),
+      ]),
+    );
+  }
+
+  /// Los partidos agrupados por fase, en orden. La instantánea los trae planos
+  /// para que el documento sea una lista y no un árbol anidado.
+  List<List<PartidoPublicado>> _fases() {
+    final por = <int, List<PartidoPublicado>>{};
+    for (final p in copia.llave) {
+      (por[p.ronda] ??= []).add(p);
+    }
+    final claves = por.keys.toList()..sort();
+    return [for (final k in claves) por[k]!];
+  }
+
+  /// Un partido publicado. Mismo criterio que dentro de la app: se dice POR QUÉ
+  /// pasó quien pasó, o el cuadro es un veredicto sin motivo.
+  Widget _partido(GolfTheme t, PartidoPublicado p) {
+    Widget lado(String? nombre) {
+      final gana = nombre != null && nombre == p.ganador;
+      return Row(children: [
+        Expanded(
+          child: Text(nombre ?? 'Por decidir',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: nombre == null || !gana ? t.sub : t.text,
+                  fontSize: 13,
+                  fontWeight: gana ? FontWeight.w800 : FontWeight.w500)),
+        ),
+        if (gana) Icon(Icons.arrow_forward, size: 13, color: t.primary),
+      ]);
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+            color: p.empatado ? t.scoreOver.withValues(alpha: 0.6) : t.divider),
+      ),
+      child: Column(children: [
+        lado(p.a),
+        const SizedBox(height: 5),
+        lado(p.b),
+        if (p.bye || p.empatado || p.enRonda != null) ...[
+          const SizedBox(height: 6),
+          Text(
+              p.bye
+                  ? 'Pasa sin jugar'
+                  : p.empatado
+                      ? 'Empatados en ${p.enRonda}. Falta decidir quién pasa.'
+                      : 'Se resolvió en ${p.enRonda}',
+              style: TextStyle(
+                  color: p.empatado ? t.scoreOver : t.sub,
+                  fontSize: 10.5,
+                  height: 1.3)),
+        ],
       ]),
     );
   }

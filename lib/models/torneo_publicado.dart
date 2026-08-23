@@ -111,6 +111,71 @@ class JornadaPublicada {
       );
 }
 
+/// Un partido del cuadro, aplanado para publicar.
+///
+/// Con NOMBRES, no ids —igual que la tabla— y con lo que sacó cada uno en la
+/// ronda que lo resolvió: un resultado de partido sin sus dos cifras es un
+/// veredicto sin motivo, y eso hace discutir el número en vez de la regla.
+///
+/// Lo que NO lleva: el roundId. Al invitado no le sirve —no puede abrir esa
+/// ronda— y publicarlo enseñaría la forma interna sin necesidad. El nombre de la
+/// ronda y la fecha sí, porque son el "por qué".
+class PartidoPublicado {
+  final int ronda;
+  final String faseNombre;
+  final String? a;
+  final String? b;
+  final String? ganador;
+  final bool bye;
+  final bool empatado;
+  final String? enRonda;
+  final DateTime? cuando;
+  final double? medidaA;
+  final double? medidaB;
+
+  const PartidoPublicado({
+    required this.ronda,
+    required this.faseNombre,
+    this.a,
+    this.b,
+    this.ganador,
+    this.bye = false,
+    this.empatado = false,
+    this.enRonda,
+    this.cuando,
+    this.medidaA,
+    this.medidaB,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'ronda': ronda,
+        'faseNombre': faseNombre,
+        if (a != null) 'a': a,
+        if (b != null) 'b': b,
+        if (ganador != null) 'ganador': ganador,
+        if (bye) 'bye': true,
+        if (empatado) 'empatado': true,
+        if (enRonda != null) 'enRonda': enRonda,
+        if (cuando != null) 'cuando': cuando!.toIso8601String(),
+        if (medidaA != null) 'medidaA': medidaA,
+        if (medidaB != null) 'medidaB': medidaB,
+      };
+
+  factory PartidoPublicado.fromJson(Map<String, dynamic> j) => PartidoPublicado(
+        ronda: (j['ronda'] as num?)?.toInt() ?? 0,
+        faseNombre: (j['faseNombre'] as String?) ?? '',
+        a: j['a'] as String?,
+        b: j['b'] as String?,
+        ganador: j['ganador'] as String?,
+        bye: j['bye'] == true,
+        empatado: j['empatado'] == true,
+        enRonda: j['enRonda'] as String?,
+        cuando: DateTime.tryParse((j['cuando'] as String?) ?? ''),
+        medidaA: (j['medidaA'] as num?)?.toDouble(),
+        medidaB: (j['medidaB'] as num?)?.toDouble(),
+      );
+}
+
 class TorneoPublicado {
   /// El token del enlace. Es el id del documento.
   final String token;
@@ -146,6 +211,16 @@ class TorneoPublicado {
   final List<JornadaPublicada> jornadas;
   final double boteJornadaEntrada;
 
+  /// El cuadro, si el torneo es de eliminación. Vacío si es una liga.
+  ///
+  /// Se publica porque sin él el enlace de un torneo de eliminación enseñaría
+  /// una tabla acumulada donde el invitado espera ver a quién le toca — cierto,
+  /// pero no lo que fue a buscar.
+  final List<PartidoPublicado> llave;
+
+  /// Quién ganó, por nombre. Null mientras la final no se juegue.
+  final String? campeon;
+
   const TorneoPublicado({
     required this.token,
     required this.ownerUid,
@@ -162,6 +237,8 @@ class TorneoPublicado {
     this.boteProvisional,
     this.jornadas = const [],
     this.boteJornadaEntrada = 0,
+    this.llave = const [],
+    this.campeon,
   });
 
   /// Construye la copia desde la tabla YA CALCULADA.
@@ -177,7 +254,17 @@ class TorneoPublicado {
     required BoteDelTorneo bote,
     required List<BoteDeJornada> jornadas,
     required DateTime cuando,
+    LlaveDelTorneo? llave,
+    Map<String, String> nombres = const {},
   }) {
+    // Los nombres para el cuadro. La tabla ya los trae resueltos, así que sale
+    // de ahí; lo que pase [nombres] manda, para el que tiene bye y no aparece en
+    // ninguna fila. Nunca se cae al id: publicarlo enseñaría la forma interna.
+    final nombreDe = <String, String>{
+      for (final f in [...tabla.filas, ...tabla.bajoMinimo]) f.playerId: f.nombre,
+      ...nombres,
+    };
+    String? conNombre(String? pid) => pid == null ? null : (nombreDe[pid] ?? '—');
     double aporta(String pid) => bote.lineas
         .where((l) => l.playerId == pid)
         .fold(0.0, (s, l) => s + l.aporta);
@@ -226,6 +313,24 @@ class TorneoPublicado {
               ))
           .toList(),
       boteJornadaEntrada: torneo.bote.entradaPorJornada,
+      llave: [
+        for (final nivel in llave?.rondas ?? const <List<Enfrentamiento>>[])
+          for (final e in nivel)
+            PartidoPublicado(
+              ronda: e.ronda,
+              faseNombre: nombreDeRondaDeLlave(nivel.length),
+              a: conNombre(e.a),
+              b: conNombre(e.b),
+              ganador: conNombre(e.ganador),
+              bye: e.bye,
+              empatado: e.empatado,
+              enRonda: e.roundName,
+              cuando: e.cuando,
+              medidaA: e.medidaA,
+              medidaB: e.medidaB,
+            ),
+      ],
+      campeon: conNombre(llave?.campeon),
     );
   }
 
@@ -245,6 +350,8 @@ class TorneoPublicado {
         if (jornadas.isNotEmpty)
           'jornadas': jornadas.map((j) => j.toJson()).toList(),
         if (boteJornadaEntrada != 0) 'boteJornadaEntrada': boteJornadaEntrada,
+        if (llave.isNotEmpty) 'llave': llave.map((e) => e.toJson()).toList(),
+        if (campeon != null) 'campeon': campeon,
       };
 
   factory TorneoPublicado.fromJson(String token, Map<String, dynamic> j) =>
@@ -272,6 +379,11 @@ class TorneoPublicado {
             .toList(),
         boteJornadaEntrada:
             (j['boteJornadaEntrada'] as num?)?.toDouble() ?? 0,
+        llave: ((j['llave'] as List?) ?? const [])
+            .map((x) =>
+                PartidoPublicado.fromJson(Map<String, dynamic>.from(x as Map)))
+            .toList(),
+        campeon: j['campeon'] as String?,
       );
 
   /// Cuánto hace que se publicó, en palabras.

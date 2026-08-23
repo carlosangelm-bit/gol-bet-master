@@ -32,6 +32,7 @@ import '../../models/round_result.dart';
 import '../../models/torneo.dart';
 import '../../models/torneo_publicado.dart';
 import '../../providers/perfil_provider.dart';
+import '../../providers/player_provider.dart';
 import '../../providers/torneo_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
@@ -58,6 +59,13 @@ Future<List<String>> republicarTorneosDe(
     propio,
   ];
 
+  // Los nombres del directorio, para el cuadro: el que pasa con bye no aparece
+  // en ninguna fila de la tabla y se quedaría sin nombre.
+  final nombres = {
+    for (final pw in context.read<PlayerProvider>().directory)
+      pw.player.id: pw.displayName,
+  };
+
   final ahora = DateTime.now();
   final hechos = <String>[];
 
@@ -76,6 +84,8 @@ Future<List<String>> republicarTorneosDe(
       bote: boteDe(torneo, tabla),
       jornadas: botesPorJornada(torneo, tabla),
       cuando: ahora,
+      llave: llaveDe(torneo, resultados),
+      nombres: nombres,
     );
     try {
       await FirestoreService.publicarTorneo(copia);

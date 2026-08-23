@@ -74,8 +74,18 @@ class SetupScreen extends StatefulWidget {
   /// responde y se puede retroceder a cambiar cualquier cosa.
   final BettingGroup? grupoInicial;
 
+  /// El partido del cuadro con el que se entra, si se viene de un torneo de
+  /// eliminación.
+  ///
+  /// Trae los DOS jugadores del enfrentamiento y el torneo ya marcado. Es un
+  /// atajo, no un carril: se puede añadir gente, cambiar apuestas y quitar la
+  /// marca —cuatro amigos juegan una ronda y resuelven dos partidos a la vez, y
+  /// eso tiene que caber—.
+  final ({String torneoId, List<String> jugadores})? partidoInicial;
+
   const SetupScreen({
     super.key,
+    this.partidoInicial,
     this.grupoInicial,
     this.nominaInicial,
     this.jugadoresNuevos,
@@ -419,6 +429,15 @@ class _SetupScreenState extends State<SetupScreen> {
       final bg = widget.grupoInicial;
       if (bg != null && mounted) _precargarDesdeGrupo(bg);
 
+      // El partido del cuadro: los dos que se cruzan, y el torneo ya marcado.
+      final partido = widget.partidoInicial;
+      if (partido != null && mounted) {
+        setState(() {
+          _agregarDelDirectorio(partido.jugadores);
+          _torneosMarcados.add(partido.torneoId);
+        });
+      }
+
       // Lo que ya respondió la pantalla de arranque.
       if (widget.campoInicial != null) {
         setState(() {
@@ -493,33 +512,42 @@ class _SetupScreenState extends State<SetupScreen> {
     });
   }
 
+  /// Mete en la ronda a los jugadores de [ids] que se puedan resolver.
+  ///
+  /// Sale del bucle de [_precargarDesdeGrupo] porque el cuadro de eliminación
+  /// necesita lo mismo: dos ids y un jugador en la lista. Un segundo camino
+  /// habría resuelto el handicap de otra manera —el override del link es fácil
+  /// de olvidar— y dos rondas idénticas habrían dado números distintos.
+  ///
+  /// Llamar dentro de setState: no lo hace por su cuenta.
+  void _agregarDelDirectorio(List<String> ids) {
+    final dir = context.read<PlayerProvider>().directory;
+    for (final id in ids) {
+      if (_players.any((p) => p.id == id)) continue;
+      // Creado en el arranque rápido: no está en el directorio y viene entero.
+      final nuevo = widget.jugadoresNuevos?.where((x) => x.id == id).firstOrNull;
+      if (nuevo != null) {
+        _players.add(nuevo);
+        _assignDefaultTeeToPlayer(nuevo.id);
+        continue;
+      }
+      final pw = dir.where((x) => x.player.id == id).firstOrNull;
+      if (pw == null) continue; // ya no está en el directorio: se omite
+      var player = pw.player.copyWith(name: pw.displayName);
+      final ov = pw.link?.defaultHandicapOverride;
+      if (ov != null) player = player.copyWith(handicapBase: ov);
+      _players.add(player);
+      _assignDefaultTeeToPlayer(player.id);
+    }
+  }
+
   @override
   /// Deja el wizard con lo que el grupo ya sabe, y aterriza donde no llega.
   void _precargarDesdeGrupo(BettingGroup bg) {
-    final dir = context.read<PlayerProvider>().directory;
     // La nómina de HOY manda sobre los habituales: "a veces falta uno y va
     // otro". El grupo guardado no se toca.
     final nomina = widget.nominaInicial ?? bg.playerIds;
-    setState(() {
-      for (final id in nomina) {
-        if (_players.any((p) => p.id == id)) continue;
-        // Creado en el arranque rápido: no está en el directorio y viene entero.
-        final nuevo =
-            widget.jugadoresNuevos?.where((x) => x.id == id).firstOrNull;
-        if (nuevo != null) {
-          _players.add(nuevo);
-          _assignDefaultTeeToPlayer(nuevo.id);
-          continue;
-        }
-        final pw = dir.where((x) => x.player.id == id).firstOrNull;
-        if (pw == null) continue; // ya no está en el directorio: se omite
-        var player = pw.player.copyWith(name: pw.displayName);
-        final ov = pw.link?.defaultHandicapOverride;
-        if (ov != null) player = player.copyWith(handicapBase: ov);
-        _players.add(player);
-        _assignDefaultTeeToPlayer(player.id);
-      }
-    });
+    setState(() => _agregarDelDirectorio(nomina));
     if (_players.length < 2) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Los jugadores del grupo ya no están en tu directorio'),
@@ -1045,13 +1073,22 @@ class _SetupScreenState extends State<SetupScreen> {
             GAvatar(name: pw.displayName, colorIndex: pw.player.colorIndex, size: 36),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // Expanded y no un Text suelto: "María Fernanda Villalobos" con la
+              // estrella al lado desbordaba 143 px. Es la cuarta vez que sale la
+              // misma forma —figura y texto en un Row sin restringir— y aquí
+              // truncar es lo correcto: en una lista de directorio la fila mide
+              // igual para todos y el nombre completo se ve al añadirlo.
               Row(children: [
-                Text(
-                  pw.displayName,
-                  style: TextStyle(
-                    color: (!canAdd && !inRound) ? t.sub : (inRound ? t.primary : t.text),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
+                Expanded(
+                  child: Text(
+                    pw.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: (!canAdd && !inRound) ? t.sub : (inRound ? t.primary : t.text),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
                   ),
                 ),
                 if (pw.isFavorite) ...[
@@ -1060,10 +1097,14 @@ class _SetupScreenState extends State<SetupScreen> {
                 ],
               ]),
               Row(children: [
-                Text(
+                Flexible(
+                  child: Text(
                   'HCP ${pw.player.handicapBase.toStringAsFixed(1)}'
                   '${pw.link?.defaultSlidingAdjustment != 0 && pw.link != null ? "  ·  slide ${pw.link!.defaultSlidingAdjustment > 0 ? "+" : ""}${pw.link!.defaultSlidingAdjustment.toStringAsFixed(0)}" : ""}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: t.sub, fontSize: 11),
+                  ),
                 ),
                 if (pw.player.hasLinkedAccount) ...[
                   const SizedBox(width: 5),

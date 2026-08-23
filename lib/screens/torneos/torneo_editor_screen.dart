@@ -120,8 +120,36 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           ),
           const SizedBox(height: 20),
 
-          // ── 1 · Qué rondas cuentan ─────────────────────────────────────
-          _titulo('1 · QUÉ RONDAS CUENTAN', t),
+          // ── 1 · El formato ─────────────────────────────────────────────
+          //
+          // Va primero porque reencuadra todo lo de debajo: en un cuadro la
+          // pregunta es a quién te toca, no cuánto acumulas. Y no cambia cómo se
+          // juega —un torneo nunca lo cambia— solo qué se enseña.
+          _titulo('1 · FORMATO', t),
+          for (final f in FormatoDeTorneo.values)
+            _opcion(
+              t: t,
+              titulo: f.label,
+              detalle: f.descripcion,
+              activa: _t.formato == f,
+              onTap: () => setState(() => _t = _t.copyWith(formato: f)),
+              // Solo se bloquea por la FUENTE, que es lo que impide que un
+              // cuadro funcione. La falta de inscritos la dice el bloque de la
+              // siembra: es un "todavía no", y bloquear por eso obligaría a
+              // bajar al paso 3 y volver a subir.
+              motivo: f == FormatoDeTorneo.eliminacion &&
+                      _t.formato != FormatoDeTorneo.eliminacion
+                  ? motivoSinCuadro(_t, exigirInscritos: false)
+                  : null,
+            ),
+          if (_t.formato == FormatoDeTorneo.eliminacion) ...[
+            const SizedBox(height: 8),
+            _bloqueSiembra(t),
+          ],
+          const SizedBox(height: 22),
+
+          // ── 2 · Qué rondas cuentan ─────────────────────────────────────
+          _titulo('2 · QUÉ RONDAS CUENTAN', t),
           // Solo las fuentes que se OFRECEN. La retirada por fechas sigue en el
           // enum para que un torneo guardado se lea igual, pero no se puede
           // elegir de nuevo: un rango arrastra rondas que nadie marcó.
@@ -216,12 +244,12 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           ],
           const SizedBox(height: 22),
 
-          // ── 2 · Quién participa ────────────────────────────────────────
+          // ── 3 · Quién participa ────────────────────────────────────────
           //
           // La lista explícita. Participa quien SE INSCRIBE, no quien juegue: con
           // un bote de por medio, poner $500 es una decisión y no algo que te
           // pase por jugar un sábado.
-          _titulo('2 · QUIÉN PARTICIPA', t),
+          _titulo('3 · QUIÉN PARTICIPA', t),
           if (_t.participantes.isEmpty) ...[
             Container(
               padding: const EdgeInsets.all(11),
@@ -313,7 +341,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           const SizedBox(height: 22),
 
           // ── 3 · Cómo puntúa cada ronda ─────────────────────────────────
-          _titulo('3 · CÓMO PUNTÚA CADA RONDA', t),
+          _titulo('4 · CÓMO PUNTÚA CADA RONDA', t),
           for (final m in MetodoDePuntuacion.values)
             _opcion(
               t: t,
@@ -367,7 +395,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           const SizedBox(height: 22),
 
           // ── 3 · Cómo se acumula ────────────────────────────────────────
-          _titulo('4 · CÓMO SE ACUMULA', t),
+          _titulo('5 · CÓMO SE ACUMULA', t),
           for (final a in Acumulacion.values)
             _opcion(
               t: t,
@@ -393,7 +421,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           // decide quién ENTRA —eso lo hace la lista de participantes— sino
           // quién puede COBRAR. Es lo que quería decir desde el principio, y por
           // eso se sentía insuficiente pareciendo el adecuado.
-          _titulo('5 · CUÁNTAS RONDAS PARA OPTAR AL PREMIO', t),
+          _titulo('6 · CUÁNTAS RONDAS PARA OPTAR AL PREMIO', t),
           _contador(t, 'Rondas jugadas mínimas', _t.minimoRondas, 0, 40,
               (v) => setState(() => _t = _t.copyWith(minimoRondas: v))),
           const SizedBox(height: 6),
@@ -414,7 +442,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           const SizedBox(height: 22),
 
           // ── 5 · El bote ────────────────────────────────────────────────
-          _titulo('6 · EL BOTE', t),
+          _titulo('7 · EL BOTE', t),
           TextField(
             controller: _entradaCtrl,
             keyboardType: TextInputType.number,
@@ -566,6 +594,120 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
   }
 
   // ── Piezas ────────────────────────────────────────────────────────────────
+
+  /// La siembra: el orden del cuadro, con el cruce de la primera ronda a la
+  /// vista.
+  ///
+  /// Es lo ÚNICO del cuadro que se guarda. Se enseña el emparejamiento resultante
+  /// porque el orden por sí solo no dice nada: "1, 8, 4, 5" es una lista; "el 1
+  /// contra el 8" es la información. Y así se ve el efecto de mover a alguien
+  /// antes de guardar, en vez de descubrirlo en el cuadro.
+  Widget _bloqueSiembra(GolfTheme t) {
+    // La siembra efectiva: la guardada, filtrada por quien sigue inscrito, y
+    // completada con los inscritos que no estén. Así borrar a alguien de la
+    // lista o añadirlo no deja la siembra a medias.
+    final orden = <String>[
+      ..._t.siembra.where(_t.participantes.contains),
+      ..._t.participantes.where((p) => !_t.siembra.contains(p)),
+    ];
+
+    if (orden.length < 2) {
+      return _nota(
+          'Un cuadro se arma con los inscritos. Añade al menos dos en el paso 3.',
+          t);
+    }
+
+    // onReorderItem y no onReorder: el índice llega ya ajustado, así que no hay
+    // que corregirlo a mano —que es donde se cuela el off-by-one al arrastrar
+    // hacia abajo—.
+    void mover(int desde, int hasta) {
+      final copia = [...orden];
+      copia.insert(hasta, copia.removeAt(desde));
+      setState(() => _t = _t.copyWith(siembra: copia));
+    }
+
+    final llave = llaveDe(
+        _t.copyWith(siembra: orden, formato: FormatoDeTorneo.eliminacion),
+        const []);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: t.divider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('LA SIEMBRA', style: GolfType.label(t.sub)),
+        const SizedBox(height: 4),
+        Text(
+            'El orden decide los cruces: el primero se cruza con el último, y '
+            'los dos primeros solo se ven en la final. Arrastra para cambiarlo.',
+            style: TextStyle(color: t.sub, fontSize: 11, height: 1.35)),
+        const SizedBox(height: 10),
+        // La lista es corta —son los inscritos— así que cabe entera sin
+        // scroll propio dentro del formulario.
+        ReorderableListView(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          buildDefaultDragHandles: false,
+          onReorderItem: mover,
+          children: [
+            for (var i = 0; i < orden.length; i++)
+              ReorderableDragStartListener(
+                key: ValueKey(orden[i]),
+                index: i,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: t.surface,
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(color: t.divider),
+                    ),
+                    child: Row(children: [
+                      SizedBox(
+                          width: 22,
+                          child: Text('${i + 1}',
+                              style: GolfType.bodyNum(t.sub, size: 12))),
+                      Expanded(
+                          child: Text(_nombreDe(orden[i]),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: t.text, fontSize: 13))),
+                      Icon(Icons.drag_handle, color: t.sub, size: 17),
+                    ]),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text('CÓMO QUEDA LA PRIMERA RONDA', style: GolfType.label(t.sub)),
+        const SizedBox(height: 5),
+        for (final e in llave.rondas.isEmpty ? <Enfrentamiento>[] : llave.rondas.first)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 3),
+            child: Text(
+                e.bye
+                    ? '${_nombreDe(e.ganador!)} · pasa sin jugar'
+                    : '${_nombreDe(e.a!)}  vs  ${_nombreDe(e.b!)}',
+                style: TextStyle(
+                    color: e.bye ? t.sub : t.text, fontSize: 12, height: 1.35)),
+          ),
+        if (llave.byes > 0) ...[
+          const SizedBox(height: 5),
+          Text(
+              'El cuadro tiene ${llave.plazas} plazas y hay ${orden.length} '
+              'inscritos, así que ${llave.byes} '
+              '${llave.byes == 1 ? "pasa" : "pasan"} sin jugar.',
+              style: TextStyle(color: t.sub, fontSize: 11, height: 1.35)),
+        ],
+      ]),
+    );
+  }
 
   Widget _titulo(String txt, GolfTheme t) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
