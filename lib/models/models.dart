@@ -2685,6 +2685,10 @@ class BetModuleInstance {
   // ── copyWith ──────────────────────────────────────────────────────────────
   // clearSides: si true, pone sides=null (volver a modo individual).
   BetModuleInstance copyWith({
+    /// Solo para CLONAR: la formación "pareja base contra el campo" monta tres
+    /// apuestas del mismo tipo, y el id es lo que las distingue en el ledger y en
+    /// las hojas de edición. Nadie más debería cambiarlo.
+    String? id,
     String? name,
     List<String>? participantIds,
     List<BetSide>? sides,
@@ -2717,7 +2721,7 @@ class BetModuleInstance {
     bool                                 clearScope = false,
     TeamHandicapConfig?                  teamHandicapConfig,
   }) => BetModuleInstance(
-    id: id, type: type,
+    id: id ?? this.id, type: type,
     name: name ?? this.name,
     participantIds: participantIds ?? this.participantIds,
     scope: clearScope ? null : (scope ?? this.scope),

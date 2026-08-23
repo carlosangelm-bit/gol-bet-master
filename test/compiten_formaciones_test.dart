@@ -199,7 +199,13 @@ void main() {
       expect(errores, isEmpty);
       expect(find.textContaining('High and Low se juega con 4, 5 o 6'),
           findsOneWidget);
-      expect(find.textContaining('esta ronda tiene 3'), findsOneWidget);
+      // El motivo entero de ESTA formación, no el fragmento del número: ahora
+      // hay más de una atenuada con tres jugadores y "esta ronda tiene 3"
+      // aparece en las dos. Un fragmento compartido deja de identificar nada.
+      expect(
+          find.textContaining(
+              'High and Low se juega con 4, 5 o 6 jugadores, y esta ronda tiene 3'),
+          findsOneWidget);
 
       // Y tocarla no hace nada: sigue sin equipos.
       await tester.tap(find.text('High and Low'));
@@ -218,6 +224,78 @@ void main() {
       await tester.pumpAndSettle();
       expect(_delPanel(tester, 'EQUIPO A'), hasLength(2));
       expect(_delPanel(tester, 'EQUIPO B'), hasLength(1));
+    });
+  });
+
+  group('6 · pareja base contra el campo: tres enfrentamientos a la vez', () {
+    testWidgets('sale en el catálogo y anuncia los tres', (tester) async {
+      final errores = await _hastaCompiten(tester, 5);
+      expect(errores, isEmpty);
+      expect(find.text('Pareja base contra el campo'), findsOneWidget);
+      expect(find.text('3 enfrentamientos a la vez.'), findsOneWidget);
+    });
+
+    testWidgets('elegida, enseña QUIÉN juega contra quién', (tester) async {
+      // Con tres apuestas a la vez, "tres enfrentamientos" es una promesa si no
+      // se ve la lista.
+      final errores = await _hastaCompiten(tester, 5);
+      expect(errores, isEmpty);
+      await tester.tap(find.text('Pareja base contra el campo'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('LOS ENFRENTAMIENTOS'), findsOneWidget);
+      expect(find.text('Rafa + Alan  vs  Memo + Toño'), findsOneWidget);
+      expect(find.text('Rafa + Alan  vs  Memo + Beto'), findsOneWidget);
+      expect(find.text('Rafa + Alan  vs  Toño + Beto'), findsOneWidget);
+    });
+
+    testWidgets('dice que la asimetría es el formato', (tester) async {
+      // Para que nadie lo "arregle" después bajando importes.
+      await _hastaCompiten(tester, 5);
+      await tester.tap(find.text('Pareja base contra el campo'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('gana más y pierde más'), findsOneWidget);
+      expect(find.textContaining('El equipo A es la PAREJA BASE'), findsOneWidget);
+    });
+
+    testWidgets('cambiar la pareja base rehace los tres', (tester) async {
+      await _hastaCompiten(tester, 5);
+      await tester.tap(find.text('Pareja base contra el campo'));
+      await tester.pumpAndSettle();
+
+      // Alan sale de la pareja base y entra Memo, que es el siguiente del resto.
+      final enA = find.descendant(
+          of: find.ancestor(
+              of: find.text('EQUIPO A'), matching: find.byType(Column)).first,
+          matching: find.text('Alan'));
+      await tester.tap(enA.first);
+      await tester.pumpAndSettle();
+
+      // Con un solo jugador en la base ya no hay pareja: se propone otra vez la
+      // de handicap más bajo, así que los cruces siguen siendo tres.
+      expect(find.text('LOS ENFRENTAMIENTOS'), findsOneWidget);
+      expect(find.textContaining('  vs  '), findsNWidgets(3));
+    });
+
+    testWidgets('con cuatro jugadores se atenúa con su motivo', (tester) async {
+      final errores = await _hastaCompiten(tester, 4);
+      expect(errores, isEmpty);
+      expect(
+          find.textContaining('Pareja base contra el campo se juega con 5'),
+          findsOneWidget);
+      // Y tocarla no monta nada.
+      await tester.tap(find.text('Pareja base contra el campo'));
+      await tester.pumpAndSettle();
+      expect(find.text('LOS ENFRENTAMIENTOS'), findsNothing);
+    });
+
+    testWidgets('cabe a 320 px con cinco nombres', (tester) async {
+      final errores =
+          await _hastaCompiten(tester, 5, tamano: const Size(320, 2000));
+      expect(errores, isEmpty);
+      await tester.tap(find.text('Pareja base contra el campo'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
     });
   });
 

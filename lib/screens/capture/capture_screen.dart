@@ -15,6 +15,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../engines/bet_engine.dart';
+import '../../models/formaciones.dart';
 import '../../models/models.dart';
 import '../torneos/republicar_al_cerrar.dart';
 import '../../providers/round_provider.dart';
@@ -48,6 +49,16 @@ class _CaptureScreenState extends State<CaptureScreen> {
       ];
 
   static bool _tieneSixes(Round round) => _sixesMods(round).isNotEmpty;
+
+  /// La pareja base de la ronda, si las apuestas dibujan ese patrón.
+  ///
+  /// Se DERIVA de los módulos —dos o más de 2 contra 2 que comparten un lado— en
+  /// vez de leerse de un campo. Así funciona también con las tres apuestas
+  /// montadas a mano, que es como este formato ya se podía jugar antes de que el
+  /// atajo existiera.
+  static ({List<String> base, List<List<String>> rivales})? _parejaBase(
+          Round round) =>
+      parejaBaseDe([for (final g in round.betGroups) ...g.modules]);
 
   /// Ancla del bloque de Wolf, para poder traerlo a pantalla.
   ///
@@ -323,6 +334,16 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 // ENSEÑA.
                 if (_tieneSixes(round)) ...[
                   _SixesBloqueSection(hole: _currentHole, t: t),
+                  const SizedBox(height: 10),
+                ],
+
+                // ── La pareja base y sus tres rivales ─────────────────
+                //
+                // Con tres enfrentamientos a la vez, deducir quién juega contra
+                // quién mirando la lista de apuestas es trabajo. Aquí la pareja
+                // base va destacada —es la constante— y los rivales como chips.
+                if (_parejaBase(round) != null) ...[
+                  _ParejaBaseSection(round: round, t: t),
                   const SizedBox(height: 10),
                 ],
 
@@ -2049,6 +2070,87 @@ class LowHighHoleBlock extends StatelessWidget {
 // El nombre del Wolf se ENSEÑA porque orienta —"Wolf: RAFA"— pero no se pide. Y
 // "Solo" es una opción más de la misma fila: ir en solitario es una de las
 // cuatro respuestas posibles, no una pantalla aparte.
+/// La pareja base y las parejas contra las que juega.
+///
+/// Solo informa: no hay nada que tocar. Y no depende del hoyo —la pareja base es
+/// fija toda la ronda— así que se pinta una vez y no cambia al navegar.
+class _ParejaBaseSection extends StatelessWidget {
+  final Round round;
+  final GolfTheme t;
+  const _ParejaBaseSection({required this.round, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = _CaptureScreenState._parejaBase(round);
+    if (p == null) return const SizedBox.shrink();
+
+    String nombre(String pid) => round.players
+        .firstWhere((x) => x.id == pid, orElse: () => Player(id: pid, name: pid))
+        .name
+        .split(' ')
+        .first;
+
+    String par(List<String> l) => l.map(nombre).join(' + ').toUpperCase();
+
+    return Container(
+      key: const Key('parejaBaseSection'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.divider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // La pareja base primero y sola: es lo constante de la ronda, y las
+        // tres apuestas se entienden desde ella.
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: t.text.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text('🎲 PAREJA BASE: ${par(p.base)}',
+              style: TextStyle(
+                  color: t.text,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.3)),
+        ),
+        const SizedBox(height: 7),
+        // Wrap y no Row: tres parejas de nombres en una fila es la forma que ya
+        // desbordó cinco veces en esta app.
+        Wrap(
+          spacing: 8,
+          runSpacing: 5,
+          children: [
+            for (final r in p.rivales)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: t.surface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: t.divider),
+                ),
+                child: Text('vs ${par(r)}',
+                    style: TextStyle(
+                        color: t.text,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+            'Juegan los ${p.rivales.length} a la vez. La pareja base está en '
+            'todos, así que gana más y pierde más.',
+            style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
+      ]),
+    );
+  }
+}
+
 /// El bloque de Sixes del hoyo actual: quién juega con quién, y desde dónde.
 ///
 /// Solo informa. No hay nada que tocar aquí, y por eso no lleva borde de aviso

@@ -483,6 +483,55 @@ class BetRecipe {
     );
   }
 
+  /// Un módulo, expandido a UNO POR ENFRENTAMIENTO.
+  ///
+  /// La formación "pareja base contra el campo" no parte la ronda en dos lados:
+  /// monta TRES apuestas a la vez, cada una con sus dos parejas. Y eso ya
+  /// funcionaba a mano —los lados viven en el módulo, no en la ronda— así que
+  /// esto no es un motor nuevo: es el atajo que evita montarlas una por una.
+  ///
+  /// Devuelve el módulo tal cual, en una lista de uno, si no hay nada que
+  /// expandir. Así el sitio que llama no necesita saber cuál es el caso.
+  ///
+  /// El importe queda IGUAL en los tres, y separable después: son tres módulos de
+  /// verdad, cada uno con su hoja. Con la exposición asimétrica alguien puede
+  /// querer que el tercero valga menos, y para eso no hace falta una opción
+  /// nueva —solo editar ese módulo—.
+  static List<BetModuleInstance> porEnfrentamiento(
+    BetModuleInstance mod, {
+    required List<(List<String>, List<String>)> lados,
+    TeamBall? bola,
+    SingleBallMode submodo = SingleBallMode.scramble,
+  }) {
+    if (lados.length <= 1) {
+      return [
+        conEquiposDeRonda(mod,
+            porEquipos: lados.isNotEmpty,
+            equipoA: lados.isEmpty ? const [] : lados.first.$1,
+            equipoB: lados.isEmpty ? const [] : lados.first.$2,
+            bola: bola,
+            submodo: submodo)
+      ];
+    }
+    // Un conteo sin motor de equipo no se multiplica: darle lados no lo haría de
+    // equipo, y tres copias sin lados serían tres apuestas idénticas.
+    if (!mod.type.rules.teams) return [mod];
+
+    final out = <BetModuleInstance>[];
+    for (var i = 0; i < lados.length; i++) {
+      final (a, b) = lados[i];
+      // Id propio por enfrentamiento: son módulos distintos y el id es lo que
+      // los distingue en el ledger y en las hojas de edición.
+      final base = mod.copyWith(id: '${mod.id}_e${i + 1}');
+      out.add(conEquiposDeRonda(base,
+              porEquipos: true, equipoA: a, equipoB: b, bola: bola, submodo: submodo)
+          // El nombre dice CONTRA QUIÉN. Tres apuestas llamadas igual son
+          // indistinguibles en la lista, y hay que poder editar la tercera.
+          .copyWith(name: '${mod.type.label} · enfrentamiento ${i + 1}'));
+    }
+    return out;
+  }
+
   /// Clave estable de un cruce. Ordenada, para que (a,b) y (b,a) sean el mismo.
   ///
   /// El separador es '|', el mismo que MatchAutoPressConfig.pairKey y

@@ -2854,8 +2854,50 @@ class _SetupScreenState extends State<SetupScreen> {
           Expanded(child: _panelEquipo(t, 'Equipo B', _teamB, 1)),
         ]),
         const SizedBox(height: 8),
-        Text('Toca un jugador para cambiarlo de lado.',
+        Text(
+            _formacion == Formacion.parejaBaseVsCampo
+                // Con esta formación el lado B no es un equipo: es el resto, del
+                // que salen las parejas rivales. Llamarlo "Equipo B" sin más
+                // haría creer que juegan los tres juntos.
+                ? 'El equipo A es la PAREJA BASE. Toca un jugador para '
+                    'cambiarla; del equipo B salen las parejas rivales.'
+                : 'Toca un jugador para cambiarlo de lado.',
             style: GolfType.label(t.sub)),
+        // Los tres enfrentamientos, calculados en vivo: sin esto "tres
+        // enfrentamientos" es una promesa y no se ve contra quién juega quién.
+        if (_formacion == Formacion.parejaBaseVsCampo) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: t.card,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.divider),
+            ),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('LOS ENFRENTAMIENTOS', style: GolfType.label(t.sub)),
+                  const SizedBox(height: 5),
+                  for (final e in enfrentamientosDe(_formacion, _players,
+                      parejaBase: _teamA))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Text(
+                          '${e.$1.map(_nombreCorto).join(' + ')}  vs  '
+                          '${e.$2.map(_nombreCorto).join(' + ')}',
+                          style: TextStyle(
+                              color: t.text, fontSize: 12, height: 1.35)),
+                    ),
+                  const SizedBox(height: 5),
+                  Text(
+                      'La pareja base juega los tres y cada rival dos: gana más y '
+                      'pierde más. Es el formato, no un desajuste que corregir '
+                      'bajando importes.',
+                      style: TextStyle(color: t.sub, fontSize: 11, height: 1.3)),
+                ]),
+          ),
+        ],
         // El criterio, dicho. Un atajo que reparte a la gente en silencio deja
         // la sospecha de que lo hizo mal.
         if (_formacion.reglas.comoSeDecide != null) ...[
@@ -2916,6 +2958,13 @@ class _SetupScreenState extends State<SetupScreen> {
       ],
     ]);
   }
+
+  /// El nombre de pila de un jugador de la ronda.
+  String _nombreCorto(String pid) => _players
+      .where((p) => p.id == pid)
+      .map((p) => p.name.split(' ').first)
+      .firstOrNull ??
+      pid;
 
   /// Arma los dos lados con [f]. La composición sale del catálogo, que es lógica
   /// pura: la pantalla no decide quién va con quién.
@@ -6783,15 +6832,23 @@ class _SetupScreenState extends State<SetupScreen> {
     }
 
     if (_porEquipos) {
+      // Los enfrentamientos de la formación, no un par de lados fijo.
+      //
+      // Casi todas dan UNO —dos equipos, una apuesta— y entonces esto se
+      // comporta igual que antes. "Pareja base contra el campo" da TRES, y cada
+      // apuesta elegida se expande a tres con sus parejas puestas.
+      //
+      // Se hace aquí, en el único sitio por el que pasa toda ronda, y no en cada
+      // punto donde se crea un módulo: esos son varios y basta olvidar uno.
+      final enfrentamientos = _formacion == Formacion.parejaBaseVsCampo
+          ? enfrentamientosDe(_formacion, _players, parejaBase: _teamA)
+          : [(_teamA, _teamB)];
       for (var g = 0; g < _groups.length; g++) {
         _groups[g] = _groups[g].copyWith(
-          modules: _groups[g].modules
-              .map((m) => BetRecipe.conEquiposDeRonda(m,
-                  porEquipos: true,
-                  equipoA: _teamA,
-                  equipoB: _teamB,
-                  bola: _bola,
-                  submodo: _submodo))
+          modules: _groups[g]
+              .modules
+              .expand((m) => BetRecipe.porEnfrentamiento(m,
+                  lados: enfrentamientos, bola: _bola, submodo: _submodo))
               .toList(),
         );
       }
