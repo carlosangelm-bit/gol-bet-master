@@ -82,6 +82,12 @@ class RoundResult {
   /// netByPlayer y los pares del campo.
   final Map<String, int> stablefordByPlayer;
 
+  /// Los torneos para los que cuenta esta ronda.
+  ///
+  /// Se copia de la ronda, donde se marcó al configurarla. Es lo que consulta la
+  /// fuente "marcadas": el torneo no adivina, pregunta quién dijo que contaba.
+  final List<String> torneoIds;
+
   /// Los grupos de apuesta GUARDADOS de los que salió esta ronda.
   ///
   /// Lo que permite un torneo "todas las de Viernes CGM". Vacío si la ronda se
@@ -102,6 +108,7 @@ class RoundResult {
     this.netByPlayer = const {},
     this.stablefordByPlayer = const {},
     this.bettingGroupIds = const [],
+    this.torneoIds = const [],
   });
 
   /// Lo que le tocó a [pid]. Cero si no jugó —pero pregunta antes con
@@ -185,6 +192,7 @@ class RoundResult {
       grossByPlayer: gross,
       netByPlayer: neto,
       stablefordByPlayer: stbl,
+      torneoIds: List.of(round.torneoIds),
       bettingGroupIds: round.betGroups
           .map((g) => g.savedGroupId)
           .whereType<String>()
@@ -209,6 +217,7 @@ class RoundResult {
         if (stablefordByPlayer.isNotEmpty)
           'stablefordByPlayer': stablefordByPlayer,
         if (bettingGroupIds.isNotEmpty) 'bettingGroupIds': bettingGroupIds,
+        if (torneoIds.isNotEmpty) 'torneoIds': torneoIds,
       };
 
   factory RoundResult.fromJson(Map<String, dynamic> j) => RoundResult(
@@ -234,5 +243,7 @@ class RoundResult {
             .map((k, v) => MapEntry('$k', (v as num).toInt())),
         bettingGroupIds:
             ((j['bettingGroupIds'] as List?) ?? const []).map((e) => '$e').toList(),
+        torneoIds:
+            ((j['torneoIds'] as List?) ?? const []).map((e) => '$e').toList(),
       );
 }

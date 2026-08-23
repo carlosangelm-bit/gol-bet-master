@@ -124,6 +124,17 @@ console.log('\n5 · El organizador sí manda sobre lo suyo');
 await prueba('actualiza su instantánea', () =>
     assertSucceeds(setDoc(doc(organizador, 'sharedTorneos', TOKEN),
         { ownerUid: ORG, nombre: 'Copa CGM 2026', tabla: [] })));
+// La republicación al cerrar ronda pasa por aquí: es un update, no un create.
+// Se prueba con el DOCUMENTO ENTERO, que es lo que escribe publicarTorneo(),
+// y aparte el caso del acompañante —autenticado, en la ronda, pero no dueño del
+// torneo—, que es quien podría intentarlo sin querer al cerrar.
+await prueba('republica al cerrar la ronda (update completo del dueño)', () =>
+    assertSucceeds(setDoc(doc(organizador, 'sharedTorneos', TOKEN),
+        { ownerUid: ORG, nombre: 'Copa CGM 2026', publicadoEn: '2026-08-22',
+          tabla: [{ puesto: 1, nombre: 'ANA', total: 12 }] })));
+await prueba('el acompañante no republica el torneo del organizador', () =>
+    assertFails(setDoc(doc(invitado, 'sharedTorneos', TOKEN),
+        { ownerUid: ORG, nombre: 'Copa CGM 2026', publicadoEn: '2026-08-22' })));
 await prueba('publica una nueva', () =>
     assertSucceeds(setDoc(doc(organizador, 'sharedTorneos', 'tok_nuevo'),
         { ownerUid: ORG, nombre: 'Otra' })));

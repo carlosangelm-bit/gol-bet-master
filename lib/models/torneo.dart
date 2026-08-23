@@ -13,35 +13,75 @@
 // Aquí no puede pasar: [tablaDe] recibe los resultados y calcula. Si una ronda
 // cambia, la tabla siguiente ya sale distinta.
 // ─────────────────────────────────────────────────────────────────────────────
+import 'models.dart';
 import 'round_result.dart';
 
 /// De dónde salen las rondas que cuentan.
 enum FuenteDeRondas {
-  /// Elegidas a mano, una por una.
+  /// Marcadas al configurar la ronda: cuenta para este torneo porque se dijo.
+  ///
+  /// Es la fuente por defecto y la que resuelve el problema de raíz. Un rango
+  /// arrastra todo lo que cae dentro —Copa CGM 2026 salió con 79 rondas y 55
+  /// personas— mientras que una marca explícita cuenta lo que se dijo que cuenta.
+  ///
+  /// Mismo principio que la lista de participantes: participa quien se inscribe,
+  /// y cuenta la ronda que se marcó.
+  marcadas,
+
+  /// Elegidas a mano de entre las ya jugadas.
+  ///
+  /// Se conserva porque sirve para lo que la marca no puede: armar un torneo
+  /// sobre rondas del pasado, que se jugaron antes de que existiera la marca.
   manual,
 
-  /// Todas las cerradas entre dos fechas.
+  /// Todas las cerradas entre dos fechas. **RETIRADA.**
+  ///
+  /// No se puede elegir en un torneo nuevo: es la que causó el problema. Sigue
+  /// existiendo en el enum porque los torneos ya guardados la usan y tienen que
+  /// abrir y leerse igual; lo único que desaparece es la posibilidad de
+  /// elegirla. Es el mismo trato que se le dio a Match + Press.
   rango,
 
   /// Todas las de un grupo de apuesta guardado, opcionalmente con rango.
-  ///
-  /// Es la más natural para el uso real —"todas las de Viernes CGM entre marzo y
-  /// noviembre"— y por eso combina grupo Y fechas en vez de ser excluyentes.
   grupo,
+}
+
+/// Las fuentes que se pueden elegir hoy. **Todo selector debe usar esto.**
+///
+/// [FuenteDeRondas.rango] queda fuera. Una fuente retirada ofrecida en un torneo
+/// nuevo es la promesa de un problema que ya conocemos.
+List<FuenteDeRondas> get fuentesOfrecibles =>
+    FuenteDeRondas.values.where((f) => f.seOfrece).toList();
+
+extension FuenteRetirada on FuenteDeRondas {
+  bool get seOfrece => this != FuenteDeRondas.rango;
+
+  /// Por qué esta fuente ya no se ofrece, y qué hacer. Null si sí se ofrece.
+  String? get motivoRetirada => this == FuenteDeRondas.rango
+      ? 'La fuente por fechas ya no se puede elegir: un rango arrastra todas '
+          'las rondas que caen dentro, sean de este torneo o no. Este torneo la '
+          'sigue usando, pero para acotarlo cambia a "Marcadas al configurar la '
+          'ronda" —y marca las que cuenten— o a "Elegidas a mano".'
+      : null;
 }
 
 extension FuenteDeRondasLabel on FuenteDeRondas {
   String get label => switch (this) {
+        FuenteDeRondas.marcadas => 'Marcadas al configurar la ronda',
         FuenteDeRondas.manual => 'Elegidas a mano',
-        FuenteDeRondas.rango => 'Por fechas',
+        FuenteDeRondas.rango => 'Por fechas (retirada)',
         FuenteDeRondas.grupo => 'De un grupo de apuesta',
       };
 
   String get descripcion => switch (this) {
+        FuenteDeRondas.marcadas =>
+          'Al crear una ronda dices si cuenta para este torneo. Cuenta lo que se '
+              'marcó, ni una más.',
         FuenteDeRondas.manual =>
-          'Tú marcas qué rondas cuentan. Para un torneo de un fin de semana.',
+          'Eliges de entre las rondas ya jugadas. Para armar un torneo sobre el '
+              'histórico.',
         FuenteDeRondas.rango =>
-          'Todas las rondas cerradas entre dos fechas, sean del grupo que sean.',
+          'Todas las cerradas entre dos fechas. Arrastra lo que caiga dentro.',
         FuenteDeRondas.grupo =>
           'Todas las de un grupo guardado, y si quieres solo las de un tramo '
               'de fechas.',
@@ -228,7 +268,7 @@ class Torneo {
     required this.id,
     required this.nombre,
     this.emoji = '🏆',
-    this.fuente = FuenteDeRondas.grupo,
+    this.fuente = FuenteDeRondas.marcadas,
     this.roundIds = const [],
     this.desde,
     this.hasta,
@@ -320,7 +360,7 @@ class Torneo {
         nombre: (j['nombre'] as String?) ?? 'Torneo',
         emoji: (j['emoji'] as String?) ?? '🏆',
         fuente: FuenteDeRondas.values.firstWhere((f) => f.name == j['fuente'],
-            orElse: () => FuenteDeRondas.grupo),
+            orElse: () => FuenteDeRondas.marcadas),
         roundIds:
             ((j['roundIds'] as List?) ?? const []).map((e) => '$e').toList(),
         desde: DateTime.tryParse((j['desde'] as String?) ?? ''),
@@ -497,6 +537,10 @@ List<RoundResult> rondasDelTorneo(Torneo t, List<RoundResult> resultados) {
   }
 
   return switch (t.fuente) {
+    // La marca vive en la RONDA, puesta al configurarla. Así el torneo no tiene
+    // que adivinar nada: pregunta quién dijo que contaba.
+    FuenteDeRondas.marcadas =>
+      resultados.where((r) => r.torneoIds.contains(t.id)).toList(),
     FuenteDeRondas.manual =>
       resultados.where((r) => t.roundIds.contains(r.roundId)).toList(),
     FuenteDeRondas.rango => resultados.where(enRango).toList(),
@@ -1342,8 +1386,9 @@ List<String> participantesPropuestos(
 /// partida grande; más que eso en un torneo casi siempre significa que la fuente
 /// está cogiendo rondas que no son de este grupo.
 String? avisoDeArrastre(Torneo t, TablaDelTorneo tabla, {int umbral = 8}) {
-  // Con lista de participantes el número lo decide el organizador, así que no
-  // hay nada que avisar: el aviso existía porque la fuente arrastraba gente.
+  // Solo la fuente retirada arrastra. Con marca, con lista manual o con grupo el
+  // número lo decide el organizador.
+  if (t.fuente != FuenteDeRondas.rango) return null;
   if (!tabla.sinListaDeParticipantes) return null;
   if (tabla.jugadores <= umbral) return null;
 
@@ -1357,3 +1402,42 @@ String? avisoDeArrastre(Torneo t, TablaDelTorneo tabla, {int umbral = 8}) {
       'Si esperabas menos, la fuente está cogiendo rondas de otros grupos: '
       'acótala por fechas, elige el grupo, o sube el mínimo de rondas.';
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// REPUBLICAR AL CERRAR — qué enlaces quedan viejos cuando termina una ronda
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Publicar sigue siendo una ACCIÓN: nadie crea un enlace sin querer. Lo que se
+// automatiza es solo REFRESCAR uno que ya existe, porque es justo lo que nadie
+// se acuerda de hacer. Un torneo compartido cuya última ronda no aparece es
+// peor que no compartirlo: la gente lee una tabla que ya no es la tabla.
+//
+// Función pura y con nombre, para que la condición se pueda probar sin Firestore
+// —y para que no se repita en los tres sitios que cierran una ronda—.
+//
+/// Los torneos cuyo enlace hay que volver a publicar tras cerrar [round].
+///
+/// Tres condiciones, y las tres importan:
+///
+///   · la ronda lo MARCÓ           → si no cuenta, la tabla no cambió
+///   · el torneo ya tiene enlace   → refrescar, nunca crear
+///   · el torneo no está cerrado    → una instantánea final es final
+///
+/// La fuente tiene que ser [FuenteDeRondas.marcadas]: en las demás la marca no
+/// la mira nadie, así que cerrar la ronda no mueve la clasificación.
+List<Torneo> torneosARepublicar(Round round, List<Torneo> torneos) => torneos
+    .where((t) =>
+        t.tokenCompartido != null &&
+        !t.cerrado &&
+        t.fuente == FuenteDeRondas.marcadas &&
+        round.torneoIds.contains(t.id))
+    .toList();
+
+/// Los torneos que se pueden marcar al configurar una ronda.
+///
+/// Uno cerrado no admite rondas nuevas, y uno con otra fuente no mira la marca
+/// —ofrecerlo sería un control que no hace nada—. Si la lista sale vacía, el
+/// bloque entero no aparece en el asistente.
+List<Torneo> torneosMarcables(List<Torneo> torneos) => torneos
+    .where((t) => !t.cerrado && t.fuente == FuenteDeRondas.marcadas)
+    .toList();

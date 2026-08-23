@@ -16,6 +16,7 @@ import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../engines/bet_engine.dart';
 import '../../models/models.dart';
+import '../torneos/republicar_al_cerrar.dart';
 import '../../providers/round_provider.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sliding_adjustment_dialog.dart';
@@ -1680,6 +1681,20 @@ class _HoleNavButtons extends StatelessWidget {
     // Mostrar diálogo de ajuste de sliding
     if (round != null && context.mounted) {
       await showSlidingAdjustmentDialog(context, round);
+    }
+
+    // El enlace del torneo se refresca solo. Publicar por primera vez sigue
+    // siendo una decisión; dejar la tabla vieja no debería serlo.
+    if (round != null && context.mounted) {
+      final refrescados = await republicarTorneosDe(context, round);
+      if (refrescados.isNotEmpty && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(refrescados.length == 1
+              ? 'Tabla de ${refrescados.first} actualizada para quien tenga el enlace.'
+              : 'Tablas actualizadas: ${refrescados.join(', ')}.'),
+          duration: const Duration(seconds: 4),
+        ));
+      }
     }
   }
 }

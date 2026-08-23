@@ -1,0 +1,89 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// REPUBLICAR AL CERRAR — el enlace se refresca solo; crearlo sigue siendo tuyo
+//
+// La ronda se marcó para un torneo, la ronda se cerró: si ese torneo ya tiene
+// enlace compartido, la tabla que ven los invitados acaba de quedar vieja. Esto
+// la vuelve a publicar en el MISMO token, así que quien lo tenga en WhatsApp no
+// se queda con una copia muerta.
+//
+// Qué NO hace, y a propósito:
+//
+//   · no crea enlaces        → publicar por primera vez es una decisión
+//   · no toca torneos cerrados → una instantánea final es final
+//   · no avisa si falla      → cerrar la ronda ya salió bien; un error rojo
+//                              aquí haría dudar de lo que sí se guardó. Queda
+//                              en el log, y el botón de compartir sigue estando
+//
+// El acompañante que cierra una ronda ajena no republica nada, y sin condición
+// especial: su TorneoProvider solo trae SUS torneos, así que la marca del
+// organizador no encuentra pareja en la lista. Las reglas lo rechazarían de
+// todos modos —hay una prueba que lo comprueba—, pero ni se intenta.
+//
+// El detalle que importa: la instantánea se calcula con el RoundResult de la
+// ronda que se acaba de cerrar AÑADIDO a mano. El stream de PerfilProvider tarda
+// en traerlo, y publicar antes de que llegue enseñaría la tabla sin la última
+// ronda —exactamente el problema que esto viene a resolver—.
+// ─────────────────────────────────────────────────────────────────────────────
+import 'package:flutter/widgets.dart';
+import 'package:provider/provider.dart';
+
+import '../../models/models.dart';
+import '../../models/round_result.dart';
+import '../../models/torneo.dart';
+import '../../models/torneo_publicado.dart';
+import '../../providers/perfil_provider.dart';
+import '../../providers/torneo_provider.dart';
+import '../../services/auth_service.dart';
+import '../../services/firestore_service.dart';
+
+/// Refresca los enlaces de los torneos para los que contaba [round].
+///
+/// Devuelve los nombres de los torneos republicados, para poder decirlo en la
+/// interfaz y para que los tests lo comprueben.
+Future<List<String>> republicarTorneosDe(
+    BuildContext context, Round round) async {
+  final uid = AuthService.uid;
+  if (uid == null) return const [];
+
+  final torneoProv = context.read<TorneoProvider>();
+  final perfilProv = context.read<PerfilProvider>();
+
+  final afectados = torneosARepublicar(round, torneoProv.torneos);
+  if (afectados.isEmpty) return const [];
+
+  // La ronda recién cerrada, calculada aquí en vez de esperada del stream.
+  final propio = RoundResult.fromRound(round);
+  final resultados = [
+    ...perfilProv.resultados.where((r) => r.roundId != propio.roundId),
+    propio,
+  ];
+
+  final ahora = DateTime.now();
+  final hechos = <String>[];
+
+  for (final torneo in afectados) {
+    final tabla = tablaDe(torneo, resultados);
+    // Sin lista de inscritos no se publica: es el mismo criterio que el botón
+    // de compartir, y publicar una tabla con gente que no se inscribió empeora
+    // el problema en vez de arreglarlo.
+    if (tabla.sinListaDeParticipantes) continue;
+
+    final copia = TorneoPublicado.desde(
+      token: torneo.tokenCompartido!,
+      ownerUid: uid,
+      torneo: torneo,
+      tabla: tabla,
+      bote: boteDe(torneo, tabla),
+      jornadas: botesPorJornada(torneo, tabla),
+      cuando: ahora,
+    );
+    try {
+      await FirestoreService.publicarTorneo(copia);
+      await torneoProv.guardar(torneo.copyWith(publicadoEn: ahora));
+      hechos.add(torneo.nombre);
+    } catch (e) {
+      debugPrint('[republicar] ${torneo.nombre}: $e');
+    }
+  }
+  return hechos;
+}

@@ -6,6 +6,8 @@ import 'package:uuid/uuid.dart';
 import '../../core/app_theme.dart';
 import '../../engines/bet_engine.dart';
 import '../../models/bet_recipe.dart';
+import '../../models/torneo.dart';
+import '../../providers/torneo_provider.dart';
 import 'setup_flow.dart';
 import '../../engines/pair_agreement_engine.dart';
 import '../../providers/user_profile_provider.dart';
@@ -5754,6 +5756,98 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   // ── STEP 3: Revisión ─────────────────────────────────────────────────────
+  /// Para qué torneos cuenta esta ronda. Se decide al configurarla.
+  final Set<String> _torneosMarcados = {};
+
+  /// El bloque de la marca de torneo.
+  ///
+  /// Va en Revisar y no antes porque es una decisión sobre la ronda ENTERA, no
+  /// sobre cómo se juega: se contesta cuando ya está armada.
+  ///
+  /// Solo aparece si hay torneos ABIERTOS que se alimenten de marcas. Uno cerrado
+  /// no admite rondas nuevas, y uno con fuente por fechas o manual no mira esto
+  /// —ofrecerlo sería un control que no hace nada—.
+  Widget _bloqueTorneos(GolfTheme t) {
+    final abiertos =
+        torneosMarcables(context.watch<TorneoProvider>().torneos);
+    if (abiertos.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.divider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('¿CUENTA PARA UN TORNEO?', style: GolfType.label(t.sub)),
+        const SizedBox(height: 4),
+        Text(
+            'Se decide aquí y no después: así el torneo cuenta lo que se dijo '
+            'que cuenta, en vez de arrastrar todo lo que caiga en un rango.',
+            style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
+        const SizedBox(height: 10),
+        for (final tor in abiertos)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() {
+                if (!_torneosMarcados.remove(tor.id)) {
+                  _torneosMarcados.add(tor.id);
+                }
+              }),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                decoration: BoxDecoration(
+                  color: _torneosMarcados.contains(tor.id)
+                      ? t.primary.withValues(alpha: 0.1)
+                      : t.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: _torneosMarcados.contains(tor.id)
+                          ? t.primary
+                          : t.divider,
+                      width: _torneosMarcados.contains(tor.id) ? 1.5 : 1),
+                ),
+                child: Row(children: [
+                  Text(tor.emoji, style: const TextStyle(fontSize: 18)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(tor.nombre,
+                              style: TextStyle(
+                                  color: t.text,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700)),
+                          Text(
+                              tor.participantes.isEmpty
+                                  ? 'Sin lista de participantes todavía'
+                                  : '${tor.participantes.length} inscritos',
+                              style: TextStyle(color: t.sub, fontSize: 11)),
+                        ]),
+                  ),
+                  Icon(
+                      _torneosMarcados.contains(tor.id)
+                          ? Icons.check_circle
+                          : Icons.circle_outlined,
+                      color: _torneosMarcados.contains(tor.id)
+                          ? t.primary
+                          : t.sub,
+                      size: 18),
+                ]),
+              ),
+            ),
+          ),
+      ]),
+    );
+  }
+
   Widget _stepReview(GolfTheme t) {
     final allPids = _players.map((p) => p.id).toList();
     final effectiveGroups = _groups.isEmpty
@@ -5791,6 +5885,8 @@ class _SetupScreenState extends State<SetupScreen> {
         // Compiten o de la hoja de una apuesta. En individual todo son duelos y
         // ya se configuran en los pasos normales, así que el bloque no aparece.
         if (_ladosDeLaRonda() != null) _bloqueDuelos(t),
+        // ── ¿Cuenta para un torneo? ────────────────────────────────────────
+        _bloqueTorneos(t),
         // ── Selector de duración de ronda ──────────────────────────────────
         GSectionHeader(title: 'DURACIÓN DE LA RONDA'),
         GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -6793,6 +6889,9 @@ class _SetupScreenState extends State<SetupScreen> {
 
     final round = Round(
       id: _uuid.v4(),
+      // La marca de torneo, puesta al configurar. Es lo que consulta la fuente
+      // "marcadas" y lo que sustituye al rango de fechas.
+      torneoIds: _torneosMarcados.toList(),
       name: _nameCtrl.text.trim().isEmpty ? 'Ronda Golf' : _nameCtrl.text.trim(),
       course: _selectedCourse ?? CourseInfo.standard,
       players: linkedPlayers,

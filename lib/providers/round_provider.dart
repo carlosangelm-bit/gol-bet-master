@@ -45,6 +45,8 @@ Map<String, dynamic> roundToJson(Round r) {
   // Solo si hay alguno: las rondas sin Wolf no ganan una clave vacía.
   if (r.wolfCalls.isNotEmpty)
     'wolfCalls': r.wolfCalls.map((h, w) => MapEntry(h.toString(), w.toJson())),
+  // Solo si cuenta para algún torneo: una ronda normal no gana una clave vacía.
+  if (r.torneoIds.isNotEmpty) 'torneoIds': r.torneoIds,
   'sliding': r.sliding.map((s) => s.toJson()).toList(),
   // pairSliding: fuente canónica de acuerdos bilaterales (solo si hay valores)
   if (r.pairSliding.isNotEmpty) 'pairSliding': r.pairSliding,
@@ -158,6 +160,8 @@ Round roundFromJson(Map<String, dynamic> j) {
         : CourseInfo.standard,
     scores: scores, events: events, oyeseRankings: oyeses, sliding: sliding,
     wolfCalls: wolfCalls,
+    torneoIds:
+        ((j['torneoIds'] as List?) ?? const []).map((e) => '$e').toList(),
     // ── pairSliding: leer campo canónico y aplicar migración legacy ──────────
     pairSliding: _buildPairSliding(j, roundPlayers),
     slidingRecalcula: j['slidingRecalcula'] as bool? ?? true,

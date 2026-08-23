@@ -122,7 +122,10 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
 
           // ── 1 · Qué rondas cuentan ─────────────────────────────────────
           _titulo('1 · QUÉ RONDAS CUENTAN', t),
-          for (final f in FuenteDeRondas.values)
+          // Solo las fuentes que se OFRECEN. La retirada por fechas sigue en el
+          // enum para que un torneo guardado se lea igual, pero no se puede
+          // elegir de nuevo: un rango arrastra rondas que nadie marcó.
+          for (final f in fuentesOfrecibles)
             _opcion(
               t: t,
               titulo: f.label,
@@ -130,6 +133,30 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
               activa: _t.fuente == f,
               onTap: () => setState(() => _t = _t.copyWith(fuente: f)),
             ),
+          // Y si ESTE torneo la usa, se enseña —marcada, y con el motivo—. Callar
+          // una fuente que el torneo está usando dejaría la pantalla mintiendo
+          // sobre de dónde salen sus rondas.
+          if (_t.fuente.motivoRetirada != null) ...[
+            _opcion(
+              t: t,
+              titulo: '${_t.fuente.label} · retirada',
+              detalle: '',
+              activa: true,
+              onTap: () {},
+              motivo: 'En uso por este torneo. Ya no se puede elegir de nuevo.',
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: t.card,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: t.scoreOver.withValues(alpha: 0.5)),
+              ),
+              child: Text(_t.fuente.motivoRetirada!,
+                  style: TextStyle(color: t.text, fontSize: 12, height: 1.4)),
+            ),
+          ],
           if (_t.fuente == FuenteDeRondas.grupo) ...[
             const SizedBox(height: 8),
             if (grupos.isEmpty)
@@ -148,7 +175,10 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
                       setState(() => _t = _t.copyWith(bettingGroupId: g.id)),
                 ),
           ],
-          if (_t.fuente != FuenteDeRondas.manual) ...[
+          // Las fechas solo donde filtran algo: la fuente por marcas no las mira
+          // —cuenta lo que se marcó, no cuándo se jugó— y la manual tampoco.
+          if (_t.fuente == FuenteDeRondas.grupo ||
+              _t.fuente == FuenteDeRondas.rango) ...[
             const SizedBox(height: 8),
             Row(children: [
               Expanded(child: _fecha(t, 'Desde', _t.desde,

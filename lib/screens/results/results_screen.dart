@@ -11,6 +11,7 @@ import '../../core/app_theme.dart';
 import '../../engines/ledger_engine.dart';
 import '../../engines/bet_engine.dart';
 import '../../models/models.dart';
+import '../torneos/republicar_al_cerrar.dart';
 import '../../providers/round_provider.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/common_widgets.dart';
@@ -355,6 +356,20 @@ class _ResultsScreenState extends State<ResultsScreen> {
               : null;
           if (roundSnapshot != null && myLinkedPlayer != null && context.mounted) {
             await showSlidingAdjustmentDialog(context, roundSnapshot);
+          }
+          // El enlace del torneo se refresca solo. Publicar por primera vez
+          // sigue siendo una decisión; dejar la tabla vieja no debería serlo.
+          if (roundSnapshot != null && context.mounted) {
+            final refrescados =
+                await republicarTorneosDe(context, roundSnapshot);
+            if (refrescados.isNotEmpty && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(refrescados.length == 1
+                    ? 'Tabla de ${refrescados.first} actualizada para quien tenga el enlace.'
+                    : 'Tablas actualizadas: ${refrescados.join(', ')}.'),
+                duration: const Duration(seconds: 4),
+              ));
+            }
           }
         }, child: Text('Finalizar', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700))),
       ],

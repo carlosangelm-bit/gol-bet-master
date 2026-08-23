@@ -3801,6 +3801,18 @@ class Round {
   final Map<String, Map<int, List<HoleEvent>>> events;
   final Map<int, OyeseRanking> oyeseRankings;
 
+  /// Para qué torneos cuenta esta ronda.
+  ///
+  /// La marca se pone AL CONFIGURAR la ronda, no después. Es lo que sustituye a
+  /// la fuente por fechas: un rango arrastra todo lo que cae dentro —Copa CGM
+  /// 2026 salió con 79 rondas y 55 personas— mientras que una marca explícita
+  /// cuenta lo que se dijo que cuenta.
+  ///
+  /// Aditivo y vacío por defecto: las rondas jugadas antes de que existiera la
+  /// marca no cuentan para ningún torneo por esta vía, y para armar un torneo
+  /// sobre el histórico está la fuente "elegidas a mano".
+  final List<String> torneoIds;
+
   /// Con quién jugó el Wolf en cada hoyo.
   ///
   /// ADITIVO y con default vacío a propósito: hacerlo obligatorio habría roto
@@ -3864,6 +3876,7 @@ class Round {
     required this.betGroups, required this.scores,
     required this.events, required this.oyeseRankings,
     this.wolfCalls = const {},
+    this.torneoIds = const [],
     required this.sliding, required this.createdAt,
     this.currentHole = 1, this.isFinished = false,
     this.startingNine = StartingNine.front,
@@ -4123,6 +4136,7 @@ class Round {
     Map<String, Map<int, List<HoleEvent>>>? events,
     Map<int, OyeseRanking>? oyeseRankings,
     Map<int, WolfCall>? wolfCalls,
+    List<String>? torneoIds,
     List<BetGroup>? betGroups,
     List<RoundPlayer>? roundPlayers,
     List<Player>? players,
@@ -4144,6 +4158,7 @@ class Round {
     events: events ?? this.events,
     oyeseRankings: oyeseRankings ?? this.oyeseRankings,
     wolfCalls: wolfCalls ?? this.wolfCalls,
+    torneoIds: torneoIds ?? this.torneoIds,
     sliding: sliding, createdAt: createdAt,
     currentHole: currentHole ?? this.currentHole,
     isFinished: isFinished ?? this.isFinished,
