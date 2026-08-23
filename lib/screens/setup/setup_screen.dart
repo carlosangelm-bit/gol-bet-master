@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/app_theme.dart';
 import '../../engines/bet_engine.dart';
 import '../../models/bet_recipe.dart';
+import '../../models/formaciones.dart';
 import '../../models/torneo.dart';
 import '../../providers/torneo_provider.dart';
 import 'setup_flow.dart';
@@ -841,9 +842,13 @@ class _SetupScreenState extends State<SetupScreen> {
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               Icon(Icons.search, color: t.sub, size: 18),
               const SizedBox(width: 8),
-              Text(
-                favCourses.isEmpty ? 'Buscar campo de golf' : 'Buscar otro campo',
-                style: TextStyle(color: t.sub, fontWeight: FontWeight.w600),
+              Flexible(
+                child: Text(
+                  favCourses.isEmpty ? 'Buscar campo de golf' : 'Buscar otro campo',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: t.sub, fontWeight: FontWeight.w600),
+                ),
               ),
             ]),
           ),
@@ -2805,6 +2810,10 @@ class _SetupScreenState extends State<SetupScreen> {
   // individual y equipos no son dos casos: son el mismo con distinto número de
   // lados. De ahí salen los enfrentamientos, y de los enfrentamientos los
   // montos.
+  /// La formación con la que se armaron los lados. Solo para poder DECIRLO —el
+  /// criterio y el rearmado— porque lo que la ronda guarda son los lados.
+  Formacion _formacion = Formacion.manual;
+
   Widget _stepCompiten(GolfTheme t) {
     final n = _players.length;
     final cruces = n * (n - 1) ~/ 2;
@@ -2823,15 +2832,20 @@ class _SetupScreenState extends State<SetupScreen> {
                 _porEquipos = false;
                 _bola = null; // la bola no aplica sin equipos
               })),
-      _opcionCompiten(t,
-          icon: '👥',
-          titulo: 'Por equipos',
-          detalle: '2 lados · 1 enfrentamiento.',
-          activa: _porEquipos,
-          onTap: () => setState(() {
-                _porEquipos = true;
-                if (_teamA.isEmpty && _teamB.isEmpty) _repartirEquipos();
-              })),
+      // Las formaciones salen del CATÁLOGO, no de una lista escrita aquí. Ocho
+      // veces en esta app una lista literal se quedó vieja al crecer el enum.
+      for (final f in Formacion.values)
+        _opcionCompiten(t,
+            icon: f.reglas.icon,
+            titulo: f.reglas.label,
+            detalle: f.motivoNoDisponible(n) ?? f.reparto(n),
+            activa: _porEquipos && _formacion == f,
+            motivo: f.motivoNoDisponible(n),
+            onTap: () => setState(() {
+                  _porEquipos = true;
+                  _formacion = f;
+                  _armarLados(f);
+                })),
       if (_porEquipos) ...[
         const SizedBox(height: 12),
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2842,36 +2856,112 @@ class _SetupScreenState extends State<SetupScreen> {
         const SizedBox(height: 8),
         Text('Toca un jugador para cambiarlo de lado.',
             style: GolfType.label(t.sub)),
+        // El criterio, dicho. Un atajo que reparte a la gente en silencio deja
+        // la sospecha de que lo hizo mal.
+        if (_formacion.reglas.comoSeDecide != null) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: t.card,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.divider),
+            ),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('CÓMO SE REPARTIÓ', style: GolfType.label(t.sub)),
+                  const SizedBox(height: 4),
+                  Text(_formacion.reglas.comoSeDecide!,
+                      style: TextStyle(
+                          color: t.text, fontSize: 11.5, height: 1.35)),
+                  const SizedBox(height: 6),
+                  // El handicap de aquí es el REGISTRADO: el paso de Ventaja va
+                  // después. Rearmar es un botón y no algo automático porque lo
+                  // automático movería a la gente de equipo sin avisar.
+                  Text(
+                      'Con el handicap registrado, que es el que hay en este '
+                      'paso. Si lo cambias en Ventaja, los lados no se rearman '
+                      'solos.',
+                      style: TextStyle(color: t.sub, fontSize: 11, height: 1.3)),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(() => _armarLados(_formacion)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: t.surface,
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(color: t.divider),
+                      ),
+                      child: Text('Rearmar por handicap',
+                          style: TextStyle(
+                              color: t.text,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ]),
+          ),
+        ],
+        // Los handicaps a la vista: sin ellos, "por handicap" es una promesa.
+        const SizedBox(height: 10),
+        Wrap(spacing: 10, runSpacing: 4, children: [
+          for (final p in _players)
+            Text('${p.name} ${p.handicapBase.toStringAsFixed(1)}',
+                style: TextStyle(color: t.sub, fontSize: 11)),
+        ]),
       ],
     ]);
   }
 
-  /// Reparto inicial alternando, para que dos jugadores del mismo nivel no
-  /// caigan siempre juntos por el orden en que se capturaron.
-  void _repartirEquipos() {
-    _teamA.clear();
-    _teamB.clear();
-    for (var i = 0; i < _players.length; i++) {
-      (i.isEven ? _teamA : _teamB).add(_players[i].id);
-    }
+  /// Arma los dos lados con [f]. La composición sale del catálogo, que es lógica
+  /// pura: la pantalla no decide quién va con quién.
+  void _armarLados(Formacion f) {
+    // La pareja base se conserva al rearmar: si la cambiaste a mano, rearmar no
+    // te la deshace —solo recoloca al resto—.
+    final lados = armarFormacion(f, _players,
+        parejaBase: f == Formacion.parejaVsResto && _teamA.length == 2
+            ? _teamA
+            : const []);
+    if (lados == null) return;
+    _teamA
+      ..clear()
+      ..addAll(lados.$1);
+    _teamB
+      ..clear()
+      ..addAll(lados.$2);
   }
+
+  /// Reparto inicial alternando. Delega en el catálogo para que no haya dos
+  /// versiones del mismo reparto que puedan discrepar.
+  void _repartirEquipos() => _armarLados(Formacion.manual);
 
   Widget _opcionCompiten(GolfTheme t,
       {required String icon,
       required String titulo,
       required String detalle,
       required bool activa,
-      required VoidCallback onTap}) {
+      required VoidCallback onTap,
+      String? motivo}) {
+    final bloqueada = motivo != null;
     return GestureDetector(
-      onTap: onTap,
+      onTap: bloqueada ? null : onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(13),
         decoration: BoxDecoration(
-          color: activa ? t.primary.withValues(alpha: 0.08) : t.card,
+          color: bloqueada
+              ? t.surface
+              : activa
+                  ? t.primary.withValues(alpha: 0.08)
+                  : t.card,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-              color: activa ? t.primary : t.divider, width: activa ? 1.5 : 1),
+              color: activa && !bloqueada ? t.primary : t.divider,
+              width: activa && !bloqueada ? 1.5 : 1),
         ),
         child: Row(children: [
           Text(icon, style: const TextStyle(fontSize: 20)),
@@ -2881,12 +2971,18 @@ class _SetupScreenState extends State<SetupScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                 Text(titulo,
-                    style: GolfType.body(t.text)
+                    style: GolfType.body(bloqueada ? t.sub : t.text)
                         .copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
-                Text(detalle, style: GolfType.label(t.sub)),
+                Text(detalle,
+                    style: GolfType.label(t.sub).copyWith(
+                        fontStyle:
+                            bloqueada ? FontStyle.italic : FontStyle.normal)),
               ])),
-          if (activa) Icon(Icons.check_circle, color: t.primary, size: 20),
+          if (bloqueada)
+            Icon(Icons.block, color: t.sub, size: 17)
+          else if (activa)
+            Icon(Icons.check_circle, color: t.primary, size: 20),
         ]),
       ),
     );

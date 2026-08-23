@@ -63,8 +63,16 @@ class GSectionHeader extends StatelessWidget {
     final t = GolfThemeExt.current;
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 8, 0, 6),
+      // Flexible y no un Text suelto: un título largo desbordaba a 320 px. Es
+      // la misma forma que ya salió varias veces —texto sin restringir en un
+      // Row— y aquí duele más porque el widget lo usan muchas pantallas.
       child: Row(children: [
-        Text(title, style: TextStyle(color: t.sub, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1)),
+        Flexible(
+          child: Text(title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: t.sub, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1)),
+        ),
         const Spacer(),
         if (trailing != null) trailing!,
       ]),
@@ -197,7 +205,12 @@ class GPrimaryButton extends StatelessWidget {
           ),
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             if (icon != null) ...[Icon(icon, color: t.onPrimary, size: 18), const SizedBox(width: 8)],
-            Text(label, style: TextStyle(color: t.onPrimary, fontWeight: FontWeight.w700, fontSize: 16)),
+            Flexible(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: t.onPrimary, fontWeight: FontWeight.w700, fontSize: 16)),
+            ),
           ]),
         ),
       ),
