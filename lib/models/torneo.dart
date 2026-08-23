@@ -377,6 +377,18 @@ class TablaDelTorneo {
   /// Cuántas rondas entran en el torneo.
   final int rondas;
 
+  /// Nombres que aparecen con MÁS DE UN id: nombre → los ids.
+  ///
+  /// Pasa de verdad y afectaría a cualquier torneo real: si alguien creó a
+  /// "Rafa" a mano en una ronda y en otra usó el Rafa del directorio, son dos
+  /// ids y la temporada lo cuenta como dos personas.
+  ///
+  /// Se DETECTA y se dice; no se fusiona. Agrupar por nombre sería peligroso
+  /// —dos personas pueden llamarse igual y quedarían sumadas en una fila sin que
+  /// nadie lo pidiera— y decidir que son la misma persona toca el directorio,
+  /// que no es cosa de una tabla de torneo. Las dos filas siguen ahí, marcadas.
+  final Map<String, List<String>> nombresDuplicados;
+
   /// Rondas que el método NO pudo puntuar por falta de dato.
   ///
   /// Pasa con "por score neto" y "por Stableford" en rondas cerradas antes de
@@ -390,7 +402,14 @@ class TablaDelTorneo {
     required this.bajoMinimo,
     required this.rondas,
     required this.rondasSinDato,
+    this.nombresDuplicados = const {},
   });
+
+  /// Cuántos jugadores distintos aparecen, clasifiquen o no.
+  ///
+  /// Lo consume el aviso del editor: una fuente por fechas puede arrastrar
+  /// decenas de personas de rondas viejas, y el bote se calcularía sobre todas.
+  int get jugadores => filas.length + bajoMinimo.length;
 
   bool get vacia => filas.isEmpty && bajoMinimo.isEmpty;
 }
@@ -517,11 +536,22 @@ TablaDelTorneo tablaDe(
   final clasificados = filas.where((f) => !f.bajoMinimo).toList();
   final fuera = filas.where((f) => f.bajoMinimo).toList();
 
+  // Nombres con más de un id. Se calcula al final, con todos los que salieron.
+  final porNombre = <String, Set<String>>{};
+  for (final f in filas) {
+    (porNombre[f.nombre] ??= {}).add(f.playerId);
+  }
+  final duplicados = {
+    for (final e in porNombre.entries)
+      if (e.value.length > 1) e.key: e.value.toList()..sort(),
+  };
+
   return TablaDelTorneo(
     filas: _conPuestos(clasificados),
     bajoMinimo: _conPuestos(fuera),
     rondas: rondas.length - sinDato,
     rondasSinDato: sinDato,
+    nombresDuplicados: duplicados,
   );
 }
 
@@ -724,6 +754,10 @@ enum EntradaSinMinimo {
   pierde,
 
   /// Se le devuelve: si no clasifica, no juega el bote.
+  ///
+  /// Es el DEFAULT, y por lo que se vio con datos reales: con "pierde", subir el
+  /// mínimo no acota el bote —los que no clasifican siguen aportando— así que un
+  /// torneo con la fuente mal acotada daba una cifra que nadie puso.
   devolver,
 
   /// Aporta en proporción a las rondas que jugó, y le vuelve el resto.
@@ -751,10 +785,31 @@ extension EntradaSinMinimoLabel on EntradaSinMinimo {
 }
 
 class BoteConfig {
-  /// Lo que pone cada jugador. 0 = sin bote.
+  // ── DOS BOTES, DOS ENTRADAS ───────────────────────────────────────────────
+  //
+  // El de temporada y el del día son dinero distinto y se financian por
+  // separado: pones lo del día cuando juegas y lo de la temporada al empezar.
+  //
+  // Se descartó la entrada única repartida entre los dos. Es más difícil de
+  // explicar —"de tus $500, $200 van al bote del día y $300 al final"— y no se
+  // parece a cómo se juega: quien falta tres sábados no puso el bote de esos
+  // tres días, y con una entrada única sí lo habría puesto.
+  //
+  // Y no se suman en ninguna cifra. El del día está COBRADO —esa ronda ya se
+  // cerró— y el final es una EXPECTATIVA mientras el torneo esté abierto. Es el
+  // mismo criterio que separa el bote de las apuestas de ronda, un nivel más
+  // adentro.
+
+  /// Lo que pone cada jugador por la TEMPORADA. 0 = sin bote final.
   final double entrada;
 
   final RepartoDelBote reparto;
+
+  /// Lo que pone cada jugador POR RONDA que juegue. 0 = sin bote del día.
+  final double entradaPorJornada;
+
+  /// Cómo se reparte el bote del día. Puede ser distinto del final.
+  final RepartoDelBote repartoJornada;
 
   /// Porcentajes del podio. Deben sumar 100; si no, se normalizan al calcular.
   final List<int> porcentajes;
@@ -764,23 +819,42 @@ class BoteConfig {
   const BoteConfig({
     this.entrada = 0,
     this.reparto = RepartoDelBote.ganadorTodo,
+    this.entradaPorJornada = 0,
+    this.repartoJornada = RepartoDelBote.ganadorTodo,
     this.porcentajes = const [60, 30, 10],
-    this.sinMinimo = EntradaSinMinimo.pierde,
+    // ── Por qué el default cambió a "devolver" ──────────────────────────────
+    //
+    // Era "pierde", y con datos reales salió el problema: una fuente por fechas
+    // arrastró ochenta rondas de prueba, la tabla se llenó de 55 personas y el
+    // bote dio $27500 — una cifra que nadie puso encima de la mesa. Con
+    // "pierde", subir el mínimo NO arregla el número: los 50 que no clasifican
+    // siguen aportando.
+    //
+    // "Devolver" implementa exactamente "quien no clasifica tampoco puso", que
+    // es la lectura correcta: el bote a repartir es el de los que compiten por
+    // él. Sigue habiendo las otras dos opciones para el grupo que las quiera.
+    this.sinMinimo = EntradaSinMinimo.devolver,
   });
 
   static const def = BoteConfig();
 
   bool get hayBote => entrada > 0;
+  bool get hayBoteJornada => entradaPorJornada > 0;
+  bool get hayAlgunBote => hayBote || hayBoteJornada;
 
   BoteConfig copyWith({
     double? entrada,
     RepartoDelBote? reparto,
+    double? entradaPorJornada,
+    RepartoDelBote? repartoJornada,
     List<int>? porcentajes,
     EntradaSinMinimo? sinMinimo,
   }) =>
       BoteConfig(
         entrada: entrada ?? this.entrada,
         reparto: reparto ?? this.reparto,
+        entradaPorJornada: entradaPorJornada ?? this.entradaPorJornada,
+        repartoJornada: repartoJornada ?? this.repartoJornada,
         porcentajes: porcentajes ?? this.porcentajes,
         sinMinimo: sinMinimo ?? this.sinMinimo,
       );
@@ -788,8 +862,13 @@ class BoteConfig {
   Map<String, dynamic> toJson() => {
         'entrada': entrada,
         'reparto': reparto.name,
-        if (reparto == RepartoDelBote.podio) 'porcentajes': porcentajes,
-        if (sinMinimo != EntradaSinMinimo.pierde) 'sinMinimo': sinMinimo.name,
+        if (hayBoteJornada) 'entradaPorJornada': entradaPorJornada,
+        if (hayBoteJornada) 'repartoJornada': repartoJornada.name,
+        if (reparto == RepartoDelBote.podio ||
+            repartoJornada == RepartoDelBote.podio)
+          'porcentajes': porcentajes,
+        // Se escribe lo que se aparta del default, que ahora es devolver.
+        if (sinMinimo != EntradaSinMinimo.devolver) 'sinMinimo': sinMinimo.name,
       };
 
   factory BoteConfig.fromJson(Map<String, dynamic> j) => BoteConfig(
@@ -797,12 +876,16 @@ class BoteConfig {
         reparto: RepartoDelBote.values.firstWhere(
             (r) => r.name == j['reparto'],
             orElse: () => RepartoDelBote.ganadorTodo),
+        entradaPorJornada: (j['entradaPorJornada'] as num?)?.toDouble() ?? 0,
+        repartoJornada: RepartoDelBote.values.firstWhere(
+            (r) => r.name == j['repartoJornada'],
+            orElse: () => RepartoDelBote.ganadorTodo),
         porcentajes: ((j['porcentajes'] as List?) ?? const [60, 30, 10])
             .map((e) => (e as num).toInt())
             .toList(),
         sinMinimo: EntradaSinMinimo.values.firstWhere(
             (s) => s.name == j['sinMinimo'],
-            orElse: () => EntradaSinMinimo.pierde),
+            orElse: () => EntradaSinMinimo.devolver),
       );
 }
 
@@ -965,4 +1048,171 @@ BoteDelTorneo boteDe(Torneo t, TablaDelTorneo tabla) {
         : 'El torneo está abierto: el reparto cambia con cada ronda que entre. '
             'Ciérralo cuando la temporada acabe para dejarlo fijo.',
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EL BOTE DE LA JORNADA
+//
+// Cada ronda tiene el suyo: pones al jugar y lo cobra quien gana ESE día. Se
+// liquida al cerrar la ronda, así que cuando lo ves ya está cobrado — y esa es
+// la diferencia con el final, que es una expectativa mientras el torneo esté
+// abierto.
+//
+// LOS DOS NO SE SUMAN EN NINGUNA CIFRA. Es el mismo criterio que separa el bote
+// de las apuestas de ronda, un nivel más adentro: mezclar dinero cobrado con
+// dinero esperado da un número que no significa nada.
+//
+// Y NO entra en el balance de la ronda. El ledger de una ronda es lo que liquidó
+// el motor de apuestas; el bote del torneo es contabilidad por encima. Meterlo
+// ahí lo colaría en RoundResult.balances y de ahí al balance histórico del
+// tablero, rompiendo la separación que existe justo para esto. Se enseña en el
+// torneo, marcado como cobrado.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// El bote de UNA ronda del torneo.
+class BoteDeJornada {
+  final String roundId;
+  final String nombreRonda;
+  final DateTime fecha;
+
+  /// Cuántos jugaron esa ronda y pusieron.
+  final int jugadores;
+
+  /// Lo que hay: entrada × jugadores.
+  final double total;
+
+  /// Quién cobra, y cuánto cada uno. Vacío si el día quedó sin ganador.
+  final Map<String, double> cobran;
+
+  /// Nombres, para no resolverlos otra vez en pantalla.
+  final Map<String, String> nombres;
+
+  const BoteDeJornada({
+    required this.roundId,
+    required this.nombreRonda,
+    required this.fecha,
+    required this.jugadores,
+    required this.total,
+    required this.cobran,
+    required this.nombres,
+  });
+
+  /// Lo que puso cada uno.
+  double get entrada => jugadores == 0 ? 0 : total / jugadores;
+}
+
+/// Los botes de cada jornada, derivados de la tabla ya calculada.
+///
+/// Se saca de [TablaDelTorneo] y no de un segundo recorrido de las rondas: los
+/// puestos de cada día ya están ahí. Un segundo cálculo podría discrepar del
+/// primero, y sería el mismo error que dos recorridos independientes sobre los
+/// mismos datos.
+List<BoteDeJornada> botesPorJornada(Torneo t, TablaDelTorneo tabla) {
+  final cfg = t.bote;
+  if (!cfg.hayBoteJornada) return const [];
+
+  // Quién jugó cada ronda y en qué puesto quedó, desde las filas de la tabla.
+  // Entran TODOS los que jugaron ese día, clasifiquen o no en la temporada: el
+  // bote del día es del día, y el mínimo es una regla de la temporada.
+  final porRonda = <String, List<({String pid, String nombre, int puesto})>>{};
+  final datos = <String, ({String nombre, DateTime fecha})>{};
+  for (final fila in [...tabla.filas, ...tabla.bajoMinimo]) {
+    for (final r in fila.rondas) {
+      (porRonda[r.roundId] ??= []).add(
+          (pid: fila.playerId, nombre: fila.nombre, puesto: r.puesto ?? 1));
+      datos[r.roundId] = (nombre: r.nombreRonda, fecha: r.fecha);
+    }
+  }
+
+  final salida = <BoteDeJornada>[];
+  for (final entrada in porRonda.entries) {
+    final jugadores = entrada.value;
+    if (jugadores.isEmpty) continue;
+    final total = _redondea(cfg.entradaPorJornada * jugadores.length);
+
+    // Los premios del día, por PUESTO, con los empatados repartiendo el suyo.
+    final porcentajes = cfg.repartoJornada == RepartoDelBote.ganadorTodo
+        ? <int>[100]
+        : cfg.porcentajes;
+    final suma = porcentajes.fold(0, (s, v) => s + v);
+    final cobran = <String, double>{};
+    if (suma > 0 && total > 0) {
+      final premioDelPuesto = <int, double>{
+        for (var i = 0; i < porcentajes.length; i++)
+          i + 1: total * porcentajes[i] / suma,
+      };
+      final porPuesto = <int, List<String>>{};
+      for (final j in jugadores) {
+        (porPuesto[j.puesto] ??= []).add(j.pid);
+      }
+      for (final grupo in porPuesto.entries) {
+        var premio = 0.0;
+        for (var p = grupo.key; p < grupo.key + grupo.value.length; p++) {
+          premio += premioDelPuesto[p] ?? 0;
+        }
+        if (premio <= 0) continue;
+        final cada = _redondea(premio / grupo.value.length);
+        for (final pid in grupo.value) {
+          cobran[pid] = cada;
+        }
+      }
+    }
+
+    salida.add(BoteDeJornada(
+      roundId: entrada.key,
+      nombreRonda: datos[entrada.key]?.nombre ?? 'Ronda',
+      fecha: datos[entrada.key]?.fecha ?? DateTime(2000),
+      jugadores: jugadores.length,
+      total: total,
+      cobran: cobran,
+      nombres: {for (final j in jugadores) j.pid: j.nombre},
+    ));
+  }
+
+  salida.sort((a, b) => b.fecha.compareTo(a.fecha));
+  return salida;
+}
+
+/// Lo que un jugador lleva ganado o perdido EN LOS BOTES DE JORNADA.
+///
+/// Es dinero ya cobrado, y por eso va aparte del bote final: sumarlos daría una
+/// cifra mitad hecho mitad promesa.
+double saldoDeJornadas(String pid, List<BoteDeJornada> jornadas) {
+  var saldo = 0.0;
+  for (final j in jornadas) {
+    if (!j.nombres.containsKey(pid)) continue;
+    saldo += (j.cobran[pid] ?? 0) - j.entrada;
+  }
+  return _redondea(saldo);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EL AVISO DEL EDITOR
+//
+// Salió de usarlo con datos reales: una fuente por fechas arrastró ochenta
+// rondas de prueba, la tabla se llenó de 55 personas y el bote dio $27500 — una
+// cifra que nadie puso encima de la mesa.
+//
+// El campo del mínimo existe justo para eso y estaba en 0. Lo que faltaba era
+// DECIRLO CON EL NÚMERO antes de guardar, en vez de descubrirlo en la tabla. Es
+// el mismo criterio del resto de la app.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Aviso si la configuración arrastra más gente de la que parece. Null si no.
+///
+/// [umbral] es a partir de cuántos jugadores conviene decirlo. Ocho es una
+/// partida grande; más que eso en un torneo casi siempre significa que la fuente
+/// está cogiendo rondas que no son de este grupo.
+String? avisoDeArrastre(Torneo t, TablaDelTorneo tabla, {int umbral = 8}) {
+  if (tabla.jugadores <= umbral) return null;
+
+  final bote = t.bote.hayBote
+      ? ' El bote final saldría de '
+          '\$${(t.bote.entrada * tabla.filas.length).toStringAsFixed(0)}.'
+      : '';
+
+  return '${tabla.jugadores} jugadores entran con esta configuración, de '
+      '${tabla.rondas} rondas.$bote '
+      'Si esperabas menos, la fuente está cogiendo rondas de otros grupos: '
+      'acótala por fechas, elige el grupo, o sube el mínimo de rondas.';
 }

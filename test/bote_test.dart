@@ -46,7 +46,10 @@ Torneo _t({
   double entrada = 100,
   RepartoDelBote reparto = RepartoDelBote.ganadorTodo,
   List<int> porcentajes = const [60, 30, 10],
-  EntradaSinMinimo sinMinimo = EntradaSinMinimo.pierde,
+  // Nullable a propósito: si el helper fijara un valor, taparía el default del
+  // modelo y un test sobre el default no probaría nada. Lo descubrí escribiendo
+  // justo ese test.
+  EntradaSinMinimo? sinMinimo,
   int minimoRondas = 0,
   bool cerrado = false,
 }) =>
@@ -56,11 +59,14 @@ Torneo _t({
       metodo: MetodoDePuntuacion.dinero,
       minimoRondas: minimoRondas,
       cerrado: cerrado,
-      bote: BoteConfig(
-          entrada: entrada,
-          reparto: reparto,
-          porcentajes: porcentajes,
-          sinMinimo: sinMinimo),
+      bote: sinMinimo == null
+          ? BoteConfig(
+              entrada: entrada, reparto: reparto, porcentajes: porcentajes)
+          : BoteConfig(
+              entrada: entrada,
+              reparto: reparto,
+              porcentajes: porcentajes,
+              sinMinimo: sinMinimo),
     );
 
 /// Cuatro jugadores, tres rondas. Ana gana, luego Beto, luego Caro.
@@ -73,6 +79,8 @@ List<RoundResult> _temporada() => [
 
 void main() {
   _enInicio();
+
+  _dosBotes();
 
   group('1 · lo que hay en el bote', () {
     test('la entrada por cada uno de los que aparecen en la tabla', () {
@@ -175,8 +183,27 @@ void main() {
       expect(deDani.saldo, -120);
     });
 
-    test('el default es "pierde": es lo más común en ligas', () {
-      expect(BoteConfig.def.sinMinimo, EntradaSinMinimo.pierde);
+    test('el default es "devolver": quien no clasifica tampoco puso', () {
+      // Este test decía "pierde", que es lo más común en ligas y fue la elección
+      // de la vez anterior. Cambió con datos reales: una fuente por fechas
+      // arrastró ochenta rondas de prueba, la tabla se llenó de 55 personas y el
+      // bote dio $27500. Y con "pierde", SUBIR EL MÍNIMO NO ARREGLA EL NÚMERO
+      // —los que no clasifican siguen aportando— así que la herramienta que
+      // existía para acotarlo no servía.
+      //
+      // "Devolver" implementa "quien no clasifica tampoco puso", que es la
+      // lectura correcta: el bote a repartir es el de los que compiten por él.
+      // Las otras dos siguen ahí para el grupo que las quiera.
+      expect(BoteConfig.def.sinMinimo, EntradaSinMinimo.devolver);
+    });
+
+    test('y con el default, subir el mínimo SÍ acota el bote', () {
+      // La comprobación de que el cambio sirve para lo que se hizo.
+      final sinMinimo = _t(entrada: 120, minimoRondas: 0);
+      final conMinimo = _t(entrada: 120, minimoRondas: 2);
+      expect(boteDe(sinMinimo, tablaDe(sinMinimo, _temporada())).total, 480);
+      expect(boteDe(conMinimo, tablaDe(conMinimo, _temporada())).total, 360,
+          reason: 'Dani no clasifica, así que su entrada no está en el bote');
     });
 
     test('con "devolver" el bote a repartir es menor', () {
@@ -369,6 +396,248 @@ void _enInicio() {
       expect(find.textContaining('EN JUEGO'), findsNothing);
       // Pero el balance sí: el contrapeso de que el bloque no tape nada.
       expect(find.textContaining('BALANCE HISTÓRICO'), findsOneWidget);
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOS BOTES A LA VEZ, Y NINGUNA CIFRA QUE LOS JUNTE
+//
+// El de la jornada está COBRADO —esa ronda se cerró— y el final es una
+// EXPECTATIVA mientras el torneo esté abierto. Es el mismo criterio que separa
+// el bote de las apuestas de ronda, un nivel más adentro.
+//
+// Se eligieron DOS ENTRADAS separadas y no una repartida: pones lo del día
+// cuando juegas y lo de la temporada al empezar. Con una entrada única, quien
+// falta tres sábados habría puesto el bote de esos tres días.
+// ─────────────────────────────────────────────────────────────────────────────
+void _dosBotes() {
+  Torneo conJornada({
+    double temporada = 500,
+    double jornada = 100,
+    RepartoDelBote repartoJornada = RepartoDelBote.ganadorTodo,
+    int minimoRondas = 0,
+  }) =>
+      Torneo(
+        id: 't', nombre: 'T',
+        fuente: FuenteDeRondas.rango,
+        metodo: MetodoDePuntuacion.dinero,
+        minimoRondas: minimoRondas,
+        bote: BoteConfig(
+            entrada: temporada,
+            entradaPorJornada: jornada,
+            repartoJornada: repartoJornada),
+      );
+
+  group('8 · el bote de la jornada', () {
+    test('uno por ronda, con lo que puso quien jugó ESE día', () {
+      // La ronda 1 la jugaron cuatro; la 2 y la 3, tres.
+      final t = conJornada(jornada: 100);
+      final jornadas = botesPorJornada(t, tablaDe(t, _temporada()));
+      expect(jornadas, hasLength(3));
+      final r1 = jornadas.firstWhere((j) => j.roundId == '1');
+      expect(r1.jugadores, 4);
+      expect(r1.total, 400);
+      final r2 = jornadas.firstWhere((j) => j.roundId == '2');
+      expect(r2.jugadores, 3);
+      expect(r2.total, 300);
+    });
+
+    test('lo cobra quien ganó ese día, no quien va primero en la tabla', () {
+      // Ana gana la 1, Beto la 2, Caro la 3. Si el bote del día lo cobrara el
+      // líder de la temporada, Ana se llevaría los tres.
+      final t = conJornada(jornada: 100);
+      final jornadas = botesPorJornada(t, tablaDe(t, _temporada()));
+      expect(jornadas.firstWhere((j) => j.roundId == '1').cobran.keys, [ana]);
+      expect(jornadas.firstWhere((j) => j.roundId == '2').cobran.keys, [beto]);
+      expect(jornadas.firstWhere((j) => j.roundId == '3').cobran.keys, [caro]);
+    });
+
+    test('el ganador del día se lleva el bote entero de ese día', () {
+      final t = conJornada(jornada: 100);
+      final r1 = botesPorJornada(t, tablaDe(t, _temporada()))
+          .firstWhere((j) => j.roundId == '1');
+      expect(r1.cobran[ana], 400);
+    });
+
+    test('con podio, el reparto del día puede ser distinto del final', () {
+      final t = conJornada(jornada: 90, repartoJornada: RepartoDelBote.podio);
+      final r1 = botesPorJornada(t, tablaDe(t, _temporada()))
+          .firstWhere((j) => j.roundId == '1');
+      // 360 en juego. Ana 1ª; Beto, Caro y Dani empatan a −100 en el segundo.
+      final cobrado = r1.cobran.values.fold(0.0, (s, v) => s + v);
+      expect((cobrado - 360).abs() < 1, isTrue, reason: 'cobrado = $cobrado');
+      expect(r1.cobran[ana]! > (r1.cobran[beto] ?? 0), isTrue);
+    });
+
+    test('quien no juega una jornada no pone ni cobra en ella', () {
+      // Dani solo juega la ronda 1.
+      final t = conJornada(jornada: 100);
+      final jornadas = botesPorJornada(t, tablaDe(t, _temporada()));
+      expect(jornadas.firstWhere((j) => j.roundId == '1').nombres.keys,
+          contains(dani));
+      expect(jornadas.firstWhere((j) => j.roundId == '2').nombres.keys,
+          isNot(contains(dani)));
+      expect(saldoDeJornadas(dani, jornadas), -100,
+          reason: 'puso una vez y no cobró: solo pierde esa');
+    });
+
+    test('el bote del día NO mira el mínimo de la temporada', () {
+      // El mínimo es una regla de la temporada; el bote del día es del día.
+      // Dani no clasifica pero jugó esa ronda y puso.
+      final t = conJornada(jornada: 100, minimoRondas: 3);
+      final r1 = botesPorJornada(t, tablaDe(t, _temporada()))
+          .firstWhere((j) => j.roundId == '1');
+      expect(r1.jugadores, 4);
+      expect(r1.nombres.keys, contains(dani));
+    });
+
+    test('sin entrada por jornada no hay botes del día', () {
+      final t = conJornada(jornada: 0);
+      expect(botesPorJornada(t, tablaDe(t, _temporada())), isEmpty);
+      expect(t.bote.hayBoteJornada, isFalse);
+    });
+  });
+
+  group('9 · los dos botes no se suman', () {
+    test('el final no incluye lo de las jornadas, ni al revés', () {
+      final t = conJornada(temporada: 500, jornada: 100);
+      final tabla = tablaDe(t, _temporada());
+      final finalDelTorneo = boteDe(t, tabla);
+      final jornadas = botesPorJornada(t, tabla);
+
+      // Cuatro jugadores × 500 de temporada.
+      expect(finalDelTorneo.total, 2000);
+      // Y 400 + 300 + 300 en los tres días.
+      expect(jornadas.fold(0.0, (s, j) => s + j.total), 1000);
+
+      // Ninguna cifra vale 3000.
+      expect(finalDelTorneo.total, isNot(3000));
+      expect(finalDelTorneo.recaudado, isNot(3000));
+    });
+
+    test('el saldo de Ana en cada bolsa se lee por separado', () {
+      final t = conJornada(temporada: 500, jornada: 100);
+      final tabla = tablaDe(t, _temporada());
+      final jornadas = botesPorJornada(t, tabla);
+
+      // Ana gana la jornada 1: cobra 400 y puso 100 en cada una de las tres.
+      expect(saldoDeJornadas(ana, jornadas), 100);
+      // Y en el final: cobra los 2000 y había puesto 500.
+      final suya = boteDe(t, tabla).lineas.firstWhere((l) => l.playerId == ana);
+      expect(suya.saldo, 1500);
+      // Son dos números, y ninguno es 1600.
+      expect(suya.saldo + saldoDeJornadas(ana, jornadas), 1600,
+          reason: 'la suma EXISTE aritméticamente; lo que no existe es una '
+              'cifra en la app que la muestre');
+    });
+
+    test('cambiar la entrada por jornada no toca el bote final', () {
+      final tabla = tablaDe(conJornada(), _temporada());
+      final barato = boteDe(conJornada(jornada: 1), tabla);
+      final caro2 = boteDe(conJornada(jornada: 9999), tabla);
+      expect(barato.total, caro2.total);
+    });
+
+    test('y cambiar la entrada de temporada no toca los del día', () {
+      final tabla = tablaDe(conJornada(), _temporada());
+      final a = botesPorJornada(conJornada(temporada: 1), tabla);
+      final b = botesPorJornada(conJornada(temporada: 9999), tabla);
+      expect(a.map((j) => j.total).toList(), b.map((j) => j.total).toList());
+    });
+
+    test('el viaje a JSON conserva los dos', () {
+      final t = conJornada(
+          temporada: 500, jornada: 250, repartoJornada: RepartoDelBote.podio);
+      final v = Torneo.fromJson(Map<String, dynamic>.from(t.toJson()));
+      expect(v.bote.entrada, 500);
+      expect(v.bote.entradaPorJornada, 250);
+      expect(v.bote.repartoJornada, RepartoDelBote.podio);
+    });
+
+    test('un torneo sin bote por jornada no escribe esas claves', () {
+      final j = conJornada(jornada: 0).toJson()['bote'] as Map;
+      expect(j.containsKey('entradaPorJornada'), isFalse);
+      expect(j.containsKey('repartoJornada'), isFalse);
+    });
+  });
+
+  group('10 · el aviso de arrastre', () {
+    test('con pocos jugadores no avisa', () {
+      final t = conJornada();
+      expect(avisoDeArrastre(t, tablaDe(t, _temporada())), isNull);
+    });
+
+    test('con muchos avisa, con el número y el importe', () {
+      // El caso real: una fuente por fechas que arrastra rondas de otros grupos.
+      final muchas = [
+        for (var i = 0; i < 30; i++)
+          _r('x$i', 1 + (i % 20), {'p$i': 10, 'q$i': -10}),
+      ];
+      final t = conJornada(temporada: 500);
+      final aviso = avisoDeArrastre(t, tablaDe(t, muchas));
+      expect(aviso, isNotNull);
+      expect(aviso, contains('60 jugadores'));
+      expect(aviso, contains('\$30000'), reason: 'el importe, no solo el número');
+      expect(aviso, contains('sube el mínimo'),
+          reason: 'y qué hacer al respecto');
+    });
+
+    test('sin bote avisa del número pero no inventa un importe', () {
+      final muchas = [
+        for (var i = 0; i < 30; i++)
+          _r('x$i', 1 + (i % 20), {'p$i': 10, 'q$i': -10}),
+      ];
+      final t = conJornada(temporada: 0, jornada: 0);
+      final aviso = avisoDeArrastre(t, tablaDe(t, muchas));
+      expect(aviso, contains('60 jugadores'));
+      expect(aviso, isNot(contains('\$')));
+    });
+  });
+
+  group('11 · nombres duplicados', () {
+    test('dos ids con el mismo nombre se detectan', () {
+      // El caso real: alguien creado a mano en una ronda y el del directorio en
+      // otra. La app los cuenta como dos personas, y hay que decirlo.
+      final rondas = [
+        RoundResult(
+          roundId: 'r1', roundName: 'R1', courseName: 'C',
+          playedAt: DateTime(2026, 3, 1), holesPlayed: 18,
+          playerIds: const ['id_dir', 'id_mano'],
+          playerNames: const {'id_dir': 'CAM', 'id_mano': 'CAM'},
+          balances: const {'id_dir': 100.0, 'id_mano': -100.0},
+          pairBalances: const {}, grossByPlayer: const {},
+        ),
+      ];
+      final t = conJornada();
+      final tabla = tablaDe(t, rondas);
+      expect(tabla.nombresDuplicados.keys, ['CAM']);
+      expect(tabla.nombresDuplicados['CAM'], ['id_dir', 'id_mano']);
+    });
+
+    test('NO se fusionan: siguen siendo dos filas', () {
+      // Agrupar por nombre sumaría a dos personas que se llaman igual sin que
+      // nadie lo pidiera. Se dice y se deja que el usuario decida.
+      final rondas = [
+        RoundResult(
+          roundId: 'r1', roundName: 'R1', courseName: 'C',
+          playedAt: DateTime(2026, 3, 1), holesPlayed: 18,
+          playerIds: const ['id_dir', 'id_mano'],
+          playerNames: const {'id_dir': 'CAM', 'id_mano': 'CAM'},
+          balances: const {'id_dir': 100.0, 'id_mano': -100.0},
+          pairBalances: const {}, grossByPlayer: const {},
+        ),
+      ];
+      final t = conJornada();
+      final tabla = tablaDe(t, rondas);
+      expect(tabla.filas, hasLength(2));
+      expect(tabla.filas.map((f) => f.nombre).toSet(), {'CAM'});
+      expect(tabla.filas.map((f) => f.total).toList(), [100, -100]);
+    });
+
+    test('nombres distintos no se marcan', () {
+      final t = conJornada();
+      expect(tablaDe(t, _temporada()).nombresDuplicados, isEmpty);
     });
   });
 }

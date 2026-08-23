@@ -36,6 +36,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
   late final TextEditingController _nombreCtrl;
   late final TextEditingController _puntosCtrl;
   late final TextEditingController _entradaCtrl;
+  late final TextEditingController _jornadaCtrl;
   bool _guardando = false;
 
   @override
@@ -47,6 +48,10 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
         TextEditingController(text: _t.puntosPorPuesto.join(', '));
     _entradaCtrl = TextEditingController(
         text: _t.bote.hayBote ? _t.bote.entrada.toStringAsFixed(0) : '');
+    _jornadaCtrl = TextEditingController(
+        text: _t.bote.hayBoteJornada
+            ? _t.bote.entradaPorJornada.toStringAsFixed(0)
+            : '');
   }
 
   @override
@@ -54,14 +59,16 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
     _nombreCtrl.dispose();
     _puntosCtrl.dispose();
     _entradaCtrl.dispose();
+    _jornadaCtrl.dispose();
     super.dispose();
   }
 
   /// Las rondas que el torneo tendría AHORA. Se recalcula en cada build para que
   /// los avisos hablen de la configuración que se está tocando, no de la que
   /// había al abrir.
-  List<RoundResult> get _rondas =>
-      rondasDelTorneo(_t, context.read<PerfilProvider>().resultados);
+  List<RoundResult> get _rondas => rondasDelTorneo(_t, _todos);
+
+  List<RoundResult> get _todos => context.read<PerfilProvider>().resultados;
 
   /// Cuántos jugadores tendría la tabla con estas rondas. Para poder decir el
   /// total del bote mientras se configura, en vez de al guardar.
@@ -152,6 +159,25 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
               '${rondas.length} ronda${rondas.length == 1 ? '' : 's'} '
               '${rondas.length == 1 ? 'entra' : 'entran'} con esta fuente.',
               t),
+          // El aviso que faltaba, y salió de usarlo con datos reales: una fuente
+          // por fechas arrastró ochenta rondas de prueba y el bote dio una cifra
+          // que nadie puso encima de la mesa. Se dice CON EL NÚMERO antes de
+          // guardar, no se descubre en la tabla.
+          if (avisoDeArrastre(_t, tablaDe(_t, _todos)) != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: t.card,
+                borderRadius: BorderRadius.circular(10),
+                border:
+                    Border.all(color: t.scoreOver.withValues(alpha: 0.5)),
+              ),
+              child: Text(avisoDeArrastre(_t, tablaDe(_t, _todos))!,
+                  style: TextStyle(
+                      color: t.text, fontSize: 12, height: 1.4)),
+            ),
+          ],
           const SizedBox(height: 22),
 
           // ── 2 · Cómo puntúa cada ronda ─────────────────────────────────
@@ -272,10 +298,57 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
                   borderSide: BorderSide(color: t.divider)),
             ),
           ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _jornadaCtrl,
+            keyboardType: TextInputType.number,
+            style: TextStyle(color: t.text),
+            onChanged: (v) {
+              final n = double.tryParse(v) ?? 0;
+              setState(() => _t = _t.copyWith(
+                  bote: _t.bote.copyWith(entradaPorJornada: n)));
+            },
+            decoration: InputDecoration(
+              labelText: 'Entrada por ronda jugada',
+              prefixText: '\$ ',
+              helperText: 'El bote del día, que cobra quien gana esa ronda. '
+                  '0 = sin bote por jornada.',
+              helperMaxLines: 3,
+              helperStyle: TextStyle(color: t.sub, fontSize: 11),
+              labelStyle: TextStyle(color: t.sub),
+              filled: true,
+              fillColor: t.surface,
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: t.divider)),
+            ),
+          ),
+          if (_t.bote.hayBoteJornada) ...[
+            const SizedBox(height: 10),
+            _titulo('CÓMO SE REPARTE EL DEL DÍA', t),
+            for (final r in RepartoDelBote.values)
+              _opcion(
+                t: t,
+                titulo: r.label,
+                detalle: r == RepartoDelBote.podio
+                    ? 'Porcentajes: ${_t.bote.porcentajes.join(' · ')}%'
+                    : 'Todo para el primero de esa ronda.',
+                activa: _t.bote.repartoJornada == r,
+                onTap: () => setState(() => _t = _t.copyWith(
+                    bote: _t.bote.copyWith(repartoJornada: r))),
+              ),
+            const SizedBox(height: 6),
+            // Los dos botes no se suman en ninguna cifra, y se dice donde se
+            // configuran para que nadie espere un total único.
+            _nota(
+                'El del día se cobra al cerrar cada ronda; el final, al cerrar '
+                'el torneo. Son dinero distinto y no se suman.',
+                t),
+          ],
           if (_t.bote.hayBote) ...[
             const SizedBox(height: 6),
             _nota(
-                'Total del bote con las rondas de ahora: '
+                'Total del bote final con las rondas de ahora: '
                 '\$${(_t.bote.entrada * _jugadoresEnTabla(rondas)).toStringAsFixed(0)}',
                 t),
             const SizedBox(height: 12),
@@ -293,7 +366,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
               ),
             if (_t.minimoRondas > 0) ...[
               const SizedBox(height: 10),
-              _titulo('QUIEN NO LLEGA AL MÍNIMO', t),
+              _titulo('QUIEN NO LLEGA AL MÍNIMO (BOTE FINAL)', t),
               for (final s in EntradaSinMinimo.values)
                 _opcion(
                   t: t,
