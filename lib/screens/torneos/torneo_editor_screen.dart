@@ -72,10 +72,14 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
 
   List<RoundResult> get _todos => context.read<PerfilProvider>().resultados;
 
-  /// Cuántos jugadores tendría la tabla con estas rondas. Para poder decir el
-  /// total del bote mientras se configura, en vez de al guardar.
-  int _jugadoresEnTabla(List<RoundResult> rondas) =>
-      rondas.expand((r) => r.playerIds).toSet().length;
+  /// Cuántos ponen al bote: los INSCRITOS.
+  ///
+  /// Contaba los jugadores de las RONDAS, y por eso el total no se movía al
+  /// quitar chips: seguía en $27500 con 47 inscritos porque las 79 rondas del
+  /// rango tenían 55 personas. Dos bugs a la vez con el mismo síntoma —la lista
+  /// que no se veía guardada y el total que no reaccionaba— y este era el
+  /// segundo.
+  int get _inscritos => _t.participantes.length;
 
   @override
   Widget build(BuildContext context) {
@@ -452,8 +456,13 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           if (_t.bote.hayBote) ...[
             const SizedBox(height: 6),
             _nota(
-                'Total del bote final con las rondas de ahora: '
-                '\$${(_t.bote.entrada * _jugadoresEnTabla(rondas)).toStringAsFixed(0)}',
+                _inscritos == 0
+                    // Sin lista no hay bote, así que tampoco un total que
+                    // prometerlo. Es la misma regla que aplica el modelo.
+                    ? 'Sin participantes no hay bote: define la lista arriba.'
+                    : 'Total del bote final: '
+                        '\$${(_t.bote.entrada * _inscritos).toStringAsFixed(0)}'
+                        ' · $_inscritos inscrito${_inscritos == 1 ? '' : 's'}',
                 t),
             const SizedBox(height: 12),
             _titulo('CÓMO SE REPARTE', t),

@@ -24,6 +24,7 @@ import 'package:golf_bet_master/providers/round_provider.dart';
 import 'package:golf_bet_master/providers/torneo_provider.dart';
 import 'package:golf_bet_master/providers/user_profile_provider.dart';
 import 'package:golf_bet_master/screens/home/home_screen.dart';
+import 'package:golf_bet_master/screens/torneos/torneos_screen.dart';
 
 const ana = 'ana', beto = 'beto', caro = 'caro', dani = 'dani';
 
@@ -74,6 +75,8 @@ Torneo _t({
     );
 
 void main() {
+  _pantallaLeeLoGuardado();
+
   _participantes();
 
   _alcanzable();
@@ -670,6 +673,115 @@ void _participantes() {
       expect(tabla.filas, isEmpty, reason: 'ninguno llega a 3 rondas');
       expect(tabla.bajoMinimo, hasLength(2),
           reason: 'pero los dos están inscritos y salen con su cuenta');
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LA PANTALLA ENSEÑA LO GUARDADO, NO LO QUE RECIBIÓ AL ABRIRSE
+//
+// El bug: se editaba la lista de participantes, se guardaba, se volvía, y la
+// pantalla seguía diciendo "falta la lista" con el bote a cero. La lista SÍ se
+// había guardado —el modelo la persiste bien— pero TorneoTablaScreen renderizaba
+// el objeto que recibió al construirse, que es de antes de editar.
+//
+// Es el patrón de siempre en la dirección contraria: no que la UI reaccione y el
+// modelo no se entere, sino que el modelo cambie y la UI mire una copia vieja. Y
+// yo mismo había escrito un parche para esquivarlo al compartir sin arreglar la
+// pantalla que tenía el problema.
+//
+// Este test monta la pantalla con un torneo VIEJO como argumento y uno nuevo en
+// el provider. Es la forma de reproducir "volver del editor" sin navegar.
+// ─────────────────────────────────────────────────────────────────────────────
+void _pantallaLeeLoGuardado() {
+  Future<void> montar(WidgetTester tester,
+      {required Torneo argumento,
+      required Torneo enProvider,
+      required List<RoundResult> res}) async {
+    tester.view.physicalSize = const Size(390, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<PerfilProvider>.value(
+            value: PerfilProvider()..sembrar(res)),
+        ChangeNotifierProvider<TorneoProvider>.value(
+            value: TorneoProvider()..sembrar([enProvider])),
+        ChangeNotifierProvider(create: (_) => PlayerProvider()),
+        ChangeNotifierProvider(create: (_) => BettingGroupProvider()),
+      ],
+      child: MaterialApp(home: TorneoTablaScreen(torneo: argumento)),
+    ));
+    await tester.pump(const Duration(milliseconds: 150));
+  }
+
+  final rondas = [
+    _r(id: 'r1', dia: 1, quienes: const [ana, beto],
+        dinero: {ana: 100, beto: -100}),
+  ];
+
+  const sinLista = Torneo(
+    id: 'mismo', nombre: 'Copa',
+    fuente: FuenteDeRondas.rango,
+    metodo: MetodoDePuntuacion.dinero,
+    bote: BoteConfig(entrada: 500),
+  );
+  const conLista = Torneo(
+    id: 'mismo', nombre: 'Copa',
+    fuente: FuenteDeRondas.rango,
+    metodo: MetodoDePuntuacion.dinero,
+    participantes: [ana, beto],
+    bote: BoteConfig(entrada: 500),
+  );
+
+  group('14 · la pantalla lee del provider, no del argumento', () {
+    testWidgets('con la lista ya guardada, el aviso desaparece',
+        (tester) async {
+      // El argumento es la versión VIEJA —sin lista— y el provider tiene la
+      // guardada. Antes se enseñaba la vieja.
+      await montar(tester,
+          argumento: sinLista, enProvider: conLista, res: rondas);
+      expect(find.text('FALTA LA LISTA DE PARTICIPANTES'), findsNothing,
+          reason: 'la lista está guardada: el aviso sobra');
+    });
+
+    testWidgets('y el bote se calcula con los inscritos guardados',
+        (tester) async {
+      await montar(tester,
+          argumento: sinLista, enProvider: conLista, res: rondas);
+      expect(find.text('\$1000'), findsOneWidget,
+          reason: 'dos inscritos × 500');
+    });
+
+    testWidgets('si de verdad falta la lista, el aviso sí sale',
+        (tester) async {
+      // El contrapeso: sin este, los dos de arriba pasarían con un aviso que
+      // nunca se enseña.
+      await montar(tester,
+          argumento: conLista, enProvider: sinLista, res: rondas);
+      expect(find.text('FALTA LA LISTA DE PARTICIPANTES'), findsOneWidget);
+    });
+
+    testWidgets('un torneo borrado del provider no deja la pantalla vacía',
+        (tester) async {
+      // Se enseña el último conocido en vez de una pantalla en blanco: es lo que
+      // se ve un instante al borrar desde otro sitio.
+      tester.view.physicalSize = const Size(390, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider<PerfilProvider>.value(
+              value: PerfilProvider()..sembrar(rondas)),
+          ChangeNotifierProvider<TorneoProvider>.value(
+              value: TorneoProvider()..sembrar(const [])),
+          ChangeNotifierProvider(create: (_) => PlayerProvider()),
+          ChangeNotifierProvider(create: (_) => BettingGroupProvider()),
+        ],
+        child: const MaterialApp(home: TorneoTablaScreen(torneo: conLista)),
+      ));
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(find.text('CÓMO SE PUNTÚA'), findsOneWidget);
     });
   });
 }

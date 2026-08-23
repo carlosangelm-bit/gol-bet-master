@@ -158,12 +158,39 @@ class _TarjetaTorneo extends StatelessWidget {
 }
 
 class TorneoTablaScreen extends StatelessWidget {
+  /// El torneo con el que se abrió la pantalla.
+  ///
+  /// **No se pinta desde aquí.** Se usa solo para saber QUÉ torneo es; lo que se
+  /// enseña sale del provider por id.
   final Torneo torneo;
+
   const TorneoTablaScreen({super.key, required this.torneo});
+
+  /// El torneo VIVO. Es la diferencia entre enseñar lo guardado y enseñar lo que
+  /// llegó al abrir la pantalla.
+  ///
+  /// El bug que arregla: se editaba la lista de participantes, se guardaba, se
+  /// volvía, y la pantalla seguía diciendo "falta la lista" con el bote a cero.
+  /// La lista SÍ se había guardado —el modelo la persiste bien, comprobado— pero
+  /// esta pantalla renderizaba el objeto que recibió al construirse, que es de
+  /// antes de editar.
+  ///
+  /// Es el mismo patrón de siempre en otra dirección: no que la UI reaccione y el
+  /// modelo no se entere, sino que el modelo cambie y la UI mire una copia vieja.
+  /// Yo mismo escribí un helper para esquivarlo al compartir —"para no publicar
+  /// una versión vieja"— y no arreglé la pantalla que tenía el mismo problema.
+  Torneo _vivo(BuildContext context) {
+    final lista = context.watch<TorneoProvider>().torneos;
+    final match = lista.where((x) => x.id == torneo.id);
+    // Si ya no está —lo borraron desde otro sitio— se enseña el último que se
+    // conoce en vez de una pantalla vacía.
+    return match.isEmpty ? torneo : match.first;
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = context.gt;
+    final torneo = _vivo(context);
     final resultados = context.watch<PerfilProvider>().resultados;
     final tabla = tablaDe(torneo, resultados);
 
@@ -178,7 +205,7 @@ class TorneoTablaScreen extends StatelessWidget {
           IconButton(
             icon: Icon(Icons.ios_share, color: t.sub),
             tooltip: 'Compartir',
-            onPressed: () => _compartir(context, tabla),
+            onPressed: () => _compartir(context, torneo, tabla),
           ),
           IconButton(
             icon: Icon(Icons.tune, color: t.sub),
@@ -404,16 +431,15 @@ class TorneoTablaScreen extends StatelessWidget {
 /// con el sello de fecha en la vista de invitado un enlace rancio se ve. Volver a
 /// tocar aquí actualiza el MISMO enlace, así que quien ya lo tiene en WhatsApp no
 /// se queda con una copia muerta.
-Future<void> _compartir(BuildContext context, TablaDelTorneo tabla) async {
+Future<void> _compartir(
+    BuildContext context, Torneo torneoArg, TablaDelTorneo tabla) async {
   final t = context.gt;
   final prov = context.read<TorneoProvider>();
-  final resultados = context.read<PerfilProvider>().resultados;
 
-  // Se busca el torneo por id para tener la versión más reciente del provider,
-  // no la que llegó al construir la pantalla.
-  final torneoArg = _torneoDeContexto(context);
-  if (torneoArg == null) return;
-
+  // Llega el torneo VIVO desde la pantalla, que ya lo resuelve contra el
+  // provider. Antes había aquí un findAncestorWidgetOfExactType para esquivar la
+  // copia vieja: era un parche sobre el bug de al lado, y con la pantalla
+  // arreglada sobra.
   if (tabla.sinListaDeParticipantes) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
       content: Text(
@@ -531,16 +557,6 @@ Future<void> _compartir(BuildContext context, TablaDelTorneo tabla) async {
       ),
     ),
   );
-}
-
-/// El torneo que está enseñando la pantalla. Se saca del provider por id para
-/// no publicar una versión vieja de la que se editó hace un momento.
-Torneo? _torneoDeContexto(BuildContext context) {
-  final actual = context.findAncestorWidgetOfExactType<TorneoTablaScreen>();
-  if (actual == null) return null;
-  final lista = context.read<TorneoProvider>().torneos;
-  final match = lista.where((x) => x.id == actual.torneo.id);
-  return match.isEmpty ? actual.torneo : match.first;
 }
 
 class _Fila extends StatefulWidget {
@@ -705,21 +721,37 @@ class _BloqueBote extends StatelessWidget {
           ),
         ]),
         const SizedBox(height: 8),
-        Row(crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic, children: [
-          Text('\$${bote.total.toStringAsFixed(0)}',
-              style: TextStyle(
-                  color: t.text,
-                  fontSize: 30,
-                  height: 1.0,
-                  fontWeight: FontWeight.w900,
-                  fontFeatures: const [FontFeature.tabularFigures()])),
-          const SizedBox(width: 8),
-          Text(
-              '\$${torneo.bote.entrada.toStringAsFixed(0)} por jugador · '
-              '${bote.lineas.length}',
-              style: TextStyle(color: t.sub, fontSize: 11.5)),
-        ]),
+        // Wrap y no Row. Es la TERCERA vez en la sesión que el mismo patrón
+        // —cifra grande a 30 px más una etiqueta al lado— se sale por la
+        // derecha: pasó con la fila de contadores del tablero, con la cifra del
+        // balance y su chip de racha, y aquí. La forma es la culpable, no los
+        // números concretos: dos Text sin Flexible en un Row toman su ancho
+        // intrínseco y no hay quien los ceda.
+        //
+        // Con Wrap la etiqueta baja de línea en vez de recortarse, y deja de
+        // importar cuánto midan el importe o el número de jugadores.
+        Wrap(
+          spacing: 8,
+          runSpacing: 2,
+          crossAxisAlignment: WrapCrossAlignment.end,
+          children: [
+            Text('\$${bote.total.toStringAsFixed(0)}',
+                style: TextStyle(
+                    color: t.text,
+                    fontSize: 30,
+                    height: 1.0,
+                    fontWeight: FontWeight.w900,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text(
+                  '\$${torneo.bote.entrada.toStringAsFixed(0)} por jugador · '
+                  '${bote.lineas.length} inscrito'
+                  '${bote.lineas.length == 1 ? '' : 's'}',
+                  style: TextStyle(color: t.sub, fontSize: 11.5)),
+            ),
+          ],
+        ),
         if (bote.recaudado != bote.total) ...[
           const SizedBox(height: 2),
           Text(
