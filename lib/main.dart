@@ -17,6 +17,7 @@ import 'providers/user_profile_provider.dart';
 import 'providers/handicap_provider.dart';
 import 'providers/perfil_provider.dart';
 import 'providers/torneo_provider.dart';
+import 'screens/torneos/torneo_enlace_screen.dart';
 import 'providers/betting_group_provider.dart';
 import 'app_shell.dart';
 import 'screens/guest/guest_join_screen.dart';
@@ -118,6 +119,22 @@ class GolfBetApp extends StatelessWidget {
     return null;
   }
 
+  /// El token de /torneo/:token.
+  ///
+  /// Mismo patrón que guest y caddie: no se inventa un segundo enrutado. El
+  /// rewrite de hosting manda cualquier ruta a index.html, así que el enlace
+  /// funciona sin hash.
+  static String? _extractTorneoToken() {
+    if (!kIsWeb) return null;
+    try {
+      final segments = Uri.base.pathSegments;
+      if (segments.length >= 2 && segments[0] == 'torneo') {
+        return segments[1];
+      }
+    } catch (_) {}
+    return null;
+  }
+
   static String? _extractCaddieToken() {
     if (!kIsWeb) return null;
     try {
@@ -135,6 +152,7 @@ class GolfBetApp extends StatelessWidget {
     final prov        = context.watch<RoundProvider>();
     final guestToken  = _extractGuestToken();
     final caddieToken = _extractCaddieToken();
+    final torneoToken = _extractTorneoToken();
 
     return MaterialApp(
       title: 'Golf Bet Master', // v1.1.0+5
@@ -147,12 +165,17 @@ class GolfBetApp extends StatelessWidget {
         };
         return child ?? const SizedBox.shrink();
       },
-      // Prioridad: caddie > guest > app normal
+      // Prioridad: caddie > guest > torneo > app normal.
+      //
+      // El torneo va DESPUÉS de los dos de ronda: quien llega con un enlace de
+      // ronda en vivo está a punto de jugar, y eso manda sobre mirar una tabla.
       home: caddieToken != null
           ? CaddieJoinScreen(token: caddieToken)
           : guestToken != null
               ? GuestJoinScreen(token: guestToken)
-              : const AppShell(),
+              : torneoToken != null
+                  ? TorneoEnlaceScreen(token: torneoToken)
+                  : const AppShell(),
       onGenerateRoute: (settings) {
         final name = settings.name ?? '';
         if (name.startsWith('/caddie/')) {
@@ -165,6 +188,15 @@ class GolfBetApp extends StatelessWidget {
           final token = name.replaceFirst('/guest/', '');
           return MaterialPageRoute(
             builder: (_) => GuestJoinScreen(token: token),
+          );
+        }
+        // El enlace de torneo. Va aquí además de en home porque una navegación
+        // dentro de la app tambien puede llegar por nombre de ruta, y dejarlo
+        // solo en home lo haria funcionar al abrir y no al navegar.
+        if (name.startsWith('/torneo/')) {
+          final token = name.replaceFirst('/torneo/', '');
+          return MaterialPageRoute(
+            builder: (_) => TorneoEnlaceScreen(token: token),
           );
         }
         return null;

@@ -10,6 +10,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../models/torneo.dart';
+import '../../services/firestore_service.dart';
+import '../../services/auth_service.dart';
+import '../../models/torneo_publicado.dart';
+import 'package:flutter/services.dart';
 import '../../providers/perfil_provider.dart';
 import '../../providers/torneo_provider.dart';
 import 'torneo_editor_screen.dart';
@@ -171,6 +175,11 @@ class TorneoTablaScreen extends StatelessWidget {
         title: Text('${torneo.emoji} ${torneo.nombre}'),
         elevation: 0,
         actions: [
+          IconButton(
+            icon: Icon(Icons.ios_share, color: t.sub),
+            tooltip: 'Compartir',
+            onPressed: () => _compartir(context, tabla),
+          ),
           IconButton(
             icon: Icon(Icons.tune, color: t.sub),
             tooltip: 'Editar el torneo',
@@ -387,6 +396,151 @@ class TorneoTablaScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Publica la copia y ofrece el enlace.
+///
+/// Publicar es una ACCIÓN, no algo automático: es más predecible y más barato, y
+/// con el sello de fecha en la vista de invitado un enlace rancio se ve. Volver a
+/// tocar aquí actualiza el MISMO enlace, así que quien ya lo tiene en WhatsApp no
+/// se queda con una copia muerta.
+Future<void> _compartir(BuildContext context, TablaDelTorneo tabla) async {
+  final t = context.gt;
+  final prov = context.read<TorneoProvider>();
+  final resultados = context.read<PerfilProvider>().resultados;
+
+  // Se busca el torneo por id para tener la versión más reciente del provider,
+  // no la que llegó al construir la pantalla.
+  final torneoArg = _torneoDeContexto(context);
+  if (torneoArg == null) return;
+
+  if (tabla.sinListaDeParticipantes) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text(
+          'Define primero los participantes: compartir una tabla con gente que '
+          'no se inscribió empeora el problema en vez de arreglarlo.'),
+      duration: Duration(seconds: 5),
+    ));
+    return;
+  }
+
+  final uid = AuthService.uid;
+  if (uid == null) return;
+
+  final token = torneoArg.tokenCompartido ??
+      'tor_${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
+  final ahora = DateTime.now();
+  final copia = TorneoPublicado.desde(
+    token: token,
+    ownerUid: uid,
+    torneo: torneoArg,
+    tabla: tabla,
+    bote: boteDe(torneoArg, tabla),
+    jornadas: botesPorJornada(torneoArg, tabla),
+    cuando: ahora,
+  );
+
+  try {
+    await FirestoreService.publicarTorneo(copia);
+    await prov.guardar(torneoArg.copyWith(
+        tokenCompartido: token, publicadoEn: ahora));
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo publicar: $e')));
+    }
+    return;
+  }
+  if (!context.mounted) return;
+
+  final enlace = 'https://golf-bet-master.web.app/torneo/$token';
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: t.bg,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('Enlace del torneo',
+              style: TextStyle(
+                  color: t.text, fontSize: 17, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          Text(
+              'Quien lo abra ve la tabla en solo lectura. Lo que se publica es '
+              'una COPIA con fecha: si añades rondas, vuelve aquí para '
+              'actualizarla.',
+              style: TextStyle(color: t.sub, fontSize: 12, height: 1.4)),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: t.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: t.divider),
+            ),
+            child: SelectableText(enlace,
+                style: TextStyle(color: t.text, fontSize: 12.5)),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: enlace));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Enlace copiado')));
+              },
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: t.primary,
+                  foregroundColor: t.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 13)),
+              icon: const Icon(Icons.copy, size: 17),
+              label: const Text('Copiar para WhatsApp',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Revocar: un enlace de WhatsApp acaba donde no se previó, así que hay
+          // que poder matarlo. Borrar el documento lo deja inservible.
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () async {
+                await FirestoreService.revocarTorneo(token);
+                await prov.guardar(
+                    torneoArg.copyWith(limpiarCompartido: true));
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text(
+                          'Enlace revocado. Quien lo tenga ya no verá nada.')));
+                }
+              },
+              style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: t.divider),
+                  foregroundColor: t.sub,
+                  padding: const EdgeInsets.symmetric(vertical: 12)),
+              child: const Text('Revocar este enlace'),
+            ),
+          ),
+        ]),
+      ),
+    ),
+  );
+}
+
+/// El torneo que está enseñando la pantalla. Se saca del provider por id para
+/// no publicar una versión vieja de la que se editó hace un momento.
+Torneo? _torneoDeContexto(BuildContext context) {
+  final actual = context.findAncestorWidgetOfExactType<TorneoTablaScreen>();
+  if (actual == null) return null;
+  final lista = context.read<TorneoProvider>().torneos;
+  final match = lista.where((x) => x.id == actual.torneo.id);
+  return match.isEmpty ? actual.torneo : match.first;
 }
 
 class _Fila extends StatefulWidget {

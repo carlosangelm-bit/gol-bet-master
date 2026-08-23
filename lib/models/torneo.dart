@@ -207,6 +207,17 @@ class Torneo {
   /// El bote, si el grupo pone uno. Aditivo: por defecto no hay.
   final BoteConfig bote;
 
+  /// El token del enlace compartido, si se ha publicado alguna vez.
+  ///
+  /// Se guarda para que republicar actualice el MISMO enlace en vez de crear
+  /// otro: quien ya lo tiene en WhatsApp no se queda con una copia muerta.
+  /// Revocar lo borra, y volver a publicar genera uno nuevo — así un enlace
+  /// reenviado donde no se quería deja de valer.
+  final String? tokenCompartido;
+
+  /// Cuándo se publicó la última copia. Null si nunca.
+  final DateTime? publicadoEn;
+
   /// Si el torneo está cerrado y liquidado.
   ///
   /// Cerrado no significa "pagado" —la app no procesa pagos— significa que la
@@ -230,6 +241,8 @@ class Torneo {
     this.participantes = const [],
     this.minimoRondas = 0,
     this.bote = BoteConfig.def,
+    this.tokenCompartido,
+    this.publicadoEn,
     this.cerrado = false,
   });
 
@@ -251,6 +264,9 @@ class Torneo {
     List<String>? participantes,
     int? minimoRondas,
     BoteConfig? bote,
+    String? tokenCompartido,
+    DateTime? publicadoEn,
+    bool limpiarCompartido = false,
     bool? cerrado,
   }) =>
       Torneo(
@@ -270,6 +286,10 @@ class Torneo {
         participantes: participantes ?? this.participantes,
         minimoRondas: minimoRondas ?? this.minimoRondas,
         bote: bote ?? this.bote,
+        tokenCompartido:
+            limpiarCompartido ? null : (tokenCompartido ?? this.tokenCompartido),
+        publicadoEn:
+            limpiarCompartido ? null : (publicadoEn ?? this.publicadoEn),
         cerrado: cerrado ?? this.cerrado,
       );
 
@@ -289,7 +309,9 @@ class Torneo {
         'mejoresN': mejoresN,
         if (participantes.isNotEmpty) 'participantes': participantes,
         if (minimoRondas > 0) 'minimoRondas': minimoRondas,
-        if (bote.hayBote) 'bote': bote.toJson(),
+        if (bote.hayAlgunBote) 'bote': bote.toJson(),
+        if (tokenCompartido != null) 'tokenCompartido': tokenCompartido,
+        if (publicadoEn != null) 'publicadoEn': publicadoEn!.toIso8601String(),
         if (cerrado) 'cerrado': true,
       };
 
@@ -323,6 +345,8 @@ class Torneo {
         bote: j['bote'] == null
             ? BoteConfig.def
             : BoteConfig.fromJson(Map<String, dynamic>.from(j['bote'] as Map)),
+        tokenCompartido: j['tokenCompartido'] as String?,
+        publicadoEn: DateTime.tryParse((j['publicadoEn'] as String?) ?? ''),
         cerrado: j['cerrado'] == true,
       );
 }

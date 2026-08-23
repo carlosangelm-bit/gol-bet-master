@@ -33,9 +33,22 @@ service cloud.firestore {
     // DATOS DE USUARIO + TODAS las subcolecciones
     // rounds, templates, gamePresets, playerLinks, favoriteCourses
     match /users/{userId} {
-      // Permitir leer el documento raíz a usuarios autenticados
-      // Necesario para buscar UID por email al vincular compañeros.
-      allow read: if request.auth != null;
+      // ── Solo el propio usuario lee su documento raíz ──────────────────────
+      //
+      // Antes era `if request.auth != null`: cualquier usuario autenticado podía
+      // leer el perfil de cualquier otro conociendo su uid, y ahí está el CORREO,
+      // además del apodo, el handicap por defecto y la moneda.
+      //
+      // El comentario decía que hacía falta "para buscar UID por email al
+      // vincular compañeros", y no: para eso está /userLookup, que solo tiene
+      // uid y email. El propio código lo dice en player_service —"esta colección
+      // evita hacer queries sobre /users (que requieren permisos de leer datos
+      // de otros usuarios)"— así que el permiso estaba MUERTO y solo exponía.
+      //
+      // Lo encontró una prueba de reglas escrita para el torneo compartido, no
+      // una revisión. Los accesos cruzados que la app sí necesita van a
+      // subcolecciones concretas —liveRoundRefs— con su propia regla.
+      allow read: if request.auth != null && request.auth.uid == userId;
 
       // Solo el propio usuario puede escribir en sus datos
       allow write: if request.auth != null
@@ -91,6 +104,46 @@ service cloud.firestore {
                            && exists(/databases/$(database)/documents/liveRounds/$(roundId))
                            && request.auth.uid == get(/databases/$(database)/documents/liveRounds/$(roundId)).data.ownerUid;
       }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // TORNEOS COMPARTIDOS
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Un torneo vive en users/{uid}/torneos y su tabla se DERIVA de
+    // users/{uid}/roundResults. Un invitado no puede leer eso, y no debe: son
+    // TODAS las rondas del organizador, no las del torneo.
+    //
+    // Así que compartir es PUBLICAR UNA COPIA: un documento autocontenido con lo
+    // del torneo y nada más. Clasificación, botes, participantes. NO los
+    // RoundResult completos, NO balances de rondas ajenas, NO el directorio.
+    //
+    // Y eso es lo que hace segura esta regla: es `read` sobre un documento que
+    // solo contiene lo que se quiso compartir. Sin get() cruzados, sin
+    // condiciones sobre users/** que alguien tenga que razonar. El criterio se
+    // cumple POR CONSTRUCCIÓN, no porque la regla esté bien escrita — que es
+    // mejor, porque no depende de que lo esté.
+    //
+    // Revocar un enlace es borrar el documento.
+    match /sharedTorneos/{token} {
+      // Cualquiera autenticado que tenga el enlace lee. Se pide cuenta —aunque
+      // sea ligera— porque aquí hay dinero y nombres de terceros a la vista.
+      allow read: if request.auth != null;
+
+      // Solo el organizador publica, actualiza o revoca. El ownerUid se
+      // comprueba contra lo que ya hay al actualizar y contra lo que se escribe
+      // al crear, así que nadie puede publicar a nombre de otro ni apropiarse de
+      // un token existente.
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.ownerUid;
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.ownerUid
+                    && request.auth.uid == request.resource.data.ownerUid;
+      allow delete: if request.auth != null
+                    && request.auth.uid == resource.data.ownerUid;
+
+      // Nada de subcolecciones: si algún día hacen falta, se abren a mano. Un
+      // {document=**} aquí dejaría entrar lo que nadie ha revisado.
     }
 
   }

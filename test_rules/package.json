@@ -1,0 +1,10 @@
+{
+  "name": "golf-bet-master-rules-tests",
+  "private": true,
+  "type": "module",
+  "description": "Pruebas de las reglas de Firestore. Ejecutar con: firebase emulators:exec --only firestore \"node test_rules/run.mjs\"",
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "firebase": "^10.14.1"
+  }
+}

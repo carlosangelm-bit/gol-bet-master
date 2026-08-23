@@ -13,6 +13,7 @@ import 'handicap_service.dart';
 import 'user_profile_service.dart';
 import '../models/round_result.dart';
 import '../models/torneo.dart';
+import '../models/torneo_publicado.dart';
 
 class FirestoreService {
   static final _db = FirebaseFirestore.instance;
@@ -502,6 +503,45 @@ class FirestoreService {
       list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       return list;
     });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TORNEOS COMPARTIDOS — la copia publicada
+  // ══════════════════════════════════════════════════════════════════════════
+  //
+  // Colección de NIVEL SUPERIOR, no bajo users/: es lo que la hace legible por
+  // alguien que no es el dueño. Y el documento es autocontenido —solo lo del
+  // torneo— así que la regla es `read` sobre algo que no tiene nada más.
+  //
+  // Las reglas están probadas contra el emulador en test_rules/run.mjs. Fue ahí
+  // donde salió que users/{uid} tenía `allow read` para cualquier autenticado,
+  // exponiendo el correo de todos.
+
+  static CollectionReference<Map<String, dynamic>> _sharedTorneos() =>
+      _db.collection('sharedTorneos');
+
+  /// Publica o actualiza la copia de un torneo. Devuelve el token.
+  static Future<String> publicarTorneo(TorneoPublicado copia) async {
+    if (AuthService.uid == null) throw Exception('No autenticado');
+    await _sharedTorneos().doc(copia.token).set(copia.toJson());
+    return copia.token;
+  }
+
+  /// Revoca un enlace. Borrar el documento lo deja inservible.
+  static Future<void> revocarTorneo(String token) async {
+    if (AuthService.uid == null) return;
+    await _sharedTorneos().doc(token).delete();
+  }
+
+  /// Lee una copia publicada. Devuelve null si el enlace ya no vale.
+  static Future<TorneoPublicado?> leerTorneoPublicado(String token) async {
+    try {
+      final d = await _sharedTorneos().doc(token).get();
+      if (!d.exists || d.data() == null) return null;
+      return TorneoPublicado.fromJson(token, Map<String, dynamic>.from(d.data()!));
+    } catch (_) {
+      return null;
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════════

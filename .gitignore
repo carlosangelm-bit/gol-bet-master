@@ -46,3 +46,9 @@ app.*.map.json
 # Firebase
 google-services.json
 GoogleService-Info.plist
+
+# Dependencias de las pruebas de reglas de Firestore (test_rules/run.mjs).
+# Se instalan con: npm install --prefix test_rules
+test_rules/node_modules/
+test_rules/package-lock.json
+firestore-debug.log
