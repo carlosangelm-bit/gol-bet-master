@@ -14,13 +14,144 @@
 // Y la cintilla de descarga, permanente, sin tapar el contenido: va fija abajo
 // con el ListView dejándole sitio, no flotando encima.
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/app_theme.dart';
 import '../../widgets/bracket_tree.dart';
 import '../../models/torneo_publicado.dart';
 
-class TorneoInvitadoScreen extends StatelessWidget {
+// ══════════════════════════════════════════════════════════════════════════════
+// ELEGIR TU JUGADOR — libre, y por qué eso no es un agujero
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// El invitado abre el enlace, ve la lista y dice "soy Luis Herrera". A partir de
+// ahí ve SU llave y SU partido. No hace falta cuenta, ni correo, ni que el
+// organizador apruebe nada.
+//
+// Y ESO NO SE VA A ENDURECER DESPUÉS. Que dos personas elijan el mismo nombre no
+// tiene coste, porque en un torneo donde no se conoce la gente difícilmente hay
+// dinero; y donde hay dinero, la gente se registra igual porque es el suyo. La
+// fricción se autorregula, así que NO se construye aprobación del organizador ni
+// resolución de conflictos: sería una capa de permisos para un problema que el
+// caso no tiene.
+//
+// La autoridad la da LA CUENTA, no la selección. Elegir jugador es una preferencia
+// de visualización guardada en este teléfono; escribir un score exige cuenta, y
+// esa puerta está en el momento en que se intenta, no antes.
+//
+// Queda escrito aquí para que nadie añada luego lo que este encargo descartó a
+// propósito.
+class TorneoInvitadoScreen extends StatefulWidget {
   final TorneoPublicado copia;
   const TorneoInvitadoScreen({super.key, required this.copia});
+
+  @override
+  State<TorneoInvitadoScreen> createState() => _TorneoInvitadoScreenState();
+}
+
+class _TorneoInvitadoScreenState extends State<TorneoInvitadoScreen> {
+  TorneoPublicado get copia => widget.copia;
+
+  /// El nombre que el invitado dijo que es. null = todavía no lo dijo.
+  String? _yoSoy;
+
+  /// La clave donde se recuerda, por token: quien mira dos torneos distintos es
+  /// una persona distinta en cada uno.
+  String get _clave => 'invitado_soy_${copia.token}';
+
+  /// Los nombres entre los que elegir.
+  ///
+  /// De la tabla Y del cuadro, unidos. Solo de la tabla no basta: un torneo de
+  /// eliminación recién armado no tiene rondas jugadas, y entonces las filas
+  /// salen sin nombre —el guion— así que la lista habría sido de guiones. Lo
+  /// destapó el test.
+  List<String> get _candidatos {
+    final out = <String>{};
+    for (final f in copia.tabla) {
+      if (f.nombre.isNotEmpty && f.nombre != '—') out.add(f.nombre);
+    }
+    for (final p in copia.llave) {
+      for (final n in [p.a, p.b]) {
+        if (n != null && n.isNotEmpty && n != '—') out.add(n);
+      }
+    }
+    final lista = out.toList()..sort();
+    return lista;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _recordar();
+  }
+
+  Future<void> _recordar() async {
+    final prefs = await SharedPreferences.getInstance();
+    final guardado = prefs.getString(_clave);
+    // Solo si sigue en la lista: si el organizador lo saca, la preferencia deja
+    // de valer y se vuelve a preguntar.
+    if (!mounted || guardado == null) return;
+    if (_candidatos.contains(guardado)) {
+      setState(() => _yoSoy = guardado);
+    }
+  }
+
+  Future<void> _elegir(String? nombre) async {
+    setState(() => _yoSoy = nombre);
+    final prefs = await SharedPreferences.getInstance();
+    if (nombre == null) {
+      await prefs.remove(_clave);
+    } else {
+      await prefs.setString(_clave, nombre);
+    }
+  }
+
+  /// La puerta de la cuenta: se abre cuando se intenta ESCRIBIR, no antes.
+  void _pedirCuenta(GolfTheme t, String queIba) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.bg,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('⛳', style: TextStyle(fontSize: 34)),
+            const SizedBox(height: 10),
+            Text('Para $queIba hace falta cuenta',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: t.text, fontSize: 17, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            // Se explica la diferencia, que es la que justifica la puerta: mirar
+            // es leer una copia; anotar es escribir en la ronda de otros.
+            Text(
+                'Ver el torneo no necesita nada: es una copia. Anotar scores sí, '
+                'porque se escribe en la ronda que están jugando los demás, y ahí '
+                'hay que saber quién eres.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: t.sub, fontSize: 12.5, height: 1.45)),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: t.primary,
+                    foregroundColor: t.onPrimary,
+                    padding: const EdgeInsets.symmetric(vertical: 13)),
+                child: const Text('Descargar la app y crear cuenta',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text('Seguir mirando no necesita nada.',
+                style: TextStyle(color: t.sub, fontSize: 11)),
+          ]),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +198,13 @@ class TorneoInvitadoScreen extends StatelessWidget {
                   ),
                 ]),
               ),
+              const SizedBox(height: 14),
+
+              // ── ¿Quién eres? ──────────────────────────────────────
+              //
+              // Va arriba: lo que alguien quiere de un enlace de torneo es SU
+              // llave, y todo lo de abajo se lee distinto una vez dicho.
+              _bloqueYoSoy(t),
               const SizedBox(height: 14),
 
               _tarjeta(t, 'CÓMO SE PUNTÚA', [
@@ -138,7 +276,9 @@ class TorneoInvitadoScreen extends StatelessWidget {
                 // que es donde un cuadro bien dibujado hace más trabajo.
                 //
                 // Sin resaltado: aquí no se sabe quién mira.
-                ArbolDeLlaveVista(arbol: _arbol(), t: t),
+                // Con el nombre elegido, el árbol resalta su camino y arranca en
+                // su fase: es el mismo widget que la app, y ya sabía hacerlo.
+                ArbolDeLlaveVista(arbol: _arbol(), t: t, miNombre: _yoSoy),
                 const SizedBox(height: 18),
               ],
 
@@ -169,6 +309,152 @@ class TorneoInvitadoScreen extends StatelessWidget {
         _CintillaDescarga(t: t),
       ]),
     );
+  }
+
+  /// "Soy Luis Herrera", y lo que eso enseña.
+  Widget _bloqueYoSoy(GolfTheme t) {
+    final mio = _yoSoy;
+    final fila = mio == null
+        ? null
+        : copia.tabla.where((f) => f.nombre == mio).firstOrNull;
+
+    if (mio == null) {
+      // Sin elegir: la pregunta, y la lista. Nada más —ni cuenta, ni correo—
+      // porque la selección es una preferencia, no una credencial.
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: t.primary.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: t.primary.withValues(alpha: 0.5)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('¿CUÁL ERES TÚ?',
+              style: TextStyle(
+                  color: t.sub,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8)),
+          const SizedBox(height: 4),
+          Text(
+              'Dilo y se marca tu camino en el cuadro. No hace falta cuenta ni '
+              'correo: se guarda solo en este teléfono.',
+              style: TextStyle(color: t.text, fontSize: 12, height: 1.35)),
+          const SizedBox(height: 9),
+          if (_candidatos.isEmpty)
+            Text('El organizador todavía no ha publicado la lista.',
+                style: TextStyle(color: t.sub, fontSize: 11.5)),
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            for (final nombre in _candidatos)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _elegir(nombre),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: t.surface,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: t.divider),
+                  ),
+                  child: Text(nombre,
+                      style: TextStyle(
+                          color: t.text,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700)),
+                ),
+              ),
+          ]),
+        ]),
+      );
+    }
+
+    // Elegido: lo suyo. El partido pendiente primero, que es la pregunta.
+    final arbol = _arbol();
+    final mios = [
+      for (final fase in arbol.rondas)
+        for (final n in fase)
+          if (n.a == mio || n.b == mio) n
+    ];
+    final pendiente = mios.where((n) => n.ganador == null).firstOrNull;
+    final ultimo = mios.isEmpty ? null : mios.last;
+    final fuera = pendiente == null &&
+        ultimo != null &&
+        ultimo.ganador != null &&
+        ultimo.ganador != mio;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: t.primary.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.primary),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+            child: Text(mio,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: t.text, fontSize: 16, fontWeight: FontWeight.w800)),
+          ),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _elegir(null),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Text('No soy yo', style: GolfType.label(t.primary)),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 4),
+        Text(
+            copia.campeon == mio
+                ? '🏆 Campeón del torneo.'
+                : fuera
+                    ? 'Fuera del cuadro: perdiste en '
+                        '${ArbolDeLlave.nombreDeFase(arbol.rondas[ultimo.ronda].length)}.'
+                    : pendiente == null
+                        ? 'Sin partido pendiente ahora mismo.'
+                        : 'Te toca en '
+                            '${ArbolDeLlave.nombreDeFase(arbol.rondas[pendiente.ronda].length)}'
+                            '${_rivalDe(pendiente, mio, arbol)}',
+            style: TextStyle(color: t.text, fontSize: 12.5, height: 1.35)),
+        if (fila != null) ...[
+          const SizedBox(height: 3),
+          Text('Puesto ${fila.puesto} · ${fila.jugadas} rondas jugadas',
+              style: TextStyle(color: t.sub, fontSize: 11)),
+        ],
+        // La puerta de la cuenta, ofrecida solo cuando hay algo que jugar.
+        if (pendiente != null) ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => _pedirCuenta(t, 'anotar los scores de tu partido'),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: t.primary,
+                  foregroundColor: t.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 12)),
+              child: const Text('Jugar este partido',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  /// " contra Luis" o " contra el ganador de Cuartos 2", según se sepa.
+  String _rivalDe(NodoDeLlave n, String mio, ArbolDeLlave arbol) {
+    final otro = n.a == mio ? n.b : n.a;
+    if (otro != null) return ' contra $otro.';
+    final lado = n.a == mio ? 1 : 0;
+    final de = arbol.procedenciaDe(n, lado);
+    return de == null ? '.' : ' contra el ${de.toLowerCase()}.';
   }
 
   /// El cuadro publicado, en la forma que dibuja el árbol.

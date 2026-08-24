@@ -214,6 +214,25 @@ class TorneoPublicado {
   final int rondas;
   final bool cerrado;
 
+  /// Si el enlace está encendido.
+  ///
+  /// ── Por qué un interruptor y no borrar ────────────────────────────────────
+  ///
+  /// El enlace de un torneo es ESTABLE toda su vida: nadie reenvía por WhatsApp
+  /// el mismo enlace cada semana de una temporada. Y revocar borrando el
+  /// documento obligaba a generar otro token al volver a publicar, o sea a
+  /// reenviarlo.
+  ///
+  /// Apagado NO significa "el documento sigue ahí con todo dentro": significa que
+  /// el documento se queda VACÍO —solo el dueño y esta bandera— así que apagar de
+  /// verdad deja de servir los nombres y las cifras. Lo que no se destruye es el
+  /// TOKEN, ni el torneo del organizador. Encender vuelve a publicar la
+  /// instantánea entera.
+  ///
+  /// Es la diferencia entre "dejo de compartir esto" y "rompo el enlace que
+  /// mandé a doce personas".
+  final bool activo;
+
   final List<FilaPublicada> tabla;
 
   /// El bote final: lo que hay y cómo se reparte, en texto.
@@ -244,6 +263,7 @@ class TorneoPublicado {
     required this.comoSeAcumula,
     required this.rondas,
     required this.cerrado,
+    this.activo = true,
     required this.tabla,
     this.boteTotal = 0,
     this.boteReparto,
@@ -362,6 +382,8 @@ class TorneoPublicado {
         'comoSeAcumula': comoSeAcumula,
         'rondas': rondas,
         if (cerrado) 'cerrado': true,
+        // Solo cuando está apagado: un enlace vivo no engorda el documento.
+        if (!activo) 'activo': false,
         'tabla': tabla.map((f) => f.toJson()).toList(),
         if (boteTotal != 0) 'boteTotal': boteTotal,
         if (boteReparto != null) 'boteReparto': boteReparto,
@@ -386,6 +408,9 @@ class TorneoPublicado {
         comoSeAcumula: (j['comoSeAcumula'] as String?) ?? '',
         rondas: (j['rondas'] as num?)?.toInt() ?? 0,
         cerrado: j['cerrado'] == true,
+        // Ausente = encendido: los enlaces publicados antes de que esto
+        // existiera siguen sirviendo.
+        activo: j['activo'] != false,
         tabla: ((j['tabla'] as List?) ?? const [])
             .map((f) => FilaPublicada.fromJson(Map<String, dynamic>.from(f as Map)))
             .toList(),

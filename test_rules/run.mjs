@@ -180,6 +180,82 @@ await prueba('y un tercero NO puede', () =>
             'users', INV, 'liveRoundRefs', 'ronda_viva'),
         { roundId: 'ronda_viva', status: 'pending' })));
 
+// ══════════════════════════════════════════════════════════════════════════════
+// 10 · EL INVITADO QUE JUEGA — la parte con consecuencias fuera de la app
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Hasta ahora el invitado solo LEÍA una instantánea autocontenida, y por eso la
+// seguridad se cumplía por construcción. Dejarle jugar su partido parecía romper
+// esa propiedad.
+//
+// NO LA ROMPE, y esa es la conclusión que estas pruebas fijan: el invitado que se
+// hace cuenta NO escribe en el torneo ni en los datos del organizador. Escribe en
+// la RONDA EN VIVO, que es un camino que ya existía con sus propias reglas —estar
+// en participantUids— y que no mira a users/** ni a sharedTorneos.
+//
+// Así que no hubo que añadir NINGUNA regla condicional sobre users/**. Lo que se
+// prueba aquí es que eso es verdad: que puede escribir donde juega, que no puede
+// escribir donde no, y que el torneo sigue siendo de solo lectura para él.
+console.log('\n10 · El invitado que se hace cuenta y juega su partido');
+
+// Las dos rondas, sembradas sin reglas: un fallo de montaje se leería como un
+// fallo de regla.
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const db = ctx.firestore();
+  // La ronda del partido, con el invitado dentro.
+  await setDoc(doc(db, 'liveRounds', 'ronda_partido'), {
+    ownerUid: ORG,
+    participantUids: [ORG, INV],
+    name: 'Semifinal',
+  });
+  // Y otra en la que el invitado NO juega.
+  await setDoc(doc(db, 'liveRounds', 'ronda_ajena'), {
+    ownerUid: ORG,
+    participantUids: [ORG, OTRO],
+    name: 'La otra semifinal',
+  });
+});
+
+await prueba('escribe scores en LA RONDA DE SU PARTIDO', () =>
+    assertSucceeds(setDoc(doc(invitado, 'liveRounds', 'ronda_partido'),
+        { scores: { [INV]: { 1: 4 } } }, { merge: true })));
+await prueba('y la lee', () =>
+    assertSucceeds(getDoc(doc(invitado, 'liveRounds', 'ronda_partido'))));
+await prueba('pero NO escribe en una ronda donde no juega', () =>
+    assertFails(setDoc(doc(invitado, 'liveRounds', 'ronda_ajena'),
+        { scores: { [INV]: { 1: 2 } } }, { merge: true })));
+await prueba('ni la lee', () =>
+    assertFails(getDoc(doc(invitado, 'liveRounds', 'ronda_ajena'))));
+await prueba('ni se mete en la lista de participantes de la ajena', () =>
+    assertFails(setDoc(doc(invitado, 'liveRounds', 'ronda_ajena'),
+        { participantUids: [ORG, OTRO, INV] }, { merge: true })));
+await prueba('ni borra la ronda de su propio partido: no es el dueño', () =>
+    assertFails(deleteDoc(doc(invitado, 'liveRounds', 'ronda_partido'))));
+
+// Y lo que esto tenía que preservar: el torneo sigue siendo de solo lectura.
+await prueba('jugar NO le da escritura sobre el torneo compartido', () =>
+    assertFails(setDoc(doc(invitado, 'sharedTorneos', TOKEN),
+        { nombre: 'mío' }, { merge: true })));
+await prueba('ni sobre las rondas del organizador', () =>
+    assertFails(setDoc(doc(invitado, 'users', ORG, 'rounds', 'r1'),
+        { scores: {} }, { merge: true })));
+await prueba('ni sobre su historial de resultados', () =>
+    assertFails(setDoc(doc(invitado, 'users', ORG, 'roundResults', 'r1'),
+        { balances: {} }, { merge: true })));
+
+console.log('\n11 · Apagar el enlace no lo abre a nadie más');
+await prueba('el organizador apaga: deja el documento en la bandera', () =>
+    assertSucceeds(setDoc(doc(organizador, 'sharedTorneos', TOKEN),
+        { ownerUid: ORG, activo: false })));
+await prueba('el invitado lo lee y ve que está apagado', () =>
+    assertSucceeds(getDoc(doc(invitado, 'sharedTorneos', TOKEN))));
+await prueba('pero no puede encenderlo', () =>
+    assertFails(setDoc(doc(invitado, 'sharedTorneos', TOKEN),
+        { ownerUid: ORG, activo: true }, { merge: true })));
+await prueba('y el organizador lo enciende otra vez en el MISMO token', () =>
+    assertSucceeds(setDoc(doc(organizador, 'sharedTorneos', TOKEN),
+        { ownerUid: ORG, nombre: 'Copa CGM 2026', tabla: [] })));
+
 console.log('\n9 · Nada de subcolecciones no revisadas');
 await prueba('el invitado no escribe en una subcolección del compartido', () =>
     assertFails(setDoc(

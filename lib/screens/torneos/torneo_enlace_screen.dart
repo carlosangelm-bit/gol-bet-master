@@ -96,6 +96,40 @@ class _TorneoEnlaceScreenState extends State<TorneoEnlaceScreen> {
     }
 
     final copia = _copia;
+    // Apagado: el documento existe pero no sirve contenido. Se dice, y se dice
+    // que el MISMO enlace vuelve a servir —no que haya que pedir otro—, porque
+    // ahora eso es verdad.
+    if (copia != null && !copia.activo) {
+      return Scaffold(
+        backgroundColor: t.bg,
+        appBar: AppBar(
+            backgroundColor: t.bg, foregroundColor: t.text, elevation: 0),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.visibility_off_rounded, size: 40, color: t.sub),
+                  const SizedBox(height: 12),
+                  Text('Este torneo ya no se comparte',
+                      style: TextStyle(
+                          color: t.text,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 8),
+                  Text(
+                      'El organizador lo apagó. Guarda el enlace: es el mismo '
+                      'siempre, así que volverá a funcionar si lo comparte otra '
+                      'vez.',
+                      textAlign: TextAlign.center,
+                      style:
+                          TextStyle(color: t.sub, fontSize: 13, height: 1.45)),
+                ]),
+          ),
+        ),
+      );
+    }
     if (copia == null) {
       return Scaffold(
         backgroundColor: t.bg,

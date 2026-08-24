@@ -527,7 +527,26 @@ class FirestoreService {
     return copia.token;
   }
 
-  /// Revoca un enlace. Borrar el documento lo deja inservible.
+  /// Apaga el enlace SIN romperlo.
+  ///
+  /// El documento se sobrescribe con lo mínimo —dueño y bandera— así que deja de
+  /// servir nombres y cifras de verdad, pero el TOKEN sobrevive. Encender vuelve
+  /// a publicar la instantánea completa en el mismo enlace.
+  ///
+  /// Es lo que hace posible un enlace estable: borrarlo obligaba a generar otro
+  /// token al volver a publicar, o sea a reenviarlo a doce personas.
+  static Future<void> apagarEnlace(String token) async {
+    final uid = AuthService.uid;
+    if (uid == null) return;
+    // set y no update: deja el documento con SOLO estos dos campos, así que lo
+    // que había dentro deja de estar. Apagar tiene que apagar.
+    await _sharedTorneos().doc(token).set({'ownerUid': uid, 'activo': false});
+  }
+
+  /// Borra el documento del todo. Solo para cuando se borra el torneo.
+  ///
+  /// Para dejar de compartir está [apagarEnlace]: borrar rompe el enlace que ya
+  /// se repartió.
   static Future<void> revocarTorneo(String token) async {
     if (AuthService.uid == null) return;
     await _sharedTorneos().doc(token).delete();

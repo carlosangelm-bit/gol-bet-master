@@ -596,28 +596,41 @@ Future<void> _compartir(BuildContext context, Torneo torneoArg,
                   style: TextStyle(fontWeight: FontWeight.w800)),
             ),
           ),
-          const SizedBox(height: 8),
-          // Revocar: un enlace de WhatsApp acaba donde no se previó, así que hay
-          // que poder matarlo. Borrar el documento lo deja inservible.
+          const SizedBox(height: 6),
+          Text(
+              'Este enlace es el mismo toda la vida del torneo: al actualizar la '
+              'tabla no cambia, así que no hay que reenviarlo.',
+              style: TextStyle(color: t.sub, fontSize: 11, height: 1.35)),
+          const SizedBox(height: 10),
+          // APAGAR, no borrar. Un enlace de WhatsApp acaba donde no se previó, así
+          // que hay que poder cortarlo; pero borrarlo obligaba a generar otro
+          // token al volver a publicar, o sea a reenviárselo a doce personas.
+          //
+          // Apagar deja el documento con solo el dueño y la bandera: los nombres
+          // y las cifras dejan de servirse de verdad. Lo que sobrevive es el
+          // token.
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
               onPressed: () async {
-                await FirestoreService.revocarTorneo(token);
-                await prov.guardar(
-                    torneoArg.copyWith(limpiarCompartido: true));
+                await FirestoreService.apagarEnlace(token);
+                // El token SE CONSERVA: volver a publicar usa el mismo enlace.
+                await prov.guardar(torneoArg.copyWith(publicadoEn: null));
                 if (ctx.mounted) Navigator.pop(ctx);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                       content: Text(
-                          'Enlace revocado. Quien lo tenga ya no verá nada.')));
+                          'Enlace apagado. Quien lo tenga verá que ya no se '
+                          'comparte; el mismo enlace vuelve a servir si lo '
+                          'compartes otra vez.'),
+                      duration: Duration(seconds: 5)));
                 }
               },
               style: OutlinedButton.styleFrom(
                   side: BorderSide(color: t.divider),
                   foregroundColor: t.sub,
                   padding: const EdgeInsets.symmetric(vertical: 12)),
-              child: const Text('Revocar este enlace'),
+              child: const Text('Dejar de compartir'),
             ),
           ),
         ]),

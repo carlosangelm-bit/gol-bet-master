@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:golf_bet_master/core/app_theme.dart';
 import 'package:golf_bet_master/models/round_result.dart';
 import 'package:golf_bet_master/models/torneo.dart';
@@ -58,7 +59,9 @@ TorneoPublicado _publicar({double entrada = 0, List<RoundResult>? rondas}) {
     bote: BoteConfig(entrada: entrada),
   );
   final rs = rondas ?? const <RoundResult>[];
-  final tabla = tablaDe(t, rs);
+  // nombres también a la TABLA, que es lo que hace la app: sin ellos las filas
+  // salen con guion y la lista de "cuál eres" sería de guiones.
+  final tabla = tablaDe(t, rs, nombres: nombres);
   final llave = llaveDe(t, rs);
   return TorneoPublicado.desde(
     token: 'tok',
@@ -98,6 +101,163 @@ String _pantalla(WidgetTester tester) => tester
     .join(' · ');
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  group('4 · ELEGIR TU JUGADOR, sin cuenta y sin correo', () {
+    testWidgets('se pregunta cuál eres, con la lista', (tester) async {
+      final errores = await _montar(tester, _publicar());
+      expect(errores, isEmpty);
+      expect(find.text('¿CUÁL ERES TÚ?'), findsOneWidget);
+      // La lista son los participantes, por nombre.
+      for (final n in nombres.values) {
+        expect(find.text(n), findsWidgets, reason: n);
+      }
+      // Y se dice que no hace falta nada: es una preferencia, no una credencial.
+      expect(_pantalla(tester), contains('No hace falta cuenta ni correo'));
+    });
+
+    testWidgets('elegido, sale lo suyo: su partido y su puesto',
+        (tester) async {
+      final errores = await _montar(tester, _publicar(rondas: [
+        _r('s1', 7, {ana: 300, dani: -300}),
+      ]));
+      expect(errores, isEmpty);
+      // Rafael ganó su semifinal, así que le toca la final.
+      await tester.tap(find.text('Rafael').first);
+      await tester.pumpAndSettle();
+
+      final txt = _pantalla(tester);
+      expect(txt, contains('Te toca en Final'));
+      expect(txt, contains('No soy yo'), reason: 'tiene que poder cambiarse');
+      expect(txt, contains('Puesto'));
+    });
+
+    testWidgets('dice contra QUIÉN, o contra el ganador de qué',
+        (tester) async {
+      // Con la otra semifinal sin jugar, el rival todavía no existe: se dice de
+      // dónde va a salir en vez de dejarlo en blanco.
+      await _montar(tester, _publicar(rondas: [
+        _r('s1', 7, {ana: 300, dani: -300}),
+      ]));
+      await tester.tap(find.text('Rafael').first);
+      await tester.pumpAndSettle();
+      expect(_pantalla(tester), contains('contra el ganador de'));
+    });
+
+    testWidgets('y con el rival ya decidido, su nombre', (tester) async {
+      await _montar(tester, _publicar(rondas: [
+        _r('s1', 7, {ana: 300, dani: -300}),
+        _r('s2', 8, {beto: 200, caro: -200}),
+      ]));
+      await tester.tap(find.text('Rafael').first);
+      await tester.pumpAndSettle();
+      expect(_pantalla(tester), contains('contra Alan'));
+    });
+
+    testWidgets('el que quedó fuera lo sabe', (tester) async {
+      await _montar(tester, _publicar(rondas: [
+        _r('s1', 7, {ana: 300, dani: -300}),
+      ]));
+      await tester.tap(find.text('Alejandro').first);
+      await tester.pumpAndSettle();
+      expect(_pantalla(tester), contains('Fuera del cuadro'));
+    });
+
+    testWidgets('el campeón también', (tester) async {
+      await _montar(tester, _publicar(rondas: [
+        _r('s1', 7, {ana: 300, dani: -300}),
+        _r('s2', 8, {beto: 200, caro: -200}),
+        _r('fin', 20, {ana: 500, beto: -500}),
+      ]));
+      await tester.tap(find.text('Rafael').first);
+      await tester.pumpAndSettle();
+      expect(_pantalla(tester), contains('Campeón del torneo'));
+    });
+
+    testWidgets('"No soy yo" vuelve a preguntar', (tester) async {
+      await _montar(tester, _publicar());
+      await tester.tap(find.text('Rafael').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('No soy yo'));
+      await tester.pumpAndSettle();
+      expect(find.text('¿CUÁL ERES TÚ?'), findsOneWidget);
+    });
+
+    testWidgets('se recuerda entre visitas, por torneo', (tester) async {
+      // Guardado en ESTE teléfono y por token: quien mira dos torneos es una
+      // persona distinta en cada uno.
+      SharedPreferences.setMockInitialValues(
+          {'invitado_soy_tok': 'Guillermo'});
+      await _montar(tester, _publicar());
+      await tester.pumpAndSettle();
+      expect(find.text('¿CUÁL ERES TÚ?'), findsNothing);
+      expect(_pantalla(tester), contains('No soy yo'));
+    });
+
+    testWidgets('si el organizador lo saca de la lista, se vuelve a preguntar',
+        (tester) async {
+      // La preferencia deja de valer: enseñar "eres Fulano" cuando Fulano ya no
+      // está inscrito sería mentir.
+      SharedPreferences.setMockInitialValues(
+          {'invitado_soy_tok': 'Alguien que ya no está'});
+      await _montar(tester, _publicar());
+      await tester.pumpAndSettle();
+      expect(find.text('¿CUÁL ERES TÚ?'), findsOneWidget);
+    });
+  });
+
+  group('5 · CRITERIO 5: la cuenta se pide al ESCRIBIR, no antes', () {
+    testWidgets('mirar no pide nada', (tester) async {
+      final errores = await _montar(tester, _publicar());
+      expect(errores, isEmpty);
+      // Ni antes de elegir, ni después: nada de cuenta en la pantalla.
+      expect(_pantalla(tester).toLowerCase(), isNot(contains('crear cuenta')));
+    });
+
+    testWidgets('al intentar jugar, ahí sí', (tester) async {
+      await _montar(tester, _publicar(rondas: [
+        _r('s1', 7, {ana: 300, dani: -300}),
+      ]));
+      await tester.tap(find.text('Rafael').first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Jugar este partido'), findsOneWidget);
+      await tester.tap(find.text('Jugar este partido'));
+      await tester.pumpAndSettle();
+
+      final txt = _pantalla(tester);
+      expect(txt, contains('hace falta cuenta'));
+      // Y se explica la DIFERENCIA, que es lo que justifica la puerta.
+      expect(txt, contains('es una copia'));
+      expect(txt, contains('Seguir mirando no necesita nada'));
+    });
+
+    testWidgets('sin partido pendiente no se ofrece jugar', (tester) async {
+      await _montar(tester, _publicar(rondas: [
+        _r('s1', 7, {ana: 300, dani: -300}),
+      ]));
+      await tester.tap(find.text('Alejandro').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Jugar este partido'), findsNothing);
+    });
+  });
+
+  group('6 · CRITERIO 2: el enlace apagado lo dice, y sigue siendo el mismo', () {
+    test('la bandera viaja, y ausente significa encendido', () {
+      final vivo = _publicar();
+      expect(vivo.activo, isTrue);
+      expect(vivo.toJson().containsKey('activo'), isFalse,
+          reason: 'un enlace vivo no engorda el documento');
+      // Un enlace publicado antes de que esto existiera sigue sirviendo.
+      final viejo = TorneoPublicado.fromJson('tok', const {'nombre': 'X'});
+      expect(viejo.activo, isTrue);
+      // Y apagado se lee apagado.
+      final apagado = TorneoPublicado.fromJson(
+          'tok', const {'ownerUid': 'uid', 'activo': false});
+      expect(apagado.activo, isFalse);
+    });
+  });
+
   group('1 · el invitado ve el mismo ÁRBOL', () {
     testWidgets('con las fases como columnas y los nombres', (tester) async {
       final errores = await _montar(tester, _publicar());
