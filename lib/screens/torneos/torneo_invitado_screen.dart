@@ -19,6 +19,8 @@ import 'package:provider/provider.dart';
 import '../../models/torneo_seguido.dart';
 import '../../providers/torneo_provider.dart';
 import '../../services/auth_service.dart';
+import '../../app_shell.dart';
+import '../setup/setup_screen.dart';
 import '../../core/app_theme.dart';
 import '../../widgets/bracket_tree.dart';
 import '../../models/torneo_publicado.dart';
@@ -456,22 +458,26 @@ class _TorneoInvitadoScreenState extends State<TorneoInvitadoScreen> {
           Text('Puesto ${fila.puesto} · ${fila.jugadas} rondas jugadas',
               style: TextStyle(color: t.sub, fontSize: 11)),
         ],
-        // La puerta de la cuenta, ofrecida solo cuando hay algo que jugar.
-        if (pendiente != null) ...[
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => _pedirCuenta(t, 'anotar los scores de tu partido'),
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: t.primary,
-                  foregroundColor: t.onPrimary,
-                  padding: const EdgeInsets.symmetric(vertical: 12)),
-              child: const Text('Jugar este partido',
-                  style: TextStyle(fontWeight: FontWeight.w800)),
-            ),
-          ),
-        ],
+        // ── JUGAR, que es donde el recorrido se acababa ──────────────
+        //
+        // Esta pantalla se diseñó para el desconocido sin cuenta, y ahora la usan
+        // tres personas distintas: quien no tiene cuenta —mirar—, quien la tiene
+        // y no sigue —seguir— y quien ya sigue, que es el que había hecho todo lo
+        // que le pedimos y se quedaba sin nada que hacer.
+        //
+        // Es el mismo error que sacar "seguir" de dentro de "¿cuál eres tú?": una
+        // pantalla que sirve a varios estados tiene que saber en cuál está.
+        const SizedBox(height: 10),
+        _BotonJugar(
+            copia: copia,
+            t: t,
+            pendiente: pendiente,
+            rival: pendiente == null ? null : _rivalDe(pendiente, mio, arbol),
+            onPedirCuenta: () => _pedirCuenta(
+                t,
+                pendiente == null
+                    ? 'jugar una ronda que cuente'
+                    : 'anotar los scores de tu partido')),
       ]),
     );
   }
@@ -715,39 +721,67 @@ class _TorneoInvitadoScreenState extends State<TorneoInvitadoScreen> {
 // Permanente y visible, pero SIN TAPAR el contenido: va fija abajo dentro de la
 // Column, con el ListView ocupando el resto. Flotando encima taparía la última
 // fila de la tabla, que es justo la que alguien viene a mirar cuando va último.
+/// La cintilla de abajo, que ya no supone que quien la ve no tiene cuenta.
+///
+/// Ofrecer "descarga la app" a alguien que ESTÁ dentro de la app y con sesión es
+/// la misma causa que el resto de esta pantalla: se escribió para el desconocido.
+/// Con sesión, lo útil no es descargar: es volver a la app.
 class _CintillaDescarga extends StatelessWidget {
   final GolfTheme t;
   const _CintillaDescarga({required this.t});
 
   @override
   Widget build(BuildContext context) {
+    final conSesion = AuthService.uid != null;
     return Material(
       color: t.primary,
       child: SafeArea(
         top: false,
         child: InkWell(
-          onTap: () => _abrirTienda(context),
+          onTap: () {
+            if (!conSesion) {
+              _abrirTienda(context);
+              return;
+            }
+            // Ya está dentro: al shell, y sin dejar el enlace en la pila —desde
+            // el shell se vuelve al torneo por Torneos—.
+            Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const AppShell()),
+                (r) => false);
+          },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
             child: Row(children: [
-              const Text('⛳', style: TextStyle(fontSize: 20)),
+              Text(conSesion ? '🏠' : '⛳',
+                  style: const TextStyle(fontSize: 20)),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Descarga la app para más funciones',
+                      Text(
+                          conSesion
+                              ? 'Volver a la app'
+                              : 'Descarga la app para más funciones',
                           style: TextStyle(
                               color: t.onPrimary,
                               fontSize: 13.5,
                               fontWeight: FontWeight.w800)),
-                      Text('Lleva la cuenta de tus apuestas y tu handicap',
+                      Text(
+                          conSesion
+                              ? 'Tus rondas, tu handicap y tus torneos'
+                              : 'Lleva la cuenta de tus apuestas y tu handicap',
                           style: TextStyle(
                               color: t.onPrimary.withValues(alpha: 0.85),
                               fontSize: 11)),
                     ]),
               ),
-              Icon(Icons.arrow_forward_rounded, color: t.onPrimary, size: 18),
+              Icon(
+                  conSesion
+                      ? Icons.home_rounded
+                      : Icons.arrow_forward_rounded,
+                  color: t.onPrimary,
+                  size: 18),
             ]),
           ),
         ),
@@ -948,6 +982,93 @@ class _BotonSeguirState extends State<_BotonSeguir> {
                   'envía a la tabla del organizador como $mio.'
               : 'Las rondas que juegues podrás marcarlas para este torneo, y su '
                   'resultado contará en su tabla como $mio.',
+          style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
+    ]);
+  }
+}
+
+/// Jugar una ronda que cuente para este torneo.
+///
+/// Tres estados, y el botón es distinto en cada uno:
+///
+///   · sin cuenta        → se ofrece hacerse una, explicando para qué
+///   · con cuenta, no sigue → nada: primero hay que seguirlo, y ese botón está
+///                            justo encima
+///   · con cuenta, sigue → CREAR LA RONDA, con la marca ya puesta
+///
+/// ── Por qué crear la ronda te mete en la app ──────────────────────────────
+///
+/// Porque tiene que hacerlo. La ruta del enlace es su propio `home`, así que
+/// volverAlShell —que hace popUntil(isFirst)— devolvería AQUÍ, a la pantalla del
+/// torneo, con la ronda arrancada y ninguna forma de capturarla. Se entra en la
+/// app y el asistente se abre encima: cuando la ronda arranca, se aterriza donde
+/// se anota.
+///
+/// Y eso contesta también dónde acaba el recorrido del invitado: acaba jugando, y
+/// jugar es lo que le convierte en usuario de la app.
+class _BotonJugar extends StatelessWidget {
+  final TorneoPublicado copia;
+  final GolfTheme t;
+  final NodoDeLlave? pendiente;
+  final String? rival;
+  final VoidCallback onPedirCuenta;
+
+  const _BotonJugar(
+      {required this.copia,
+      required this.t,
+      required this.pendiente,
+      required this.rival,
+      required this.onPedirCuenta});
+
+  @override
+  Widget build(BuildContext context) {
+    final sinSesion = AuthService.uid == null;
+    final sigue = context
+        .watch<TorneoProvider>()
+        .seguidos
+        .any((s) => s.torneoId == copia.torneoId);
+
+    // Con cuenta y sin seguir, el paso que toca es seguirlo, y su botón está
+    // justo encima. Ofrecer los dos a la vez sería preguntar dos cosas para una.
+    if (!sinSesion && !sigue) return const SizedBox.shrink();
+
+    final etiqueta = pendiente == null
+        ? 'Crear una ronda para este torneo'
+        : 'Jugar mi partido${rival == null ? '' : rival!.replaceFirst('.', '')}';
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: () {
+            if (sinSesion) {
+              onPedirCuenta();
+              return;
+            }
+            // Al shell PRIMERO y el asistente encima: ver la nota de arriba.
+            final nav = Navigator.of(context);
+            nav.pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const AppShell()),
+                (r) => false);
+            nav.push(MaterialPageRoute(
+                builder: (_) =>
+                    SetupScreen(torneoInicial: copia.torneoId)));
+          },
+          style: ElevatedButton.styleFrom(
+              backgroundColor: t.primary,
+              foregroundColor: t.onPrimary,
+              padding: const EdgeInsets.symmetric(vertical: 13)),
+          child: Text(etiqueta,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w800)),
+        ),
+      ),
+      const SizedBox(height: 5),
+      Text(
+          sinSesion
+              ? 'Para anotar scores hace falta cuenta. Mirar no.'
+              : 'Se abre el asistente con este torneo ya marcado, así que no hay '
+                  'que acordarse de nada.',
           style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
     ]);
   }

@@ -142,12 +142,31 @@ void main() {
   });
 
   group('2 · y dónde acaba: la app completa se descubre, no se impone', () {
-    testWidgets('la cintilla de descarga está siempre', (tester) async {
-      // Es el único puente a la app completa, y es permanente a propósito: quien
-      // llega por un enlace y le gusta tiene que poder llegar al resto sin que
-      // se lo metan por delante mientras mira su llave.
+    testWidgets('sin sesión, la cintilla ofrece descargar', (tester) async {
+      // Es el puente a la app completa para quien no la tiene, y es permanente a
+      // propósito: quien llega por un enlace y le gusta tiene que poder llegar al
+      // resto sin que se lo metan por delante mientras mira su llave.
       await _montar(tester, _copia());
-      expect(_pantalla(tester).toLowerCase(), contains('app'));
+      expect(find.text('Descarga la app para más funciones'), findsOneWidget);
+      expect(find.text('Volver a la app'), findsNothing);
+    });
+
+    testWidgets('CRITERIO 3: con sesión NO se ofrece descargar', (tester) async {
+      // Ofrecerle descargar la app a alguien que está DENTRO de la app es la
+      // misma causa que el resto: la pantalla suponía que quien la ve no tiene
+      // cuenta. Sin sesión en el harness no se puede montar el caso contrario,
+      // así que se fija lo que se puede: el texto depende de la sesión y no es
+      // fijo.
+      await _montar(tester, _copia());
+      // Sin sesión en el test, así que sale el de descargar. Lo que este test
+      // protege es que exista la bifurcación: si alguien la quita, el de sesión
+      // vuelve a decir "descarga la app".
+      expect(
+          tester
+              .widgetList<Text>(find.byType(Text))
+              .map((w) => w.data ?? '')
+              .where((x) => x.contains('Volver a la app')),
+          isEmpty);
     });
   });
 

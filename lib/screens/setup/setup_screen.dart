@@ -84,9 +84,18 @@ class SetupScreen extends StatefulWidget {
   /// eso tiene que caber—.
   final ({String torneoId, List<String> jugadores})? partidoInicial;
 
+  /// El torneo para el que esta ronda va a contar, si se entró desde su enlace.
+  ///
+  /// Aparte de [partidoInicial] porque son dos cosas: allí hay dos jugadores
+  /// concretos que se cruzan; aquí solo la marca. Quien sigue una liga y crea una
+  /// ronda juega con quien quiera —es su sábado— y lo único que hay que recordar
+  /// es que cuenta.
+  final String? torneoInicial;
+
   const SetupScreen({
     super.key,
     this.partidoInicial,
+    this.torneoInicial,
     this.grupoInicial,
     this.nominaInicial,
     this.jugadoresNuevos,
@@ -462,6 +471,12 @@ class _SetupScreenState extends State<SetupScreen> {
       // lista y _precargarDesdeGrupo no lo duplica al recorrer playerIds.
       final bg = widget.grupoInicial;
       if (bg != null && mounted) _precargarDesdeGrupo(bg);
+
+      // El torneo del enlace: solo la marca, sin jugadores.
+      final delEnlace = widget.torneoInicial;
+      if (delEnlace != null && mounted) {
+        setState(() => _torneosMarcados.add(delEnlace));
+      }
 
       // El partido del cuadro: los dos que se cruzan, y el torneo ya marcado.
       final partido = widget.partidoInicial;

@@ -20,6 +20,7 @@ import '../../providers/perfil_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/torneo_provider.dart';
 import 'torneo_editor_screen.dart';
+import 'torneo_enlace_screen.dart';
 import 'llave_screen.dart';
 
 /// La cifra con signo la define el modelo: la usan la tabla, el cuadro y la
@@ -52,13 +53,79 @@ class TorneosScreen extends StatelessWidget {
         icon: const Icon(Icons.add),
         label: const Text('Nuevo torneo'),
       ),
-      body: prov.torneos.isEmpty
+      body: prov.torneos.isEmpty && prov.seguidos.isEmpty
           ? _vacio(t)
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
               children: [
                 for (final tor in prov.torneos)
                   _TarjetaTorneo(torneo: tor, t: t),
+
+                // ── Los que sigo, de otros ────────────────────────────
+                //
+                // Es el camino de VUELTA, y sin él el bucle no cerraba: alguien
+                // que llegó por un enlace, siguió el torneo y entró en la app se
+                // quedaba sin forma de volver a verlo. Un enlace en WhatsApp no
+                // es una manera de navegar.
+                //
+                // Van aparte y abren la vista compartida, no el editor: un torneo
+                // de otro no se configura. La tarjeta lo dice.
+                if (prov.seguidos.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text('TORNEOS QUE SIGUES',
+                      style: TextStyle(
+                          color: t.sub,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.8)),
+                  const SizedBox(height: 8),
+                  for (final seg in prov.seguidos)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Material(
+                        color: t.card,
+                        borderRadius: BorderRadius.circular(14),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => TorneoEnlaceScreen(
+                                      token: seg.token))),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Row(children: [
+                              Text(seg.emoji,
+                                  style: const TextStyle(fontSize: 26)),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(seg.nombre,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                              color: t.text,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w800)),
+                                      Text(
+                                          'De otro organizador · juegas como '
+                                          '${seg.jugadorNombre}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                              color: t.sub, fontSize: 11.5)),
+                                    ]),
+                              ),
+                              Icon(Icons.chevron_right_rounded, color: t.sub),
+                            ]),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ],
             ),
     );

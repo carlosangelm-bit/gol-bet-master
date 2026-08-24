@@ -290,8 +290,10 @@ void main() {
       await tester.tap(find.text('Rafael').first);
       await tester.pumpAndSettle();
 
-      expect(find.text('Jugar este partido'), findsOneWidget);
-      await tester.tap(find.text('Jugar este partido'));
+      // La etiqueta dice CONTRA QUIÉN ahora, que es lo que hacía falta: "jugar
+      // este partido" no decía cuál.
+      expect(find.textContaining('Jugar mi partido'), findsOneWidget);
+      await tester.tap(find.textContaining('Jugar mi partido'));
       await tester.pumpAndSettle();
 
       final txt = _pantalla(tester);
@@ -301,13 +303,28 @@ void main() {
       expect(txt, contains('Seguir mirando no necesita nada'));
     });
 
-    testWidgets('sin partido pendiente no se ofrece jugar', (tester) async {
+    testWidgets('sin partido pendiente se ofrece CREAR una ronda', (tester) async {
+      // El eslabón que faltaba: quien sigue el torneo y no tiene partido asignado
+      // —una liga, o un cuadro del que ya salió— igual quiere jugar una ronda que
+      // cuente. Antes aquí no había nada.
       await _montar(tester, _publicar(rondas: [
         _r('s1', 7, {ana: 300, dani: -300}),
       ]));
       await tester.tap(find.text('Alejandro').first);
       await tester.pumpAndSettle();
-      expect(find.text('Jugar este partido'), findsNothing);
+      expect(find.textContaining('Jugar mi partido'), findsNothing);
+      expect(find.text('Crear una ronda para este torneo'), findsOneWidget);
+    });
+
+    testWidgets('y dice que el asistente ya viene con el torneo marcado',
+        (tester) async {
+      // Sin eso, "crear una ronda" no se distingue de crear una cualquiera.
+      await _montar(tester, _publicar());
+      await tester.tap(find.text('Rafael').first);
+      await tester.pumpAndSettle();
+      expect(_pantalla(tester),
+          anyOf(contains('Para anotar scores hace falta cuenta'),
+              contains('ya marcado')));
     });
   });
 
