@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/importar_jugadores_sheet.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/round_provider.dart';
 import '../../services/player_service.dart';
@@ -50,6 +51,39 @@ class _PlayersScreenState extends State<PlayersScreen> {
         child: Column(children: [
           // ── Header ─────────────────────────────────────────────────────────
           _Header(t: t, onAdd: () => _showPlayerSheet(context, t)),
+
+          // ── Importar una lista ─────────────────────────────────────────────
+          //
+          // Aquí y no en el torneo: el directorio es de donde tiran las rondas,
+          // los grupos y los torneos, así que se importa a los treinta del club
+          // UNA vez y se usan en todo. Importar directamente en un torneo crearía
+          // gente que solo existe dentro de ese torneo, que es el problema de
+          // "dos filas con el mismo nombre" a escala.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  final ids = await showImportarJugadoresSheet(context, t: t);
+                  if (ids == null || !context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('${ids.length} jugador'
+                        '${ids.length == 1 ? '' : 'es'} en tu directorio.'),
+                    duration: const Duration(seconds: 3),
+                  ));
+                },
+                style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: t.divider),
+                    foregroundColor: t.text,
+                    padding: const EdgeInsets.symmetric(vertical: 11)),
+                icon: Icon(Icons.content_paste_go, size: 17, color: t.sub),
+                label: const Text('Importar una lista (pegar de Excel)',
+                    style:
+                        TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+              ),
+            ),
+          ),
 
           // ── Buscador ───────────────────────────────────────────────────────
           Padding(

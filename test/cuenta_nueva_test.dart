@@ -25,6 +25,7 @@ import 'package:golf_bet_master/providers/betting_group_provider.dart';
 import 'package:golf_bet_master/providers/handicap_provider.dart';
 import 'package:golf_bet_master/providers/perfil_provider.dart';
 import 'package:golf_bet_master/providers/player_provider.dart';
+import 'package:golf_bet_master/services/player_service.dart';
 import 'package:golf_bet_master/providers/round_provider.dart';
 import 'package:golf_bet_master/providers/torneo_provider.dart';
 import 'package:golf_bet_master/providers/user_profile_provider.dart';
@@ -50,12 +51,20 @@ RoundResult _res(int dia, String nombre) => RoundResult(
       bettingGroupIds: const [],
     );
 
+PlayerWithLink _pw(String id, String nombre, double hcp) => PlayerWithLink(
+    player: Player(id: id, name: nombre, handicapBase: hcp),
+    link: PlayerLink(
+        playerId: id,
+        createdAt: DateTime(2026, 1, 1),
+        updatedAt: DateTime(2026, 1, 1)));
+
 /// Monta [pantalla] con los providers vacíos, salvo lo que se pase.
 Future<List<String>> _montar(
   WidgetTester tester,
   Widget pantalla, {
   List<RoundResult> res = const [],
   List<Torneo> torneos = const [],
+  List<PlayerWithLink> directorio = const [],
   Size tamano = const Size(390, 2000),
 }) async {
   tester.view.physicalSize = tamano;
@@ -75,7 +84,7 @@ Future<List<String>> _montar(
       ChangeNotifierProvider(create: (_) => BettingGroupProvider()),
       // Directorio VACÍO: es el estado real de una cuenta nueva.
       ChangeNotifierProvider<PlayerProvider>.value(
-          value: PlayerProvider()..sembrar(const [])),
+          value: PlayerProvider()..sembrar(directorio)),
       ChangeNotifierProvider<PerfilProvider>.value(
           value: PerfilProvider()..sembrar(res)),
       ChangeNotifierProvider<TorneoProvider>.value(
@@ -276,6 +285,81 @@ void main() {
           tee: TeeInfo.standard,
           guardarEnDirectorio: true);
       expect(preguntado.guardarEnDirectorio, isTrue);
+    });
+  });
+
+  group('5 · la hoja de participantes NO se cierra tras cada añadido', () {
+    // Era lo que hacía inviable inscribir a diez: cerrar y reabrir por cada uno.
+    // Cuatro personas costaban ocho toques.
+    Future<void> abrirHoja(WidgetTester tester) async {
+      await tester.tap(find.text('Añadir del directorio'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('se pueden añadir tres seguidos sin reabrirla',
+        (tester) async {
+      final errores = await _montar(
+          tester, const TorneoEditorScreen(existente: null),
+          directorio: [
+            _pw('pid_1', 'Rafael', 12),
+            _pw('pid_2', 'Alan', 18),
+            _pw('pid_3', 'Guillermo', 8),
+          ]);
+      expect(errores, isEmpty);
+      await abrirHoja(tester);
+
+      for (final n in ['Rafael', 'Alan', 'Guillermo']) {
+        expect(find.text(n), findsWidgets, reason: 'la hoja se cerró antes de $n');
+        await tester.tap(find.text(n).last);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      // Sigue abierta: el título está y el contador ha subido.
+      expect(find.text('Añadir participantes'), findsOneWidget);
+      expect(_pantalla(tester), contains('3 inscritos'));
+    });
+
+    testWidgets('los ya inscritos se quedan en la lista, marcados',
+        (tester) async {
+      // Si desaparecieran, la lista salta bajo el dedo y el siguiente toque cae
+      // en otra persona.
+      await _montar(tester, const TorneoEditorScreen(existente: null),
+          directorio: [_pw('pid_1', 'Rafael', 12), _pw('pid_2', 'Alan', 18)]);
+      await abrirHoja(tester);
+      await tester.tap(find.text('Rafael').last);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Rafael'), findsWidgets);
+      // Y tocarlo otra vez lo saca: el mismo gesto en los dos sentidos.
+      await tester.tap(find.text('Rafael').last);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(_pantalla(tester), contains('0 inscritos'));
+    });
+
+    testWidgets('se cierra con "Listo", cuando el usuario ha acabado',
+        (tester) async {
+      await _montar(tester, const TorneoEditorScreen(existente: null),
+          directorio: [_pw('pid_1', 'Rafael', 12)]);
+      await abrirHoja(tester);
+      expect(find.text('Listo'), findsOneWidget);
+      await tester.tap(find.text('Listo'));
+      await tester.pumpAndSettle();
+      expect(find.text('Añadir participantes'), findsNothing);
+    });
+
+    testWidgets('con directorio grande sale el buscador', (tester) async {
+      // Con treinta, bajar rodando es peor que escribir tres letras.
+      await _montar(tester, const TorneoEditorScreen(existente: null),
+          directorio: [
+            for (var i = 0; i < 12; i++) _pw('pid_$i', 'Jugador $i', 10)
+          ]);
+      await abrirHoja(tester);
+      expect(find.text('Buscar por nombre'), findsOneWidget);
+    });
+
+    testWidgets('y la hoja ofrece importar una lista', (tester) async {
+      await _montar(tester, const TorneoEditorScreen(existente: null),
+          directorio: [_pw('pid_1', 'Rafael', 12)]);
+      await abrirHoja(tester);
+      expect(find.textContaining('Importar una lista'), findsOneWidget);
     });
   });
 

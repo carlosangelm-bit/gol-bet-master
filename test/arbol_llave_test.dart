@@ -166,6 +166,7 @@ void main() {
       // que es lo que decide el resaltado.
       final camino = _arbol(8).caminoDe('Jugador5');
       expect(camino, isNotEmpty);
+      expect(camino, isNotEmpty);
     });
 
     test('el camino recoge todas las celdas donde aparezco', () {
@@ -186,32 +187,24 @@ void main() {
     });
 
     testWidgets('el árbol arranca desplazado a MI fase', (tester) async {
-      // Es lo que hace el scroll utilizable: quien abre esto quiere su partido,
-      // no la primera fase de un cuadro de dieciséis.
+      // Es lo que hace el scroll utilizable: quien abre esto quiere su partido.
+      // Con OCHO plazas, que es donde sigue habiendo árbol: por encima de tres
+      // fases la vista es otra y el desplazamiento no aplica.
       final rondas = <List<NodoDeLlave>>[
         [
-          for (var p = 0; p < 8; p++)
-            NodoDeLlave(
-                ronda: 0,
-                posicion: p,
-                a: 'A$p',
-                b: 'B$p',
-                ganador: 'A$p'),
-        ],
-        [
           for (var p = 0; p < 4; p++)
-            NodoDeLlave(ronda: 1, posicion: p, a: 'A${p * 2}', b: 'A${p * 2 + 1}'),
+            NodoDeLlave(
+                ronda: 0, posicion: p, a: 'A$p', b: 'B$p', ganador: 'A$p'),
         ],
-        // A6 llega a la fase 2, que es la que hace falta desplazarse para ver:
-        // con la fase 1 el destino es la columna 0 y el offset 0 es correcto.
         [
-          const NodoDeLlave(ronda: 2, posicion: 0, a: 'A0', b: 'A2'),
-          const NodoDeLlave(ronda: 2, posicion: 1, a: 'A6', b: null),
+          const NodoDeLlave(ronda: 1, posicion: 0, a: 'A0', b: 'A1', ganador: 'A0'),
+          const NodoDeLlave(ronda: 1, posicion: 1, a: 'A2', b: 'A3', ganador: 'A2'),
         ],
-        [const NodoDeLlave(ronda: 3, posicion: 0)],
+        // A2 llega a la final, que es la fase 2: ahí sí hay que desplazarse.
+        [const NodoDeLlave(ronda: 2, posicion: 0, a: 'A0', b: 'A2')],
       ];
-      await _montar(tester, ArbolDeLlave(rondas: rondas, plazas: 16),
-          miNombre: 'A6');
+      await _montar(tester, ArbolDeLlave(rondas: rondas, plazas: 8),
+          miNombre: 'A2');
       final sc = tester
           .widgetList<Scrollable>(find.byType(Scrollable))
           .firstWhere((s) => s.axis == Axis.horizontal);
@@ -222,7 +215,7 @@ void main() {
     testWidgets('con mi fase en la primera columna NO se desplaza', (tester) async {
       // No es un fallo: mi fase es la 1, así que las columnas 0 y 1 ya están a
       // la vista y moverse sería perder el contexto de dónde vengo.
-      await _montar(tester, _arbol(16), miNombre: 'Jugador3');
+      await _montar(tester, _arbol(8), miNombre: 'Jugador3');
       final sc = tester
           .widgetList<Scrollable>(find.byType(Scrollable))
           .firstWhere((s) => s.axis == Axis.horizontal);
@@ -230,7 +223,7 @@ void main() {
     });
 
     testWidgets('sin identidad no se desplaza ni se resalta', (tester) async {
-      await _montar(tester, _arbol(16));
+      await _montar(tester, _arbol(8));
       final sc = tester
           .widgetList<Scrollable>(find.byType(Scrollable))
           .firstWhere((s) => s.axis == Axis.horizontal);
@@ -307,6 +300,92 @@ void main() {
     testWidgets('sin campeón no hay trofeo', (tester) async {
       await _montar(tester, _arbol(4));
       expect(find.text('🏆'), findsNothing);
+    });
+  });
+
+  group('7 · CRITERIO 1: por encima de tres fases deja de ser árbol', () {
+    // MEDIDO a 390 px, con 358 útiles y unos 600 de alto visible:
+    //
+    //   plazas  fases  ancho  alto   ¿cabe?
+    //        4      2    258   176   sí, entero
+    //        8      3    398   368   rueda 40 en horizontal
+    //       16      4    538   680   NO: +180 de ancho Y +80 de alto
+    //       32      5    678  1304   NO: +320 y +704
+    //
+    // A 16 el árbol pide arrastrar en DIAGONAL, y con guante entre golpe y golpe
+    // eso no se hace. Así que por encima de tres fases se ve por fases.
+    testWidgets('con 16 plazas ya no hay columnas: hay chips de fase',
+        (tester) async {
+      final errores = await _montar(tester, _arbol(16));
+      expect(errores, isEmpty);
+      final txt = _pantalla(tester);
+      // Los chips de fase, que son el selector.
+      expect(find.text('Octavos'), findsOneWidget);
+      expect(find.text('Cuartos'), findsOneWidget);
+      expect(find.text('Final'), findsOneWidget);
+      // Y se dice POR QUÉ no es un árbol: quien lo vio con cuatro se lo pregunta.
+      expect(txt, contains('se ve por fases'));
+      expect(txt, contains('no cabe en un teléfono'));
+    });
+
+    testWidgets('y cada partido dice a dónde va el que gane', (tester) async {
+      // Es la conexión que el árbol dibujaba con una línea. Sin árbol, con
+      // palabras.
+      await _montar(tester, _arbol(16));
+      expect(_pantalla(tester), contains('Pasa a'));
+    });
+
+    testWidgets('y de dónde vienen sus dos plazas', (tester) async {
+      await _montar(tester, _arbol(16));
+      // En la fase de cuartos, las plazas vienen de los octavos.
+      await tester.tap(find.text('Cuartos'));
+      await tester.pumpAndSettle();
+      expect(_pantalla(tester), contains('Ganador de Octavos'));
+    });
+
+    testWidgets('con 32 tampoco desborda a 320 px', (tester) async {
+      final errores = await _montar(tester, _arbol(32), ancho: 320);
+      expect(errores, isEmpty);
+      // 32 plazas → 16 partidos en la primera fase → dieciseisavos.
+      expect(find.text('Dieciseisavos'), findsOneWidget);
+    });
+
+    testWidgets('con 8 SIGUE siendo árbol: es el contrapeso', (tester) async {
+      // Si el umbral estuviera mal puesto, un cuadro de ocho perdería el árbol
+      // sin necesidad.
+      await _montar(tester, _arbol(8));
+      final txt = _pantalla(tester);
+      expect(txt, isNot(contains('se ve por fases')));
+      expect(txt, contains('Arrastra'), reason: 'el árbol rueda, no cambia');
+    });
+
+    testWidgets('la vista por fases arranca en MI fase', (tester) async {
+      // Con dieciséis, la primera fase no es donde nadie mira.
+      final rondas = <List<NodoDeLlave>>[
+        [
+          for (var p = 0; p < 8; p++)
+            NodoDeLlave(
+                ronda: 0, posicion: p, a: 'A$p', b: 'B$p', ganador: 'A$p'),
+        ],
+        [
+          for (var p = 0; p < 4; p++)
+            NodoDeLlave(
+                ronda: 1,
+                posicion: p,
+                a: 'A${p * 2}',
+                b: 'A${p * 2 + 1}',
+                ganador: 'A${p * 2}'),
+        ],
+        [
+          NodoDeLlave(ronda: 2, posicion: 0, a: 'A0', b: 'A2'),
+          NodoDeLlave(ronda: 2, posicion: 1, a: 'A4', b: 'A6'),
+        ],
+        [const NodoDeLlave(ronda: 3, posicion: 0)],
+      ];
+      await _montar(tester, ArbolDeLlave(rondas: rondas, plazas: 16),
+          miNombre: 'A4');
+      // A4 llega a semifinales, así que esa es la fase que se abre.
+      expect(_pantalla(tester), contains('Semifinales 2'));
     });
   });
 

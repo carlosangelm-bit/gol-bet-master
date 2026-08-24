@@ -17,6 +17,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/importar_jugadores_sheet.dart';
 import '../../models/models.dart';
 import '../../models/round_result.dart';
 import '../../models/torneo.dart';
@@ -1045,11 +1046,21 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
   }
 
   /// Añadir del directorio a alguien que aún no ha jugado ninguna ronda.
+  /// La hoja de añadir participantes.
+  ///
+  /// ── Por qué NO se cierra tras cada añadido ────────────────────────────────
+  ///
+  /// Se cerraba, y eso convertía inscribir a cuatro personas en ocho toques con
+  /// reaperturas de por medio. Con treinta, inviable. La hoja es un SITIO donde
+  /// se inscribe gente, no un diálogo de una pregunta: se queda abierta, va
+  /// marcando lo añadido y se cierra cuando el usuario ha acabado.
+  ///
+  /// Lleva su propio estado —StatefulBuilder— porque el setState del editor no
+  /// repinta el contenido de un bottom sheet: es otra ruta. Sin eso, lo añadido
+  /// no se vería marcado hasta cerrar.
   void _abrirDirectorio(GolfTheme t) {
     final dir = context.read<PlayerProvider>().directory;
-    final ya = _t.participantes.toSet();
-    final candidatos =
-        dir.where((x) => !ya.contains(x.player.id)).toList();
+    final busca = TextEditingController();
 
     showModalBottomSheet(
       context: context,
@@ -1058,52 +1069,155 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Row(children: [
-              Expanded(
-                child: Text('Añadir participantes',
-                    style: TextStyle(
-                        color: t.text,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 17)),
-              ),
-              GestureDetector(
-                onTap: () => Navigator.pop(ctx),
-                child: Icon(Icons.close, color: t.sub),
-              ),
-            ]),
-            const SizedBox(height: 12),
-            if (candidatos.isEmpty)
-              Text('Todos los del directorio ya están inscritos.',
-                  style: TextStyle(color: t.sub, fontSize: 12))
-            else
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final c in candidatos)
-                      ListTile(
-                        dense: true,
-                        title: Text(c.player.name,
-                            style: TextStyle(color: t.text, fontSize: 14)),
-                        trailing:
-                            Icon(Icons.add_circle_outline, color: t.primary),
-                        onTap: () {
-                          setState(() => _t = _t.copyWith(
-                              participantes: [
-                                ..._t.participantes,
-                                c.player.id
-                              ]));
-                          Navigator.pop(ctx);
-                        },
-                      ),
-                  ],
+        child: StatefulBuilder(builder: (ctx2, setHoja) {
+          final ya = _t.participantes.toSet();
+          final filtro = busca.text.trim().toLowerCase();
+          final candidatos = dir
+              .where((x) =>
+                  filtro.isEmpty ||
+                  x.displayName.toLowerCase().contains(filtro))
+              .toList();
+
+          void alternar(String pid) {
+            // El editor y la hoja se repintan los dos: el editor guarda el
+            // estado y la hoja lo enseña.
+            setState(() => _t = _t.copyWith(
+                participantes: ya.contains(pid)
+                    ? _t.participantes.where((x) => x != pid).toList()
+                    : [..._t.participantes, pid]));
+            setHoja(() {});
+          }
+
+          return Padding(
+            padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 18,
+                bottom: MediaQuery.of(ctx2).viewInsets.bottom + 20),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(children: [
+                Expanded(
+                  child: Text('Añadir participantes',
+                      style: TextStyle(
+                          color: t.text,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 17)),
+                ),
+                // "Listo" y no una X: la hoja se cierra cuando se ha acabado de
+                // inscribir, no tras cada uno.
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.pop(ctx),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 4),
+                    child: Text('Listo',
+                        style: TextStyle(
+                            color: t.primary,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14)),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 4),
+              Text(
+                  '${_t.participantes.length} inscrito'
+                  '${_t.participantes.length == 1 ? '' : 's'}. '
+                  'Toca para añadir o sacar; puedes seguir añadiendo.',
+                  style: TextStyle(color: t.sub, fontSize: 11.5)),
+              const SizedBox(height: 10),
+              // Buscador: con treinta en el directorio, bajar rodando es peor
+              // que escribir tres letras.
+              if (dir.length > 8)
+                TextField(
+                  controller: busca,
+                  onChanged: (_) => setHoja(() {}),
+                  style: TextStyle(color: t.text, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Buscar por nombre',
+                    hintStyle: TextStyle(color: t.sub, fontSize: 13),
+                    prefixIcon: Icon(Icons.search, color: t.sub, size: 18),
+                    isDense: true,
+                    filled: true,
+                    fillColor: t.surface,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: t.divider)),
+                  ),
+                ),
+              const SizedBox(height: 10),
+              // Importar desde aquí: van al directorio Y quedan inscritos, que
+              // es lo que se venía a hacer. Sin salir de la pantalla.
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final ids =
+                        await showImportarJugadoresSheet(ctx2, t: t);
+                    if (ids == null || ids.isEmpty) return;
+                    setState(() => _t = _t.copyWith(participantes: [
+                          ..._t.participantes,
+                          ...ids.where((x) => !_t.participantes.contains(x)),
+                        ]));
+                    setHoja(() {});
+                  },
+                  style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: t.divider),
+                      foregroundColor: t.text,
+                      padding: const EdgeInsets.symmetric(vertical: 10)),
+                  icon: Icon(Icons.content_paste_go, size: 16, color: t.sub),
+                  label: const Text('Importar una lista (pegar de Excel)',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 12.5)),
                 ),
               ),
-          ]),
-        ),
+              const SizedBox(height: 10),
+              if (dir.isEmpty)
+                Text(
+                    'Tu directorio está vacío. Pega una lista con el botón de '
+                    'arriba, o añade compañeros desde Ajustes.',
+                    style: TextStyle(color: t.sub, fontSize: 12))
+              else if (candidatos.isEmpty)
+                Text('Nadie del directorio coincide con "${busca.text}".',
+                    style: TextStyle(color: t.sub, fontSize: 12))
+              else
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final c in candidatos)
+                        ListTile(
+                          dense: true,
+                          // Los ya inscritos SIGUEN en la lista, marcados: si
+                          // desaparecieran, la lista salta bajo el dedo y el
+                          // siguiente toque cae en otra persona.
+                          title: Text(c.displayName,
+                              style: TextStyle(
+                                  color: ya.contains(c.player.id)
+                                      ? t.primary
+                                      : t.text,
+                                  fontSize: 14,
+                                  fontWeight: ya.contains(c.player.id)
+                                      ? FontWeight.w700
+                                      : FontWeight.w500)),
+                          subtitle: Text(
+                              'HCP ${c.player.handicapBase.toStringAsFixed(1)}',
+                              style: TextStyle(color: t.sub, fontSize: 11)),
+                          trailing: Icon(
+                              ya.contains(c.player.id)
+                                  ? Icons.check_circle
+                                  : Icons.add_circle_outline,
+                              color: ya.contains(c.player.id)
+                                  ? t.primary
+                                  : t.sub),
+                          onTap: () => alternar(c.player.id),
+                        ),
+                    ],
+                  ),
+                ),
+            ]),
+          );
+        }),
       ),
     );
   }

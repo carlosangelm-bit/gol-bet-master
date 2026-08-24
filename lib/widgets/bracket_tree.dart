@@ -25,6 +25,30 @@
 // pregunta "¿contra quién voy si gano?" necesita es tu columna y la siguiente, y
 // eso es exactamente lo que se ve al abrir.
 //
+// ── Y DÓNDE DEJA DE SER UN ÁRBOL ────────────────────────────────────────────
+//
+// La medición de arriba era solo del ANCHO. El ALTO crece más rápido y se
+// compone, porque la primera columna apila plazas/2 partidos:
+//
+//   plazas   fases   ancho   alto     ¿cabe en 358 × 600?
+//        4       2     258    176     sí, entero y sin rodar
+//        8       3     398    368     rueda 40 px en horizontal, cabe a lo alto
+//       16       4     538    680     NO: se sale 180 de ancho y 80 de alto
+//       32       5     678   1304     NO: 320 de ancho y 704 de alto
+//
+// A partir de 16 plazas el árbol exige arrastrar en las DOS direcciones a la vez,
+// y eso con guante entre golpe y golpe no se hace. Además la celda de la final
+// mide 624 px de alto con dos nombres dentro: un rectángulo casi vacío del tamaño
+// de la pantalla.
+//
+// Así que POR ENCIMA DE TRES FASES esto deja de dibujarse como árbol y pasa a
+// VISTA POR FASES: una fase a la vez, en vertical, y cada partido dice de dónde
+// vienen sus dos plazas Y a dónde va el que gane. Es la misma información del
+// árbol —de dónde viene cada plaza y a dónde va— sin pedir dos scrolls.
+//
+// No es una versión degradada: es la forma que cabe. Un árbol que no se lee de un
+// vistazo es peor que una lista, y eso lo decidía la propia medición.
+//
 // ── LA GEOMETRÍA DEL ÁRBOL, SIN MATEMÁTICAS GLOBALES ────────────────────────
 //
 // El truco clásico: la celda de la fase n mide el DOBLE de alto que la de la
@@ -118,6 +142,20 @@ class ArbolDeLlave {
         16 => 'Dieciseisavos',
         _ => 'Ronda de ${partidos * 2}',
       };
+
+  /// A dónde va el que gane [n]. null si es la final.
+  ///
+  /// Es la otra mitad de la conexión, y la que el árbol dibujaba con una línea.
+  /// Sin árbol hay que decirla con palabras.
+  String? destinoDe(NodoDeLlave n) {
+    final siguiente = n.ronda + 1;
+    if (siguiente >= rondas.length) return null;
+    final fase = nombreDeFase(rondas[siguiente].length);
+    final idx = n.posicion ~/ 2;
+    return rondas[siguiente].length == 1
+        ? 'Pasa a la $fase'
+        : 'Pasa a $fase ${idx + 1}';
+  }
 
   /// De dónde sale la plaza [lado] (0 = A, 1 = B) del partido [n].
   ///
@@ -217,11 +255,23 @@ class _ArbolDeLlaveVistaState extends State<ArbolDeLlaveVista> {
     _scroll.jumpTo(destino.clamp(0, _scroll.position.maxScrollExtent));
   }
 
+  /// Hasta cuántas fases se dibuja como árbol.
+  ///
+  /// Tres: con cuatro el árbol se sale 180 px de ancho y 80 de alto a 390 px, y
+  /// pide arrastrar en diagonal. Medido, no supuesto.
+  static const _maxFasesArbol = 3;
+
   @override
   Widget build(BuildContext context) {
     final t = widget.t;
     final arbol = widget.arbol;
     if (arbol.vacia) return const SizedBox.shrink();
+
+    // Cuadro grande: por fases, en vertical. Ver la cabecera del archivo.
+    if (arbol.rondas.length > _maxFasesArbol) {
+      return _PorFases(
+          arbol: arbol, t: t, miNombre: widget.miNombre);
+    }
 
     final camino = arbol.caminoDe(widget.miNombre);
 
@@ -478,4 +528,245 @@ class _Conectores extends CustomPainter {
   @override
   bool shouldRepaint(_Conectores old) =>
       old.color != color || old.altoFeeder != altoFeeder;
+}
+
+/// El cuadro grande, por fases y en vertical.
+///
+/// Una fase a la vez. Cada partido dice de dónde vienen sus dos plazas y a dónde
+/// va el que gane, así que la conexión que el árbol dibujaba con una línea aquí
+/// se dice con palabras. Se elige la fase con los chips de arriba, que sí ruedan
+/// —son cuatro o cinco etiquetas cortas— pero el contenido no.
+///
+/// Arranca en MI fase. Con dieciséis o treinta y dos personas, la primera fase no
+/// es donde nadie mira.
+class _PorFases extends StatefulWidget {
+  final ArbolDeLlave arbol;
+  final GolfTheme t;
+  final String? miNombre;
+
+  const _PorFases({required this.arbol, required this.t, this.miNombre});
+
+  @override
+  State<_PorFases> createState() => _PorFasesState();
+}
+
+class _PorFasesState extends State<_PorFases> {
+  late int _fase;
+
+  @override
+  void initState() {
+    super.initState();
+    _fase = _miFase();
+  }
+
+  /// La fase más avanzada donde aparezco; si no aparezco, la primera sin
+  /// resolver, que es donde está el torneo.
+  int _miFase() {
+    final mio = widget.miNombre;
+    if (mio != null) {
+      for (var r = widget.arbol.rondas.length - 1; r >= 0; r--) {
+        if (widget.arbol.rondas[r].any((n) => n.a == mio || n.b == mio)) return r;
+      }
+    }
+    for (var r = 0; r < widget.arbol.rondas.length; r++) {
+      if (widget.arbol.rondas[r].any((n) => n.ganador == null)) return r;
+    }
+    return 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    final arbol = widget.arbol;
+    final camino = arbol.caminoDe(widget.miNombre);
+    final fase = arbol.rondas[_fase];
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      // Por qué esto no es un árbol, dicho una vez. Un usuario que ha visto el
+      // árbol en un cuadro de cuatro se pregunta por qué aquí no está.
+      Text(
+          'Cuadro de ${arbol.plazas} plazas: se ve por fases, porque un árbol de '
+          '${arbol.rondas.length} columnas no cabe en un teléfono sin arrastrar '
+          'en diagonal.',
+          style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
+      const SizedBox(height: 8),
+      // Los chips de fase. Cortos, así que su scroll no molesta.
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          for (var r = 0; r < arbol.rondas.length; r++) ...[
+            if (r > 0) const SizedBox(width: 6),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _fase = r),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                decoration: BoxDecoration(
+                  color: r == _fase
+                      ? t.primary.withValues(alpha: 0.14)
+                      : t.surface,
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(
+                      color: r == _fase ? t.primary : t.divider,
+                      width: r == _fase ? 1.5 : 1),
+                ),
+                child: Text(
+                    ArbolDeLlave.nombreDeFase(arbol.rondas[r].length),
+                    style: TextStyle(
+                        color: r == _fase ? t.text : t.sub,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ]),
+      ),
+      const SizedBox(height: 10),
+      for (var i = 0; i < fase.length; i++)
+        _FilaDeFase(
+          n: fase[i],
+          numero: i + 1,
+          arbol: arbol,
+          t: t,
+          mio: widget.miNombre,
+          enMiCamino: camino.contains('${fase[i].ronda}-${fase[i].posicion}'),
+        ),
+      if (arbol.campeon != null) ...[
+        const SizedBox(height: 10),
+        Row(children: [
+          const Text('🏆', style: TextStyle(fontSize: 18)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('Campeón: ${arbol.campeon}',
+                style: TextStyle(
+                    color: t.text, fontSize: 14, fontWeight: FontWeight.w800)),
+          ),
+        ]),
+      ],
+      if (arbol.byes > 0) ...[
+        const SizedBox(height: 8),
+        Text(
+            '${arbol.byes} ${arbol.byes == 1 ? "jugador pasa" : "jugadores pasan"} '
+            'sin jugar la primera fase: el cuadro tiene ${arbol.plazas} plazas y '
+            'hay ${arbol.plazas - arbol.byes} inscritos.',
+            style: TextStyle(color: t.sub, fontSize: 11, height: 1.35)),
+      ],
+    ]);
+  }
+}
+
+/// Un partido en la vista por fases, con sus dos conexiones dichas.
+class _FilaDeFase extends StatelessWidget {
+  final NodoDeLlave n;
+  final int numero;
+  final ArbolDeLlave arbol;
+  final GolfTheme t;
+  final String? mio;
+  final bool enMiCamino;
+
+  const _FilaDeFase(
+      {required this.n,
+      required this.numero,
+      required this.arbol,
+      required this.t,
+      required this.mio,
+      required this.enMiCamino});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget lado(String? nombre, int cual, String? medida) {
+      final gana = nombre != null && nombre == n.ganador;
+      final soyYo = nombre != null && nombre == mio;
+      final texto = nombre ?? arbol.procedenciaDe(n, cual) ?? 'Por decidir';
+      return Row(children: [
+        Expanded(
+          child: Text(texto,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: nombre == null
+                      ? t.sub
+                      : gana
+                          ? t.text
+                          : t.sub,
+                  fontSize: 13,
+                  fontStyle:
+                      nombre == null ? FontStyle.italic : FontStyle.normal,
+                  fontWeight: soyYo
+                      ? FontWeight.w900
+                      : gana
+                          ? FontWeight.w800
+                          : FontWeight.w500)),
+        ),
+        if (medida != null)
+          Text(medida,
+              style: TextStyle(
+                  color: gana ? t.text : t.sub,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700)),
+        if (gana) ...[
+          const SizedBox(width: 6),
+          Icon(Icons.arrow_forward, size: 13, color: t.primary),
+        ],
+      ]);
+    }
+
+    final destino = arbol.destinoDe(n);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: enMiCamino ? t.primary.withValues(alpha: 0.08) : t.card,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+            color: n.empatado
+                ? t.scoreOver.withValues(alpha: 0.7)
+                : enMiCamino
+                    ? t.primary
+                    : t.divider,
+            width: enMiCamino ? 1.4 : 1),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // El número del partido dentro de su fase: es lo que hace que
+        // "Ganador de Cuartos 3" se pueda seguir hasta aquí.
+        Text(
+            '${ArbolDeLlave.nombreDeFase(arbol.rondas[n.ronda].length)} '
+            '$numero',
+            style: TextStyle(
+                color: t.sub,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.5)),
+        const SizedBox(height: 5),
+        lado(n.a, 0, n.medidaA),
+        const SizedBox(height: 4),
+        lado(n.b, 1, n.medidaB),
+        if (n.bye || n.empatado || n.nota != null) ...[
+          const SizedBox(height: 5),
+          Text(
+              n.bye
+                  ? 'Sin rival: pasa directo'
+                  : n.empatado
+                      ? 'Empate en ${n.nota ?? "la ronda"} · falta decidir'
+                      : n.desempatadoAMano
+                          ? 'Empataron en ${n.nota}. Lo decidisteis vosotros.'
+                          : 'Se resolvió en ${n.nota}',
+              style: TextStyle(
+                  color: n.empatado ? t.scoreOver : t.sub,
+                  fontSize: 10.5,
+                  height: 1.25)),
+        ],
+        // La conexión hacia arriba, que es lo que el árbol dibujaba con una
+        // línea: a dónde va el que gane.
+        if (destino != null) ...[
+          const SizedBox(height: 4),
+          Text('→ $destino',
+              style: TextStyle(
+                  color: t.primary, fontSize: 10.5, fontWeight: FontWeight.w700)),
+        ],
+      ]),
+    );
+  }
 }
