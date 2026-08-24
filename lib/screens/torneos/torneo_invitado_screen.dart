@@ -15,6 +15,10 @@
 // con el ListView dejándole sitio, no flotando encima.
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
+import '../../models/torneo_seguido.dart';
+import '../../providers/torneo_provider.dart';
+import '../../services/auth_service.dart';
 import '../../core/app_theme.dart';
 import '../../widgets/bracket_tree.dart';
 import '../../models/torneo_publicado.dart';
@@ -428,6 +432,19 @@ class _TorneoInvitadoScreenState extends State<TorneoInvitadoScreen> {
           Text('Puesto ${fila.puesto} · ${fila.jugadas} rondas jugadas',
               style: TextStyle(color: t.sub, fontSize: 11)),
         ],
+        // ── Seguir el torneo ────────────────────────────────────────
+        //
+        // Es lo que hace que una LIGA funcione. Sin esto, las rondas que juegue
+        // esta persona no se pueden marcar para el torneo del organizador —su
+        // lista de torneos es solo la suya— así que su temporada entera no
+        // contaría. Y no fallaría: la tabla contaría menos rondas, calladita.
+        //
+        // Necesita cuenta, y por eso está aquí y no en la elección de jugador:
+        // seguir un torneo escribe en tu cuenta, y mirar no.
+        const SizedBox(height: 10),
+        _BotonSeguir(copia: copia, t: t, onPedirCuenta: () => _pedirCuenta(
+            t, 'que tus rondas cuenten para este torneo')),
+
         // La puerta de la cuenta, ofrecida solo cuando hay algo que jugar.
         if (pendiente != null) ...[
           const SizedBox(height: 10),
@@ -737,5 +754,83 @@ class _CintillaDescarga extends StatelessWidget {
           'compartió el torneo.'),
       duration: Duration(seconds: 4),
     ));
+  }
+}
+
+/// "Que mis rondas cuenten para este torneo".
+///
+/// Con cuenta, guarda la referencia —id, token y dueño— para que el asistente
+/// pueda marcar rondas a este torneo y el cierre publique su resultado. Sin
+/// cuenta, ofrece hacerse una: seguir escribe, y escribir necesita saber quién
+/// eres.
+class _BotonSeguir extends StatefulWidget {
+  final TorneoPublicado copia;
+  final GolfTheme t;
+  final VoidCallback onPedirCuenta;
+
+  const _BotonSeguir(
+      {required this.copia, required this.t, required this.onPedirCuenta});
+
+  @override
+  State<_BotonSeguir> createState() => _BotonSeguirState();
+}
+
+class _BotonSeguirState extends State<_BotonSeguir> {
+  bool _ocupado = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    final prov = context.watch<TorneoProvider>();
+    // El id del torneo no viaja en la instantánea —no hace falta para mirarla—
+    // así que el token hace de identidad aquí: es único por torneo y estable
+    // toda su vida.
+    final id = widget.copia.token;
+    final siguiendo = prov.seguidos.any((s) => s.torneoId == id);
+
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: _ocupado
+            ? null
+            : () async {
+                if (AuthService.uid == null) {
+                  widget.onPedirCuenta();
+                  return;
+                }
+                setState(() => _ocupado = true);
+                try {
+                  if (siguiendo) {
+                    await prov.dejarDeSeguir(id);
+                  } else {
+                    await prov.seguir(TorneoSeguido(
+                      torneoId: id,
+                      token: widget.copia.token,
+                      ownerUid: widget.copia.ownerUid,
+                      nombre: widget.copia.nombre,
+                      emoji: widget.copia.emoji,
+                      desde: DateTime.now(),
+                    ));
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text('No se pudo guardar: $e')));
+                  }
+                }
+                if (mounted) setState(() => _ocupado = false);
+              },
+        style: OutlinedButton.styleFrom(
+            side: BorderSide(color: siguiendo ? t.primary : t.divider),
+            foregroundColor: siguiendo ? t.primary : t.text,
+            padding: const EdgeInsets.symmetric(vertical: 11)),
+        icon: Icon(siguiendo ? Icons.check : Icons.add, size: 16),
+        label: Text(
+            siguiendo
+                ? 'Tus rondas cuentan para este torneo'
+                : 'Que mis rondas cuenten aquí',
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+      ),
+    );
   }
 }

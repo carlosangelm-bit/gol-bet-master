@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:golf_bet_master/providers/torneo_provider.dart';
 import 'package:golf_bet_master/core/app_theme.dart';
 import 'package:golf_bet_master/models/torneo.dart';
 import 'package:golf_bet_master/models/torneo_publicado.dart';
@@ -77,7 +78,12 @@ Future<List<String>> _montar(WidgetTester tester, TorneoPublicado copia) async {
   FlutterError.onError = (d) => errores.add(d.exceptionAsString());
 
   await tester.pumpWidget(MultiProvider(
-    providers: [ChangeNotifierProvider(create: (_) => RoundProvider())],
+    providers: [
+        ChangeNotifierProvider(create: (_) => RoundProvider()),
+        // El botón de "que mis rondas cuenten aquí" lo necesita, y main.dart lo
+        // provee por encima de la ruta del enlace.
+        ChangeNotifierProvider(create: (_) => TorneoProvider()),
+      ],
     child: MaterialApp(
       theme: GolfTheme.classic.toMaterial(),
       home: TorneoInvitadoScreen(copia: copia),

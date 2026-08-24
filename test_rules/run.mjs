@@ -77,6 +77,9 @@ await env.withSecurityRulesDisabled(async (ctx) => {
 const invitado = env.authenticatedContext(INV).firestore();
 const organizador = env.authenticatedContext(ORG).firestore();
 const anonimo = env.unauthenticatedContext().firestore();
+// Un tercero con cuenta: no es el organizador ni juega en su torneo. Es quien
+// tiene que quedarse fuera de todo.
+const otro = env.authenticatedContext(OTRO).firestore();
 
 console.log('\n1 · El invitado autenticado LEE el torneo compartido');
 await prueba('lee sharedTorneos/{token}', () =>
@@ -316,6 +319,106 @@ await prueba('un participante SÍ puede marcar la ronda en vivo como terminada',
 await prueba('pero eso NO mete nada en la tabla del organizador', () =>
     assertFails(setDoc(doc(invitado, 'users', ORG, 'roundResults', 'otra'),
         { roundId: 'otra' })));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 13 · RESULTADOS PUBLICADOS A UN TORNEO AJENO — la liga de temporada
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// El shotgun no necesita esto: allí el organizador es dueño de las rondas. La liga
+// sí, porque cada jugador cierra la suya y su resultado cae en SU colección.
+//
+// Lo que la regla garantiza, y lo que NO:
+//
+//   SÍ · que nadie publique firmando por otro
+//   SÍ · que el organizador declarado sea el de verdad —se compara contra
+//        sharedTorneos/{token}.ownerUid, que solo escribe su dueño—
+//   SÍ · que el id sea {torneoId}_{roundId}, así que corregir ACTUALIZA
+//   SÍ · que solo el organizador y el autor lo lean
+//   NO · que quien publica haya jugado esa ronda. Eso no se puede saber desde
+//        aquí, y se cierra en la lectura: la tabla solo cuenta resultados de
+//        gente inscrita. Está probado en Dart —resultadosQueCuentan— y dicho en
+//        los dos sitios.
+console.log('\n13 · Publicar un resultado a un torneo ajeno');
+
+const DOC_OK = `tor_liga_${'ronda_luis'}`;
+
+await prueba('el jugador publica su resultado al torneo del organizador', () =>
+    assertSucceeds(setDoc(doc(invitado, 'torneoResultados', DOC_OK), {
+      torneoId: 'tor_liga',
+      roundId: 'ronda_luis',
+      token: TOKEN,
+      torneoOwnerUid: ORG,
+      escritoPor: INV,
+      resultado: { roundId: 'ronda_luis', balances: { [INV]: 100 } },
+    })));
+
+await prueba('y el organizador lo lee: es de su torneo', () =>
+    assertSucceeds(getDoc(doc(organizador, 'torneoResultados', DOC_OK))));
+await prueba('y el autor también, para poder corregirlo', () =>
+    assertSucceeds(getDoc(doc(invitado, 'torneoResultados', DOC_OK))));
+await prueba('pero un tercero NO lo lee', () =>
+    assertFails(getDoc(doc(otro, 'torneoResultados', DOC_OK))));
+
+await prueba('volver a cerrar la ronda ACTUALIZA, no duplica', () =>
+    assertSucceeds(setDoc(doc(invitado, 'torneoResultados', DOC_OK), {
+      torneoId: 'tor_liga',
+      roundId: 'ronda_luis',
+      token: TOKEN,
+      torneoOwnerUid: ORG,
+      escritoPor: INV,
+      resultado: { roundId: 'ronda_luis', balances: { [INV]: 250 } },
+    })));
+
+await prueba('NO se puede firmar por otro', () =>
+    assertFails(setDoc(doc(invitado, 'torneoResultados', 'tor_liga_falso'), {
+      torneoId: 'tor_liga',
+      roundId: 'falso',
+      token: TOKEN,
+      torneoOwnerUid: ORG,
+      escritoPor: OTRO,
+      resultado: {},
+    })));
+
+await prueba('NI declarar un organizador que no es el del enlace', () =>
+    assertFails(setDoc(doc(invitado, 'torneoResultados', 'tor_liga_inv2'), {
+      torneoId: 'tor_liga',
+      roundId: 'inv2',
+      token: TOKEN,
+      torneoOwnerUid: OTRO,
+      escritoPor: INV,
+      resultado: {},
+    })));
+
+await prueba('ni con un token que no existe', () =>
+    assertFails(setDoc(doc(invitado, 'torneoResultados', 'tor_liga_inv3'), {
+      torneoId: 'tor_liga',
+      roundId: 'inv3',
+      token: 'tok_inventado',
+      torneoOwnerUid: INV,
+      escritoPor: INV,
+      resultado: {},
+    })));
+
+await prueba('ni con el id del documento cambiado', () =>
+    assertFails(setDoc(doc(invitado, 'torneoResultados', 'cualquier_cosa'), {
+      torneoId: 'tor_liga',
+      roundId: 'ronda_luis',
+      token: TOKEN,
+      torneoOwnerUid: ORG,
+      escritoPor: INV,
+      resultado: {},
+    })));
+
+await prueba('un tercero no borra el resultado de otro', () =>
+    assertFails(deleteDoc(doc(otro, 'torneoResultados', DOC_OK))));
+await prueba('pero el organizador sí: responde de su tabla', () =>
+    assertSucceeds(deleteDoc(doc(organizador, 'torneoResultados', DOC_OK))));
+
+// Y lo que esto NO abre: publicar no da acceso a nada del organizador.
+await prueba('publicar no da lectura de users/{organizador}', () =>
+    assertFails(getDoc(doc(invitado, 'users', ORG))));
+await prueba('ni de sus roundResults', () =>
+    assertFails(getDocs(collection(invitado, 'users', ORG, 'roundResults'))));
 
 console.log('\n9 · Nada de subcolecciones no revisadas');
 await prueba('el invitado no escribe en una subcolección del compartido', () =>

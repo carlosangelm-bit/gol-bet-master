@@ -17,6 +17,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/round_result.dart';
 import 'package:golf_bet_master/models/torneo.dart';
+import 'package:golf_bet_master/models/torneo_seguido.dart';
 
 /// Un grupo de cuatro con su ronda cerrada, como la que cierra el organizador.
 RoundResult _grupo(int n, {String torneo = 'tor_1'}) {
@@ -149,6 +150,153 @@ void main() {
           fuente: FuenteDeRondas.marcadas,
           participantes: const ['pid_g1_0', 'pid_g1_1']);
       expect(rondasDelTorneo(otro, [doble]), hasLength(1));
+    });
+  });
+
+  group('4 · LA LIGA: solo cuenta lo publicado por gente inscrita', () {
+    // Es la comprobación que la regla de Firestore NO puede hacer —no sabe si
+    // quien publica jugó esa ronda— así que se hace aquí, donde sí está la lista
+    // de inscritos. Quitarla dejaría que cualquiera con el enlace metiera una
+    // fila en la tabla de otro.
+    RoundResult publicado(String roundId, String pid, double dinero) =>
+        RoundResult(
+          roundId: roundId,
+          roundName: 'Ronda de $pid',
+          courseName: 'C',
+          playedAt: DateTime(2026, 5, 12),
+          holesPlayed: 18,
+          playerIds: [pid],
+          playerNames: {pid: pid},
+          balances: {pid: dinero},
+          pairBalances: const {},
+          grossByPlayer: const {},
+          netByPlayer: const {},
+          stablefordByPlayer: const {},
+          bettingGroupIds: const [],
+          torneoIds: const ['tor_1'],
+        );
+
+    test('el resultado de un inscrito cuenta', () {
+      final t = _t(participantes: const ['pid_luis', 'pid_ana']);
+      final buenos = resultadosQueCuentan(t, [
+        (escritoPor: 'pid_luis', resultado: publicado('r1', 'pid_luis', 100)),
+      ]);
+      expect(buenos, hasLength(1));
+    });
+
+    test('el de un NO inscrito se descarta', () {
+      final t = _t(participantes: const ['pid_luis']);
+      final buenos = resultadosQueCuentan(t, [
+        (escritoPor: 'pid_colado', resultado: publicado('r2', 'pid_colado', 9999)),
+      ]);
+      expect(buenos, isEmpty);
+    });
+
+    test('sin lista de inscritos NO cuenta ninguno', () {
+      // Mismo criterio que el bote: sin saber quién entra, aceptar lo que llegue
+      // es peor que no aceptar nada.
+      final t = _t(participantes: const []);
+      final buenos = resultadosQueCuentan(t, [
+        (escritoPor: 'pid_luis', resultado: publicado('r1', 'pid_luis', 100)),
+      ]);
+      expect(buenos, isEmpty);
+    });
+
+    test('la liga completa: cada uno cierra la suya y la tabla las cuenta', () {
+      // El caso del encargo. Tres jugadores, tres rondas cerradas por cada uno
+      // desde SU cuenta, y una tabla que las ve todas.
+      final t = _t(participantes: const ['pid_a', 'pid_b', 'pid_c']);
+      final publicados = [
+        (escritoPor: 'pid_a', resultado: publicado('ra', 'pid_a', 100)),
+        (escritoPor: 'pid_b', resultado: publicado('rb', 'pid_b', 50)),
+        (escritoPor: 'pid_c', resultado: publicado('rc', 'pid_c', -150)),
+      ];
+      final tabla = tablaDe(t, resultadosQueCuentan(t, publicados));
+      expect(tabla.rondas, 3);
+      expect(tabla.filas.first.playerId, 'pid_a');
+    });
+  });
+
+  group('5 · unir sin contar dos veces', () {
+    RoundResult r(String id, String pid, double d) => RoundResult(
+          roundId: id,
+          roundName: id,
+          courseName: 'C',
+          playedAt: DateTime(2026, 5, 12),
+          holesPlayed: 18,
+          playerIds: [pid],
+          playerNames: {pid: pid},
+          balances: {pid: d},
+          pairBalances: const {},
+          grossByPlayer: const {},
+          netByPlayer: const {},
+          stablefordByPlayer: const {},
+          bettingGroupIds: const [],
+          torneoIds: const ['tor_1'],
+        );
+
+    test('una ronda que está en las dos listas cuenta UNA vez', () {
+      // Pasa de verdad: el organizador cierra una ronda suya y además está
+      // publicada porque alguien la sigue. Sin deduplicar, el dinero saldría al
+      // doble.
+      final propios = [r('compartida', 'pid_a', 100)];
+      final publicados = [r('compartida', 'pid_a', 100), r('otra', 'pid_b', 50)];
+      final unidos = resultadosUnidos(propios, publicados);
+      expect(unidos, hasLength(2));
+      expect(unidos.where((x) => x.roundId == 'compartida'), hasLength(1));
+    });
+
+    test('gana lo PROPIO: es lo que el dueño cerró con sus manos', () {
+      final propios = [r('x', 'pid_a', 100)];
+      final publicados = [r('x', 'pid_a', 999)];
+      final unidos = resultadosUnidos(propios, publicados);
+      expect(unidos, hasLength(1));
+      expect(unidos.first.balances['pid_a'], 100);
+    });
+
+    test('con una lista vacía devuelve la otra', () {
+      expect(resultadosUnidos(const [], [r('a', 'p', 1)]), hasLength(1));
+      expect(resultadosUnidos([r('a', 'p', 1)], const []), hasLength(1));
+      expect(resultadosUnidos(const [], const []), isEmpty);
+    });
+  });
+
+  group('6 · el torneo seguido es una REFERENCIA, no una copia', () {
+    test('lleva lo justo para marcar y publicar', () {
+      final s = TorneoSeguido(
+          torneoId: 'tor_1',
+          token: 'tok_abc',
+          ownerUid: 'uid_org',
+          nombre: 'Copa de Primavera',
+          desde: DateTime(2026, 3, 1));
+      expect(s.utilizable, isTrue);
+      final ida = TorneoSeguido.fromJson(s.toJson());
+      expect(ida.token, 'tok_abc');
+      expect(ida.ownerUid, 'uid_org');
+      expect(ida.nombre, 'Copa de Primavera');
+    });
+
+    test('sin token o sin dueño NO es utilizable: no se puede publicar', () {
+      final sinToken = TorneoSeguido(
+          torneoId: 'tor_1',
+          token: '',
+          ownerUid: 'uid',
+          nombre: 'X',
+          desde: DateTime(2026, 1, 1));
+      expect(sinToken.utilizable, isFalse);
+    });
+
+    test('el id del documento del resultado es determinista', () {
+      // Es lo que hace que corregir una ronda actualice en vez de duplicar, y la
+      // regla lo exige.
+      const r = ResultadoDeTorneo(
+          torneoId: 'tor_1',
+          roundId: 'ronda_9',
+          token: 'tok',
+          torneoOwnerUid: 'uid',
+          escritoPor: 'yo',
+          resultado: {});
+      expect(r.docId, 'tor_1_ronda_9');
     });
   });
 

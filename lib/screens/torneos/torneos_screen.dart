@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../../models/round_result.dart';
 import '../../models/torneo.dart';
 import '../../services/firestore_service.dart';
 import '../../services/live_round_service.dart';
@@ -183,14 +184,76 @@ class _TarjetaTorneo extends StatelessWidget {
   }
 }
 
-class TorneoTablaScreen extends StatelessWidget {
+/// La pantalla de un torneo, con los resultados PUBLICADOS por otros incluidos.
+///
+/// Es la mitad que faltaba de la agregación. La tabla salía de
+/// users/{miUid}/roundResults, así que en una liga —donde cada jugador cierra su
+/// ronda— contaba menos rondas de las que había, y sin avisar.
+///
+/// Los publicados se cargan una vez al abrir. No en tiempo real a propósito: una
+/// tabla que cambia mientras la lees es peor que una que se refresca al volver, y
+/// una consulta por torneo cada vez que alguien cierra una ronda cuesta.
+class TorneoTablaScreen extends StatefulWidget {
+  final Torneo torneo;
+  const TorneoTablaScreen({super.key, required this.torneo});
+
+  @override
+  State<TorneoTablaScreen> createState() => _TorneoTablaScreenState();
+}
+
+class _TorneoTablaScreenState extends State<TorneoTablaScreen> {
+  List<RoundResult> _publicados = const [];
+  int _descartados = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarPublicados();
+  }
+
+  Future<void> _cargarPublicados() async {
+    final crudos =
+        await FirestoreService.resultadosPublicados(widget.torneo.id);
+    if (!mounted) return;
+    // Solo los de gente INSCRITA. Es la comprobación que la regla no puede
+    // hacer, y por eso se hace aquí. Ver resultadosQueCuentan.
+    final vivo = context.read<TorneoProvider>().torneos
+        .where((x) => x.id == widget.torneo.id)
+        .firstOrNull ??
+        widget.torneo;
+    final buenos = resultadosQueCuentan(vivo, crudos);
+    setState(() {
+      _publicados = buenos;
+      _descartados = crudos.length - buenos.length;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => _TorneoTabla(
+        torneo: widget.torneo,
+        publicados: _publicados,
+        descartados: _descartados,
+      );
+}
+
+class _TorneoTabla extends StatelessWidget {
   /// El torneo con el que se abrió la pantalla.
   ///
   /// **No se pinta desde aquí.** Se usa solo para saber QUÉ torneo es; lo que se
   /// enseña sale del provider por id.
   final Torneo torneo;
 
-  const TorneoTablaScreen({super.key, required this.torneo});
+  /// Los resultados que otros publicaron a este torneo, ya filtrados.
+  final List<RoundResult> publicados;
+
+  /// Cuántos se descartaron por venir de alguien no inscrito. Se DICE: un
+  /// silencio aquí es exactamente el fallo que esto viene a arreglar.
+  final int descartados;
+
+  const _TorneoTabla(
+      {required this.torneo,
+      this.publicados = const [],
+      this.descartados = 0});
 
   /// El torneo VIVO. Es la diferencia entre enseñar lo guardado y enseñar lo que
   /// llegó al abrir la pantalla.
@@ -217,7 +280,9 @@ class TorneoTablaScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.gt;
     final torneo = _vivo(context);
-    final resultados = context.watch<PerfilProvider>().resultados;
+    // Lo propio MÁS lo que otros publicaron, sin contar una ronda dos veces.
+    final resultados = resultadosUnidos(
+        context.watch<PerfilProvider>().resultados, publicados);
     final nombres = context.watch<PlayerProvider>().nombres;
     final tabla = tablaDe(torneo, resultados, nombres: nombres);
     // El cuadro se deriva una vez y se usa para todo: el bloque de arriba, y el
@@ -320,6 +385,30 @@ class TorneoTablaScreen extends StatelessWidget {
                 ]),
           ),
           const SizedBox(height: 14),
+
+          // Lo que llegó y NO se contó. Decirlo es la diferencia entre una tabla
+          // incompleta y una tabla incompleta que se sabe.
+          if (descartados > 0) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: t.card,
+                borderRadius: BorderRadius.circular(11),
+                border:
+                    Border.all(color: t.scoreOver.withValues(alpha: 0.6)),
+              ),
+              child: Text(
+                  '$descartados resultado${descartados == 1 ? '' : 's'} '
+                  '${descartados == 1 ? 'llegó' : 'llegaron'} de alguien que no '
+                  'está en la lista de participantes, así que no '
+                  '${descartados == 1 ? 'cuenta' : 'cuentan'}. Si debería '
+                  'contar, añádelo a la lista.',
+                  style:
+                      TextStyle(color: t.text, fontSize: 11.5, height: 1.35)),
+            ),
+            const SizedBox(height: 14),
+          ],
 
           // ── Los grupos que están jugando ──────────────────────────
           //

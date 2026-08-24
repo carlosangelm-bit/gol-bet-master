@@ -24,18 +24,61 @@
 // en traerlo, y publicar antes de que llegue enseñaría la tabla sin la última
 // ronda —exactamente el problema que esto viene a resolver—.
 // ─────────────────────────────────────────────────────────────────────────────
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/models.dart';
 import '../../models/round_result.dart';
 import '../../models/torneo.dart';
+import '../../models/torneo_seguido.dart';
 import '../../models/torneo_publicado.dart';
 import '../../providers/perfil_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/torneo_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
+
+/// Publica el resultado de [round] a los torneos AJENOS que sigo y que la ronda
+/// marcó.
+///
+/// Solo a los ajenos: los míos ya tienen el resultado en mi propia colección, que
+/// es de donde la tabla lo lee. Publicarlo también sería escribir dos veces lo
+/// mismo.
+Future<void> _publicarASeguidos(
+    BuildContext context, Round round, TorneoProvider prov) async {
+  if (round.torneoIds.isEmpty) return;
+  final uid = AuthService.uid;
+  if (uid == null) return;
+
+  final mios = prov.torneos.map((t) => t.id).toSet();
+  final resultado = RoundResult.fromRound(round, playedAt: round.createdAt);
+
+  for (final id in round.torneoIds) {
+    if (mios.contains(id)) continue; // el mío ya está donde tiene que estar
+    final seg = prov.seguidos.where((s) => s.torneoId == id).firstOrNull;
+    if (seg == null || !seg.utilizable) continue;
+    try {
+      await FirestoreService.publicarResultadoDeTorneo(ResultadoDeTorneo(
+        torneoId: seg.torneoId,
+        roundId: round.id,
+        token: seg.token,
+        torneoOwnerUid: seg.ownerUid,
+        escritoPor: uid,
+        resultado: resultado.toJson(),
+      ));
+      debugPrint('[Torneo] resultado de ${round.id} publicado a ${seg.nombre}');
+    } catch (e) {
+      debugPrint('[Torneo] no se pudo publicar a ${seg.nombre}: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('La ronda se cerró, pero no se pudo enviar a '
+              '${seg.nombre}. Vuelve a cerrarla cuando haya conexión.'),
+          duration: const Duration(seconds: 5),
+        ));
+      }
+    }
+  }
+}
 
 /// Refresca los enlaces de los torneos para los que contaba [round].
 ///
@@ -48,6 +91,17 @@ Future<List<String>> republicarTorneosDe(
 
   final torneoProv = context.read<TorneoProvider>();
   final perfilProv = context.read<PerfilProvider>();
+
+  // ── Primero: publicar el resultado a los torneos AJENOS que sigo ─────────
+  //
+  // Es lo que hace que una liga funcione. Mi ronda la cierro yo, así que su
+  // resultado cae en MI colección y el organizador no lo vería; publicarlo en
+  // torneoResultados es la única forma de que su tabla lo cuente.
+  //
+  // Va antes de republicar y no bloquea: si falla, la ronda ya está cerrada y el
+  // resultado se puede volver a publicar cerrándola otra vez —el id del documento
+  // es determinista, así que no duplica—.
+  await _publicarASeguidos(context, round, torneoProv);
 
   final afectados = torneosARepublicar(round, torneoProv.torneos);
   if (afectados.isEmpty) return const [];

@@ -6261,9 +6261,13 @@ class _SetupScreenState extends State<SetupScreen> {
   /// no admite rondas nuevas, y uno con fuente por fechas o manual no mira esto
   /// —ofrecerlo sería un control que no hace nada—.
   Widget _bloqueTorneos(GolfTheme t) {
-    final abiertos =
-        torneosMarcables(context.watch<TorneoProvider>().torneos);
-    if (abiertos.isEmpty) return const SizedBox.shrink();
+    final prov = context.watch<TorneoProvider>();
+    final abiertos = torneosMarcables(prov.torneos);
+    // Los AJENOS que sigo. Sin esto, en una liga de temporada nadie más que el
+    // organizador podía marcar una ronda para su torneo: la lista salía de
+    // users/{miUid}/torneos, o sea solo de los míos.
+    final seguidos = prov.seguidos;
+    if (abiertos.isEmpty && seguidos.isEmpty) return const SizedBox.shrink();
 
     return Container(
       width: double.infinity,
@@ -6282,6 +6286,62 @@ class _SetupScreenState extends State<SetupScreen> {
             'que cuenta, en vez de arrastrar todo lo que caiga en un rango.',
             style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
         const SizedBox(height: 10),
+        // Los seguidos primero: si estoy en una liga de otro, es lo que voy a
+        // marcar más veces.
+        for (final seg in seguidos)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() {
+                if (!_torneosMarcados.remove(seg.torneoId)) {
+                  _torneosMarcados.add(seg.torneoId);
+                }
+              }),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                decoration: BoxDecoration(
+                  color: _torneosMarcados.contains(seg.torneoId)
+                      ? t.primary.withValues(alpha: 0.1)
+                      : t.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: _torneosMarcados.contains(seg.torneoId)
+                          ? t.primary
+                          : t.divider,
+                      width: _torneosMarcados.contains(seg.torneoId) ? 1.5 : 1),
+                ),
+                child: Row(children: [
+                  Text(seg.emoji, style: const TextStyle(fontSize: 18)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(seg.nombre,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: t.text,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700)),
+                          Text('Torneo de otro · lo sigues',
+                              style: TextStyle(color: t.sub, fontSize: 11)),
+                        ]),
+                  ),
+                  Icon(
+                      _torneosMarcados.contains(seg.torneoId)
+                          ? Icons.check_circle
+                          : Icons.circle_outlined,
+                      color: _torneosMarcados.contains(seg.torneoId)
+                          ? t.primary
+                          : t.sub,
+                      size: 18),
+                ]),
+              ),
+            ),
+          ),
         for (final tor in abiertos)
           Padding(
             padding: const EdgeInsets.only(bottom: 6),

@@ -12,6 +12,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/torneo.dart';
+import '../models/torneo_seguido.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 
@@ -38,6 +39,10 @@ class TorneoProvider extends ChangeNotifier {
     if (AuthService.uid == null) return;
     _loading = true;
     notifyListeners();
+    _subSeguidos ??= FirestoreService.torneosSeguidosStream().listen((l) {
+      _seguidos = l;
+      notifyListeners();
+    }, onError: (_) {});
     _sub = FirestoreService.torneosStream().listen((lista) {
       _torneos = lista;
       _loading = false;
@@ -53,6 +58,9 @@ class TorneoProvider extends ChangeNotifier {
   void stopListening() {
     _sub?.cancel();
     _sub = null;
+    _subSeguidos?.cancel();
+    _subSeguidos = null;
+    _seguidos = [];
     _torneos = [];
     _loading = false;
     notifyListeners();
@@ -71,6 +79,34 @@ class TorneoProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Los torneos AJENOS que sigo, para poder marcarles rondas.
+  ///
+  /// Van aparte de los míos a propósito: un torneo seguido es una referencia
+  /// —nombre, token y dueño— no una copia de la configuración. Mezclarlos en una
+  /// sola lista habría hecho creer que se pueden editar.
+  List<TorneoSeguido> _seguidos = [];
+  List<TorneoSeguido> get seguidos => _seguidos;
+  StreamSubscription<List<TorneoSeguido>>? _subSeguidos;
+
+  @visibleForTesting
+  void sembrarSeguidos(List<TorneoSeguido> s) {
+    _seguidos = s;
+    notifyListeners();
+  }
+
+  Future<void> seguir(TorneoSeguido s) async {
+    await FirestoreService.seguirTorneo(s);
+    if (_seguidos.any((x) => x.torneoId == s.torneoId)) return;
+    _seguidos = [..._seguidos, s];
+    notifyListeners();
+  }
+
+  Future<void> dejarDeSeguir(String torneoId) async {
+    await FirestoreService.dejarDeSeguir(torneoId);
+    _seguidos = _seguidos.where((x) => x.torneoId != torneoId).toList();
+    notifyListeners();
+  }
+
   Future<void> borrar(String id) async {
     await FirestoreService.deleteTorneo(id);
     _torneos = _torneos.where((x) => x.id != id).toList();
@@ -79,6 +115,7 @@ class TorneoProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _subSeguidos?.cancel();
     _sub?.cancel();
     super.dispose();
   }

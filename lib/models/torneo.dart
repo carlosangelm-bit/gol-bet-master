@@ -2015,6 +2015,51 @@ String resumenDeLlave(LlaveDelTorneo llave, Map<String, String> nombres) {
   return '${llave.plazas} plazas · esperando resultados';
 }
 
+/// Los resultados publicados que SÍ cuentan para [t].
+///
+/// La regla de Firestore no puede comprobar que quien publica un resultado jugó
+/// esa ronda: la ronda de una liga no es una ronda en vivo, así que no hay
+/// documento compartido donde mirarlo. Así que se cierra AQUÍ, en la lectura,
+/// donde sí está la lista de inscritos.
+///
+/// Cuenta el resultado si quien lo escribió está inscrito. Con la lista vacía no
+/// cuenta ninguno: sin saber quién entra, aceptar lo que llegue es peor que no
+/// aceptar nada —y es el mismo criterio que el bote, que no se calcula sin
+/// lista—.
+///
+/// Se dice en los dos sitios a propósito: quien quite esta comprobación pensando
+/// que la regla ya la hacía, rompe la única que hay.
+List<RoundResult> resultadosQueCuentan(
+  Torneo t,
+  Iterable<({String escritoPor, RoundResult resultado})> publicados,
+) {
+  if (t.participantes.isEmpty) return const [];
+  final inscritos = t.participantes.toSet();
+  return [
+    for (final p in publicados)
+      if (inscritos.contains(p.escritoPor)) p.resultado,
+  ];
+}
+
+/// Une lo propio con lo publicado, sin contar una ronda dos veces.
+///
+/// Pasa de verdad: el organizador cierra una ronda suya —va a su colección— y
+/// además está publicada porque alguien la siguió. Sin deduplicar, esa ronda
+/// contaría doble y el dinero saldría al doble.
+///
+/// Gana lo PROPIO: es lo que el dueño de la tabla cerró con sus manos.
+List<RoundResult> resultadosUnidos(
+  List<RoundResult> propios,
+  List<RoundResult> publicados,
+) {
+  final vistos = propios.map((r) => r.roundId).toSet();
+  return [
+    ...propios,
+    for (final r in publicados)
+      if (vistos.add(r.roundId)) r,
+  ];
+}
+
 /// Por qué un torneo de liga no puede pasar a eliminación, si no puede.
 ///
 /// El cuadro se alimenta de rondas MARCADAS: con otra fuente, los partidos no se

@@ -125,6 +125,72 @@ service cloud.firestore {
     // mejor, porque no depende de que lo esté.
     //
     // Revocar un enlace es borrar el documento.
+    // ══════════════════════════════════════════════════════════════════════
+    // RESULTADOS PUBLICADOS A UN TORNEO AJENO
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // El caso: una LIGA DE TEMPORADA. Cada jugador marca sus propias rondas y
+    // las cierra él, así que su resultado cae en users/{suUid}/roundResults y el
+    // organizador no lo ve. La tabla contaba menos rondas de las que había, sin
+    // avisar.
+    //
+    // Con el shotgun no pasa —el organizador es dueño de todas— y por eso allí
+    // esta colección sobra. Aquí hace falta.
+    //
+    // ── Lo que hace segura la escritura, sin tocar users/** ────────────────
+    //
+    // Quien escribe tiene que demostrar DOS cosas, y las dos se comprueban
+    // leyendo documentos que ya puede leer:
+    //
+    //   1 · Que escribe a su nombre: escritoPor == su uid. Sin esto, cualquiera
+    //       podría publicar un resultado firmado por otro.
+    //   2 · Que el organizador que declara es el DE VERDAD: se compara contra
+    //       sharedTorneos/{token}.ownerUid, que es público-para-autenticados y
+    //       lo escribe solo el dueño del torneo. Sin esto, se podría meter una
+    //       fila en la tabla de un desconocido.
+    //
+    // NINGUNA de las dos condiciones lee users/**, así que la propiedad que
+    // importaba —que nadie escribe ni lee bajo la cuenta de otro— se conserva.
+    //
+    // ── Lo que la regla NO puede comprobar, y cómo se cubre ────────────────
+    //
+    // No puede verificar que quien escribe JUGÓ esa ronda: la ronda de una liga
+    // no es una ronda en vivo, así que no hay documento compartido que lo diga.
+    // O sea que alguien con el enlace podría publicar el resultado de una ronda
+    // inventada.
+    //
+    // Eso se cierra en la LECTURA, no aquí: la tabla solo cuenta resultados cuyo
+    // autor está en la lista de inscritos del torneo —ver resultadosQueCuentan en
+    // torneo.dart—. Se dice aquí para que nadie quite esa comprobación pensando
+    // que la regla ya la hacía.
+    match /torneoResultados/{docId} {
+      // Lo lee el ORGANIZADOR —que es quien arma la tabla— y el autor, para
+      // poder ver y corregir lo suyo. Nadie más: aquí hay ids de jugador y
+      // balances, que es más de lo que la instantánea comparte.
+      allow read: if request.auth != null
+                  && (request.auth.uid == resource.data.torneoOwnerUid
+                      || request.auth.uid == resource.data.escritoPor);
+
+      allow create, update: if request.auth != null
+                    && request.auth.uid == request.resource.data.escritoPor
+                    && request.resource.data.torneoId is string
+                    && request.resource.data.roundId is string
+                    && request.resource.data.token is string
+                    // El id del documento es {torneoId}_{roundId}: determinista,
+                    // así que volver a cerrar la misma ronda ACTUALIZA en vez de
+                    // añadir otra fila.
+                    && docId == request.resource.data.torneoId + '_' + request.resource.data.roundId
+                    && exists(/databases/$(database)/documents/sharedTorneos/$(request.resource.data.token))
+                    && request.resource.data.torneoOwnerUid ==
+                       get(/databases/$(database)/documents/sharedTorneos/$(request.resource.data.token)).data.ownerUid;
+
+      // Borra el autor —se equivocó— o el organizador, que es quien responde de
+      // su tabla.
+      allow delete: if request.auth != null
+                    && (request.auth.uid == resource.data.escritoPor
+                        || request.auth.uid == resource.data.torneoOwnerUid);
+    }
+
     match /sharedTorneos/{token} {
       // Cualquiera autenticado que tenga el enlace lee. Se pide cuenta —aunque
       // sea ligera— porque aquí hay dinero y nombres de terceros a la vista.

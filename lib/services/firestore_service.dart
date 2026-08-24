@@ -13,6 +13,7 @@ import 'handicap_service.dart';
 import 'user_profile_service.dart';
 import '../models/round_result.dart';
 import '../models/torneo.dart';
+import '../models/torneo_seguido.dart';
 import '../models/torneo_publicado.dart';
 
 class FirestoreService {
@@ -560,6 +561,97 @@ class FirestoreService {
       return TorneoPublicado.fromJson(token, Map<String, dynamic>.from(d.data()!));
     } catch (_) {
       return null;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TORNEOS SEGUIDOS Y RESULTADOS PUBLICADOS — la liga de temporada
+  // ══════════════════════════════════════════════════════════════════════════
+  //
+  // El shotgun no necesita esto: allí el organizador es dueño de las rondas y sus
+  // resultados caen solos en su colección. La liga sí, porque cada jugador cierra
+  // la suya.
+  //
+  // Dos piezas: los torneos que sigo —bajo mi cuenta, sin reglas nuevas— y los
+  // resultados que publico a un torneo ajeno, que sí tienen su regla y sus
+  // pruebas de emulador.
+
+  static CollectionReference<Map<String, dynamic>> _seguidos() => _db
+      .collection('users')
+      .doc(AuthService.uid)
+      .collection('torneosSeguidos');
+
+  static CollectionReference<Map<String, dynamic>> _torneoResultados() =>
+      _db.collection('torneoResultados');
+
+  /// Los torneos ajenos que sigo. Para poder marcarles rondas.
+  static Stream<List<TorneoSeguido>> torneosSeguidosStream() {
+    if (AuthService.uid == null) return Stream.value(const []);
+    return _seguidos().snapshots().map((snap) => snap.docs
+        .map((d) {
+          try {
+            return TorneoSeguido.fromJson({...d.data(), 'torneoId': d.id});
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<TorneoSeguido>()
+        .where((x) => x.utilizable)
+        .toList());
+  }
+
+  /// Empieza a seguir un torneo desde su enlace.
+  static Future<void> seguirTorneo(TorneoSeguido s) async {
+    if (AuthService.uid == null) throw Exception('No autenticado');
+    await _seguidos().doc(s.torneoId).set(s.toJson());
+  }
+
+  static Future<void> dejarDeSeguir(String torneoId) async {
+    if (AuthService.uid == null) return;
+    await _seguidos().doc(torneoId).delete();
+  }
+
+  /// Publica el resultado de una ronda a un torneo AJENO.
+  ///
+  /// El id del documento es determinista —{torneoId}_{roundId}— así que volver a
+  /// cerrar la misma ronda actualiza en vez de añadir otra fila. La regla lo
+  /// exige, y por eso corregir una ronda no duplica nada.
+  static Future<void> publicarResultadoDeTorneo(ResultadoDeTorneo r) async {
+    if (AuthService.uid == null) return;
+    await _torneoResultados().doc(r.docId).set(r.toJson());
+  }
+
+  /// Los resultados publicados a un torneo MÍO, con quién los escribió.
+  ///
+  /// La procedencia viaja porque la tabla la necesita: solo cuentan los de gente
+  /// inscrita, y eso es lo que la regla no puede comprobar al escribir.
+  static Future<List<({String escritoPor, RoundResult resultado})>>
+      resultadosPublicados(String torneoId) async {
+    final uid = AuthService.uid;
+    if (uid == null) return const [];
+    try {
+      final snap = await _torneoResultados()
+          .where('torneoOwnerUid', isEqualTo: uid)
+          .where('torneoId', isEqualTo: torneoId)
+          .get();
+      final out = <({String escritoPor, RoundResult resultado})>[];
+      for (final d in snap.docs) {
+        try {
+          final r = ResultadoDeTorneo.fromJson(d.data());
+          if (r.resultado.isEmpty) continue;
+          out.add((
+            escritoPor: r.escritoPor,
+            resultado: RoundResult.fromJson(r.resultado),
+          ));
+        } catch (e) {
+          debugPrint('[Torneo] resultado publicado ilegible ${d.id}: $e');
+        }
+      }
+      return out;
+    } catch (e) {
+      // Sin conexión o sin permiso: la tabla sale con lo propio y no revienta.
+      debugPrint('[Torneo] no se pudieron leer los publicados: $e');
+      return const [];
     }
   }
 
