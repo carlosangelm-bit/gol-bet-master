@@ -200,6 +200,42 @@ Future<List<String>> _montarEditor(
 }
 
 void main() {
+  group('9 · el cuadro es un ÁRBOL, y llega a la vista de invitado', () {
+    testWidgets('en la app: fases como columnas, no como lista apilada',
+        (tester) async {
+      final errores = await _montar(tester, torneo: _t());
+      expect(errores, isEmpty);
+      // Un scroll horizontal es la firma del árbol: la lista de antes no tenía.
+      final horizontales = tester
+          .widgetList<Scrollable>(find.byType(Scrollable))
+          .where((x) => x.axis == Axis.horizontal);
+      expect(horizontales, isNotEmpty, reason: 'el cuadro no rueda: no es árbol');
+    });
+
+    testWidgets('los huecos de la final dicen de dónde salen', (tester) async {
+      final errores = await _montar(tester, torneo: _t());
+      expect(errores, isEmpty);
+      expect(find.textContaining('Ganador de Semifinales'), findsWidgets);
+    });
+
+    testWidgets('"a quién le toca" SIGUE arriba del árbol', (tester) async {
+      // La decisión de antes se conserva: lo primero es tu partido pendiente y
+      // su botón; el árbol es para entender el torneo, no para jugarlo.
+      await _montar(tester, torneo: _t());
+      final tocaY = tester.getTopLeft(find.text('A QUIÉN LE TOCA')).dy;
+      final cuadroY = tester.getTopLeft(find.text('EL CUADRO')).dy;
+      expect(tocaY, lessThan(cuadroY));
+      expect(find.text('Crear la ronda de este partido'), findsWidgets);
+    });
+
+    testWidgets('cabe a 320 px con nombres largos', (tester) async {
+      final errores = await _montar(tester,
+          torneo: _t(), tamano: const Size(320, 1800));
+      expect(errores, isEmpty);
+    });
+  });
+
+
   group('8 · el editor solo enseña lo que aplica al formato', () {
     // Las secciones de liga son las que quedaron a la vista con eliminación
     // marcada. Ninguna aplica: ganas el partido y pasas.
@@ -369,8 +405,10 @@ void main() {
       for (final n in nombres.values) {
         expect(find.text(n), findsWidgets, reason: n);
       }
-      // Y la final espera: dos plazas por decidir.
-      expect(find.text('Por decidir'), findsNWidgets(2));
+      // Y la final espera. El árbol no deja un hueco vacío: dice DE DÓNDE va a
+      // salir cada plaza, que es lo que la lista de antes no decía.
+      expect(find.textContaining('Ganador de Semifinales'), findsNWidgets(2));
+      expect(find.text('Por decidir'), findsNothing);
     });
 
     testWidgets('a quién le toca va ARRIBA, con el botón de crear la ronda',
@@ -492,8 +530,10 @@ void main() {
       final errores = await _montar(tester,
           torneo: _t(participantes: const [ana, beto, caro]));
       expect(errores, isEmpty);
-      expect(find.textContaining('Pasa sin jugar'), findsWidgets);
-      expect(find.textContaining('sin jugar la primera ronda'), findsOneWidget);
+      // El árbol lo dice en la celda —"sin rival"— y debajo explica cuántos y
+      // por qué, que es el criterio 5.
+      expect(find.textContaining('Sin rival: pasa directo'), findsWidgets);
+      expect(find.textContaining('sin jugar la primera fase'), findsOneWidget);
     });
   });
 

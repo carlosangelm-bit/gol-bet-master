@@ -160,8 +160,14 @@ class _TarjetaTorneo extends StatelessWidget {
                             style: TextStyle(
                                 color: t.scoreOver.withValues(alpha: 0.9),
                                 fontSize: 10.5)),
+                      // Sin bote no se habla de bote. Un torneo que se juega sin
+                      // dinero —que es lo normal en eliminación— no debería
+                      // mencionarlo en ninguna línea.
                       if (tabla.sinListaDeParticipantes)
-                        Text('Sin lista de participantes · el bote no se calcula',
+                        Text(
+                            torneo.bote.hayAlgunBote
+                                ? 'Sin lista de participantes · el bote no se calcula'
+                                : 'Sin lista de participantes',
                             style: TextStyle(
                                 color: t.scoreOver.withValues(alpha: 0.9),
                                 fontSize: 10.5)),

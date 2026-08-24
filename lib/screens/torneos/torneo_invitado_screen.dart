@@ -15,6 +15,7 @@
 // con el ListView dejándole sitio, no flotando encima.
 import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/bracket_tree.dart';
 import '../../models/torneo_publicado.dart';
 
 class TorneoInvitadoScreen extends StatelessWidget {
@@ -132,18 +133,12 @@ class TorneoInvitadoScreen extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.8)),
                 const SizedBox(height: 8),
-                for (final fase in _fases()) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6, bottom: 5),
-                    child: Text(fase.first.faseNombre.toUpperCase(),
-                        style: TextStyle(
-                            color: t.sub,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.6)),
-                  ),
-                  for (final p in fase) _partido(t, p),
-                ],
+                // El MISMO árbol que la app, no un dibujo aparte. Es la pantalla
+                // que alguien abre desde WhatsApp sin tener la app instalada, así
+                // que es donde un cuadro bien dibujado hace más trabajo.
+                //
+                // Sin resaltado: aquí no se sabe quién mira.
+                ArbolDeLlaveVista(arbol: _arbol(), t: t),
                 const SizedBox(height: 18),
               ],
 
@@ -176,6 +171,38 @@ class TorneoInvitadoScreen extends StatelessWidget {
     );
   }
 
+  /// El cuadro publicado, en la forma que dibuja el árbol.
+  ///
+  /// La instantánea trae los partidos PLANOS —con su fase y su posición— para que
+  /// el documento sea una lista y no un árbol anidado. El árbol se reconstruye
+  /// aquí: el partido i de la fase n lo alimentan el 2i y el 2i+1 de la n-1.
+  ArbolDeLlave _arbol() => ArbolDeLlave(
+        rondas: [
+          for (final fase in _fases())
+            [
+              for (final p in fase)
+                NodoDeLlave(
+                  ronda: p.ronda,
+                  posicion: p.posicion,
+                  a: p.a,
+                  b: p.b,
+                  ganador: p.ganador,
+                  bye: p.bye,
+                  empatado: p.empatado,
+                  nota: p.enRonda,
+                ),
+            ],
+        ],
+        campeon: copia.campeon,
+        // La instantánea no publica plazas ni byes —no hacían falta para la
+        // lista— y el árbol los deduce: las plazas son el doble de partidos de la
+        // primera fase, y los byes los partidos con un solo lado.
+        plazas: copia.llave.isEmpty
+            ? 0
+            : copia.llave.where((p) => p.ronda == 0).length * 2,
+        byes: copia.llave.where((p) => p.ronda == 0 && p.bye).length,
+      );
+
   /// Los partidos agrupados por fase, en orden. La instantánea los trae planos
   /// para que el documento sea una lista y no un árbol anidado.
   List<List<PartidoPublicado>> _fases() {
@@ -184,57 +211,14 @@ class TorneoInvitadoScreen extends StatelessWidget {
       (por[p.ronda] ??= []).add(p);
     }
     final claves = por.keys.toList()..sort();
+    // Dentro de la fase, por POSICIÓN: el orden de la lista del documento no es
+    // garantía, y el árbol sí depende de él para saber qué alimenta a qué.
+    for (final k in claves) {
+      por[k]!.sort((a, b) => a.posicion.compareTo(b.posicion));
+    }
     return [for (final k in claves) por[k]!];
   }
 
-  /// Un partido publicado. Mismo criterio que dentro de la app: se dice POR QUÉ
-  /// pasó quien pasó, o el cuadro es un veredicto sin motivo.
-  Widget _partido(GolfTheme t, PartidoPublicado p) {
-    Widget lado(String? nombre) {
-      final gana = nombre != null && nombre == p.ganador;
-      return Row(children: [
-        Expanded(
-          child: Text(nombre ?? 'Por decidir',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  color: nombre == null || !gana ? t.sub : t.text,
-                  fontSize: 13,
-                  fontWeight: gana ? FontWeight.w800 : FontWeight.w500)),
-        ),
-        if (gana) Icon(Icons.arrow_forward, size: 13, color: t.primary),
-      ]);
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: t.card,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-            color: p.empatado ? t.scoreOver.withValues(alpha: 0.6) : t.divider),
-      ),
-      child: Column(children: [
-        lado(p.a),
-        const SizedBox(height: 5),
-        lado(p.b),
-        if (p.bye || p.empatado || p.enRonda != null) ...[
-          const SizedBox(height: 6),
-          Text(
-              p.bye
-                  ? 'Pasa sin jugar'
-                  : p.empatado
-                      ? 'Empatados en ${p.enRonda}. Falta decidir quién pasa.'
-                      : 'Se resolvió en ${p.enRonda}',
-              style: TextStyle(
-                  color: p.empatado ? t.scoreOver : t.sub,
-                  fontSize: 10.5,
-                  height: 1.3)),
-        ],
-      ]),
-    );
-  }
 
   Widget _tarjeta(GolfTheme t, String titulo, List<String> lineas) => Container(
         width: double.infinity,

@@ -22,6 +22,9 @@ import '../../models/torneo.dart';
 import '../../providers/perfil_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/torneo_provider.dart';
+import '../../providers/user_profile_provider.dart';
+import '../../services/user_profile_service.dart';
+import '../../widgets/bracket_tree.dart';
 import '../setup/setup_screen.dart';
 
 /// El nombre para enseñar de un playerId.
@@ -76,28 +79,71 @@ class LlaveDelTorneoVista extends StatelessWidget {
         const SizedBox(height: 16),
       ],
       _titulo('EL CUADRO', t),
-      for (var i = 0; i < llave.rondas.length; i++) ...[
-        Padding(
-          padding: const EdgeInsets.only(top: 10, bottom: 6),
-          child: Text(nombreDeRondaDeLlave(llave.rondas[i].length).toUpperCase(),
-              style: TextStyle(
-                  color: t.sub,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.8)),
-        ),
-        for (final e in llave.rondas[i]) _filaDelCuadro(context, t, e),
-      ],
-      if (llave.byes > 0) ...[
-        const SizedBox(height: 10),
-        Text(
-            '${llave.byes} ${llave.byes == 1 ? "pasa" : "pasan"} sin jugar la '
-            'primera ronda: el cuadro tiene ${llave.plazas} plazas y hay '
-            '${llave.plazas - llave.byes} inscritos. Los byes van a los '
-            'primeros de la siembra.',
-            style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
-      ],
+      // El ÁRBOL, no la lista de fases. La lista se leía de un vistazo pero no
+      // decía contra quién te podrías enfrentar, que es la mitad de para qué
+      // existe un cuadro.
+      //
+      // El mismo widget que usa la vista de invitado, a través de una forma
+      // neutra: dos dibujos del mismo cuadro habrían divergido en cuanto alguien
+      // tocara uno.
+      ArbolDeLlaveVista(
+        arbol: _arbol(context, llave),
+        t: t,
+        // La identidad ya resuelta, la misma que usa la cifra héroe de Inicio.
+        // Montar otra resolución habría dado dos respuestas a "cuál soy yo".
+        miNombre: _miNombre(context),
+      ),
     ]);
+  }
+
+  /// El cuadro en la forma que dibuja el árbol, con los nombres resueltos.
+  ArbolDeLlave _arbol(BuildContext context, LlaveDelTorneo llave) {
+    String? nom(String? pid) =>
+        pid == null ? null : nombreDeJugador(context, pid);
+    String? cifra(double? v) => v == null ? null : importeDelTorneo(v);
+
+    return ArbolDeLlave(
+      rondas: [
+        for (final fase in llave.rondas)
+          [
+            for (final e in fase)
+              NodoDeLlave(
+                ronda: e.ronda,
+                posicion: e.posicion,
+                a: nom(e.a),
+                b: nom(e.b),
+                ganador: nom(e.ganador),
+                bye: e.bye,
+                empatado: e.empatado,
+                desempatadoAMano: e.desempatadoAMano,
+                nota: e.roundName,
+                medidaA: torneo.metodo == MetodoDePuntuacion.dinero ||
+                        torneo.metodo == MetodoDePuntuacion.posicion
+                    ? cifra(e.medidaA)
+                    : e.medidaA?.toStringAsFixed(0),
+                medidaB: torneo.metodo == MetodoDePuntuacion.dinero ||
+                        torneo.metodo == MetodoDePuntuacion.posicion
+                    ? cifra(e.medidaB)
+                    : e.medidaB?.toStringAsFixed(0),
+              ),
+          ],
+      ],
+      campeon: nom(llave.campeon),
+      plazas: llave.plazas,
+      byes: llave.byes,
+    );
+  }
+
+  /// Mi nombre, para resaltar mi camino.
+  ///
+  /// Sale de la identidad que ya existe —la del tablero de Inicio— y no de una
+  /// resolución nueva: dos respuestas a "cuál de estos soy yo" es exactamente el
+  /// fallo que aquella identidad vino a arreglar.
+  String? _miNombre(BuildContext context) {
+    final mio = context.read<UserProfileProvider>().profile?.myPlayerId ??
+        UserProfileService.miJugadorId;
+    if (mio == null) return null;
+    return nombreDeJugador(context, mio);
   }
 
   Widget _titulo(String txt, GolfTheme t) => Padding(
@@ -259,72 +305,4 @@ class LlaveDelTorneoVista extends StatelessWidget {
     );
   }
 
-  /// Una fila del cuadro entero: los dos lados y quién pasó.
-  Widget _filaDelCuadro(BuildContext context, GolfTheme t, Enfrentamiento e) {
-    Widget lado(String? pid, double? medida) {
-      final gana = pid != null && pid == e.ganador;
-      return Row(children: [
-        Expanded(
-          child: Text(pid == null ? 'Por decidir' : nombreDeJugador(context, pid),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  color: pid == null
-                      ? t.sub
-                      : gana
-                          ? t.text
-                          : t.sub,
-                  fontSize: 13,
-                  fontWeight: gana ? FontWeight.w800 : FontWeight.w500)),
-        ),
-        if (medida != null)
-          Text(
-              torneo.metodo == MetodoDePuntuacion.dinero ||
-                      torneo.metodo == MetodoDePuntuacion.posicion
-                  ? importeDelTorneo(medida)
-                  : medida.toStringAsFixed(0),
-              style: GolfType.bodyNum(gana ? t.text : t.sub, size: 12.5)),
-        if (gana) ...[
-          const SizedBox(width: 6),
-          Icon(Icons.arrow_forward, size: 13, color: t.primary),
-        ],
-      ]);
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: t.card,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-            color: e.empatado ? t.scoreOver.withValues(alpha: 0.6) : t.divider),
-      ),
-      child: Column(children: [
-        lado(e.a, e.medidaA),
-        const SizedBox(height: 5),
-        lado(e.b, e.medidaB),
-        // Por qué pasó quien pasó. Sin esto el cuadro es un veredicto sin
-        // motivo, que es justo lo que hace discutir el número en vez de la regla.
-        if (e.bye ||
-            e.empatado ||
-            e.desempatadoAMano ||
-            e.roundName != null) ...[
-          const SizedBox(height: 6),
-          Text(
-              e.bye
-                  ? 'Pasa sin jugar'
-                  : e.empatado
-                      ? 'Empatados en ${e.roundName}. Falta decidir quién pasa.'
-                      : e.desempatadoAMano
-                          ? 'Empataron en ${e.roundName}. Lo decidisteis vosotros.'
-                          : 'Se resolvió en ${e.roundName}',
-              style: TextStyle(
-                  color: e.empatado ? t.scoreOver : t.sub,
-                  fontSize: 10.5,
-                  height: 1.3)),
-        ],
-      ]),
-    );
-  }
 }

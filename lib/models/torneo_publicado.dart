@@ -122,6 +122,16 @@ class JornadaPublicada {
 /// ronda y la fecha sí, porque son el "por qué".
 class PartidoPublicado {
   final int ronda;
+
+  /// Dónde está dentro de su fase, contando desde arriba.
+  ///
+  /// Es lo único que le faltaba a la instantánea para que la vista de invitado
+  /// pueda dibujar el ÁRBOL y no una lista: el partido i de la fase n lo
+  /// alimentan el 2i y el 2i+1 de la n-1, y sin la posición eso no se puede
+  /// reconstruir. Es un número, no un id: la regla de qué no va en la
+  /// instantánea sigue intacta.
+  final int posicion;
+
   final String faseNombre;
   final String? a;
   final String? b;
@@ -135,6 +145,7 @@ class PartidoPublicado {
 
   const PartidoPublicado({
     required this.ronda,
+    this.posicion = 0,
     required this.faseNombre,
     this.a,
     this.b,
@@ -149,6 +160,7 @@ class PartidoPublicado {
 
   Map<String, dynamic> toJson() => {
         'ronda': ronda,
+        if (posicion != 0) 'posicion': posicion,
         'faseNombre': faseNombre,
         if (a != null) 'a': a,
         if (b != null) 'b': b,
@@ -163,6 +175,7 @@ class PartidoPublicado {
 
   factory PartidoPublicado.fromJson(Map<String, dynamic> j) => PartidoPublicado(
         ronda: (j['ronda'] as num?)?.toInt() ?? 0,
+        posicion: (j['posicion'] as num?)?.toInt() ?? 0,
         faseNombre: (j['faseNombre'] as String?) ?? '',
         a: j['a'] as String?,
         b: j['b'] as String?,
@@ -323,6 +336,7 @@ class TorneoPublicado {
           for (final e in nivel)
             PartidoPublicado(
               ronda: e.ronda,
+              posicion: e.posicion,
               faseNombre: nombreDeRondaDeLlave(nivel.length),
               a: conNombre(e.a),
               b: conNombre(e.b),
