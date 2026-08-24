@@ -39,6 +39,7 @@ import '../../models/models.dart';
 import '../../models/punto_de_torneo.dart';
 import '../../models/torneo.dart';
 import '../../providers/round_provider.dart';
+import '../../providers/user_profile_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/course_picker_sheet.dart';
@@ -74,12 +75,25 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
     final t = widget.torneo;
     if (t == null) return null;
     final dir = context.read<PlayerProvider>().directory;
-    return t.conFichas({
+    final resuelto = t.conFichas({
       for (final pw in dir) pw.displayName: pw.player.id,
       // Los creados aquí mismo todavía no están en el directorio del provider.
       for (final e in _creados.entries) e.value.name: e.key,
     });
+    // Y MI reclamación manda sobre el nombre. "Soy Carlos Angel" no dice "tengo
+    // una ficha que se llama así": dice que ese de la lista soy yo, y mi ficha
+    // puede llamarse "CAV". Sin esto me quedaba fuera de mi propio torneo, con la
+    // consecuencia que no es cosmética: una ronda del torneo en la que no estoy.
+    final mia = context.read<UserProfileProvider>().profile?.myPlayerId;
+    return mia == null ? resuelto : resuelto.conMiFicha(mia);
   }
+
+  /// Nombre de cada ficha, para resolver cómo llamo yo a los del padrón.
+  Map<String, String> get _nombreDeFicha => {
+        for (final pw in context.read<PlayerProvider>().directory)
+          pw.player.id: pw.displayName,
+        for (final e in _creados.entries) e.key: e.value.name,
+      };
 
   /// Quiénes juegan HOY. Con grupo, sus habituales marcados.
   ///
@@ -89,14 +103,43 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
   /// Desde un torneo sin plantilla arranca con QUIEN SOY YO y nadie más: marcar
   /// a los veinte del padrón sería peor que no marcar a ninguno, porque hay que
   /// desmarcar diecisiete para jugar un cuarteto. Los demás se añaden del padrón.
-  late final List<String> _hoy = _inicial();
+  final List<String> _hoy = [];
+  bool _sembrado = false;
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Aquí y no en un inicializador de campo: resolver quién soy necesita el
+    // directorio y el perfil, o sea el contexto. Una sola vez, porque después
+    // _hoy es de quien lo esté editando.
+    if (_sembrado) return;
+    _sembrado = true;
+    _hoy.addAll(_inicial());
+  }
+
+  /// Quién viene marcado, y de dónde sale ESA decisión.
+  ///
+  /// ── Nunca del directorio ──────────────────────────────────────────────────
+  ///
+  /// Quién juega la ronda de hoy no lo decide mi lista de compañeros. En una liga
+  /// puedo jugar con cualquiera de los inscritos, con gente de fuera o con nadie
+  /// del torneo. Así que marcado viene:
+  ///
+  ///   · YO, si reclamé un jugador del padrón. Soy el único que seguro juega.
+  ///   · Los habituales de la PLANTILLA, si el torneo fija una — y entonces sí lo
+  ///     dice el torneo. Es el caso del shotgun: el organizador armó el grupo,
+  ///     así que la ronda trae a sus compañeros.
+  ///
+  /// Nadie más. Y cada fila lleva escrito de dónde viene, para que la pregunta
+  /// "¿por qué está marcado este?" se pueda contestar mirando.
   List<String> _inicial() {
-    final g = widget.grupo;
-    if (g != null) return List.of(g.playerIds);
-    final t = widget.torneo;
-    final mio = t?.yoSoy == null ? null : t!.fichaDe[t.yoSoy];
-    return mio == null ? <String>[] : [mio];
+    final fuera = <String>[];
+    final mio = _tor?.miFicha;
+    if (mio != null) fuera.add(mio);
+    for (final id in widget.grupo?.playerIds ?? const <String>[]) {
+      if (!fuera.contains(id)) fuera.add(id);
+    }
+    return fuera;
   }
 
   /// 'handicap' · 'sliding' · 'ninguna'. Sin elegir hasta que se toque.
@@ -373,17 +416,60 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const SizedBox(height: 10),
-      for (final id in habituales)
-        _filaJugador(t, nombre(id), _hoy.contains(id), habitual: true,
+      // YO primero, siempre. Soy el único que seguro juega esta ronda.
+      if (_tor?.miFicha != null)
+        _filaJugador(t, nombre(_tor!.miFicha!), _hoy.contains(_tor!.miFicha!),
+            etiqueta: 'tú',
             onTap: () => setState(() {
-                  if (!_hoy.remove(id)) _hoy.add(id);
+                  if (!_hoy.remove(_tor!.miFicha!)) _hoy.add(_tor!.miFicha!);
                 })),
-      // Invitados: los que no son del grupo pero juegan hoy. Un inscrito del
-      // torneo NO es un invitado —está en el padrón— así que no lleva la
-      // etiqueta: decirle invitado a quien pagó el bote sería raro.
-      for (final id in _hoy.where((x) => !habituales.contains(x)))
-        _filaJugador(t, nombre(id), true, habitual: _delPadron(id),
+      for (final id in habituales)
+        if (id != _tor?.miFicha)
+          _filaJugador(t, nombre(id), _hoy.contains(id),
+              etiqueta: _porQueEsta(id),
+              onTap: () => setState(() {
+                    if (!_hoy.remove(id)) _hoy.add(id);
+                  })),
+      // Los añadidos de hoy. La etiqueta dice de dónde vienen —del padrón, del
+      // torneo, o a mano— para que "¿por qué está marcado este?" se conteste
+      // mirando en vez de adivinando.
+      for (final id
+          in _hoy.where((x) => !habituales.contains(x) && x != _tor?.miFicha))
+        _filaJugador(t, nombre(id), true,
+            etiqueta: _porQueEsta(id) ?? 'invitado',
             onTap: () => setState(() => _hoy.remove(id))),
+
+      // ── Y si no me pudieron resolver ─────────────────────────────────────
+      //
+      // Pasa si la cuenta no tiene jugador propio asignado. No se materializa en
+      // silencio: hace falta el handicap, y sobre todo hace falta que se vea, que
+      // la consecuencia de no estar no es cosmética.
+      if (_tor?.yoSoy != null && _tor?.miFicha == null) ...[
+        const SizedBox(height: 8),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _sumarDelPadron(t, _tor!.yoSoy!),
+          child: Container(
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: t.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.primary),
+            ),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('+ Ponerme en la ronda (${_tor!.yoSoy})',
+                      style: GolfType.body(t.text)
+                          .copyWith(fontWeight: FontWeight.w700)),
+                  Text(
+                      'Sin ti, esta ronda contaría para el torneo sin contar '
+                      'para nadie.',
+                      style: GolfType.label(t.danger)),
+                ]),
+          ),
+        ),
+      ],
 
       // ── El padrón del torneo ─────────────────────────────────────────────
       //
@@ -407,7 +493,12 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(color: t.primary.withValues(alpha: 0.35)),
                 ),
-                child: Text('+ $n', style: GolfType.label(t.primary)),
+                // El nombre que YO uso para esa persona, no el del padrón: es
+                // el que va a salir en la captura y en el historial, y tener dos
+                // vocabularios en la misma vista hacía parecer que eran dos
+                // clases de gente distintas.
+                child: Text('+ ${_tor!.comoLoLlamo(n, _nombreDeFicha)}',
+                    style: GolfType.label(t.primary)),
               ),
             ),
         ]),
@@ -484,9 +575,6 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
     ]);
   }
 
-  /// Si este id es de alguien del padrón del torneo.
-  bool _delPadron(String id) => _tor?.fichaDe.values.contains(id) ?? false;
-
   /// Los del padrón que hoy no están marcados, por nombre.
   ///
   /// Se compara por FICHA cuando la hay y por nombre cuando no: alguien del
@@ -495,9 +583,24 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
     final tor = _tor;
     if (tor == null) return const [];
     return tor.padron.where((n) {
+      // YO nunca salgo aquí: no soy un tercero al que añadir. Si mi ficha no se
+      // pudo resolver tengo mi propio bloque, que además dice qué pasa si no me
+      // pongo.
+      if (n == tor.yoSoy) return false;
       final id = tor.fichaDe[n];
       return id == null || !_hoy.contains(id);
     }).toList();
+  }
+
+  /// De dónde viene que esta ficha esté marcada. Null si es un añadido a mano.
+  String? _porQueEsta(String id) {
+    final tor = _tor;
+    if (tor != null && tor.miFicha == id) return 'tú';
+    if (widget.grupo?.playerIds.contains(id) ?? false) {
+      return tor == null ? 'habitual' : 'del torneo';
+    }
+    if (tor?.fichaDe.values.contains(id) ?? false) return 'del padrón';
+    return null;
   }
 
   /// Añade a alguien del padrón, materializando su ficha si hace falta.
@@ -633,7 +736,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
   }
 
   Widget _filaJugador(GolfTheme t, String nombre, bool dentro,
-          {required bool habitual, required VoidCallback onTap}) =>
+          {String? etiqueta, required VoidCallback onTap}) =>
       GestureDetector(
         // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
         // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
@@ -657,8 +760,8 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
                     style: GolfType.body(dentro ? t.text : t.sub).copyWith(
                         decoration:
                             dentro ? null : TextDecoration.lineThrough))),
-            if (!habitual)
-              Text('invitado', style: GolfType.label(t.primary)),
+            if (etiqueta != null)
+              Text(etiqueta, style: GolfType.label(t.primary)),
           ]),
         ),
       );

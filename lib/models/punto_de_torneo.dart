@@ -162,6 +162,55 @@ class PuntoDeTorneo {
     );
   }
 
+  /// Mi ficha en este torneo, si la reclamación se pudo resolver.
+  ///
+  /// Es el jugador que SEGURO juega la ronda: por eso viene marcado y no se
+  /// ofrece como si fuera un tercero al que añadir.
+  String? get miFicha => yoSoy == null ? null : fichaDe[yoSoy];
+
+  /// Fija cuál de MIS fichas soy yo en este torneo.
+  ///
+  /// ── Por qué la reclamación manda sobre el nombre ──────────────────────────
+  ///
+  /// "Soy Carlos Angel" no dice "tengo una ficha que se llama Carlos Angel":
+  /// dice "ese de la lista soy yo". Y mi ficha propia puede llamarse "CAV",
+  /// porque así me llamo en mi app. Emparejar solo por nombre me dejaría fuera
+  /// de mi propio torneo, o peor, me emparejaría con otra ficha que sí se llama
+  /// así y que no soy yo.
+  ///
+  /// Se aplica DESPUÉS de [conFichas] para que gane: el nombre es una pista, la
+  /// reclamación es una decisión.
+  PuntoDeTorneo conMiFicha(String playerId) {
+    final quien = yoSoy;
+    if (quien == null) return this;
+    return PuntoDeTorneo(
+      torneoId: torneoId,
+      nombre: nombre,
+      emoji: emoji,
+      padron: padron,
+      fichaDe: {...fichaDe, quien: playerId},
+      ventaja: ventaja,
+      campo: campo,
+      yoSoy: yoSoy,
+      conPlantilla: conPlantilla,
+    );
+  }
+
+  /// Cómo se llama alguien del padrón EN MI APP.
+  ///
+  /// Una sola regla para toda la pantalla: si tengo ficha suya, su nombre es el
+  /// que uso en todas partes —el que va a salir en la captura y en el historial—
+  /// y si no la tengo, el del padrón, que es lo único que hay.
+  ///
+  /// Sin esta regla la pantalla mezclaba dos vocabularios —"Luis Herrera" del
+  /// torneo junto a "RAFA" del directorio— y parecían dos clases de gente
+  /// distintas cuando lo único distinto era por dónde entró la ficha.
+  String comoLoLlamo(String nombreDelPadron, Map<String, String> nombreDeFicha) {
+    final id = fichaDe[nombreDelPadron];
+    final local = id == null ? null : nombreDeFicha[id];
+    return local == null || local.isEmpty ? nombreDelPadron : local;
+  }
+
   /// Los del padrón que todavía no tienen ficha. Hay que crearlas al entrar.
   List<String> get sinFicha =>
       padron.where((n) => fichaDe[n] == null).toList();

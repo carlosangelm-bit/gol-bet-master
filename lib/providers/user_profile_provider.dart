@@ -27,6 +27,18 @@ class UserProfileProvider extends ChangeNotifier {
   bool isFavCourse(String courseId) =>
       _favCourses.any((c) => c.courseId == courseId);
 
+  /// Siembra el perfil sin Firestore. Para tests.
+  ///
+  /// Existe porque quién soy YO decide cosas con consecuencias —cuál de los
+  /// jugadores de una ronda de torneo es el que reclamó su nombre en el enlace— y
+  /// eso no se puede probar con un perfil nulo. Mismo patrón que sembrar de
+  /// PlayerProvider y TorneoProvider.
+  void sembrar(UserProfile p) {
+    _profile = p;
+    _loading = false;
+    notifyListeners();
+  }
+
   // ── Suscripción en tiempo real ─────────────────────────────────────────────
   void startListening() {
     // Si ya hay una suscripción activa y tenemos datos, no hacer nada.

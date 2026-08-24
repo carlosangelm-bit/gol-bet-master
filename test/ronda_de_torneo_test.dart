@@ -29,6 +29,7 @@ import 'package:golf_bet_master/models/punto_de_torneo.dart';
 import 'package:golf_bet_master/models/round_result.dart';
 import 'package:golf_bet_master/models/torneo.dart';
 import 'package:golf_bet_master/models/torneo_publicado.dart';
+import 'package:golf_bet_master/models/torneo_seguido.dart';
 import 'package:golf_bet_master/providers/betting_group_provider.dart';
 import 'package:golf_bet_master/providers/handicap_provider.dart';
 import 'package:golf_bet_master/providers/perfil_provider.dart';
@@ -37,6 +38,7 @@ import 'package:golf_bet_master/providers/round_provider.dart';
 import 'package:golf_bet_master/providers/torneo_provider.dart';
 import 'package:golf_bet_master/providers/user_profile_provider.dart';
 import 'package:golf_bet_master/services/player_service.dart';
+import 'package:golf_bet_master/services/user_profile_service.dart';
 import 'package:golf_bet_master/screens/setup/quick_start_screen.dart';
 import 'package:golf_bet_master/providers/auth_provider.dart';
 import 'package:golf_bet_master/screens/torneos/torneo_editor_screen.dart';
@@ -153,7 +155,7 @@ void main() {
       final cuenta = resultadosQueCuentan(
         t,
         [
-          (
+          ResultadoPublicado(
             jugadorNombre: 'dani soto',
             resultado: RoundResult(
               roundId: 'r1',
@@ -494,6 +496,8 @@ void main() {
   });
 
   _pantallaDelTorneo();
+  _quienSoy();
+  _laRondaLlegaALaTabla();
 }
 
 // ── Montaje ─────────────────────────────────────────────────────────────────
@@ -540,7 +544,11 @@ Future<List<String>> _montarEditor(WidgetTester tester, Torneo torneo) async {
 /// gente del organizador— y es la que hace visible lo del handicap.
 Future<List<String>> _montarArranque(
     WidgetTester tester, PuntoDeTorneo punto,
-    {BettingGroup? grupo, bool conDirectorio = false}) async {
+    {BettingGroup? grupo,
+    bool conDirectorio = false,
+    String? miFicha,
+    String miNombre = 'CAV',
+    double miHcp = 12}) async {
   tester.view.physicalSize = const Size(390, 2600);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -553,13 +561,25 @@ Future<List<String>> _montarArranque(
     providers: [
       ChangeNotifierProvider(create: (_) => RoundProvider()),
       ChangeNotifierProvider(create: (_) => HandicapProvider()),
-      ChangeNotifierProvider(create: (_) => UserProfileProvider()),
+      ChangeNotifierProvider<UserProfileProvider>.value(
+          value: UserProfileProvider()
+            ..sembrar(UserProfile(
+                uid: 'uid_yo',
+                displayName: miNombre,
+                email: 'yo@x.com',
+                myPlayerId: miFicha))),
       ChangeNotifierProvider<PlayerProvider>.value(
           value: PlayerProvider()
             ..sembrar([
               if (conDirectorio)
                 for (final e in nombres.entries)
                   PlayerWithLink(player: Player(id: e.key, name: e.value)),
+              // MI ficha, con el apodo con el que me llamo en mi app. El nombre
+              // NO coincide con el del padrón a propósito: es el caso real.
+              if (miFicha != null)
+                PlayerWithLink(
+                    player: Player(
+                        id: miFicha, name: miNombre, handicapBase: miHcp)),
             ])),
     ],
     child: MaterialApp(
@@ -651,6 +671,289 @@ void _pantallaDelTorneo() {
       final errores = await _montarTabla(tester, _liga(cerrado: true));
       expect(errores, isEmpty);
       expect(find.textContaining('Jugar una ronda de'), findsNothing);
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9 · EL ARRANQUE SABE QUIÉN SOY
+//
+// El dato existía —es lo que hace que el enlace diga "Carlos Angel · No soy yo"—
+// y no llegaba. Y la consecuencia no es cosmética: si no caigo en añadirme, juego
+// una ronda del torneo en la que no estoy.
+// ─────────────────────────────────────────────────────────────────────────────
+void _quienSoy() {
+  group('9 · el arranque sabe quién soy', () {
+    testWidgets('CRITERIO 1: vengo marcado, y NO se me ofrece añadirme',
+        (tester) async {
+      final errores = await _montarArranque(
+          tester,
+          PuntoDeTorneo.seguido(
+              _publicar(_liga(ventaja: VentajaDeTorneo.ninguna)),
+              yoSoy: 'Luis Herrera'),
+          miFicha: 'mi_ficha');
+      expect(errores, isEmpty);
+      // Marcado, con su etiqueta, y con MI nombre —no el del padrón—.
+      expect(find.text('CAV'), findsOneWidget);
+      expect(find.text('tú'), findsOneWidget);
+      // Y fuera del padrón: no soy un tercero.
+      expect(find.text('+ Luis Herrera'), findsNothing);
+      expect(find.text('+ CAV'), findsNothing);
+    });
+
+    testWidgets('CRITERIO 2: el contador me incluye', (tester) async {
+      final errores = await _montarArranque(
+          tester,
+          PuntoDeTorneo.seguido(
+              _publicar(_liga(ventaja: VentajaDeTorneo.ninguna)),
+              yoSoy: 'Luis Herrera'),
+          miFicha: 'mi_ficha');
+      expect(errores, isEmpty);
+      expect(_pantalla(tester), contains('1 jugando esta ronda'));
+    });
+
+    testWidgets('la reclamación manda sobre el nombre de mi ficha',
+        (tester) async {
+      // Mi ficha se llama "CAV" y el padrón dice "Luis Herrera". Emparejar solo
+      // por nombre me habría dejado fuera de mi propio torneo.
+      final p = PuntoDeTorneo.seguido(_publicar(_liga()), yoSoy: 'Luis Herrera')
+          .conFichas({'CAV': 'mi_ficha'})
+          .conMiFicha('mi_ficha');
+      expect(p.miFicha, 'mi_ficha');
+      expect(p.comoLoLlamo('Luis Herrera', {'mi_ficha': 'CAV'}), 'CAV');
+    });
+
+    testWidgets('CRITERIO 3: nadie más viene marcado por estar en mi lista',
+        (tester) async {
+      // Los cuatro del padrón están en mi directorio con esos mismos nombres, y
+      // aun así solo entro yo: quién juega hoy no lo decide mi lista de
+      // compañeros.
+      final errores = await _montarArranque(
+          tester,
+          PuntoDeTorneo.seguido(
+              _publicar(_liga(ventaja: VentajaDeTorneo.ninguna)),
+              yoSoy: 'Luis Herrera'),
+          miFicha: 'mi_ficha',
+          conDirectorio: true);
+      expect(errores, isEmpty);
+      expect(_pantalla(tester), contains('1 jugando esta ronda'));
+      // Y los demás se ofrecen, no se imponen.
+      expect(find.text('+ Ana Ruiz'), findsOneWidget);
+      expect(find.text('+ Rafa Gil'), findsOneWidget);
+    });
+
+    testWidgets('con plantilla SÍ vienen marcados, y se dice que es del torneo',
+        (tester) async {
+      // La diferencia entre los dos modelos: en liga eliges, en shotgun viene
+      // dado. Y "dado" tiene que estar escrito, no adivinarse.
+      final errores = await _montarArranque(
+          tester,
+          PuntoDeTorneo.propio(
+              _liga(ventaja: VentajaDeTorneo.ninguna, plantillaId: 'bg_1'),
+              nombres: nombres,
+              yoSoy: 'Luis Herrera'),
+          grupo: BettingGroup(
+              id: 'bg_1',
+              name: 'Los sábados',
+              playerIds: const [beto, caro],
+              updatedAt: DateTime(2026, 1, 1)),
+          miFicha: 'mi_ficha',
+          conDirectorio: true);
+      expect(errores, isEmpty);
+      expect(find.text('del torneo'), findsNWidgets(2));
+      expect(_pantalla(tester), contains('3 jugando esta ronda'));
+    });
+
+    testWidgets('si no me pueden resolver, se dice lo que pasa si no me pongo',
+        (tester) async {
+      // Sin jugador propio en la cuenta. No se materializa en silencio: hace
+      // falta el handicap y, sobre todo, hace falta que se vea.
+      final errores = await _montarArranque(
+          tester,
+          PuntoDeTorneo.seguido(
+              _publicar(_liga(ventaja: VentajaDeTorneo.ninguna)),
+              yoSoy: 'Luis Herrera'));
+      expect(errores, isEmpty);
+      expect(find.text('+ Ponerme en la ronda (Luis Herrera)'), findsOneWidget);
+      expect(_pantalla(tester),
+          contains('contaría para el torneo sin contar para nadie'));
+      expect(_pantalla(tester), contains('0 jugando esta ronda'));
+    });
+
+    testWidgets('CRITERIO 4: un solo vocabulario de nombres', (tester) async {
+      // El padrón dice "Ana Ruiz" y yo la tengo como "ANITA". Sale ANITA, que es
+      // como va a salir en la captura y en el historial.
+      final p = PuntoDeTorneo.seguido(_publicar(_liga()))
+          .conFichas({'ANITA': 'x'});
+      // Sin ficha, el del padrón; con ficha, el mío. Una sola regla.
+      expect(p.comoLoLlamo('Ana Ruiz', const {}), 'Ana Ruiz');
+      expect(
+          p.conMiFicha('x').comoLoLlamo('Ana Ruiz', const {'x': 'ANITA'}),
+          'Ana Ruiz',
+          reason: 'ANITA no cruza con Ana Ruiz por nombre, así que no es ella');
+      final q = PuntoDeTorneo.seguido(_publicar(_liga()))
+          .conFichas({'ana ruiz': 'y'});
+      expect(q.comoLoLlamo('Ana Ruiz', const {'y': 'ANITA'}), 'ANITA');
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10 · Y LA RONDA LLEGA A LA TABLA
+//
+// El fallo que salió de mirar el punto 1: el resultado publicado llegaba, la
+// ronda se contaba, y NADIE tenía nada. Los ids de la ronda son del directorio
+// de su autor y los inscritos del directorio del organizador, así que la tabla
+// sumaba sobre ids que no reconocía.
+//
+// Ningún test lo cazó porque todos modelaban al seguidor con los ids DEL
+// ORGANIZADOR: confirmaban la suposición en vez de probarla.
+// ─────────────────────────────────────────────────────────────────────────────
+void _laRondaLlegaALaTabla() {
+  const org = {
+    'org_carlos': 'Carlos Angel',
+    'org_pepe': 'Pepe Perez',
+    'org_luis': 'Luis Herrera'
+  };
+  Torneo torneoOrg() => Torneo(
+      id: 'cp',
+      nombre: 'Copa',
+      fuente: FuenteDeRondas.marcadas,
+      metodo: MetodoDePuntuacion.dinero,
+      participantes: org.keys.toList());
+
+  RoundResult delSeguidor() => RoundResult(
+        roundId: 'r1',
+        roundName: 'Sábado 1',
+        courseName: 'Los Encinos',
+        playedAt: DateTime(2026, 5, 2),
+        holesPlayed: 18,
+        // SUS ids, y con el apodo que él usa para sí mismo.
+        playerIds: const ['mio_yo', 'mio_pepe'],
+        playerNames: const {'mio_yo': 'CAV', 'mio_pepe': 'Pepe Perez'},
+        balances: const {'mio_yo': 300, 'mio_pepe': -300},
+        pairBalances: const {'mio_pepe|mio_yo': -300},
+        grossByPlayer: const {'mio_yo': 82, 'mio_pepe': 90},
+        netByPlayer: const {'mio_yo': 70, 'mio_pepe': 86},
+        stablefordByPlayer: const {},
+        torneoIds: const ['cp'],
+      );
+
+  group('10 · el resultado del seguidor acredita a quien jugó', () {
+    test('antes de esto la tabla contaba la ronda y no le daba nada a nadie',
+        () {
+      // El contraejemplo, con el mismo dato y sin traducir: es lo que había.
+      final t = torneoOrg();
+      final tabla = tablaDe(t, [delSeguidor()], nombres: org);
+      expect(tabla.rondas, 1, reason: 'la ronda SÍ se contaba');
+      for (final f in [...tabla.filas, ...tabla.bajoMinimo]) {
+        expect(f.jugadas, 0, reason: '${f.nombre} salía a cero');
+      }
+    });
+
+    test('con el id del autor, el dinero llega a su inscrito', () {
+      final t = torneoOrg();
+      final cuentan = resultadosQueCuentan(
+          t,
+          [
+            ResultadoPublicado(
+                jugadorNombre: 'Carlos Angel',
+                jugadorId: 'mio_yo',
+                resultado: delSeguidor())
+          ],
+          nombres: org);
+      expect(cuentan.length, 1);
+      final tabla = tablaDe(t, cuentan, nombres: org);
+      final filas = {
+        for (final f in [...tabla.filas, ...tabla.bajoMinimo]) f.nombre: f
+      };
+      expect(filas['Carlos Angel']!.total, 300);
+      expect(filas['Carlos Angel']!.jugadas, 1);
+      // Y Pepe, que cruzó por nombre: una sola ronda publicada acredita a todos
+      // los inscritos que jugaron en ella.
+      expect(filas['Pepe Perez']!.total, -300);
+      // Luis no jugó.
+      expect(filas['Luis Herrera']!.jugadas, 0);
+    });
+
+    test('sin id del autor —lo publicado antes— cruza lo que puede', () {
+      // Pepe se llama igual en las dos partes, así que él sí. Carlos, que se
+      // apunta como CAV, no: es exactamente lo que el id resuelve.
+      final t = torneoOrg();
+      final cuentan = resultadosQueCuentan(
+          t,
+          [
+            ResultadoPublicado(
+                jugadorNombre: 'Carlos Angel', resultado: delSeguidor())
+          ],
+          nombres: org);
+      final tabla = tablaDe(t, cuentan, nombres: org);
+      final filas = {
+        for (final f in [...tabla.filas, ...tabla.bajoMinimo]) f.nombre: f
+      };
+      expect(filas['Pepe Perez']!.total, -300);
+      expect(filas['Carlos Angel']!.jugadas, 0);
+    });
+
+    test('dos jugadores no pueden acabar en el mismo inscrito', () {
+      // Si mi compañero se llama literalmente igual que el inscrito que YO
+      // reclamé, fundir los dos sumaría el dinero de uno al otro. El autor gana
+      // el sitio y el otro se queda con el suyo.
+      final r = RoundResult(
+        roundId: 'r2',
+        roundName: 'S',
+        courseName: 'X',
+        playedAt: DateTime(2026, 5, 3),
+        holesPlayed: 18,
+        playerIds: const ['mio_yo', 'otro'],
+        playerNames: const {'mio_yo': 'CAV', 'otro': 'Carlos Angel'},
+        balances: const {'mio_yo': 100, 'otro': -100},
+        pairBalances: const {},
+        grossByPlayer: const {},
+        netByPlayer: const {},
+        stablefordByPlayer: const {},
+        torneoIds: const ['cp'],
+      );
+      final salida = conIdsDelTorneo(r,
+          participantePorNombre: {
+            for (final e in org.entries) nombreComparable(e.value): e.key
+          },
+          jugadorNombre: 'Carlos Angel',
+          jugadorId: 'mio_yo');
+      expect(salida.playerIds, ['org_carlos', 'otro']);
+      expect(salida.balances['org_carlos'], 100);
+      expect(salida.balances['otro'], -100);
+    });
+
+    test('el duelo no cambia de signo al traducir los ids', () {
+      // La clave del par guarda la vista del id MENOR. Traducir sin recalcularla
+      // habría invertido quién le ganó a quién sin que nada avisara.
+      final r = delSeguidor();
+      expect(r.netoEntre('mio_yo', 'mio_pepe'), 300);
+      final salida = conIdsDelTorneo(r,
+          participantePorNombre: {
+            for (final e in org.entries) nombreComparable(e.value): e.key
+          },
+          jugadorNombre: 'Carlos Angel',
+          jugadorId: 'mio_yo');
+      expect(salida.netoEntre('org_carlos', 'org_pepe'), 300);
+    });
+
+    test('el id del autor viaja en el documento, no en la instantánea', () {
+      final d = ResultadoDeTorneo(
+        torneoId: 'cp',
+        roundId: 'r1',
+        token: 'tok',
+        torneoOwnerUid: 'uid_org',
+        escritoPor: 'uid_yo',
+        jugadorNombre: 'Carlos Angel',
+        jugadorId: 'mio_yo',
+        resultado: const {'roundId': 'r1'},
+      );
+      expect(d.toJson()['jugadorId'], 'mio_yo');
+      expect(ResultadoDeTorneo.fromJson(d.toJson()).jugadorId, 'mio_yo');
+      // Y la instantánea pública sigue sin ids de jugador.
+      expect(_publicar(_liga()).toJson().toString().contains('pid_'), isFalse);
     });
   });
 }

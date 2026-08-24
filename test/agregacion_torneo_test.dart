@@ -193,7 +193,7 @@ void main() {
       final buenos = resultadosQueCuentan(
           t,
           [
-            (
+            ResultadoPublicado(
               jugadorNombre: 'Luis Herrera',
               resultado: publicado('r1', 'pid_luis', 100)
             ),
@@ -211,7 +211,7 @@ void main() {
       ]) {
         final buenos = resultadosQueCuentan(
             t,
-            [(jugadorNombre: variante, resultado: publicado('r', 'pid_luis', 1))],
+            [ResultadoPublicado(jugadorNombre: variante, resultado: publicado('r', 'pid_luis', 1))],
             nombres: dir);
         expect(buenos, hasLength(1), reason: variante);
       }
@@ -222,7 +222,7 @@ void main() {
       final buenos = resultadosQueCuentan(
           t,
           [
-            (
+            ResultadoPublicado(
               jugadorNombre: 'Carlos Colado',
               resultado: publicado('r2', 'pid_x', 9999)
             ),
@@ -235,7 +235,7 @@ void main() {
       final t = _t(participantes: const ['pid_luis']);
       final buenos = resultadosQueCuentan(
           t,
-          [(jugadorNombre: '', resultado: publicado('r', 'pid_luis', 1))],
+          [ResultadoPublicado(jugadorNombre: '', resultado: publicado('r', 'pid_luis', 1))],
           nombres: dir);
       expect(buenos, isEmpty);
     });
@@ -244,7 +244,7 @@ void main() {
       final t = _t(participantes: const []);
       final buenos = resultadosQueCuentan(
           t,
-          [(jugadorNombre: 'Luis Herrera', resultado: publicado('r1', 'pid_luis', 1))],
+          [ResultadoPublicado(jugadorNombre: 'Luis Herrera', resultado: publicado('r1', 'pid_luis', 1))],
           nombres: dir);
       expect(buenos, isEmpty);
     });
@@ -255,7 +255,7 @@ void main() {
       final t = _t(participantes: const ['pid_luis']);
       expect(
           resultadosQueCuentan(t, [
-            (jugadorNombre: 'Luis Herrera', resultado: publicado('r', 'pid_luis', 1))
+            ResultadoPublicado(jugadorNombre: 'Luis Herrera', resultado: publicado('r', 'pid_luis', 1))
           ]),
           isEmpty);
     });
@@ -263,9 +263,9 @@ void main() {
     test('la liga completa: cada uno cierra la suya y la tabla las cuenta', () {
       final t = _t(participantes: const ['pid_a', 'pid_b', 'pid_c']);
       final publicados = [
-        (jugadorNombre: 'Rafael', resultado: publicado('ra', 'pid_a', 100)),
-        (jugadorNombre: 'Alan', resultado: publicado('rb', 'pid_b', 50)),
-        (jugadorNombre: 'Memo', resultado: publicado('rc', 'pid_c', -150)),
+        ResultadoPublicado(jugadorNombre: 'Rafael', resultado: publicado('ra', 'pid_a', 100)),
+        ResultadoPublicado(jugadorNombre: 'Alan', resultado: publicado('rb', 'pid_b', 50)),
+        ResultadoPublicado(jugadorNombre: 'Memo', resultado: publicado('rc', 'pid_c', -150)),
       ];
       final tabla =
           tablaDe(t, resultadosQueCuentan(t, publicados, nombres: dir));
@@ -280,7 +280,7 @@ void main() {
       final buenos = resultadosQueCuentan(
           t,
           [
-            (
+            ResultadoPublicado(
               jugadorNombre: 'uid_firebase_abc123',
               resultado: publicado('r', 'pid_luis', 1)
             )

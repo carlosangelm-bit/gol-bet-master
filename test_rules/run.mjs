@@ -352,6 +352,35 @@ await prueba('el jugador publica su resultado al torneo del organizador', () =>
       resultado: { roundId: 'ronda_luis', balances: { [INV]: 100 } },
     })));
 
+// El campo que dice CUÁL de los jugadores de la ronda es el autor. Va en este
+// documento —que solo leen el organizador y el autor— y no en la instantánea
+// pública, que sigue sin ids de jugador.
+//
+// Y no hizo falta tocar la regla: el bloque exige unos campos concretos, no una
+// lista cerrada. Esto lo comprueba en vez de darlo por bueno.
+await prueba('y el jugadorId entra sin regla nueva', () =>
+    assertSucceeds(setDoc(doc(invitado, 'torneoResultados', DOC_OK), {
+      torneoId: 'tor_liga',
+      roundId: 'ronda_luis',
+      token: TOKEN,
+      torneoOwnerUid: ORG,
+      escritoPor: INV,
+      jugadorNombre: 'Luis Herrera',
+      jugadorId: 'mio_luis',
+      resultado: { roundId: 'ronda_luis', balances: { mio_luis: 100 } },
+    })));
+
+await prueba('pero el jugadorId no sirve para firmar por otro', () =>
+    assertFails(setDoc(doc(otro, 'torneoResultados', `tor_liga_colado`), {
+      torneoId: 'tor_liga',
+      roundId: 'colado',
+      token: TOKEN,
+      torneoOwnerUid: ORG,
+      escritoPor: INV,
+      jugadorId: 'mio_luis',
+      resultado: { roundId: 'colado' },
+    })));
+
 await prueba('y el organizador lo lee: es de su torneo', () =>
     assertSucceeds(getDoc(doc(organizador, 'torneoResultados', DOC_OK))));
 await prueba('y el autor también, para poder corregirlo', () =>

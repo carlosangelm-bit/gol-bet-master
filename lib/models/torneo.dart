@@ -32,6 +32,7 @@
 // cambia, la tabla siguiente ya sale distinta.
 // ─────────────────────────────────────────────────────────────────────────────
 import 'models.dart';
+import '../engines/bet_engine.dart';
 import 'round_result.dart';
 
 /// De dónde salen las rondas que cuentan.
@@ -2179,22 +2180,160 @@ String resumenDeLlave(LlaveDelTorneo llave, Map<String, String> nombres) {
 ///
 /// Se compara normalizado —sin acentos ni mayúsculas— por lo mismo que la
 /// importación: es lo único que las dos partes escriben a mano.
+/// Un resultado publicado por alguien que sigue el torneo.
+///
+/// Clase y no registro porque [jugadorId] es opcional —los resultados publicados
+/// antes de que existiera no lo traen— y un registro obliga a rellenar todos sus
+/// campos en cada sitio que lo construye, incluidos los tests.
+class ResultadoPublicado {
+  /// El nombre de la lista del organizador que su autor reclama.
+  final String jugadorNombre;
+
+  /// El id que ESA PERSONA usa para sí misma dentro de su propia ronda.
+  ///
+  /// ── Por qué hace falta, y por qué no lo vio ningún test ───────────────────
+  ///
+  /// El nombre reclamado dice QUIÉN publica. No dice cuál de los jugadores de la
+  /// ronda es. Y hacen falta las dos cosas, porque los ids de la ronda son del
+  /// directorio de su autor y los inscritos son del directorio del organizador:
+  /// sin traducir, la tabla suma sobre ids que no reconoce y le da cero a todo
+  /// el mundo. Contando la ronda, eso sí — "1 ronda" arriba y nadie con nada.
+  ///
+  /// Los tests de agregación no lo cazaron porque modelaban al seguidor con los
+  /// ids DEL ORGANIZADOR, o sea confirmando la suposición en vez de probarla.
+  ///
+  /// No basta con emparejar por [RoundResult.playerNames]: quien juega tiene a
+  /// su gente con los apodos de siempre —"CAV", "RAFA"— y el padrón lleva nombres
+  /// completos. El id resuelve al autor sin depender de cómo se llame a sí mismo.
+  ///
+  /// Null en lo publicado antes de que el campo existiera: entonces se empareja
+  /// solo por nombre, que es lo que se podía hacer.
+  final String? jugadorId;
+
+  final RoundResult resultado;
+
+  const ResultadoPublicado({
+    required this.jugadorNombre,
+    required this.resultado,
+    this.jugadorId,
+  });
+}
+
+/// Traduce los ids de un resultado publicado a los del organizador.
+///
+/// [participantePorNombre] va con la clave ya normalizada: nombreComparable del
+/// nombre del inscrito → su id en el directorio del organizador.
+///
+/// Regla por jugador de la ronda:
+///
+///   · Si es el AUTOR —[jugadorId]— se traduce al inscrito que reclamó, sin
+///     mirar cómo se llame en su propia ficha. La reclamación manda: eso es lo
+///     que "soy este de la lista" significa.
+///   · Si no, se intenta por su nombre. Un compañero apuntado con el mismo
+///     nombre que un inscrito ES ese inscrito, y así una sola ronda publicada
+///     acredita a todos los del torneo que jugaron en ella.
+///   · Y si no cruza, se queda como está. No es inscrito, y la tabla ya lo
+///     descarta por su cuenta.
+///
+/// Dos jugadores no pueden acabar en el mismo id: fundiría dos personas en una
+/// fila y el dinero de una se le sumaría a la otra. El autor gana el sitio y el
+/// otro se queda con el suyo.
+RoundResult conIdsDelTorneo(
+  RoundResult r, {
+  required Map<String, String> participantePorNombre,
+  String? jugadorNombre,
+  String? jugadorId,
+}) {
+  final destino = <String, String>{};
+  final tomados = <String>{};
+
+  // El autor primero, para que gane el sitio si hay colisión.
+  if (jugadorId != null &&
+      jugadorNombre != null &&
+      r.playerIds.contains(jugadorId)) {
+    final pid = participantePorNombre[nombreComparable(jugadorNombre)];
+    if (pid != null) {
+      destino[jugadorId] = pid;
+      tomados.add(pid);
+    }
+  }
+  for (final x in r.playerIds) {
+    if (destino.containsKey(x)) continue;
+    final n = r.playerNames[x];
+    final pid = n == null ? null : participantePorNombre[nombreComparable(n)];
+    if (pid == null || tomados.contains(pid)) continue;
+    destino[x] = pid;
+    tomados.add(pid);
+  }
+  if (destino.isEmpty) return r;
+
+  String tr(String x) => destino[x] ?? x;
+  Map<String, V> porJugador<V>(Map<String, V> m) =>
+      {for (final e in m.entries) tr(e.key): e.value};
+
+  // Los pares se reconstruyen con pairKey porque la clave guarda la vista del id
+  // MENOR: traducir los ids sin recalcularla invertiría el signo de un duelo sin
+  // que nada avisara.
+  final pares = <String, double>{};
+  for (final e in r.pairBalances.entries) {
+    // El separador es '|', el de BetEngine.pairKey. Está aquí y no en una
+    // constante porque pairKey lo tiene literal: una constante nueva sería un
+    // cuarto sitio donde puede desincronizarse.
+    final partes = e.key.split('|');
+    if (partes.length != 2) {
+      pares[e.key] = e.value;
+      continue;
+    }
+    final a = partes[0], b = partes[1];
+    final na = tr(a), nb = tr(b);
+    final clave = BetEngine.pairKey(na, nb);
+    // El mapa guarda lo que le sacó el id menor al mayor. Si traducir cambia
+    // quién es el menor, el valor cambia de signo.
+    final antesMenor = a.compareTo(b) <= 0;
+    final ahoraMenor = na.compareTo(nb) <= 0;
+    pares[clave] = antesMenor == ahoraMenor ? e.value : -e.value;
+  }
+
+  return RoundResult(
+    roundId: r.roundId,
+    roundName: r.roundName,
+    courseName: r.courseName,
+    playedAt: r.playedAt,
+    holesPlayed: r.holesPlayed,
+    playerIds: r.playerIds.map(tr).toList(),
+    playerNames: porJugador(r.playerNames),
+    balances: porJugador(r.balances),
+    pairBalances: pares,
+    grossByPlayer: porJugador(r.grossByPlayer),
+    netByPlayer: porJugador(r.netByPlayer),
+    stablefordByPlayer: porJugador(r.stablefordByPlayer),
+    bettingGroupIds: r.bettingGroupIds,
+    torneoIds: r.torneoIds,
+  );
+}
+
 List<RoundResult> resultadosQueCuentan(
   Torneo t,
-  Iterable<({String jugadorNombre, RoundResult resultado})> publicados, {
+  Iterable<ResultadoPublicado> publicados, {
   Map<String, String> nombres = const {},
 }) {
   if (t.participantes.isEmpty) return const [];
-  final inscritos = {
+  final porNombre = <String, String>{
     for (final pid in t.participantes)
-      if (nombres[pid] != null) nombreComparable(nombres[pid]!),
+      if (nombres[pid] != null) nombreComparable(nombres[pid]!): pid,
   };
-  if (inscritos.isEmpty) return const [];
+  if (porNombre.isEmpty) return const [];
   return [
     for (final p in publicados)
       if (p.jugadorNombre.isNotEmpty &&
-          inscritos.contains(nombreComparable(p.jugadorNombre)))
-        p.resultado,
+          porNombre.containsKey(nombreComparable(p.jugadorNombre)))
+        // Filtrar y TRADUCIR van juntos a propósito. Separarlos dejaría un
+        // tercer sitio donde alguien puede olvidarse de la mitad, y la mitad que
+        // se olvida no da error: da ceros.
+        conIdsDelTorneo(p.resultado,
+            participantePorNombre: porNombre,
+            jugadorNombre: p.jugadorNombre,
+            jugadorId: p.jugadorId),
   ];
 }
 

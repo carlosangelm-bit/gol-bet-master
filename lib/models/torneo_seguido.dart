@@ -128,6 +128,21 @@ class ResultadoDeTorneo {
   /// Esto SÍ es lo que decide si cuenta: ver resultadosQueCuentan.
   final String jugadorNombre;
 
+  /// Cuál de los jugadores de la ronda es el autor.
+  ///
+  /// Su id en SU propio directorio, no en el del organizador. Es lo que permite
+  /// traducir la ronda a los ids del torneo: el nombre dice quién publica, el id
+  /// dice cuál de los que jugaron es. Sin las dos cosas la tabla suma sobre ids
+  /// que no reconoce y le da cero a todo el mundo, contando la ronda igual.
+  ///
+  /// Va en este documento y NO en la instantánea pública: aquí solo leen el
+  /// organizador y el autor —la regla lo comprueba— y es el id que su autor usa
+  /// para sí mismo. La instantánea sigue sin ids de jugador.
+  ///
+  /// Y no hace falta regla nueva: el bloque torneoResultados exige unos campos
+  /// concretos, no una lista cerrada, así que un campo más entra sin tocarla.
+  final String jugadorId;
+
   /// El resultado, en el mismo JSON que RoundResult.
   final Map<String, dynamic> resultado;
 
@@ -138,6 +153,7 @@ class ResultadoDeTorneo {
     required this.torneoOwnerUid,
     required this.escritoPor,
     this.jugadorNombre = '',
+    this.jugadorId = '',
     required this.resultado,
   });
 
@@ -152,6 +168,7 @@ class ResultadoDeTorneo {
         'torneoOwnerUid': torneoOwnerUid,
         'escritoPor': escritoPor,
         if (jugadorNombre.isNotEmpty) 'jugadorNombre': jugadorNombre,
+        if (jugadorId.isNotEmpty) 'jugadorId': jugadorId,
         'resultado': resultado,
       };
 
@@ -163,6 +180,7 @@ class ResultadoDeTorneo {
         torneoOwnerUid: (j['torneoOwnerUid'] as String?) ?? '',
         escritoPor: (j['escritoPor'] as String?) ?? '',
         jugadorNombre: (j['jugadorNombre'] as String?) ?? '',
+        jugadorId: (j['jugadorId'] as String?) ?? '',
         resultado: j['resultado'] is Map
             ? Map<String, dynamic>.from(j['resultado'] as Map)
             : const {},

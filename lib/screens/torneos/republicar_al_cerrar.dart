@@ -34,6 +34,7 @@ import '../../models/torneo_seguido.dart';
 import '../../models/torneo_publicado.dart';
 import '../../providers/perfil_provider.dart';
 import '../../providers/player_provider.dart';
+import '../../providers/user_profile_provider.dart';
 import '../../providers/torneo_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
@@ -53,6 +54,17 @@ Future<void> _publicarASeguidos(
   final mios = prov.torneos.map((t) => t.id).toSet();
   final resultado = RoundResult.fromRound(round, playedAt: round.createdAt);
 
+  // CUÁL de los jugadores de esta ronda soy yo. El nombre reclamado dice quién
+  // publica; esto dice a quién hay que acreditar, y las dos cosas hacen falta:
+  // los ids de la ronda son de MI directorio y los inscritos son del directorio
+  // del organizador.
+  //
+  // Si no juego en la ronda —la anoté para otros— se publica sin id y la tabla
+  // empareja por nombre, que es lo que se puede hacer. Y se dice en el aviso de
+  // más abajo, porque una ronda del torneo en la que no estoy es raro.
+  final miFicha = context.read<UserProfileProvider>().profile?.myPlayerId;
+  final yoJuego = miFicha != null && resultado.playerIds.contains(miFicha);
+
   for (final id in round.torneoIds) {
     if (mios.contains(id)) continue; // el mío ya está donde tiene que estar
     final seg = prov.seguidos.where((s) => s.torneoId == id).firstOrNull;
@@ -68,6 +80,7 @@ Future<void> _publicarASeguidos(
         // que permite emparejar el resultado con un inscrito: el uid no puede,
         // porque es otro espacio de ids.
         jugadorNombre: seg.jugadorNombre,
+        jugadorId: yoJuego ? miFicha : '',
         resultado: resultado.toJson(),
       ));
       debugPrint('[Torneo] resultado de ${round.id} publicado a ${seg.nombre}');

@@ -625,8 +625,8 @@ class FirestoreService {
   ///
   /// La procedencia viaja porque la tabla la necesita: solo cuentan los de gente
   /// inscrita, y eso es lo que la regla no puede comprobar al escribir.
-  static Future<List<({String jugadorNombre, RoundResult resultado})>>
-      resultadosPublicados(String torneoId) async {
+  static Future<List<ResultadoPublicado>> resultadosPublicados(
+      String torneoId) async {
     final uid = AuthService.uid;
     if (uid == null) return const [];
     try {
@@ -634,15 +634,19 @@ class FirestoreService {
           .where('torneoOwnerUid', isEqualTo: uid)
           .where('torneoId', isEqualTo: torneoId)
           .get();
-      final out = <({String jugadorNombre, RoundResult resultado})>[];
+      final out = <ResultadoPublicado>[];
       for (final d in snap.docs) {
         try {
           final r = ResultadoDeTorneo.fromJson(d.data());
           if (r.resultado.isEmpty) continue;
-          out.add((
+          out.add(ResultadoPublicado(
             // El NOMBRE reclamado, no el uid: es lo único que se puede emparejar
             // con la lista de inscritos. Ver resultadosQueCuentan.
             jugadorNombre: r.jugadorNombre,
+            // Y el id, que dice CUÁL de los que jugaron es. Vacío en lo
+            // publicado antes de que el campo existiera; se pasa como null para
+            // que el emparejamiento caiga al nombre, que es lo que se podía.
+            jugadorId: r.jugadorId.isEmpty ? null : r.jugadorId,
             resultado: RoundResult.fromJson(r.resultado),
           ));
         } catch (e) {
