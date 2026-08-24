@@ -181,6 +181,37 @@ extension FormacionInfo on Formacion {
   }
 }
 
+/// El nombre de un lado, hecho con los nombres de quien juega: "CAV+CAM".
+///
+/// Existe porque "Equipo A" sirve para un 2 contra 2 y no sirve para tres
+/// enfrentamientos con la misma pareja base: tres apuestas llamadas "Equipo A vs
+/// Equipo B" son indistinguibles, y hay que poder editar la tercera.
+///
+/// [nombres] es id → nombre completo; se usa el primero de pila, que es como se
+/// nombra a la gente en el resto de la app.
+String nombreDeLado(List<String> ids, Map<String, String> nombres) {
+  if (ids.isEmpty) return '—';
+  return ids
+      .map((id) => (nombres[id] ?? id).split(' ').first)
+      .join('+');
+}
+
+/// El enfrentamiento entero: "CAV+CAM vs AAM+RICH".
+String nombreDeEnfrentamiento(
+        List<String> a, List<String> b, Map<String, String> nombres) =>
+    '${nombreDeLado(a, nombres)} vs ${nombreDeLado(b, nombres)}';
+
+/// Clave estable de un enfrentamiento entre dos lados.
+///
+/// Los ids de cada lado ordenados, y los dos lados ordenados entre sí, para que
+/// dé igual quién sea A y quién sea B. Es lo que permite guardar un importe por
+/// enfrentamiento sin que reordenar la siembra se lo adjudique a otro.
+String claveDeEnfrentamiento(List<String> a, List<String> b) {
+  final la = ([...a]..sort()).join(',');
+  final lb = ([...b]..sort()).join(',');
+  return ([la, lb]..sort()).join('|');
+}
+
 /// Cuántas parejas salen de [n] jugadores. Solo para redactar el reparto.
 int _crucesDelResto(int n) => n < 2 ? 0 : n * (n - 1) ~/ 2;
 

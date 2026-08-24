@@ -1299,8 +1299,12 @@ class _BetsHeader extends StatelessWidget {
             t: t,
           ),
           const SizedBox(width: 12),
+          // "duelos POSIBLES", no "duelos": esta cifra cuenta con quién se
+          // podría pactar algo aparte, y la lista de abajo son las APUESTAS. Con
+          // tres enfrentamientos, "8 duelos" encima de tres tarjetas se lee como
+          // un fallo aunque las dos cifras sean correctas.
           _QuickStat(icon: Icons.compare_arrows,
-              label: '${_countDuels(round)} duelos', t: t),
+              label: '${_countDuels(round)} duelos posibles', t: t),
           const SizedBox(width: 12),
           _QuickStat(icon: Icons.list_alt,
               label: '${_countModules(round)} apuestas', t: t),

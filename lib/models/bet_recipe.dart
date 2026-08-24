@@ -24,6 +24,7 @@
 // aquí, en una función testeable, y no a mitad de una pantalla.
 // ─────────────────────────────────────────────────────────────────────────────
 import '../engines/sixes_engine.dart';
+import 'formaciones.dart';
 import 'models.dart';
 
 /// Qué se cuenta. Eje independiente de si la apuesta se parte.
@@ -453,6 +454,11 @@ class BetRecipe {
     required List<String> equipoB,
     TeamBall? bola,
     SingleBallMode submodo = SingleBallMode.scramble,
+    /// Cómo se llama cada lado. Sin esto salían "Equipo A" y "Equipo B", que en
+    /// tres enfrentamientos con la misma pareja base son tres apuestas
+    /// indistinguibles.
+    String? nombreA,
+    String? nombreB,
   }) {
     if (!porEquipos) return mod;
     if (mod.sides != null && mod.sides!.isNotEmpty) return mod;
@@ -471,12 +477,12 @@ class BetRecipe {
       sides: [
         BetSide(
             id: '${mod.id}_A',
-            name: 'Equipo A',
+            name: nombreA ?? 'Equipo A',
             playerIds: List.of(equipoA),
             playMode: modo),
         BetSide(
             id: '${mod.id}_B',
-            name: 'Equipo B',
+            name: nombreB ?? 'Equipo B',
             playerIds: List.of(equipoB),
             playMode: modo),
       ],
@@ -502,6 +508,11 @@ class BetRecipe {
     required List<(List<String>, List<String>)> lados,
     TeamBall? bola,
     SingleBallMode submodo = SingleBallMode.scramble,
+    /// id → nombre, para que los lados se llamen por quien juega.
+    Map<String, String> nombres = const {},
+    /// Importe propio de un enfrentamiento, por índice. Lo que no esté aquí se
+    /// queda con el del módulo.
+    Map<int, double> importes = const {},
   }) {
     if (lados.length <= 1) {
       return [
@@ -510,7 +521,13 @@ class BetRecipe {
             equipoA: lados.isEmpty ? const [] : lados.first.$1,
             equipoB: lados.isEmpty ? const [] : lados.first.$2,
             bola: bola,
-            submodo: submodo)
+            submodo: submodo,
+            nombreA: lados.isEmpty
+                ? null
+                : nombreDeLado(lados.first.$1, nombres),
+            nombreB: lados.isEmpty
+                ? null
+                : nombreDeLado(lados.first.$2, nombres))
       ];
     }
     // Un conteo sin motor de equipo no se multiplica: darle lados no lo haría de
@@ -522,12 +539,21 @@ class BetRecipe {
       final (a, b) = lados[i];
       // Id propio por enfrentamiento: son módulos distintos y el id es lo que
       // los distingue en el ledger y en las hojas de edición.
-      final base = mod.copyWith(id: '${mod.id}_e${i + 1}');
+      var base = mod.copyWith(id: '${mod.id}_e${i + 1}');
+      // El importe propio de este enfrentamiento, si se puso en el paso Montos.
+      final propio = importes[i];
+      if (propio != null && propio > 0) base = aplicarBase(base, propio);
       out.add(conEquiposDeRonda(base,
-              porEquipos: true, equipoA: a, equipoB: b, bola: bola, submodo: submodo)
+              porEquipos: true,
+              equipoA: a,
+              equipoB: b,
+              bola: bola,
+              submodo: submodo,
+              nombreA: nombreDeLado(a, nombres),
+              nombreB: nombreDeLado(b, nombres))
           // El nombre dice CONTRA QUIÉN. Tres apuestas llamadas igual son
           // indistinguibles en la lista, y hay que poder editar la tercera.
-          .copyWith(name: '${mod.type.label} · enfrentamiento ${i + 1}'));
+          .copyWith(name: nombreDeEnfrentamiento(a, b, nombres)));
     }
     return out;
   }

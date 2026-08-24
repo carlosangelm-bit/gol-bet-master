@@ -269,9 +269,13 @@ extension BetModuleTypeRules on BetModuleType {
             sinEseNumeroMuchos:
                 'Con 6 o más no hay una regla estándar que suponer, y '
                 'suponerla sería inventar cómo se reparten los puntos.',
+            // "decididos antes de empezar" y no "fijos de ronda": el texto se
+            // reutiliza con las formaciones, y "pareja base contra el campo" no
+            // tiene unos lados fijos —tiene tres juegos de lados solapados—. Lo
+            // que importa es CUÁNDO se deciden, no cuántos hay.
             sinEquipos: 'Wolf arma SUS PROPIOS equipos, distintos en cada '
                 'hoyo: el Wolf elige compañero al llegar al green. Unos lados '
-                'fijos de ronda serían otra apuesta.',
+                'decididos antes de empezar serían otra apuesta.',
             sinSegmentos: 'Se cobra hoyo a hoyo, así que no hay Front y Back '
                 'que separar.',
             sinMontoPorPareja: 'El importe es del hoyo y se reparte entre los '

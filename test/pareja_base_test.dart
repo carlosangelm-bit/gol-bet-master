@@ -216,6 +216,49 @@ void main() {
       expect(nombres, hasLength(3));
     });
 
+    test('y los LADOS se llaman por sus jugadores, no "Equipo A"', () {
+      // Es lo que la pestaña de Apuestas pinta en cada tarjeta. Con "Equipo A vs
+      // Equipo B" las tres apuestas eran indistinguibles en la lista.
+      final jugadores = _cinco();
+      final mods = BetRecipe.porEnfrentamiento(
+        BetModuleInstance.defaultFor(BetModuleType.nassau, cinco, id: 'm'),
+        lados: enfrentamientosDe(Formacion.parejaBaseVsCampo, jugadores),
+        nombres: {for (final p in jugadores) p.id: p.name},
+      );
+      final etiquetas = [
+        for (final m in mods) '${m.sideA.name} vs ${m.sideB.name}'
+      ];
+      expect(etiquetas.toSet(), hasLength(3),
+          reason: 'tres etiquetas iguales no identifican nada: $etiquetas');
+      for (final e in etiquetas) {
+        expect(e, isNot(contains('Equipo A')));
+        expect(e, contains('+'), reason: 'el lado nombra a los dos: $e');
+      }
+      // Y la pareja base aparece en los tres, que es lo que la identifica.
+      expect(etiquetas.where((e) => e.contains('PID_AA01+PID_BB02')), hasLength(3));
+    });
+
+    test('el importe propio de un enfrentamiento se aplica solo a ese', () {
+      // Criterio 2 del encargo anterior, ahora alcanzable desde el asistente.
+      final jugadores = _cinco();
+      final mods = BetRecipe.porEnfrentamiento(
+        BetModuleInstance(
+          id: 'm',
+          type: BetModuleType.nassau,
+          name: 'N',
+          participantIds: cinco,
+          nassauConfig: const NassauConfig(
+              frontValue: 100, backValue: 0, totalValue: 0),
+        ),
+        lados: enfrentamientosDe(Formacion.parejaBaseVsCampo, jugadores),
+        nombres: {for (final p in jugadores) p.id: p.name},
+        importes: const {2: 20},
+      );
+      expect(mods[0].nassau.frontValue, 100);
+      expect(mods[1].nassau.frontValue, 100);
+      expect(mods[2].nassau.frontValue, 20);
+    });
+
     test('un conteo sin motor de equipo NO se multiplica', () {
       // Tres copias sin lados serían tres apuestas idénticas cobrando el triple.
       final mods = BetRecipe.porEnfrentamiento(

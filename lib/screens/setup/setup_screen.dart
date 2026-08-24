@@ -172,6 +172,13 @@ class _SetupScreenState extends State<SetupScreen> {
   /// Importe base por apuesta.
   final Map<BetCount, double> _montoBase = {};
 
+  /// Importe propio de un enfrentamiento concreto, por índice.
+  ///
+  /// Existe porque con lados solapados —la pareja base juega los tres— alguien
+  /// puede querer que el tercero valga menos. Son tres módulos de verdad, así
+  /// que el importe cabe; lo que faltaba era poder decirlo desde el asistente.
+  final Map<BetCount, Map<int, double>> _montoEnfrentamiento = {};
+
   /// Excepciones: importe propio de un enfrentamiento concreto.
   final Map<BetCount, Map<String, MontoPorCruce>> _montoCruce = {};
 
@@ -230,13 +237,39 @@ class _SetupScreenState extends State<SetupScreen> {
   List<(String, String)> _crucesDisponibles() {
     final lados = _ladosDeLaRonda();
     if (lados == null) return const [];
-    return [
-      for (final a in lados.$1)
-        for (final b in lados.$2)
-          if (!_duelos.any(
-              (d) => (d.a == a && d.b == b) || (d.a == b && d.b == a)))
-            (a, b),
-    ];
+
+    // Compañeros en CUALQUIER enfrentamiento. Con la pareja base, C y D son
+    // compañeros en el primero, así que ofrecerles un duelo aparte contradiría
+    // lo que van a jugar. Es el mismo criterio que usa companerosDeLado en la
+    // pestaña de Apuestas, así que las dos superficies dicen lo mismo.
+    final companeros = <String>{};
+    for (final (a, b) in _enfrentamientos) {
+      for (final lado in [a, b]) {
+        for (var i = 0; i < lado.length; i++) {
+          for (var k = i + 1; k < lado.length; k++) {
+            companeros.add(BetRecipe.cruceKey(lado[i], lado[k]));
+          }
+        }
+      }
+    }
+
+    // Los cruces de TODOS los enfrentamientos, sin repetir.
+    final vistos = <String>{};
+    final out = <(String, String)>[];
+    for (final (ladoA, ladoB) in _enfrentamientos) {
+      for (final a in ladoA) {
+        for (final b in ladoB) {
+          final k = BetRecipe.cruceKey(a, b);
+          if (companeros.contains(k) || !vistos.add(k)) continue;
+          if (_duelos.any(
+              (d) => (d.a == a && d.b == b) || (d.a == b && d.b == a))) {
+            continue;
+          }
+          out.add((a, b));
+        }
+      }
+    }
+    return out;
   }
 
   double _hcpDe(String pid) =>
@@ -1604,16 +1637,77 @@ class _SetupScreenState extends State<SetupScreen> {
     ('Unidades', BetCount.unidades, null),
   ];
 
+  /// De qué conteo salió este módulo. Para recuperar lo que se configuró.
+  BetCount? _conteoDe(BetModuleInstance m) {
+    for (final c in BetCount.values) {
+      if (c.tipoCon(_bola) == m.type) return c;
+    }
+    return null;
+  }
+
+  /// id → nombre de todos los jugadores de la ronda.
+  Map<String, String> get _nombres =>
+      {for (final p in _players) p.id: p.name};
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LOS ENFRENTAMIENTOS DE LA RONDA — fuente única
+  // ══════════════════════════════════════════════════════════════════════════
+  //
+  // El paso Compiten decide los lados; Quién juega, Montos, Revisar y el
+  // lanzamiento los LEEN de aquí.
+  //
+  // Antes cada paso los derivaba por su cuenta de la lista de jugadores, y con
+  // "pareja base contra el campo" los cuatro decían un número distinto: Compiten
+  // 3, Quién juega 10 —los cruces individuales—, Montos 1 —colapsado a un 2v2— y
+  // Revisar otra cosa. Cuatro cifras para lo mismo.
+  //
+  // Es el patrón de siempre: una superficie resuelve la lógica y las de al lado
+  // no la leen. Con la fuente única no pueden discrepar, y un formato nuevo que
+  // arme lados distintos aparece bien en los cuatro sitios sin tocarlos.
+  //
+  /// Lado contra lado. En individual cada lado es una persona, así que los
+  /// cruces 1v1 son un caso de esto y no otra cosa —que es justo lo que dice el
+  /// comentario del paso Montos y no se cumplía—.
+  List<(List<String>, List<String>)> get _enfrentamientos {
+    if (!_porEquipos) {
+      return [
+        for (final c in BetRecipe.crucesDe(_players.map((p) => p.id).toList()))
+          ([c.$1], [c.$2])
+      ];
+    }
+    // Con varios enfrentamientos, el catálogo. Con uno, los equipos TAL CUAL
+    // están —editados a mano incluidos—: recalcularlos desde la formación
+    // desharía los cambios del panel.
+    if (_formacion == Formacion.parejaBaseVsCampo) {
+      final del = enfrentamientosDe(_formacion, _players, parejaBase: _teamA);
+      if (del.isNotEmpty) return del;
+    }
+    return [(_teamA, _teamB)];
+  }
+
+  /// Los enfrentamientos en los que participa alguno de [pids].
+  ///
+  /// Es lo que cuenta una apuesta cuando no juegan todos: con la nómina
+  /// recortada, un enfrentamiento cuyos dos lados quedaron fuera no existe.
+  List<(List<String>, List<String>)> _enfrentamientosDe(List<String> pids) => [
+        for (final e in _enfrentamientos)
+          if (e.$1.any(pids.contains) && e.$2.any(pids.contains)) e
+      ];
+
   /// Lados provisionales para consultar el traductor y para que el módulo nazca
   /// ya con equipos. null en individual.
+  ///
+  /// El PRIMER enfrentamiento: es lo que el traductor necesita para saber si el
+  /// conteo admite equipos. Los demás se materializan al lanzar.
   List<BetSide>? _ladosProvisionales() {
     if (!_porEquipos || _teamA.isEmpty || _teamB.isEmpty) return null;
     final modo = BetRecipe.playModeDe(_bola ?? TeamBall.mejor);
+    final (a, b) = _enfrentamientos.first;
     return [
-      BetSide(id: 'lado_A', name: 'Equipo A',
-          playerIds: List.of(_teamA), playMode: modo),
-      BetSide(id: 'lado_B', name: 'Equipo B',
-          playerIds: List.of(_teamB), playMode: modo),
+      BetSide(id: 'lado_A', name: nombreDeLado(a, _nombres),
+          playerIds: List.of(a), playMode: modo),
+      BetSide(id: 'lado_B', name: nombreDeLado(b, _nombres),
+          playerIds: List.of(b), playMode: modo),
     ];
   }
 
@@ -1871,8 +1965,20 @@ class _SetupScreenState extends State<SetupScreen> {
         border: Border.all(color: t.primary.withValues(alpha: 0.5)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('La apuesta de equipos está lista',
+        Text(
+            _enfrentamientos.length == 1
+                ? 'La apuesta de equipos está lista'
+                : 'Las ${_enfrentamientos.length} apuestas están listas',
             style: GolfType.body(t.text).copyWith(fontWeight: FontWeight.w700)),
+        // QUÉ se va a jugar, antes de preguntar por lo que se pacta aparte. Sin
+        // esto, Revisar enseñaba una lista de duelos pendientes y ninguna
+        // mención a los enfrentamientos que la ronda SÍ tiene.
+        if (_porEquipos) ...[
+          const SizedBox(height: 4),
+          for (final e in _enfrentamientos)
+            Text('· ${nombreDeEnfrentamiento(e.$1, e.$2, _nombres)}',
+                style: GolfType.label(t.text)),
+        ],
         const SizedBox(height: 3),
         Text(
             disponibles.isEmpty
@@ -2469,9 +2575,15 @@ class _SetupScreenState extends State<SetupScreen> {
     return ListView(padding: const EdgeInsets.all(20), children: [
       Text('Montos', style: GolfType.title(t.text)),
       const SizedBox(height: 4),
+      // La cifra sale de la fuente única. Decía "un enfrentamiento" siempre que
+      // hubiera equipos, y con la pareja base son tres.
       Text(
           _porEquipos
-              ? 'Un enfrentamiento: Equipo A contra Equipo B.'
+              ? _enfrentamientos.length == 1
+                  ? 'Un enfrentamiento: '
+                      '${nombreDeEnfrentamiento(_enfrentamientos.first.$1, _enfrentamientos.first.$2, _nombres)}.'
+                  : '${_enfrentamientos.length} enfrentamientos, cada uno con su '
+                      'importe.'
               : 'Cada apuesta tiene sus propios enfrentamientos.',
           style: GolfType.body(t.sub)),
       const SizedBox(height: 16),
@@ -2542,7 +2654,7 @@ class _SetupScreenState extends State<SetupScreen> {
           ),
         ]),
 
-        if (_porEquipos)
+        if (_porEquipos) ...[
           // Con equipos NO hay ajuste por pareja. Los cruces A1–B2 no son
           // apuestas: son cómo pay() reparte internamente un importe ya
           // pactado. Ofrecer ajustarlos era un error del diseño anterior.
@@ -2552,7 +2664,48 @@ class _SetupScreenState extends State<SetupScreen> {
                 'El pago se reparte después entre los jugadores de cada lado, '
                 'pero el importe pactado es este.',
                 style: GolfType.label(t.sub)),
-          )
+          ),
+          // Y con varios enfrentamientos, uno por cada uno. Con lados solapados
+          // —la pareja base juega los tres— alguien puede querer que el tercero
+          // valga menos, y el modelo ya lo admite: son tres módulos de verdad.
+          // Lo que faltaba era poder decirlo desde aquí.
+          if (_enfrentamientos.length > 1)
+            for (var i = 0; i < _enfrentamientos.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(children: [
+                  Expanded(
+                      child: Text(
+                          nombreDeEnfrentamiento(_enfrentamientos[i].$1,
+                              _enfrentamientos[i].$2, _nombres),
+                          style: GolfType.label(t.text))),
+                  SizedBox(
+                    width: 88,
+                    child: TextField(
+                      controller: _ctrlMonto(
+                          'enf_${cuenta.name}_$i',
+                          (_montoEnfrentamiento[cuenta] ?? const {})[i] ??
+                              _baseDe(cuenta)),
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.right,
+                      style: GolfType.bodyNum(t.text),
+                      decoration: InputDecoration(
+                        prefixText: '\$',
+                        isDense: true,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(9)),
+                      ),
+                      onChanged: (v) => setState(() {
+                        final mapa = Map<int, double>.of(
+                            _montoEnfrentamiento[cuenta] ?? const {});
+                        mapa[i] = double.tryParse(v) ?? 0;
+                        _montoEnfrentamiento[cuenta] = mapa;
+                      }),
+                    ),
+                  ),
+                ]),
+              ),
+        ]
         else ...[
           const SizedBox(height: 8),
           Row(children: [
@@ -2701,9 +2854,14 @@ class _SetupScreenState extends State<SetupScreen> {
     final dentro = _participantesDe(cuenta);
     final fuera = _crucesFuera[cuenta] ?? const <String>{};
     final cruces = BetRecipe.crucesDe(dentro);
+    // Los cruces apagados solo existen en individual: con equipos el
+    // enfrentamiento es lado contra lado y no hay cruces que apagar.
     final vivos = cruces
         .where((c) => !fuera.contains(BetRecipe.cruceKey(c.$1, c.$2)))
         .length;
+    // Lo que la ronda tiene DE VERDAD, de la fuente única.
+    final enfrentamientos =
+        _porEquipos ? _enfrentamientosDe(dentro).length : vivos;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -2757,10 +2915,24 @@ class _SetupScreenState extends State<SetupScreen> {
             ),
         ]),
         const SizedBox(height: 6),
+        // La cifra sale de la fuente única. Con equipos enumeraba los cruces
+        // individuales —10 con cinco jugadores— cuando la ronda tiene los
+        // enfrentamientos que diga la formación.
         Text(
             '${dentro.length} de ${_players.length} jugadores · '
-            '$vivos enfrentamiento${vivos == 1 ? '' : 's'}',
+            '$enfrentamientos enfrentamiento${enfrentamientos == 1 ? '' : 's'}',
             style: GolfType.label(t.sub)),
+        if (_porEquipos)
+          Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final e in _enfrentamientosDe(dentro))
+                    Text(nombreDeEnfrentamiento(e.$1, e.$2, _nombres),
+                        style: GolfType.label(t.sub)),
+                ]),
+          ),
 
         if (dentro.length < 2)
           Padding(
@@ -3286,7 +3458,12 @@ class _SetupScreenState extends State<SetupScreen> {
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               Icon(Icons.tune, color: t.sub, size: 16),
               const SizedBox(width: 8),
-              Text('Configurar partida manualmente', style: TextStyle(color: t.sub, fontWeight: FontWeight.w600, fontSize: 13)),
+              Flexible(
+                child: Text('Configurar partida manualmente',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: t.sub, fontWeight: FontWeight.w600, fontSize: 13)),
+              ),
             ]),
           ),
         ),
@@ -6172,8 +6349,15 @@ class _SetupScreenState extends State<SetupScreen> {
         ])),
         const SizedBox(height: 16),
         GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // El nombre de la ronda lo escribe el usuario, así que puede ser
+          // cualquier cosa: Expanded o se sale.
           Row(children: [Icon(Icons.golf_course, color: t.primary, size: 18), const SizedBox(width: 8),
-            Text(_nameCtrl.text, style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16))]),
+            Expanded(
+              child: Text(_nameCtrl.text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16)),
+            )]),
           const SizedBox(height: 4),
           if (_selectedCourse != null) Text(_selectedCourse!.name, style: TextStyle(color: t.accent, fontSize: 12)),
           Text(
@@ -6850,15 +7034,20 @@ class _SetupScreenState extends State<SetupScreen> {
       //
       // Se hace aquí, en el único sitio por el que pasa toda ronda, y no en cada
       // punto donde se crea un módulo: esos son varios y basta olvidar uno.
-      final enfrentamientos = _formacion == Formacion.parejaBaseVsCampo
-          ? enfrentamientosDe(_formacion, _players, parejaBase: _teamA)
-          : [(_teamA, _teamB)];
+      final enfrentamientos = _enfrentamientos;
+      final nombres = _nombres;
       for (var g = 0; g < _groups.length; g++) {
         _groups[g] = _groups[g].copyWith(
           modules: _groups[g]
               .modules
               .expand((m) => BetRecipe.porEnfrentamiento(m,
-                  lados: enfrentamientos, bola: _bola, submodo: _submodo))
+                  lados: enfrentamientos,
+                  bola: _bola,
+                  submodo: _submodo,
+                  nombres: nombres,
+                  // El importe propio de cada enfrentamiento, si se puso en
+                  // Montos. La clave es el conteo del módulo.
+                  importes: _montoEnfrentamiento[_conteoDe(m)] ?? const {}))
               .toList(),
         );
       }
