@@ -18,6 +18,7 @@ import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../models/torneo_publicado.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/torneo_provider.dart';
 import '../../services/firestore_service.dart';
 import '../auth/auth_screen.dart';
 import 'torneo_invitado_screen.dart';
@@ -38,6 +39,16 @@ class _TorneoEnlaceScreenState extends State<TorneoEnlaceScreen> {
   Future<void> _cargar() async {
     if (_cargando || _cargado) return;
     setState(() => _cargando = true);
+    // Los torneos que ya sigo, para que el botón sepa si este es uno.
+    //
+    // Hay que arrancarlo AQUÍ: por esta ruta la app no monta AppShell —el enlace
+    // es su propio `home`— así que nadie había llamado a startListening y la
+    // lista llegaba siempre vacía. Es idempotente y se protege sola sin sesión.
+    //
+    // Segundo caso del mismo patrón en esta pantalla: la lógica construida y la
+    // superficie sin conectar. Lo encontró la auditoría de la cadena, no un test.
+    if (mounted) context.read<TorneoProvider>().startListening();
+
     final c = await FirestoreService.leerTorneoPublicado(widget.token);
     if (!mounted) return;
     setState(() {

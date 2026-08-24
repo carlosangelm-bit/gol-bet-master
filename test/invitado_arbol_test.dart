@@ -215,6 +215,53 @@ void main() {
     });
   });
 
+  group('7 · "que mis rondas cuenten aquí" LLEGA a la pantalla', () {
+    // ESTE es el test que faltaba, y por eso el fallo pasó: el botón estaba
+    // dentro del bloque de identidad, en la rama que solo se pinta DESPUÉS de
+    // elegir jugador. Nadie que abre el enlace ve esa rama primero.
+    //
+    // Mis tests probaban el modelo y el provider —la lógica— y ninguno miraba si
+    // la superficie llegaba. Es el mismo patrón que ya costó tiempo: el arreglo
+    // existe y no llega a producción.
+    testWidgets('SIN elegir jugador todavía, el botón está', (tester) async {
+      final errores = await _montar(tester, _publicar());
+      expect(errores, isEmpty);
+      // La pregunta de identidad está sin contestar, que es lo que ve cualquiera
+      // al abrir el enlace.
+      expect(find.text('¿CUÁL ERES TÚ?'), findsOneWidget);
+      // Y el botón también.
+      expect(find.textContaining('cuenten aquí'), findsOneWidget);
+      // Con su explicación de para qué sirve.
+      expect(_pantalla(tester), contains('contará en su tabla'));
+    });
+
+    testWidgets('y sigue estando después de elegir', (tester) async {
+      await _montar(tester, _publicar());
+      await tester.tap(find.text('Rafael').first);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('cuenten aquí'), findsOneWidget);
+    });
+
+    testWidgets('CRITERIO 2: sin sesión no se oculta, se dice qué hace falta',
+        (tester) async {
+      // Ocultarlo dejaría a alguien que quiere que sus rondas cuenten sin saber
+      // que la opción existe.
+      await _montar(tester, _publicar());
+      expect(find.textContaining('Inicia sesión para que tus rondas cuenten'),
+          findsOneWidget);
+    });
+
+    testWidgets('y al tocarlo sin sesión se explica la diferencia',
+        (tester) async {
+      await _montar(tester, _publicar());
+      await tester.tap(find.textContaining('Inicia sesión para que tus rondas'));
+      await tester.pumpAndSettle();
+      final txt = _pantalla(tester);
+      expect(txt, contains('hace falta cuenta'));
+      expect(txt, contains('es una copia'));
+    });
+  });
+
   group('5 · CRITERIO 5: la cuenta se pide al ESCRIBIR, no antes', () {
     testWidgets('mirar no pide nada', (tester) async {
       final errores = await _montar(tester, _publicar());

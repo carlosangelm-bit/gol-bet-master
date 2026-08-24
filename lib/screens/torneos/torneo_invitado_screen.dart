@@ -211,6 +211,25 @@ class _TorneoInvitadoScreenState extends State<TorneoInvitadoScreen> {
               _bloqueYoSoy(t),
               const SizedBox(height: 14),
 
+              // ── Que mis rondas cuenten aquí ───────────────────────
+              //
+              // AL NIVEL DEL TORNEO, no dentro del bloque de identidad. Ahí es
+              // donde estaba y por eso no se veía: ese bloque hace return en la
+              // rama de "todavía no has dicho quién eres", que es justo la que ve
+              // cualquiera al abrir el enlace. La lógica estaba construida y
+              // probada; la superficie no llegaba.
+              //
+              // Y va aquí porque no es una pregunta sobre QUIÉN eres: es sobre si
+              // lo que juegues cuenta para este torneo. Son dos decisiones
+              // distintas y una no depende de la otra —se puede seguir un torneo
+              // sin decir cuál eres, y al contrario—.
+              _BotonSeguir(
+                  copia: copia,
+                  t: t,
+                  onPedirCuenta: () => _pedirCuenta(
+                      t, 'que tus rondas cuenten para este torneo')),
+              const SizedBox(height: 14),
+
               _tarjeta(t, 'CÓMO SE PUNTÚA', [
                 copia.comoSePuntua,
                 copia.comoSeAcumula,
@@ -432,19 +451,6 @@ class _TorneoInvitadoScreenState extends State<TorneoInvitadoScreen> {
           Text('Puesto ${fila.puesto} · ${fila.jugadas} rondas jugadas',
               style: TextStyle(color: t.sub, fontSize: 11)),
         ],
-        // ── Seguir el torneo ────────────────────────────────────────
-        //
-        // Es lo que hace que una LIGA funcione. Sin esto, las rondas que juegue
-        // esta persona no se pueden marcar para el torneo del organizador —su
-        // lista de torneos es solo la suya— así que su temporada entera no
-        // contaría. Y no fallaría: la tabla contaría menos rondas, calladita.
-        //
-        // Necesita cuenta, y por eso está aquí y no en la elección de jugador:
-        // seguir un torneo escribe en tu cuenta, y mirar no.
-        const SizedBox(height: 10),
-        _BotonSeguir(copia: copia, t: t, onPedirCuenta: () => _pedirCuenta(
-            t, 'que tus rondas cuenten para este torneo')),
-
         // La puerta de la cuenta, ofrecida solo cuando hay algo que jugar.
         if (pendiente != null) ...[
           const SizedBox(height: 10),
@@ -787,6 +793,32 @@ class _BotonSeguirState extends State<_BotonSeguir> {
     // coincidir. Ver TorneoPublicado.torneoId.
     final id = widget.copia.torneoId;
     final siguiendo = prov.seguidos.any((s) => s.torneoId == id);
+    final sinSesion = AuthService.uid == null;
+
+    // ── El DUEÑO no sigue su propio torneo ──────────────────────────────────
+    //
+    // Intencionado: sus rondas ya cuentan sin hacer nada, porque la tabla lee su
+    // propia colección. Ofrecerle "que mis rondas cuenten aquí" sería ofrecerle
+    // algo que ya tiene, y seguirlo crearía una referencia que además duplicaría
+    // sus resultados —los publicaría en torneoResultados además de tenerlos en su
+    // colección—. Se dice en vez de callarlo, para que no parezca que falta.
+    final soyElDueno = AuthService.uid != null &&
+        AuthService.uid == widget.copia.ownerUid;
+    if (soyElDueno) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: t.divider),
+        ),
+        child: Text(
+            'Este torneo es tuyo: tus rondas ya cuentan sin hacer nada. Este '
+            'enlace es lo que ven los demás.',
+            style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
+      );
+    }
 
     // Instantánea vieja, publicada antes de que el id viajara. Seguirla crearía
     // una referencia que no funcionaría, así que se dice qué hace falta en vez de
@@ -798,7 +830,8 @@ class _BotonSeguirState extends State<_BotonSeguir> {
           style: TextStyle(color: t.sub, fontSize: 11, height: 1.35));
     }
 
-    return SizedBox(
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SizedBox(
       width: double.infinity,
       child: OutlinedButton.icon(
         onPressed: _ocupado
@@ -834,13 +867,37 @@ class _BotonSeguirState extends State<_BotonSeguir> {
             side: BorderSide(color: siguiendo ? t.primary : t.divider),
             foregroundColor: siguiendo ? t.primary : t.text,
             padding: const EdgeInsets.symmetric(vertical: 11)),
-        icon: Icon(siguiendo ? Icons.check : Icons.add, size: 16),
+        icon: Icon(
+            siguiendo
+                ? Icons.check
+                : sinSesion
+                    ? Icons.login
+                    : Icons.add,
+            size: 16),
+        // Sin sesión NO se esconde la opción: se dice qué hace falta. Ocultarla
+        // dejaría a alguien que quiere que sus rondas cuenten sin saber que
+        // existe, que es el mismo criterio que aplicamos al capturar scores —la
+        // cuenta se pide al escribir, y explicando la diferencia—.
         label: Text(
             siguiendo
                 ? 'Tus rondas cuentan para este torneo'
-                : 'Que mis rondas cuenten aquí',
+                : sinSesion
+                    ? 'Inicia sesión para que tus rondas cuenten aquí'
+                    : 'Que mis rondas cuenten aquí',
+            textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
       ),
-    );
+      ),
+      const SizedBox(height: 5),
+      // PARA QUÉ sirve, siempre. Un botón que dice "que mis rondas cuenten aquí"
+      // sin explicar qué significa se toca a ciegas o no se toca.
+      Text(
+          siguiendo
+              ? 'Al cerrar una ronda marcada para este torneo, su resultado se '
+                  'envía a la tabla del organizador.'
+              : 'Las rondas que juegues podrás marcarlas para este torneo, y su '
+                  'resultado contará en su tabla.',
+          style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
+    ]);
   }
 }
