@@ -256,6 +256,67 @@ await prueba('y el organizador lo enciende otra vez en el MISMO token', () =>
     assertSucceeds(setDoc(doc(organizador, 'sharedTorneos', TOKEN),
         { ownerUid: ORG, nombre: 'Copa CGM 2026', tabla: [] })));
 
+// ══════════════════════════════════════════════════════════════════════════════
+// 12 · LA AGREGACIÓN DEL TORNEO — dónde entran los resultados, y quién puede
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// La tabla de un torneo sale de users/{organizador}/roundResults. El resultado de
+// una ronda se escribe al CERRARLA, en la colección de quien cierra. Así que la
+// agregación depende de UNA cosa: que cerrar esté reservado al dueño de la ronda.
+//
+// Eso es lo que estas pruebas fijan. No hay colección nueva ni regla nueva: se
+// probó una —torneoResultados, con verificación de procedencia— y se descartó al
+// ver que el camino existente ya da la garantía, sin que nadie escriba bajo
+// users/** de otro.
+//
+// Si alguna de estas cuatro pruebas se pusiera roja, la tabla del torneo podría
+// estar contando rondas que el organizador no cerró, o dejando de contar las que
+// sí. Es el punto donde un fallo sale de la app.
+console.log('\n12 · La agregación: solo el dueño cierra, y por eso la tabla cuadra');
+
+await prueba('el organizador escribe el RESULTADO en su propia colección', () =>
+    assertSucceeds(setDoc(doc(organizador, 'users', ORG, 'roundResults', 'ronda_partido'),
+        { roundId: 'ronda_partido', balances: { [ORG]: 100 } })));
+await prueba('y la ronda cerrada en su historial', () =>
+    assertSucceeds(setDoc(doc(organizador, 'users', ORG, 'rounds', 'ronda_partido'),
+        { isFinished: true })));
+
+// El que ANOTA es participante de la ronda en vivo: escribe scores —ya probado en
+// el bloque 10— pero NO puede publicar el resultado. Si pudiera, la tabla del
+// organizador tendría filas que él no cerró.
+await prueba('el que anota NO escribe el resultado en la colección del organizador', () =>
+    assertFails(setDoc(doc(invitado, 'users', ORG, 'roundResults', 'ronda_partido'),
+        { roundId: 'ronda_partido', balances: { [INV]: 999 } })));
+await prueba('ni marca la ronda como cerrada en el historial del organizador', () =>
+    assertFails(setDoc(doc(invitado, 'users', ORG, 'rounds', 'ronda_partido'),
+        { isFinished: true })));
+
+// Y al revés: el resultado que el jugador guarda en SU historial es suyo y no
+// contamina el torneo de nadie. Es lo que hace que la agregación sea del
+// organizador y no una suma de lo que cada uno diga.
+await prueba('el jugador sí escribe en SU propio historial', () =>
+    assertSucceeds(setDoc(doc(invitado, 'users', INV, 'roundResults', 'ronda_partido'),
+        { roundId: 'ronda_partido', balances: { [INV]: -100 } })));
+await prueba('y el organizador NO lo lee: no es suyo', () =>
+    assertFails(getDoc(doc(organizador, 'users', INV, 'roundResults', 'ronda_partido'))));
+
+// Las refs por las que el organizador LISTA los grupos de su torneo.
+await prueba('el organizador lista sus propias liveRoundRefs', () =>
+    assertSucceeds(getDocs(collection(organizador, 'users', ORG, 'liveRoundRefs'))));
+await prueba('y nadie más lista las suyas', () =>
+    assertFails(getDocs(collection(invitado, 'users', ORG, 'liveRoundRefs'))));
+
+// Cerrar la ronda en vivo: marcar isFinished en liveRounds. Lo puede hacer un
+// participante —la regla de update es de participantes— así que la garantía NO
+// está ahí: está en que el RESULTADO solo lo escribe el dueño. Se prueba para que
+// quede dicho dónde está y dónde no.
+await prueba('un participante SÍ puede marcar la ronda en vivo como terminada', () =>
+    assertSucceeds(setDoc(doc(invitado, 'liveRounds', 'ronda_partido'),
+        { isFinished: true }, { merge: true })));
+await prueba('pero eso NO mete nada en la tabla del organizador', () =>
+    assertFails(setDoc(doc(invitado, 'users', ORG, 'roundResults', 'otra'),
+        { roundId: 'otra' })));
+
 console.log('\n9 · Nada de subcolecciones no revisadas');
 await prueba('el invitado no escribe en una subcolección del compartido', () =>
     assertFails(setDoc(

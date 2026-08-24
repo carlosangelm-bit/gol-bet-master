@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../models/torneo.dart';
 import '../../services/firestore_service.dart';
+import '../../services/live_round_service.dart';
 import '../../services/auth_service.dart';
 import '../../models/torneo_publicado.dart';
 import 'package:flutter/services.dart';
@@ -319,6 +320,14 @@ class TorneoTablaScreen extends StatelessWidget {
                 ]),
           ),
           const SizedBox(height: 14),
+
+          // ── Los grupos que están jugando ──────────────────────────
+          //
+          // Solo para el organizador, y es LA PIEZA DE LA AGREGACIÓN: la tabla
+          // sale de sus roundResults, y ahí entra lo que él cierra. Con
+          // veinticinco grupos, poder cerrarlos sin cargarlos uno a uno es la
+          // diferencia entre un torneo y una tarde de tocar el teléfono.
+          _GruposDelTorneo(torneoId: torneo.id, t: t),
 
           // ── El cuadro, si es de eliminación ────────────────────────
           //
@@ -1007,6 +1016,166 @@ class _BloqueJornadas extends StatelessWidget {
                 style: TextStyle(color: t.sub, fontSize: 10.5)),
           ),
       ]),
+    );
+  }
+}
+
+/// Los grupos en juego de un torneo, para el organizador.
+///
+/// De dónde sale la agregación: la tabla del torneo lee los roundResults de quien
+/// la mira, y el resultado de una ronda se escribe al CERRARLA, en la colección
+/// de quien cierra. Como cerrar una ronda en vivo está reservado al dueño, si el
+/// organizador es dueño de las rondas de su torneo los resultados caen solos
+/// donde la tabla los busca.
+///
+/// Así que esto no es una pantalla de conveniencia: es el sitio por donde entran
+/// los datos. Sin ella, con veinticinco grupos había que cargar cada ronda como
+/// "la actual" para cerrarla, y el estado de la app sostiene una sola.
+class _GruposDelTorneo extends StatefulWidget {
+  final String torneoId;
+  final GolfTheme t;
+  const _GruposDelTorneo({required this.torneoId, required this.t});
+
+  @override
+  State<_GruposDelTorneo> createState() => _GruposDelTorneoState();
+}
+
+class _GruposDelTorneoState extends State<_GruposDelTorneo> {
+  List<({
+    String roundId,
+    String nombre,
+    List<String> jugadores,
+    int hoyosCapturados,
+    int totalHoles,
+    bool cerrada,
+  })>? _grupos;
+  String? _cerrando;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargar();
+  }
+
+  Future<void> _cargar() async {
+    final g = await LiveRoundService.gruposDelTorneo(widget.torneoId);
+    if (mounted) setState(() => _grupos = g);
+  }
+
+  Future<void> _cerrar(String roundId) async {
+    setState(() => _cerrando = roundId);
+    final ok = await LiveRoundService.cerrarRondaDelTorneo(roundId);
+    if (!mounted) return;
+    setState(() => _cerrando = null);
+    await _cargar();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(ok
+          ? 'Ronda cerrada. Su resultado ya cuenta para el torneo.'
+          : 'No se pudo cerrar. Solo la cierra quien la organizó.'),
+      duration: const Duration(seconds: 4),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    final g = _grupos;
+    // Mientras carga, nada: un hueco con un spinner encima de la tabla
+    // distraería de lo que sí está.
+    if (g == null || g.isEmpty) return const SizedBox.shrink();
+
+    final abiertas = g.where((x) => !x.cerrada).toList();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: t.divider),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('GRUPOS DE ESTE TORNEO', style: GolfType.label(t.sub)),
+          const SizedBox(height: 4),
+          Text(
+              abiertas.isEmpty
+                  ? '${g.length} ronda${g.length == 1 ? '' : 's'}, '
+                      '${g.length == 1 ? 'cerrada' : 'todas cerradas'}. Sus '
+                      'resultados ya cuentan.'
+                  : '${abiertas.length} sin cerrar de ${g.length}. Una ronda '
+                      'cuenta para la tabla cuando la cierras.',
+              style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
+          const SizedBox(height: 8),
+          for (final x in g)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+                decoration: BoxDecoration(
+                  color: t.surface,
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(color: t.divider),
+                ),
+                child: Row(children: [
+                  Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(x.nombre,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: t.text,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700)),
+                          Text(
+                              '${x.jugadores.join(', ')} · '
+                              '${x.hoyosCapturados}/${x.totalHoles} hoyos',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: t.sub, fontSize: 11)),
+                        ]),
+                  ),
+                  const SizedBox(width: 8),
+                  if (x.cerrada)
+                    Icon(Icons.check_circle, color: t.primary, size: 18)
+                  else
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _cerrando == null ? () => _cerrar(x.roundId) : null,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: t.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: t.primary),
+                        ),
+                        child: Text(
+                            _cerrando == x.roundId ? 'Cerrando…' : 'Cerrar',
+                            style: TextStyle(
+                                color: t.primary,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                ]),
+              ),
+            ),
+          // Lo que un grupo a medio capturar significa, dicho: cerrar una ronda
+          // incompleta la mete en la tabla con los hoyos que tenga.
+          if (abiertas.any((x) => x.hoyosCapturados < x.totalHoles)) ...[
+            const SizedBox(height: 4),
+            Text(
+                'Cerrar una ronda a medias la cuenta con los hoyos que tenga. '
+                'Si el grupo sigue en el campo, espera.',
+                style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
+          ],
+        ]),
+      ),
     );
   }
 }

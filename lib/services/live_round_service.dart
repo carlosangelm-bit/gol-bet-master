@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart';
 import '../models/models.dart';
 import '../providers/round_provider.dart' show roundToJson, roundFromJson;
 import 'auth_service.dart';
+import 'firestore_service.dart';
 
 // ── Modelo de invitación ──────────────────────────────────────────────────────
 class LiveRoundInvitation {
@@ -176,6 +177,131 @@ class LiveRoundService {
     await batch.commit();
     if (kDebugMode) debugPrint('[LiveRound] Ronda publicada: ${round.id} ($code)');
     return liveRound;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LAS RONDAS DE UN TORNEO — la agregación, y por qué no hace falta más
+  // ══════════════════════════════════════════════════════════════════════════
+  //
+  // El problema medido: la tabla de un torneo sale de tablaDe(t, resultados), y
+  // esos resultados son users/{miUid}/roundResults. Si cada grupo cerrara SU
+  // ronda, el resultado caería en la colección de cada uno y el organizador no
+  // vería nada.
+  //
+  // ── La colección nueva que NO se construyó, y por qué ─────────────────────
+  //
+  // Lo primero que se diseñó fue una colección de nivel superior
+  // —torneoResultados— donde cada grupo publicara su resultado, con reglas que
+  // verificaran la procedencia leyendo la ronda en vivo. Se descartó al medir
+  // que NO HACE FALTA:
+  //
+  //   · Cerrar una ronda en vivo ya está reservado al DUEÑO —lo comprueba la
+  //     pantalla de captura y lo cierran las reglas—.
+  //   · El resultado se escribe en users/{quienCierra}/roundResults.
+  //   · Y quien cierra es necesariamente el dueño.
+  //
+  // Así que si el organizador es dueño de las rondas de su torneo —que es como
+  // funciona un shotgun: él arma los grupos— los resultados caen SOLOS en su
+  // colección y la tabla ya agrega. Sin colección nueva, sin reglas nuevas, y
+  // sin que nadie escriba bajo users/** de otro.
+  //
+  // Lo que faltaba no era arquitectura: era que el organizador PUDIERA VER Y
+  // CERRAR las rondas de su torneo sin cargarlas como "la ronda actual".
+  // loadOwnerActiveLiveRound devuelve la primera sin terminar y con límite 5, así
+  // que con veinticinco grupos no servía.
+
+  /// Un grupo del torneo, tal como lo ve el organizador.
+  ///
+  /// Lo mínimo para decidir: quién juega, si ya acabaron de anotar y si está
+  /// cerrada. La ronda completa se carga solo al cerrarla.
+  static Future<List<({
+    String roundId,
+    String nombre,
+    List<String> jugadores,
+    int hoyosCapturados,
+    int totalHoles,
+    bool cerrada,
+  })>> gruposDelTorneo(String torneoId) async {
+    final uid = AuthService.uid;
+    if (uid == null) return [];
+
+    // Las refs de las rondas que YO organizo. Sin límite: veinticinco grupos son
+    // veinticinco refs, y quedarse en cinco era el fallo.
+    final refs = await _myRefs().where('role', isEqualTo: 'owner').get();
+    final out = <({
+      String roundId,
+      String nombre,
+      List<String> jugadores,
+      int hoyosCapturados,
+      int totalHoles,
+      bool cerrada,
+    })>[];
+
+    for (final ref in refs.docs) {
+      final roundId = ref.data()['roundId'] as String? ?? ref.id;
+      final snap = await _liveRounds.doc(roundId).get();
+      final data = snap.data();
+      if (data == null) continue;
+      // Solo las de ESTE torneo. La marca viaja en la ronda desde la fase A.
+      final marcas =
+          ((data['torneoIds'] as List?) ?? const []).map((e) => '$e').toList();
+      if (!marcas.contains(torneoId)) continue;
+
+      Round? r;
+      try {
+        r = roundFromJson(data);
+      } catch (e) {
+        debugPrint('[Torneo] ronda $roundId ilegible: $e');
+        continue;
+      }
+      // Cuántos hoyos tienen ya score de alguien: es lo que dice si el grupo va
+      // por el 7 o ya acabó, que es la pregunta del organizador.
+      var capturados = 0;
+      for (var h = 1; h <= r.totalHoles; h++) {
+        if (r.players.any((p) => r!.getScore(p.id, h).hasScore)) capturados++;
+      }
+      out.add((
+        roundId: roundId,
+        nombre: r.name,
+        jugadores: r.realPlayers.map((p) => p.name).toList(),
+        hoyosCapturados: capturados,
+        totalHoles: r.totalHoles,
+        cerrada: r.isFinished,
+      ));
+    }
+    out.sort((a, b) => a.nombre.compareTo(b.nombre));
+    return out;
+  }
+
+  /// Cierra una ronda del torneo SIN hacerla la ronda actual.
+  ///
+  /// Es lo que permite cerrar veinticinco: el estado de la app sostiene una sola
+  /// ronda, pero cerrar no necesita cargarla ahí —es leer, marcar y guardar—.
+  ///
+  /// El resultado se escribe en la colección de QUIEN CIERRA, y quien cierra es
+  /// el dueño. De ahí sale la agregación.
+  static Future<bool> cerrarRondaDelTorneo(String roundId) async {
+    final uid = AuthService.uid;
+    if (uid == null) return false;
+    try {
+      final snap = await _liveRounds.doc(roundId).get();
+      final data = snap.data();
+      if (data == null) return false;
+      // Solo el dueño. La regla también lo impide, pero fallar aquí da un
+      // mensaje y no un PERMISSION_DENIED.
+      if ((data['ownerUid'] as String?) != uid) {
+        debugPrint('[Torneo] $roundId no es tuya: no se cierra');
+        return false;
+      }
+      final round = roundFromJson(data).copyWith(isFinished: true);
+      // El historial y el RESULTADO, que es lo que la tabla del torneo lee.
+      await FirestoreService.saveRound(round);
+      await finishLiveRound(roundId);
+      return true;
+    } catch (e) {
+      debugPrint('[Torneo] no se pudo cerrar $roundId: $e');
+      return false;
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════════
