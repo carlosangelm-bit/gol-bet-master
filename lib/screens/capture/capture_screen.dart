@@ -747,11 +747,21 @@ class _PlayerTable extends StatelessWidget {
                       : BorderSide.none,
                 ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              // Cromo más ajustado en pantalla estrecha: el avatar y el
+              // relleno ceden 14 px, que es lo que le devuelve sitio al nombre.
+              // Se le quita al adorno y no al control ni al nombre, que son lo
+              // que se usa.
+              padding: EdgeInsets.symmetric(
+                  horizontal: MediaQuery.of(context).size.width < 400 ? 6 : 10,
+                  vertical: 8),
               child: Row(children: [
                 // Avatar
-                GAvatar(name: player.name, colorIndex: player.colorIndex, size: 36),
-                const SizedBox(width: 8),
+                GAvatar(
+                    name: player.name,
+                    colorIndex: player.colorIndex,
+                    size: MediaQuery.of(context).size.width < 400 ? 28 : 36),
+                SizedBox(
+                    width: MediaQuery.of(context).size.width < 400 ? 6 : 8),
 
                 // Nombre + HCP
                 //
@@ -766,7 +776,14 @@ class _PlayerTable extends StatelessWidget {
                 // steppers se estrechan, algo se parte dentro y la fila crece 27
                 // px —MEDIDO: la quinta pasaba de 844 a 871, o sea fuera de
                 // pantalla—. Lo cazó el test de geometría de Wolf.
-                SizedBox(
+                //
+                // Flexible SÍ: pide 56 y se queda con menos cuando no hay,
+                // pero al ser loose no se lleva el hueco libre, así que los
+                // steppers conservan su ancho natural. Hacía falta porque el
+                // chip de progreso CRECE —"+21" en un jugador 21 sobre par es
+                // normal— y con la fila rígida eso la sacaba 22 px a 390 px.
+                Flexible(
+                  child: SizedBox(
                   width: 56,
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(
@@ -783,6 +800,7 @@ class _PlayerTable extends StatelessWidget {
                       style: TextStyle(color: t.sub, fontSize: 10),
                     ),
                   ]),
+                  ),
                 ),
 
                 const SizedBox(width: 4),

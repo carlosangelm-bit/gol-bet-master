@@ -19,6 +19,7 @@
 // podría decir que la serpiente la tiene RAFA mientras el ledger le cobra a CAM.
 // ─────────────────────────────────────────────────────────────────────────────
 import '../models/models.dart';
+import 'ledger_engine.dart';
 import 'rabbit_engine.dart';
 import 'wolf_engine.dart';
 import 'snake_engine.dart';
@@ -73,7 +74,54 @@ List<NotaDeLiquidacion> notasDeLiquidacion(Round round) {
       }
     }
   }
+
+  // El residuo de redondeo, que no es de ningún formato en concreto: sale de
+  // repartir un importe entre cruces que no lo dividen exacto.
+  final residuo = _residuoDeRedondeo(round);
+  if (residuo != null) notas.add(residuo);
+
   return notas;
+}
+
+/// Cuando el importe no divide exacto entre los cruces, y por tanto lo que se
+/// enseña no cuadra al céntimo.
+///
+/// Lo encontró la prueba de que el ledger cierra en cero sobre toda la matriz:
+/// un Nassau 2 contra 3 a \$200 reparte \$33.33 por cruce, así que los dos que
+/// ganan cobran \$100 justos y los tres que pagan ponen \$66.67 cada uno. Suma
+/// \$200.01. Los ASIENTOS cierran exacto —el reparto es correcto— y lo que se
+/// descuadra es lo que se ENSEÑA, porque a cada persona se le redondea su total.
+///
+/// No se "arregla" moviendo el céntimo a alguien: elegir a quién sería inventarse
+/// una regla que el grupo no pactó, y el redondeo es aritmética, no un fallo. Lo
+/// que se hace es DECIRLO, que es para lo que existe este canal.
+NotaDeLiquidacion? _residuoDeRedondeo(Round round) {
+  final entradas = LedgerEngine.entriesOf(round);
+  if (entradas.isEmpty) return null;
+
+  // Los balances tal cual salen del ledger, sin redondear a céntimos, contra los
+  // que la app enseña. La diferencia es el residuo.
+  final crudo = <String, double>{};
+  for (final e in entradas) {
+    if (e.amount <= 0) continue;
+    crudo[e.fromPlayerId] = (crudo[e.fromPlayerId] ?? 0) - e.amount;
+    crudo[e.toPlayerId] = (crudo[e.toPlayerId] ?? 0) + e.amount;
+  }
+  // Al peso, que es como se enseña en las tarjetas y los chips.
+  final alPeso = crudo.values.fold(0.0, (s, v) => s + v.roundToDouble());
+  if (alPeso.abs() < 0.5) return null;
+
+  final falta = alPeso.abs().round();
+  return NotaDeLiquidacion(
+    // Sin módulo: el residuo es de la ronda, no de una apuesta.
+    moduleId: '',
+    tipo: entradas.first.betType,
+    texto: 'Las cifras están redondeadas al peso y no cuadran por \$$falta: '
+        'el importe no se divide exacto entre los cruces. El reparto es '
+        'correcto —los asientos suman cero— así que al pagar, cuadradlo entre '
+        'vosotros.',
+    tono: TonoNota.informativa,
+  );
 }
 
 List<NotaDeLiquidacion> _snake(

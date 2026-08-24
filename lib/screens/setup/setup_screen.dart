@@ -1931,6 +1931,7 @@ class _SetupScreenState extends State<SetupScreen> {
             ])),
         // El duelo pactado NO es de solo lectura.
         GestureDetector(
+      behavior: HitTestBehavior.opaque,
           onTap: () => _abrirHojaDuelo(t, d, editando: true),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -2721,6 +2722,7 @@ class _SetupScreenState extends State<SetupScreen> {
         Wrap(spacing: 5, runSpacing: 5, children: [
           for (final p in _players)
             GestureDetector(
+      behavior: HitTestBehavior.opaque,
               onTap: () => setState(() {
                 final lista = List<String>.of(_participantesDe(cuenta));
                 if (!lista.remove(p.id)) lista.add(p.id);
@@ -2997,6 +2999,14 @@ class _SetupScreenState extends State<SetupScreen> {
       String? motivo}) {
     final bloqueada = motivo != null;
     return GestureDetector(
+      // opaque para que responda TODA la tarjeta y no solo donde pintan los
+      // hijos. Es la convención del resto de fichas de selección de la app.
+      //
+      // Aviso honesto: NO es el arreglo del fallo de toque a 812 px. Se probó a
+      // 390, 812 y 1200, tocando el centro y el borde, con y sin esta línea, y
+      // el toque registra en los seis casos. Así que la causa de lo que se vio
+      // en el navegador está en otro sitio y sigue sin reproducir.
+      behavior: HitTestBehavior.opaque,
       onTap: bloqueada ? null : onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),

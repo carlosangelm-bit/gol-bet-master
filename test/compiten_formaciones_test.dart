@@ -299,6 +299,55 @@ void main() {
     });
   });
 
+  group('7 · el toque funciona con ventana ANCHA', () {
+    // P5.3: reportado a 812 px —ninguna formación se selecciona— y funcionando a
+    // 390 px con el mismo toque. No afecta al uso real, la app es de teléfono,
+    // pero sí a la verificación: con ventana ancha se concluye que algo está
+    // roto cuando funciona.
+    for (final ancho in [390.0, 812.0, 1200.0]) {
+      testWidgets('a ${ancho.toInt()} px, tocar High and Low arma los lados',
+          (tester) async {
+        final errores =
+            await _hastaCompiten(tester, 5, tamano: Size(ancho, 1400));
+        expect(errores, isEmpty, reason: 'a $ancho px');
+
+        final tarjeta = find.text('High and Low');
+        expect(tarjeta, findsOneWidget);
+        await tester.tap(tarjeta);
+        await tester.pumpAndSettle();
+
+        expect(find.text('EQUIPO A'), findsOneWidget,
+            reason: 'a $ancho px el toque no armó los equipos');
+        expect(_delPanel(tester, 'EQUIPO A'), ['Rafa', 'Alan'],
+            reason: 'a $ancho px');
+      });
+
+      testWidgets(
+          'a ${ancho.toInt()} px, el toque en el CENTRO de la tarjeta cuenta',
+          (tester) async {
+        // El caso que reproduce el fallo, y el que find.text() no ve: tocar el
+        // texto siempre funciona porque el texto SÍ es tocable. Lo que no lo era
+        // es el hueco entre el final del texto y el icono de la derecha, y ese
+        // hueco crece con el ancho de la ventana. A 390 px es estrecho; a 812
+        // px es media tarjeta.
+        await _hastaCompiten(tester, 5, tamano: Size(ancho, 1400));
+        final tarjeta = find
+            .ancestor(
+                of: find.text('Pair vs Field'),
+                matching: find.byType(GestureDetector))
+            .first;
+        final caja = tester.getRect(tarjeta);
+        // Antes del toque no hay equipos: sin esto el test pasaría aunque el
+        // toque no hiciera nada.
+        expect(find.text('EQUIPO A'), findsNothing, reason: 'a $ancho px');
+        await tester.tapAt(caja.center);
+        await tester.pumpAndSettle();
+        expect(find.text('EQUIPO A'), findsOneWidget,
+            reason: 'a $ancho px el centro de la tarjeta no responde');
+      });
+    }
+  });
+
   group('5 · cabe a 320 px', () {
     testWidgets('con cinco jugadores y la formación armada', (tester) async {
       final errores =
