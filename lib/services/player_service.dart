@@ -183,6 +183,14 @@ class PlayerService {
   /// Crea un jugador nuevo en el catálogo global Y lo añade al directorio
   /// del usuario con los datos del link.
   static Future<PlayerWithLink> createPlayer({
+    /// Id propio, para cuando el jugador YA existe en una ronda en curso.
+    ///
+    /// El asistente crea el jugador local con un uuid y lo mete en la ronda al
+    /// instante —tiene que funcionar sin conexión—. Si luego se guarda en el
+    /// directorio con OTRO id, la misma persona sale dos veces y su historial se
+    /// parte en dos. Con el id de la ronda, la ficha del directorio y lo que se
+    /// jugó son la misma persona.
+    String? id,
     required String name,
     double handicap = 0,
     int colorIndex = 0,
@@ -196,7 +204,7 @@ class PlayerService {
     final uid = AuthService.uid!;
 
     // 1. Crear Player global
-    final playerRef = _players.doc();
+    final playerRef = id == null ? _players.doc() : _players.doc(id);
     final now = DateTime.now();
     final player = Player(
       id: playerRef.id,

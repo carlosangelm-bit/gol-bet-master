@@ -185,6 +185,17 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
                   style: TextStyle(color: t.text, fontSize: 12, height: 1.4)),
             ),
           ],
+          // ── Elegidas a mano: LAS RONDAS ────────────────────────────────
+          //
+          // Esto no existía. La opción estaba, su texto prometía "eliges de entre
+          // las rondas ya jugadas", y el control no se había construido nunca:
+          // el modelo guardaba roundIds y rondasDelTorneo los leía, pero no había
+          // forma de ponerlos. Así que un torneo sobre el histórico —para lo que
+          // la fuente existe— no se podía armar.
+          if (_t.fuente == FuenteDeRondas.manual) ...[
+            const SizedBox(height: 8),
+            _bloqueRondasAMano(t),
+          ],
           if (_t.fuente == FuenteDeRondas.grupo) ...[
             const SizedBox(height: 8),
             if (grupos.isEmpty)
@@ -635,6 +646,120 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Las rondas del historial, para elegir a mano cuáles cuentan.
+  ///
+  /// Se listan de la más reciente a la más antigua, que es como se buscan: un
+  /// torneo sobre el histórico se arma con lo de las últimas semanas, no con lo
+  /// de hace un año.
+  Widget _bloqueRondasAMano(GolfTheme t) {
+    final todas = [..._todos]
+      ..sort((a, b) => b.playedAt.compareTo(a.playedAt));
+
+    if (todas.isEmpty) {
+      return _nota(
+          'No hay rondas cerradas en tu historial todavía. Esta fuente sirve '
+          'para armar un torneo sobre lo ya jugado; si vas a jugarlo desde '
+          'ahora, usa "Marcadas al configurar la ronda".',
+          t);
+    }
+
+    final elegidas = _t.roundIds.toSet();
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: t.divider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+              child: Text('CUÁLES CUENTAN', style: GolfType.label(t.sub))),
+          // Todas o ninguna: con veinte rondas, tocarlas una a una para armar
+          // una temporada entera es trabajo que la pantalla puede evitar.
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => _t = _t.copyWith(
+                roundIds: elegidas.length == todas.length
+                    ? const []
+                    : todas.map((r) => r.roundId).toList())),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Text(
+                  elegidas.length == todas.length ? 'NINGUNA' : 'TODAS',
+                  style: GolfType.label(t.primary)),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        for (final r in todas)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 5),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() {
+                final nueva = elegidas.toSet();
+                if (!nueva.remove(r.roundId)) nueva.add(r.roundId);
+                _t = _t.copyWith(roundIds: nueva.toList());
+              }),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                decoration: BoxDecoration(
+                  color: elegidas.contains(r.roundId)
+                      ? t.primary.withValues(alpha: 0.1)
+                      : t.surface,
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(
+                      color: elegidas.contains(r.roundId)
+                          ? t.primary
+                          : t.divider,
+                      width: elegidas.contains(r.roundId) ? 1.5 : 1),
+                ),
+                child: Row(children: [
+                  Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                              '${r.playedAt.day}/${r.playedAt.month}/'
+                              '${r.playedAt.year} · ${r.roundName}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: t.text, fontSize: 13)),
+                          // Con qué gente y en qué campo: es lo que distingue
+                          // dos sábados con el mismo nombre.
+                          Text(
+                              '${r.courseName} · '
+                              '${r.playerIds.length} jugadores',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: t.sub, fontSize: 11)),
+                        ]),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                      elegidas.contains(r.roundId)
+                          ? Icons.check_circle
+                          : Icons.circle_outlined,
+                      color: elegidas.contains(r.roundId) ? t.primary : t.sub,
+                      size: 18),
+                ]),
+              ),
+            ),
+          ),
+        const SizedBox(height: 4),
+        _nota(
+            elegidas.isEmpty
+                ? 'Toca las rondas que cuenten. Sin ninguna elegida, el torneo '
+                    'sale vacío.'
+                : '${elegidas.length} de ${todas.length} rondas elegidas.',
+            t),
+      ]),
     );
   }
 

@@ -84,6 +84,9 @@ class PlayerProvider extends ChangeNotifier {
   // ── Operaciones CRUD — relanzamos errores para que la UI los muestre ────────
 
   Future<PlayerWithLink> createPlayer({
+    /// Ver PlayerService.createPlayer: el id de la ronda, para que la ficha del
+    /// directorio y lo jugado sean la misma persona.
+    String? id,
     required String name,
     double handicap = 0,
     int colorIndex = 0,
@@ -94,6 +97,7 @@ class PlayerProvider extends ChangeNotifier {
   }) async {
     // Sin try-catch aquí: el error sube a la UI (_PlayerFormSheet._save)
     final result = await PlayerService.createPlayer(
+      id: id,
       name: name,
       handicap: handicap,
       colorIndex: colorIndex,

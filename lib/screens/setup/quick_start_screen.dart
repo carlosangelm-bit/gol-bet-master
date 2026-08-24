@@ -368,17 +368,44 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
       handicapInicial: 0,
       teeInicial: TeeInfo.standard,
       nombreFallback: 'Jugador ${_hoy.length + 1}',
+      creando: true,
     );
     if (r == null || !mounted) return;
     final id = 'nuevo_${DateTime.now().microsecondsSinceEpoch}';
+    final nuevo = Player(
+        id: id,
+        name: r.name,
+        handicapBase: r.handicap,
+        colorIndex: _hoy.length);
     setState(() {
-      _creados[id] = Player(
-          id: id,
-          name: r.name,
-          handicapBase: r.handicap,
-          colorIndex: _hoy.length);
+      _creados[id] = nuevo;
       _hoy.add(id);
     });
+    // Al directorio, con el MISMO id que lleva a la ronda: si el directorio le
+    // diera otro, la misma persona saldría dos veces y su historial se partiría.
+    // No bloquea el arranque: si falla, juega igual y se dice.
+    if (!r.guardarEnDirectorio) return;
+    try {
+      await context.read<PlayerProvider>().createPlayer(
+            id: id,
+            name: nuevo.name,
+            handicap: nuevo.handicapBase,
+            colorIndex: nuevo.colorIndex,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${nuevo.name} guardado en tus compañeros.'),
+        duration: const Duration(seconds: 3),
+      ));
+    } catch (e) {
+      debugPrint('[Arranque] no se pudo guardar $id en el directorio: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${nuevo.name} juega esta ronda, pero no se pudo guardar '
+            'en tus compañeros.'),
+        duration: const Duration(seconds: 5),
+      ));
+    }
   }
 
   Widget _filaJugador(GolfTheme t, String nombre, bool dentro,

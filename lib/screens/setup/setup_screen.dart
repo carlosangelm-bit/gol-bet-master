@@ -1583,7 +1583,47 @@ class _SetupScreenState extends State<SetupScreen> {
       _players.add(newPlayer);
       _assignDefaultTeeToPlayer(newPlayer.id); // ← asignar tee por defecto
     });
-    _editPlayer(_players.length - 1, _players.last, context.read<RoundProvider>().theme);
+    _editPlayer(_players.length - 1, _players.last,
+        context.read<RoundProvider>().theme,
+        creando: true);
+  }
+
+  /// Guarda en el directorio a un jugador creado en el asistente.
+  ///
+  /// ── Por qué con el id de la ronda ─────────────────────────────────────────
+  ///
+  /// El jugador se crea local y entra en la ronda al instante, porque el
+  /// asistente tiene que funcionar sin conexión. Si el directorio le diera OTRO
+  /// id, la misma persona saldría dos veces y su historial se partiría. Con el
+  /// mismo id, la ficha y lo jugado son la misma persona.
+  ///
+  /// ── Por qué no bloquea ────────────────────────────────────────────────────
+  ///
+  /// La ronda no depende de esto. Si falla —sin conexión, sin sesión— el jugador
+  /// sigue en la ronda y se dice que no se guardó en el directorio. Bloquear el
+  /// arranque de una ronda por un apunte de agenda sería el orden equivocado.
+  Future<void> _guardarEnDirectorio(Player p) async {
+    try {
+      await context.read<PlayerProvider>().createPlayer(
+            id: p.id,
+            name: p.name,
+            handicap: p.handicapBase,
+            colorIndex: p.colorIndex,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${p.name} guardado en tus compañeros.'),
+        duration: const Duration(seconds: 3),
+      ));
+    } catch (e) {
+      debugPrint('[Setup] no se pudo guardar ${p.id} en el directorio: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${p.name} juega esta ronda, pero no se pudo guardar en '
+            'tus compañeros. Puedes añadirlo después desde Ajustes.'),
+        duration: const Duration(seconds: 5),
+      ));
+    }
   }
 
 
@@ -1595,7 +1635,8 @@ class _SetupScreenState extends State<SetupScreen> {
   ///
   /// Lo que queda aquí es lo ÚNICO que era de esta pantalla: escribir el
   /// resultado en _players y en _playerTees.
-  Future<void> _editPlayer(int idx, Player p, GolfTheme t) async {
+  Future<void> _editPlayer(int idx, Player p, GolfTheme t,
+      {bool creando = false}) async {
     final r = await showPlayerEditSheet(
       context,
       t: t,
@@ -1604,12 +1645,18 @@ class _SetupScreenState extends State<SetupScreen> {
       teeInicial: _teeOf(p.id),
       nombreFallback: 'Jugador ${idx + 1}',
       apiCourse: _selectedApiCourse,
+      creando: creando,
     );
     if (r == null || !mounted) return;
     setState(() {
       _players[idx] = p.copyWith(name: r.name, handicapBase: r.handicap);
       _playerTees[p.id] = r.tee;
     });
+    // El apunte en el directorio va DESPUÉS de que el jugador esté en la ronda,
+    // y no la bloquea.
+    if (r.guardarEnDirectorio) {
+      await _guardarEnDirectorio(_players[idx]);
+    }
   }
 
   // ── STEP 2: Partidas y módulos (nuevo) ───────────────────────────────────

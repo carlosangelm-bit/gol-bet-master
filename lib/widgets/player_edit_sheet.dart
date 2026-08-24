@@ -29,10 +29,20 @@ class PlayerEditResult {
   final String name;
   final double handicap;
   final TeeInfo tee;
+
+  /// Si además hay que guardarlo en el directorio de compañeros.
+  ///
+  /// Solo se pregunta al CREAR. Un jugador creado en el asistente se perdía al
+  /// acabar la ronda: solo lo guardaba el diálogo de sliding del cierre, que
+  /// habla de otra cosa, y cancelarlo —porque no quieres tocar handicaps—
+  /// borraba a la persona. Quien crea a un amigo para jugar espera que quede.
+  final bool guardarEnDirectorio;
+
   const PlayerEditResult({
     required this.name,
     required this.handicap,
     required this.tee,
+    this.guardarEnDirectorio = false,
   });
 }
 
@@ -51,10 +61,18 @@ Future<PlayerEditResult?> showPlayerEditSheet(
   required TeeInfo teeInicial,
   required String nombreFallback,
   ApiCourse? apiCourse,
+  /// true cuando se está CREANDO. Ofrece guardarlo en el directorio, marcado.
+  ///
+  /// Al editar no se pregunta: el jugador ya existe donde exista.
+  bool creando = false,
 }) {
   
     final nc = TextEditingController(text: nombreInicial);
     final hc = TextEditingController(text: handicapInicial.toStringAsFixed(1));
+    // Marcado por defecto: es lo que espera quien acaba de escribir el nombre de
+    // un amigo. Quien juega con un invitado de una vez lo desmarca AQUÍ, que es
+    // donde está pensando en ello.
+    var guardar = true;
     // Tee actual del jugador
     TeeInfo selectedTee = teeInicial;
     final availableTees = apiCourse?.allTees ?? [];
@@ -191,6 +209,52 @@ Future<PlayerEditResult?> showPlayerEditSheet(
             }),
           ],
 
+          if (creando) ...[
+            const SizedBox(height: 18),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setSt(() => guardar = !guardar),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                decoration: BoxDecoration(
+                  color: guardar
+                      ? t.primary.withValues(alpha: 0.08)
+                      : t.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: guardar ? t.primary : t.divider,
+                      width: guardar ? 1.5 : 1),
+                ),
+                child: Row(children: [
+                  Icon(
+                      guardar
+                          ? Icons.check_box_rounded
+                          : Icons.check_box_outline_blank_rounded,
+                      color: guardar ? t.primary : t.sub,
+                      size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Guardar en mis compañeros',
+                              style: TextStyle(
+                                  color: t.text,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700)),
+                          Text(
+                              guardar
+                                  ? 'Estará ahí la próxima vez, con su historial.'
+                                  : 'Solo para esta ronda: no se guarda.',
+                              style: TextStyle(color: t.sub, fontSize: 11)),
+                        ]),
+                  ),
+                ]),
+              ),
+            ),
+          ],
+
           const SizedBox(height: 20),
           GPrimaryButton(label: 'Guardar', onTap: () {
             Navigator.pop(
@@ -199,6 +263,7 @@ Future<PlayerEditResult?> showPlayerEditSheet(
                   name: nc.text.trim().isEmpty ? nombreFallback : nc.text.trim(),
                   handicap: double.tryParse(hc.text) ?? handicapInicial,
                   tee: selectedTee,
+                  guardarEnDirectorio: creando && guardar,
                 ));
           }),
         ])),
