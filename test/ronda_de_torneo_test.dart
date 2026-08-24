@@ -504,6 +504,7 @@ void main() {
   _quienSoy();
   _laRondaLlegaALaTabla();
   _elUltimoSalto();
+  _laNominaLlegaALaRonda();
 }
 
 // ── Montaje ─────────────────────────────────────────────────────────────────
@@ -1110,6 +1111,140 @@ void _elUltimoSalto() {
             ...resueltosPorGrupo(),
           }),
           SetupStep.revisar);
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12 · LA NÓMINA LLEGA A LA RONDA
+//
+// Donde se perdía el que se añadía del padrón: nominaInicial solo se leía dentro
+// de _precargarDesdeGrupo, y una ronda de torneo sin plantilla entra SIN grupo.
+// La lista llegaba entera y no la leía nadie; solo _autoAddMyself metía a
+// alguien, y de ahí el síntoma exacto —yo sí, Pepe no—.
+//
+// Estos tests miran la capa donde el dato se perdía, no el contador de la
+// pantalla anterior, que decía la verdad de su propio estado.
+// ─────────────────────────────────────────────────────────────────────────────
+Future<List<String>> _montarAsistente(
+  WidgetTester tester, {
+  List<String>? nomina,
+  List<Player> nuevos = const [],
+  BettingGroup? grupo,
+}) async {
+  tester.view.physicalSize = const Size(390, 2400);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
+  final errores = <String>[];
+  final anterior = FlutterError.onError;
+  FlutterError.onError = (d) => errores.add(d.exceptionAsString());
+
+  await tester.pumpWidget(MultiProvider(
+    providers: [
+      ChangeNotifierProvider(create: (_) => RoundProvider()),
+      ChangeNotifierProvider(create: (_) => HandicapProvider()),
+      ChangeNotifierProvider(create: (_) => BettingGroupProvider()),
+      ChangeNotifierProvider(create: (_) => TorneoProvider()),
+      ChangeNotifierProvider(create: (_) => PerfilProvider()),
+      ChangeNotifierProvider<UserProfileProvider>.value(
+          value: UserProfileProvider()
+            ..sembrar(const UserProfile(
+                uid: 'uid_yo',
+                displayName: 'CAV',
+                email: 'yo@x.com',
+                myPlayerId: 'mi_ficha'))),
+      ChangeNotifierProvider<PlayerProvider>.value(
+          value: PlayerProvider()
+            ..sembrar([
+              PlayerWithLink(
+                  player: Player(id: 'mi_ficha', name: 'CAV', handicapBase: 12)),
+              for (final e in nombres.entries)
+                PlayerWithLink(player: Player(id: e.key, name: e.value)),
+            ])),
+    ],
+    child: MaterialApp(
+      theme: GolfTheme.classic.toMaterial(),
+      home: SetupScreen(
+          torneoInicial: 'cp',
+          nominaInicial: nomina,
+          jugadoresNuevos: nuevos,
+          grupoInicial: grupo,
+          pasosResueltos: const {SetupStep.campo, SetupStep.jugadores}),
+    ),
+  ));
+  await tester.pump(const Duration(milliseconds: 300));
+  FlutterError.onError = anterior;
+  return errores;
+}
+
+/// Los nombres que el asistente tiene EN LA RONDA, no los que ofrece.
+///
+/// Sale del paso Jugadores: las fichas elegidas se pintan con su handicap al
+/// lado, y las ofrecidas no. Contar filas ahí es lo más cerca de "contar filas
+/// en la captura" que llega el harness, y es la capa exacta donde se perdía.
+Set<String> _enLaRonda(WidgetTester tester) {
+  final estado = tester.state(find.byType(SetupScreen));
+  // ignore: avoid_dynamic_calls
+  final players = (estado as dynamic).jugadoresDeLaRonda as List<Player>;
+  return players.map((p) => p.name).toSet();
+}
+
+void _laNominaLlegaALaRonda() {
+  group('12 · la nómina llega a la ronda', () {
+    testWidgets('CRITERIO 1: quien se añadió del padrón está en la ronda',
+        (tester) async {
+      final errores = await _montarAsistente(
+          tester, nomina: const ['mi_ficha', beto]);
+      expect(errores, isEmpty);
+      expect(_enLaRonda(tester), {'CAV', 'Ana Ruiz'});
+    });
+
+    testWidgets('CRITERIO 2: varios seguidos, todos llegan', (tester) async {
+      final errores = await _montarAsistente(tester,
+          nomina: const ['mi_ficha', beto, caro, dani]);
+      expect(errores, isEmpty);
+      expect(_enLaRonda(tester).length, 4);
+      expect(_enLaRonda(tester),
+          {'CAV', 'Ana Ruiz', 'Dani Sotó', 'Rafa Gil'});
+    });
+
+    testWidgets('y el materializado sin ficha en el directorio TAMBIÉN',
+        (tester) async {
+      // El caso que apuntabas: el del padrón sin ficha local. Viaja en
+      // jugadoresNuevos y _agregarDelDirectorio lo mira ANTES del directorio,
+      // así que no depende de que createPlayer haya llegado a Firestore.
+      final errores = await _montarAsistente(
+        tester,
+        nomina: const ['mi_ficha', 'pad_nuevo'],
+        nuevos: [
+          Player(id: 'pad_nuevo', name: 'Pepe Pérez', handicapBase: 0),
+        ],
+      );
+      expect(errores, isEmpty);
+      expect(_enLaRonda(tester), {'CAV', 'Pepe Pérez'});
+    });
+
+    testWidgets('sin nómina sigo estando yo, y solo yo', (tester) async {
+      // El contrapeso: si la precarga metiera de más, esto lo caza.
+      final errores = await _montarAsistente(tester);
+      expect(errores, isEmpty);
+      expect(_enLaRonda(tester), {'CAV'});
+    });
+
+    testWidgets('y con grupo sigue funcionando como antes', (tester) async {
+      // El camino que ya iba: la nómina de hoy manda sobre los habituales.
+      final errores = await _montarAsistente(
+        tester,
+        nomina: const ['mi_ficha', beto],
+        grupo: BettingGroup(
+            id: 'bg_1',
+            name: 'Los sábados',
+            playerIds: const [caro, dani],
+            updatedAt: DateTime(2026, 1, 1)),
+      );
+      expect(errores, isEmpty);
+      expect(_enLaRonda(tester), {'CAV', 'Ana Ruiz'});
     });
   });
 }

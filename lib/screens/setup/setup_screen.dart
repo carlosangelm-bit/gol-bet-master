@@ -132,7 +132,12 @@ class _SetupScreenState extends State<SetupScreen> {
   /// Guardando el enum, quitar un paso no mueve al usuario de sitio.
   late SetupStep _current = widget.pasosResueltos.isEmpty
       ? SetupStep.campo
-      : primerPasoSinResolver(_steps, widget.pasosResueltos);
+      // Con lanzarAlEntrar se va a Revisar por lo mismo que en el camino del
+      // grupo: la hoja de vuelta se abre encima y lo que se ve detrás es el
+      // resumen, no "paso 1 de 8".
+      : widget.lanzarAlEntrar
+          ? SetupStep.revisar
+          : primerPasoSinResolver(_steps, widget.pasosResueltos);
 
   /// Los pasos de ESTA ronda. La lista la decide [setupSteps], que es lógica
   /// pura y testeable: qué pasos existen no debería depender de un widget.
@@ -318,6 +323,14 @@ class _SetupScreenState extends State<SetupScreen> {
 
   late final _nameCtrl = TextEditingController(text: _defaultRoundName());
   final List<Player> _players = [];
+
+  /// Los jugadores que esta ronda va a tener. **Para tests.**
+  ///
+  /// Expuesto porque el fallo que costó una entrega entera vivía justo aquí: la
+  /// nómina llegaba a la pantalla, se pintaba bien en la anterior, y no entraba
+  /// en la ronda. Un test que mira lo que se OFRECE no lo ve; uno que mira esto,
+  /// sí. Es lo más cerca de contar filas en la captura que llega el harness.
+  List<Player> get jugadoresDeLaRonda => List.unmodifiable(_players);
   final List<BetGroup> _groups = [];
 
   // ── Controllers de los sheets de configuración de apuesta ──────────────────
@@ -489,6 +502,22 @@ class _SetupScreenState extends State<SetupScreen> {
       // lista y _precargarDesdeGrupo no lo duplica al recorrer playerIds.
       final bg = widget.grupoInicial;
       if (bg != null && mounted) _precargarDesdeGrupo(bg);
+
+      // ── La nómina, VENGA O NO DE UN GRUPO ───────────────────────────────
+      //
+      // Aquí se perdía quien se añadía del padrón. nominaInicial solo se leía
+      // dentro de _precargarDesdeGrupo, y una ronda de torneo sin plantilla
+      // entra SIN grupo: la lista llegaba entera y no la leía nadie. Solo
+      // _autoAddMyself metía a alguien, y de ahí el síntoma exacto —yo sí,
+      // Pepe no—.
+      //
+      // Es el patrón de siempre: el dato llega y se pierde al pasar de capa. Y
+      // el contador de la pantalla anterior decía la verdad de SU estado, no de
+      // lo que se creó.
+      final nomina = widget.nominaInicial;
+      if (bg == null && nomina != null && nomina.isNotEmpty && mounted) {
+        setState(() => _agregarDelDirectorio(nomina));
+      }
 
       // El torneo del enlace: solo la marca, sin jugadores.
       final delEnlace = widget.torneoInicial;
