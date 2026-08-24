@@ -94,17 +94,40 @@ class TorneoProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sigue un torneo, ACTUALIZANDO PRIMERO y guardando después.
+  ///
+  /// El orden importa y estaba al revés: escribía y luego actualizaba, así que
+  /// mientras la escritura estuviera en vuelo —o si nunca resolvía, que en web
+  /// pasa— el botón se quedaba igual y parecía que el toque no había hecho nada.
+  ///
+  /// Es el mismo patrón optimista que ya usaba `guardar`: la pantalla refleja la
+  /// intención al instante y el stream confirma. Si la escritura falla se
+  /// deshace, así que no se queda diciendo algo que no es.
   Future<void> seguir(TorneoSeguido s) async {
-    await FirestoreService.seguirTorneo(s);
     if (_seguidos.any((x) => x.torneoId == s.torneoId)) return;
+    final antes = _seguidos;
     _seguidos = [..._seguidos, s];
     notifyListeners();
+    try {
+      await FirestoreService.seguirTorneo(s);
+    } catch (e) {
+      _seguidos = antes;
+      notifyListeners();
+      rethrow;
+    }
   }
 
   Future<void> dejarDeSeguir(String torneoId) async {
-    await FirestoreService.dejarDeSeguir(torneoId);
+    final antes = _seguidos;
     _seguidos = _seguidos.where((x) => x.torneoId != torneoId).toList();
     notifyListeners();
+    try {
+      await FirestoreService.dejarDeSeguir(torneoId);
+    } catch (e) {
+      _seguidos = antes;
+      notifyListeners();
+      rethrow;
+    }
   }
 
   Future<void> borrar(String id) async {

@@ -64,6 +64,10 @@ Future<void> _publicarASeguidos(
         token: seg.token,
         torneoOwnerUid: seg.ownerUid,
         escritoPor: uid,
+        // El nombre que esta persona reclamó de la lista del organizador. Es lo
+        // que permite emparejar el resultado con un inscrito: el uid no puede,
+        // porque es otro espacio de ids.
+        jugadorNombre: seg.jugadorNombre,
         resultado: resultado.toJson(),
       ));
       debugPrint('[Torneo] resultado de ${round.id} publicado a ${seg.nombre}');

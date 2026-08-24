@@ -52,6 +52,15 @@ class TorneoSeguido {
   /// Cuándo se empezó a seguir. Para poder decir "sigues este torneo desde…".
   final DateTime desde;
 
+  /// Qué nombre de la lista de participantes reclama esta persona.
+  ///
+  /// Es EL PUENTE entre las dos partes. El organizador inscribe jugadores de su
+  /// directorio y quien sigue el torneo tiene su propia cuenta: no hay id común,
+  /// y lo único que comparten es el nombre. Por eso seguir un torneo exige haber
+  /// dicho cuál eres —y por eso la lista del enlace, que solo trae inscritos, es
+  /// además la comprobación de que estás inscrito—.
+  final String jugadorNombre;
+
   const TorneoSeguido({
     required this.torneoId,
     required this.token,
@@ -59,6 +68,7 @@ class TorneoSeguido {
     required this.nombre,
     this.emoji = '🏆',
     required this.desde,
+    this.jugadorNombre = '',
   });
 
   Map<String, dynamic> toJson() => {
@@ -68,6 +78,7 @@ class TorneoSeguido {
         'nombre': nombre,
         'emoji': emoji,
         'desde': desde.toIso8601String(),
+        if (jugadorNombre.isNotEmpty) 'jugadorNombre': jugadorNombre,
       };
 
   factory TorneoSeguido.fromJson(Map<String, dynamic> j) => TorneoSeguido(
@@ -78,11 +89,19 @@ class TorneoSeguido {
         emoji: (j['emoji'] as String?) ?? '🏆',
         desde: DateTime.tryParse((j['desde'] as String?) ?? '') ??
             DateTime(2000),
+        jugadorNombre: (j['jugadorNombre'] as String?) ?? '',
       );
 
-  /// Si la referencia sirve para publicar. Sin token ni dueño no se puede.
+  /// Si la referencia sirve para publicar.
+  ///
+  /// Sin nombre reclamado tampoco: el resultado se descartaría en la lectura por
+  /// no poder emparejarlo con ningún inscrito, y publicarlo sería escribir algo
+  /// que nadie va a contar.
   bool get utilizable =>
-      torneoId.isNotEmpty && token.isNotEmpty && ownerUid.isNotEmpty;
+      torneoId.isNotEmpty &&
+      token.isNotEmpty &&
+      ownerUid.isNotEmpty &&
+      jugadorNombre.isNotEmpty;
 }
 
 /// Un resultado publicado a un torneo ajeno.
@@ -97,8 +116,17 @@ class ResultadoDeTorneo {
   final String token;
   final String torneoOwnerUid;
 
-  /// Quién lo publicó. La tabla solo cuenta los de gente inscrita.
+  /// Quién lo publicó, por uid. Para poder auditar quién escribió qué.
+  ///
+  /// NO sirve para comprobar la inscripción: un uid de cuenta y un id de jugador
+  /// son espacios distintos y no pueden coincidir. Compararlos era el fallo que
+  /// hacía que la tabla descartara todo en silencio.
   final String escritoPor;
+
+  /// Qué nombre de la lista de participantes reclama el autor.
+  ///
+  /// Esto SÍ es lo que decide si cuenta: ver resultadosQueCuentan.
+  final String jugadorNombre;
 
   /// El resultado, en el mismo JSON que RoundResult.
   final Map<String, dynamic> resultado;
@@ -109,6 +137,7 @@ class ResultadoDeTorneo {
     required this.token,
     required this.torneoOwnerUid,
     required this.escritoPor,
+    this.jugadorNombre = '',
     required this.resultado,
   });
 
@@ -122,6 +151,7 @@ class ResultadoDeTorneo {
         'token': token,
         'torneoOwnerUid': torneoOwnerUid,
         'escritoPor': escritoPor,
+        if (jugadorNombre.isNotEmpty) 'jugadorNombre': jugadorNombre,
         'resultado': resultado,
       };
 
@@ -132,6 +162,7 @@ class ResultadoDeTorneo {
         token: (j['token'] as String?) ?? '',
         torneoOwnerUid: (j['torneoOwnerUid'] as String?) ?? '',
         escritoPor: (j['escritoPor'] as String?) ?? '',
+        jugadorNombre: (j['jugadorNombre'] as String?) ?? '',
         resultado: j['resultado'] is Map
             ? Map<String, dynamic>.from(j['resultado'] as Map)
             : const {},

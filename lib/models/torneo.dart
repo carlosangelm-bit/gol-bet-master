@@ -2043,16 +2043,58 @@ String resumenDeLlave(LlaveDelTorneo llave, Map<String, String> nombres) {
 /// el enlace meta una fila inventada en la tabla de otro. Está dicho en firestore
 /// .rules —bloque torneoResultados— y está dicho aquí, y las dos notas se nombran
 /// la una a la otra a propósito.
+/// ── EL PUENTE ES EL NOMBRE, y esto costó un fallo entero ──────────────────
+///
+/// La primera versión comparaba `escritoPor` contra [Torneo.participantes]. Son
+/// ESPACIOS DE IDS DISTINTOS: escritoPor es un uid de cuenta —currentUser.uid— y
+/// los participantes son ids de jugador del directorio del organizador. Un uid no
+/// puede ser igual a un id de jugador NUNCA, así que el filtro descartaba TODO, y
+/// en silencio: la tabla contaba cero rondas publicadas y parecía que nadie había
+/// jugado.
+///
+/// Y no hay id compartido entre las dos partes: el organizador inscribe jugadores
+/// de SU directorio, y quien llega por el enlace tiene su propia cuenta. Lo único
+/// que las dos partes comparten es el NOMBRE, que es justo para lo que se
+/// inventó "elegir tu jugador": el invitado se señala en la lista del organizador.
+///
+/// Así que el resultado publicado declara QUÉ NOMBRE de la lista reclama su autor,
+/// y aquí se compara contra los nombres de los inscritos. [nombres] es id de
+/// jugador → nombre, que el organizador resuelve con su directorio.
+///
+/// Se compara normalizado —sin acentos ni mayúsculas— por lo mismo que la
+/// importación: es lo único que las dos partes escriben a mano.
 List<RoundResult> resultadosQueCuentan(
   Torneo t,
-  Iterable<({String escritoPor, RoundResult resultado})> publicados,
-) {
+  Iterable<({String jugadorNombre, RoundResult resultado})> publicados, {
+  Map<String, String> nombres = const {},
+}) {
   if (t.participantes.isEmpty) return const [];
-  final inscritos = t.participantes.toSet();
+  final inscritos = {
+    for (final pid in t.participantes)
+      if (nombres[pid] != null) _comparable(nombres[pid]!),
+  };
+  if (inscritos.isEmpty) return const [];
   return [
     for (final p in publicados)
-      if (inscritos.contains(p.escritoPor)) p.resultado,
+      if (p.jugadorNombre.isNotEmpty &&
+          inscritos.contains(_comparable(p.jugadorNombre)))
+        p.resultado,
   ];
+}
+
+/// Un nombre comparable: sin acentos, sin mayúsculas, sin espacios de más.
+///
+/// Igual que en la importación por pegado, y por el mismo motivo: es lo único que
+/// las dos partes escriben a mano.
+String _comparable(String s) {
+  const con = 'áàäâãéèëêíìïîóòöôõúùüûñçÁÀÄÂÃÉÈËÊÍÌÏÎÓÒÖÔÕÚÙÜÛÑÇ';
+  const sin = 'aaaaaeeeeiiiiooooouuuuncAAAAAEEEEIIIIOOOOOUUUUNC';
+  final b = StringBuffer();
+  for (final ch in s.trim().toLowerCase().split('')) {
+    final i = con.indexOf(ch);
+    b.write(i >= 0 ? sin[i] : ch);
+  }
+  return b.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
 /// Une lo propio con lo publicado, sin contar una ronda dos veces.

@@ -625,7 +625,7 @@ class FirestoreService {
   ///
   /// La procedencia viaja porque la tabla la necesita: solo cuentan los de gente
   /// inscrita, y eso es lo que la regla no puede comprobar al escribir.
-  static Future<List<({String escritoPor, RoundResult resultado})>>
+  static Future<List<({String jugadorNombre, RoundResult resultado})>>
       resultadosPublicados(String torneoId) async {
     final uid = AuthService.uid;
     if (uid == null) return const [];
@@ -634,13 +634,15 @@ class FirestoreService {
           .where('torneoOwnerUid', isEqualTo: uid)
           .where('torneoId', isEqualTo: torneoId)
           .get();
-      final out = <({String escritoPor, RoundResult resultado})>[];
+      final out = <({String jugadorNombre, RoundResult resultado})>[];
       for (final d in snap.docs) {
         try {
           final r = ResultadoDeTorneo.fromJson(d.data());
           if (r.resultado.isEmpty) continue;
           out.add((
-            escritoPor: r.escritoPor,
+            // El NOMBRE reclamado, no el uid: es lo único que se puede emparejar
+            // con la lista de inscritos. Ver resultadosQueCuentan.
+            jugadorNombre: r.jugadorNombre,
             resultado: RoundResult.fromJson(r.resultado),
           ));
         } catch (e) {

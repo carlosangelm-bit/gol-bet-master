@@ -223,30 +223,41 @@ void main() {
     // Mis tests probaban el modelo y el provider —la lógica— y ninguno miraba si
     // la superficie llegaba. Es el mismo patrón que ya costó tiempo: el arreglo
     // existe y no llega a producción.
-    testWidgets('SIN elegir jugador todavía, el botón está', (tester) async {
+    testWidgets('SIN elegir jugador, dice que hay que elegirse', (tester) async {
+      // El bloque LLEGA a la pantalla —era el fallo— y lo que dice es el aviso
+      // del otro lado del filtro: sin decir cuál eres, tu resultado no se puede
+      // emparejar con ningún inscrito.
       final errores = await _montar(tester, _publicar());
       expect(errores, isEmpty);
-      // La pregunta de identidad está sin contestar, que es lo que ve cualquiera
-      // al abrir el enlace.
       expect(find.text('¿CUÁL ERES TÚ?'), findsOneWidget);
-      // Y el botón también.
-      expect(find.textContaining('cuenten aquí'), findsOneWidget);
-      // Con su explicación de para qué sirve.
-      expect(_pantalla(tester), contains('contará en su tabla'));
+      expect(find.text('PARA QUE TUS RONDAS CUENTEN'), findsOneWidget);
     });
 
-    testWidgets('y sigue estando después de elegir', (tester) async {
+    testWidgets('y dice que no encontrarse significa no estar inscrito',
+        (tester) async {
+      // ES EL AVISO QUE FALTABA. Antes de jugar, no después: el filtro de lectura
+      // avisa cuando ya se jugó, y eso es tarde.
+      await _montar(tester, _publicar());
+      final txt = _pantalla(tester);
+      expect(txt, contains('Si no te encuentras'));
+      expect(txt, contains('pídele al organizador que te añada'));
+    });
+
+    testWidgets('elegido, aparece el botón y dice CON QUÉ NOMBRE contará',
+        (tester) async {
       await _montar(tester, _publicar());
       await tester.tap(find.text('Rafael').first);
       await tester.pumpAndSettle();
       expect(find.textContaining('cuenten aquí'), findsOneWidget);
+      // El nombre reclamado, dicho: es lo que va a viajar con el resultado.
+      expect(_pantalla(tester), contains('como Rafael'));
     });
 
-    testWidgets('CRITERIO 2: sin sesión no se oculta, se dice qué hace falta',
+    testWidgets('CRITERIO 2: elegido y sin sesión, no se oculta',
         (tester) async {
-      // Ocultarlo dejaría a alguien que quiere que sus rondas cuenten sin saber
-      // que la opción existe.
       await _montar(tester, _publicar());
+      await tester.tap(find.text('Rafael').first);
+      await tester.pumpAndSettle();
       expect(find.textContaining('Inicia sesión para que tus rondas cuenten'),
           findsOneWidget);
     });
@@ -254,6 +265,8 @@ void main() {
     testWidgets('y al tocarlo sin sesión se explica la diferencia',
         (tester) async {
       await _montar(tester, _publicar());
+      await tester.tap(find.text('Rafael').first);
+      await tester.pumpAndSettle();
       await tester.tap(find.textContaining('Inicia sesión para que tus rondas'));
       await tester.pumpAndSettle();
       final txt = _pantalla(tester);

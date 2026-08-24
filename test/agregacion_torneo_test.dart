@@ -177,44 +177,116 @@ void main() {
           torneoIds: const ['tor_1'],
         );
 
-    test('el resultado de un inscrito cuenta', () {
+    // El directorio del organizador: id de jugador → nombre. Es lo que permite
+    // emparejar, porque el uid de la cuenta de quien publica NO es un id de
+    // jugador y compararlos descartaba todo.
+    const dir = {
+      'pid_luis': 'Luis Herrera',
+      'pid_ana': 'Ana Ruiz',
+      'pid_a': 'Rafael',
+      'pid_b': 'Alan',
+      'pid_c': 'Memo',
+    };
+
+    test('el resultado de un inscrito cuenta, emparejado por NOMBRE', () {
       final t = _t(participantes: const ['pid_luis', 'pid_ana']);
-      final buenos = resultadosQueCuentan(t, [
-        (escritoPor: 'pid_luis', resultado: publicado('r1', 'pid_luis', 100)),
-      ]);
+      final buenos = resultadosQueCuentan(
+          t,
+          [
+            (
+              jugadorNombre: 'Luis Herrera',
+              resultado: publicado('r1', 'pid_luis', 100)
+            ),
+          ],
+          nombres: dir);
       expect(buenos, hasLength(1));
+    });
+
+    test('y da igual cómo lo escriba: acentos, mayúsculas y espacios', () {
+      final t = _t(participantes: const ['pid_luis']);
+      for (final variante in [
+        'luis herrera',
+        '  LUIS   HERRERA ',
+        'Luís Herrera',
+      ]) {
+        final buenos = resultadosQueCuentan(
+            t,
+            [(jugadorNombre: variante, resultado: publicado('r', 'pid_luis', 1))],
+            nombres: dir);
+        expect(buenos, hasLength(1), reason: variante);
+      }
     });
 
     test('el de un NO inscrito se descarta', () {
       final t = _t(participantes: const ['pid_luis']);
-      final buenos = resultadosQueCuentan(t, [
-        (escritoPor: 'pid_colado', resultado: publicado('r2', 'pid_colado', 9999)),
-      ]);
+      final buenos = resultadosQueCuentan(
+          t,
+          [
+            (
+              jugadorNombre: 'Carlos Colado',
+              resultado: publicado('r2', 'pid_x', 9999)
+            ),
+          ],
+          nombres: dir);
+      expect(buenos, isEmpty);
+    });
+
+    test('sin nombre reclamado se descarta: no hay con qué emparejar', () {
+      final t = _t(participantes: const ['pid_luis']);
+      final buenos = resultadosQueCuentan(
+          t,
+          [(jugadorNombre: '', resultado: publicado('r', 'pid_luis', 1))],
+          nombres: dir);
       expect(buenos, isEmpty);
     });
 
     test('sin lista de inscritos NO cuenta ninguno', () {
-      // Mismo criterio que el bote: sin saber quién entra, aceptar lo que llegue
-      // es peor que no aceptar nada.
       final t = _t(participantes: const []);
-      final buenos = resultadosQueCuentan(t, [
-        (escritoPor: 'pid_luis', resultado: publicado('r1', 'pid_luis', 100)),
-      ]);
+      final buenos = resultadosQueCuentan(
+          t,
+          [(jugadorNombre: 'Luis Herrera', resultado: publicado('r1', 'pid_luis', 1))],
+          nombres: dir);
       expect(buenos, isEmpty);
     });
 
+    test('sin directorio tampoco: no se puede resolver ningún nombre', () {
+      // El organizador sin directorio cargado no puede emparejar nada, y aceptar
+      // lo que llegue sería peor que no aceptar nada.
+      final t = _t(participantes: const ['pid_luis']);
+      expect(
+          resultadosQueCuentan(t, [
+            (jugadorNombre: 'Luis Herrera', resultado: publicado('r', 'pid_luis', 1))
+          ]),
+          isEmpty);
+    });
+
     test('la liga completa: cada uno cierra la suya y la tabla las cuenta', () {
-      // El caso del encargo. Tres jugadores, tres rondas cerradas por cada uno
-      // desde SU cuenta, y una tabla que las ve todas.
       final t = _t(participantes: const ['pid_a', 'pid_b', 'pid_c']);
       final publicados = [
-        (escritoPor: 'pid_a', resultado: publicado('ra', 'pid_a', 100)),
-        (escritoPor: 'pid_b', resultado: publicado('rb', 'pid_b', 50)),
-        (escritoPor: 'pid_c', resultado: publicado('rc', 'pid_c', -150)),
+        (jugadorNombre: 'Rafael', resultado: publicado('ra', 'pid_a', 100)),
+        (jugadorNombre: 'Alan', resultado: publicado('rb', 'pid_b', 50)),
+        (jugadorNombre: 'Memo', resultado: publicado('rc', 'pid_c', -150)),
       ];
-      final tabla = tablaDe(t, resultadosQueCuentan(t, publicados));
+      final tabla =
+          tablaDe(t, resultadosQueCuentan(t, publicados, nombres: dir));
       expect(tabla.rondas, 3);
       expect(tabla.filas.first.playerId, 'pid_a');
+    });
+
+    test('un uid de cuenta NUNCA cuenta como inscrito', () {
+      // Era el fallo: escritoPor es un uid y participantes son ids de jugador, así
+      // que compararlos descartaba TODO en silencio. Este test lo fija.
+      final t = _t(participantes: const ['pid_luis']);
+      final buenos = resultadosQueCuentan(
+          t,
+          [
+            (
+              jugadorNombre: 'uid_firebase_abc123',
+              resultado: publicado('r', 'pid_luis', 1)
+            )
+          ],
+          nombres: dir);
+      expect(buenos, isEmpty);
     });
   });
 
@@ -269,12 +341,27 @@ void main() {
           token: 'tok_abc',
           ownerUid: 'uid_org',
           nombre: 'Copa de Primavera',
-          desde: DateTime(2026, 3, 1));
+          desde: DateTime(2026, 3, 1),
+          jugadorNombre: 'Luis Herrera');
       expect(s.utilizable, isTrue);
       final ida = TorneoSeguido.fromJson(s.toJson());
       expect(ida.token, 'tok_abc');
       expect(ida.ownerUid, 'uid_org');
       expect(ida.nombre, 'Copa de Primavera');
+      expect(ida.jugadorNombre, 'Luis Herrera');
+    });
+
+    test('SIN nombre reclamado no es utilizable', () {
+      // Y no es una restricción técnica: sin nombre el resultado no se puede
+      // emparejar con ningún inscrito, así que publicarlo sería escribir algo que
+      // nadie va a contar. Mejor no ofrecerlo.
+      final sinNombre = TorneoSeguido(
+          torneoId: 'tor_1',
+          token: 'tok',
+          ownerUid: 'uid',
+          nombre: 'X',
+          desde: DateTime(2026, 1, 1));
+      expect(sinNombre.utilizable, isFalse);
     });
 
     test('sin token o sin dueño NO es utilizable: no se puede publicar', () {
@@ -283,7 +370,8 @@ void main() {
           token: '',
           ownerUid: 'uid',
           nombre: 'X',
-          desde: DateTime(2026, 1, 1));
+          desde: DateTime(2026, 1, 1),
+          jugadorNombre: 'Luis');
       expect(sinToken.utilizable, isFalse);
     });
 

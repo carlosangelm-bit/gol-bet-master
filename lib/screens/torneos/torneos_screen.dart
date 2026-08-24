@@ -221,7 +221,10 @@ class _TorneoTablaScreenState extends State<TorneoTablaScreen> {
         .where((x) => x.id == widget.torneo.id)
         .firstOrNull ??
         widget.torneo;
-    final buenos = resultadosQueCuentan(vivo, crudos);
+    // Los nombres del directorio: el filtro empareja por nombre porque es lo
+    // único que el organizador y quien publica comparten.
+    final buenos = resultadosQueCuentan(vivo, crudos,
+        nombres: context.read<PlayerProvider>().nombres);
     setState(() {
       _publicados = buenos;
       _descartados = crudos.length - buenos.length;

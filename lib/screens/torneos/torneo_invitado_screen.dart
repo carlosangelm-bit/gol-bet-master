@@ -226,6 +226,11 @@ class _TorneoInvitadoScreenState extends State<TorneoInvitadoScreen> {
               _BotonSeguir(
                   copia: copia,
                   t: t,
+                  // El nombre reclamado. Sin él no se puede seguir, y eso NO es
+                  // una restricción técnica: la lista del enlace solo trae
+                  // inscritos, así que encontrarse en ella ES la comprobación de
+                  // estar inscrito. Quien no se encuentra, no está.
+                  jugadorNombre: _yoSoy,
                   onPedirCuenta: () => _pedirCuenta(
                       t, 'que tus rondas cuenten para este torneo')),
               const SizedBox(height: 14),
@@ -772,10 +777,19 @@ class _CintillaDescarga extends StatelessWidget {
 class _BotonSeguir extends StatefulWidget {
   final TorneoPublicado copia;
   final GolfTheme t;
+
+  /// El nombre de la lista que esta persona dijo que es. null = todavía no lo
+  /// dijo, y entonces no se puede seguir: el resultado no se podría emparejar
+  /// con ningún inscrito y se descartaría en silencio.
+  final String? jugadorNombre;
+
   final VoidCallback onPedirCuenta;
 
   const _BotonSeguir(
-      {required this.copia, required this.t, required this.onPedirCuenta});
+      {required this.copia,
+      required this.t,
+      required this.jugadorNombre,
+      required this.onPedirCuenta});
 
   @override
   State<_BotonSeguir> createState() => _BotonSeguirState();
@@ -820,6 +834,42 @@ class _BotonSeguirState extends State<_BotonSeguir> {
       );
     }
 
+    // ── Sin decir cuál eres, no se puede seguir ─────────────────────────────
+    //
+    // Y aquí está el aviso que faltaba, el del OTRO lado del filtro. La tabla
+    // descarta los resultados que no puede emparejar con un inscrito —y lo dice—
+    // pero eso se ve DESPUÉS de jugar. Esto lo dice antes.
+    //
+    // La lista de arriba solo trae inscritos, así que no encontrarse en ella es
+    // la señal de que no lo estás. Se dice con la salida: pídeselo al
+    // organizador.
+    final mio = widget.jugadorNombre;
+    if (mio == null || mio.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: t.scoreOver.withValues(alpha: 0.5)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('PARA QUE TUS RONDAS CUENTEN',
+              style: TextStyle(
+                  color: t.sub,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8)),
+          const SizedBox(height: 4),
+          Text(
+              'Di arriba cuál eres de la lista. Si no te encuentras, no estás '
+              'entre los participantes: pídele al organizador que te añada, y '
+              'entonces podrás elegirte y tus rondas contarán.',
+              style: TextStyle(color: t.text, fontSize: 11.5, height: 1.35)),
+        ]),
+      );
+    }
+
     // Instantánea vieja, publicada antes de que el id viajara. Seguirla crearía
     // una referencia que no funcionaría, así que se dice qué hace falta en vez de
     // dejar un botón que no lleva a nada.
@@ -853,6 +903,7 @@ class _BotonSeguirState extends State<_BotonSeguir> {
                       nombre: widget.copia.nombre,
                       emoji: widget.copia.emoji,
                       desde: DateTime.now(),
+                      jugadorNombre: mio,
                     ));
                   }
                 } catch (e) {
@@ -894,9 +945,9 @@ class _BotonSeguirState extends State<_BotonSeguir> {
       Text(
           siguiendo
               ? 'Al cerrar una ronda marcada para este torneo, su resultado se '
-                  'envía a la tabla del organizador.'
+                  'envía a la tabla del organizador como $mio.'
               : 'Las rondas que juegues podrás marcarlas para este torneo, y su '
-                  'resultado contará en su tabla.',
+                  'resultado contará en su tabla como $mio.',
           style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
     ]);
   }
