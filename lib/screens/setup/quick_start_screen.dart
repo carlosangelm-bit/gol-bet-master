@@ -103,43 +103,41 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
   /// Desde un torneo sin plantilla arranca con QUIEN SOY YO y nadie más: marcar
   /// a los veinte del padrón sería peor que no marcar a ninguno, porque hay que
   /// desmarcar diecisiete para jugar un cuarteto. Los demás se añaden del padrón.
-  final List<String> _hoy = [];
-  bool _sembrado = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Aquí y no en un inicializador de campo: resolver quién soy necesita el
-    // directorio y el perfil, o sea el contexto. Una sola vez, porque después
-    // _hoy es de quien lo esté editando.
-    if (_sembrado) return;
-    _sembrado = true;
-    _hoy.addAll(_inicial());
-  }
-
-  /// Quién viene marcado, y de dónde sale ESA decisión.
+  /// Los DEMÁS que juegan hoy. Yo no estoy aquí, y es el arreglo.
   ///
-  /// ── Nunca del directorio ──────────────────────────────────────────────────
+  /// ── Yo no soy una casilla ─────────────────────────────────────────────────
   ///
-  /// Quién juega la ronda de hoy no lo decide mi lista de compañeros. En una liga
-  /// puedo jugar con cualquiera de los inscritos, con gente de fuera o con nadie
-  /// del torneo. Así que marcado viene:
+  /// Un checkbox es una pregunta con dos respuestas útiles, y aquí la segunda no
+  /// lo es: desmarcarme deja una ronda del torneo en la que no estoy, que es
+  /// justo "contaría para el torneo sin contar para nadie". No se ofrece.
+  ///
+  /// Y sacarme del estado arregla además un fallo de tiempos que no se veía: la
+  /// lista se sembraba UNA vez y quién soy yo se resuelve con el directorio y el
+  /// perfil, que llegan por stream. Si la siembra pasaba antes de que llegaran,
+  /// yo no entraba nunca. Derivado no puede pasar: se recalcula en cada build.
+  late final List<String> _hoy =
+      List.of(widget.grupo?.playerIds ?? const <String>[]);
+
+  /// Quién juega la ronda: yo primero, y los demás.
+  ///
+  /// ── De dónde sale que alguien esté aquí ───────────────────────────────────
+  ///
+  /// Quién juega hoy no lo decide mi lista de compañeros. En una liga puedo jugar
+  /// con cualquiera de los inscritos, con gente de fuera o con nadie del torneo.
+  /// Así que solo entran de salida:
   ///
   ///   · YO, si reclamé un jugador del padrón. Soy el único que seguro juega.
-  ///   · Los habituales de la PLANTILLA, si el torneo fija una — y entonces sí lo
-  ///     dice el torneo. Es el caso del shotgun: el organizador armó el grupo,
-  ///     así que la ronda trae a sus compañeros.
+  ///   · Los habituales de la PLANTILLA, si el torneo fija una — y ahí sí lo dice
+  ///     el torneo. Es el caso del shotgun: el organizador armó el grupo.
   ///
-  /// Nadie más. Y cada fila lleva escrito de dónde viene, para que la pregunta
-  /// "¿por qué está marcado este?" se pueda contestar mirando.
-  List<String> _inicial() {
-    final fuera = <String>[];
+  /// Nadie más, y cada fila lleva escrito de dónde viene.
+  List<String> get _jugando {
     final mio = _tor?.miFicha;
-    if (mio != null) fuera.add(mio);
-    for (final id in widget.grupo?.playerIds ?? const <String>[]) {
-      if (!fuera.contains(id)) fuera.add(id);
-    }
-    return fuera;
+    return [
+      if (mio != null) mio,
+      for (final id in _hoy)
+        if (id != mio) id,
+    ];
   }
 
   /// 'handicap' · 'sliding' · 'ninguna'. Sin elegir hasta que se toque.
@@ -158,7 +156,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
       );
 
   bool get _listo =>
-      _hoy.length >= 2 &&
+      _jugando.length >= 2 &&
       (!_pendientes.contains(SetupStep.campo) || _campo != null) &&
       (!_pendientes.contains(SetupStep.ventaja) || _ventaja != null);
 
@@ -301,7 +299,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
         // "empezar" a secas arrancaría una ronda sin apuestas sin decirlo. Lleva
         // al asistente con el padrón, la ventaja, el campo y la marca ya puestos:
         // lo que queda por responder es lo único que de verdad es suyo.
-        if (_heredaApuestas) ...[
+        if (!_pideApuestas) ...[
           GPrimaryButton(
             label: '⛳ Empezar ronda',
             onTap: _listo ? () => _empezar(directo: true) : null,
@@ -324,12 +322,16 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
                 // Antes concatenaba la frase de la tarjeta y salía "Elige falta
                 // elegir campo y ventaja para empezar".
                 ? _queFaltaFrase
-                : _heredaApuestas
-                    ? 'Empezar usa los jugadores y las apuestas del grupo tal '
-                        'cual.'
-                    : 'El torneo fija con quién juegas y con qué ventaja. Las '
-                        'apuestas se eligen en el siguiente paso, y la ronda ya '
-                        'queda marcada para el torneo.',
+                : !_pideApuestas
+                    ? (_heredaApuestas
+                        ? 'Empezar usa los jugadores y las apuestas del grupo '
+                            'tal cual.'
+                        : 'Este torneo puntúa por score, así que no hace falta '
+                            'apostar nada: empieza la ronda y ya cuenta.')
+                    // Y se dice POR QUÉ hace falta el paso, en vez de que se
+                    // note al llegar.
+                    : '${_tor?.motivoApuestas ?? ''} Lo demás ya está puesto, '
+                        'incluida la marca del torneo.',
             style: GolfType.label(t.sub)),
       ]),
     );
@@ -343,11 +345,11 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
   late bool _abierto = widget.torneo != null;
 
   /// Cuántos juegan hoy. Con torneo no hay "de N habituales" que enseñar.
-  int get _marcados => _hoy.length;
+  int get _marcados => _jugando.length;
 
   /// Reglas de hoy. Derivadas, para que el resumen se recalcule en vivo.
   List<PairBetRule> get _reglasHoy =>
-      widget.grupo?.rulesForToday(_hoy) ?? const [];
+      widget.grupo?.rulesForToday(_jugando) ?? const [];
   int get _duelosHoy => _reglasHoy.where((r) => r.modules.isNotEmpty).length;
   int get _apuestasHoy =>
       _reglasHoy.fold(0, (s, r) => s + r.modules.length);
@@ -358,7 +360,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
   /// quitar un jugador puede volver jugable un Wolf que con seis no entraba, y
   /// eso se ve al momento.
   List<ApuestaDePartidaHoy> get _partidaHoy =>
-      widget.grupo?.modulosDePartidaHoy(_hoy) ?? const [];
+      widget.grupo?.modulosDePartidaHoy(_jugando) ?? const [];
   List<ApuestaDePartidaHoy> get _partidaJugables =>
       _partidaHoy.where((a) => a.jugable).toList();
   List<ApuestaDePartidaHoy> get _partidaFuera =>
@@ -368,7 +370,11 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
   String get _queFaltaFrase {
     // Los jugadores van primero porque sin dos no hay ronda, y decir "elige el
     // campo" cuando lo que falta es gente manda a la pregunta equivocada.
-    if (_hoy.length < 2) return 'Marca al menos dos jugadores para empezar.';
+    if (_jugando.length < 2) {
+      return _tor?.miFicha == null
+          ? 'Marca al menos dos jugadores para empezar.'
+          : 'Añade a alguien más: una ronda de uno no se puede apostar.';
+    }
     final faltan = <String>[
       if (_pendientes.contains(SetupStep.campo) && _campo == null) 'el campo',
       if (_pendientes.contains(SetupStep.ventaja) && _ventaja == null)
@@ -409,20 +415,18 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
     // "del directorio"— y elegir entre dos chips idénticos no es una elección.
     final delPadron = _tor?.padron.map(nombreComparable).toSet() ?? const {};
     final invitables = dir
-        .where((x) => !_hoy.contains(x.player.id))
+        // _jugando y no _hoy: yo no estoy en _hoy —soy un hecho, no una casilla—
+        // y sin esto salía ofrecido como "del directorio" en mi propia ronda.
+        .where((x) => !_jugando.contains(x.player.id))
         .where((x) => !habituales.contains(x.player.id))
         .where((x) => !delPadron.contains(nombreComparable(x.displayName)))
         .toList();
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const SizedBox(height: 10),
-      // YO primero, siempre. Soy el único que seguro juega esta ronda.
+      // YO primero, y sin casilla: es un hecho, no una opción.
       if (_tor?.miFicha != null)
-        _filaJugador(t, nombre(_tor!.miFicha!), _hoy.contains(_tor!.miFicha!),
-            etiqueta: 'tú',
-            onTap: () => setState(() {
-                  if (!_hoy.remove(_tor!.miFicha!)) _hoy.add(_tor!.miFicha!);
-                })),
+        _filaFija(t, nombre(_tor!.miFicha!)),
       for (final id in habituales)
         if (id != _tor?.miFicha)
           _filaJugador(t, nombre(id), _hoy.contains(id),
@@ -433,8 +437,8 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
       // Los añadidos de hoy. La etiqueta dice de dónde vienen —del padrón, del
       // torneo, o a mano— para que "¿por qué está marcado este?" se conteste
       // mirando en vez de adivinando.
-      for (final id
-          in _hoy.where((x) => !habituales.contains(x) && x != _tor?.miFicha))
+      for (final id in _hoy
+          .where((x) => !habituales.contains(x) && x != _tor?.miFicha))
         _filaJugador(t, nombre(id), true,
             etiqueta: _porQueEsta(id) ?? 'invitado',
             onTap: () => setState(() => _hoy.remove(id))),
@@ -567,7 +571,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
         const SizedBox(height: 8),
         Text(pat.motivo!, style: GolfType.label(t.danger)),
       ],
-      if (_hoy.length < 2) ...[
+      if (_jugando.length < 2) ...[
         const SizedBox(height: 8),
         Text('Hacen falta al menos dos para jugar.',
             style: GolfType.label(t.danger)),
@@ -647,8 +651,8 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
     // le diera otro, la misma persona saldría dos veces y su historial se
     // partiría en dos. Es la lección del jugador creado en el asistente.
     final id = 'pad_${DateTime.now().microsecondsSinceEpoch}';
-    final nuevo =
-        Player(id: id, name: nombre, handicapBase: hcp, colorIndex: _hoy.length);
+    final nuevo = Player(
+        id: id, name: nombre, handicapBase: hcp, colorIndex: _jugando.length);
     setState(() {
       _creados[id] = nuevo;
       _hoy.add(id);
@@ -691,10 +695,10 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
     final r = await showPlayerEditSheet(
       context,
       t: t,
-      nombreInicial: 'Jugador ${_hoy.length + 1}',
+      nombreInicial: 'Jugador ${_jugando.length + 1}',
       handicapInicial: 0,
       teeInicial: TeeInfo.standard,
-      nombreFallback: 'Jugador ${_hoy.length + 1}',
+      nombreFallback: 'Jugador ${_jugando.length + 1}',
       creando: true,
     );
     if (r == null || !mounted) return;
@@ -703,7 +707,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
         id: id,
         name: r.name,
         handicapBase: r.handicap,
-        colorIndex: _hoy.length);
+        colorIndex: _jugando.length);
     setState(() {
       _creados[id] = nuevo;
       _hoy.add(id);
@@ -734,6 +738,23 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
       ));
     }
   }
+
+  /// Mi fila: marcada, con su etiqueta, y sin nada que tocar.
+  ///
+  /// No es un checkbox deshabilitado —eso sigue pareciendo una pregunta que no te
+  /// dejan contestar— es un hecho de la ronda, como el torneo para el que cuenta.
+  Widget _filaFija(GolfTheme t, String nombre) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(children: [
+          Icon(Icons.check_circle, color: t.primary, size: 19),
+          const SizedBox(width: 9),
+          Expanded(
+              child: Text(nombre,
+                  style: GolfType.body(t.text)
+                      .copyWith(fontWeight: FontWeight.w700))),
+          Text('tú', style: GolfType.label(t.primary)),
+        ]),
+      );
 
   Widget _filaJugador(GolfTheme t, String nombre, bool dentro,
           {String? etiqueta, required VoidCallback onTap}) =>
@@ -880,6 +901,19 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
   /// Las dos salidas van por SetupScreen: con [directo] lanza al entrar sin
   /// mostrar los pasos, y sin él se queda en el wizard para cambiar lo que sea.
   /// Un solo camino de lanzamiento.
+  /// Los pasos que esta pantalla deja respondidos.
+  ///
+  /// Se CALCULA de lo que hay, no se fija: el día que el punto de partida traiga
+  /// una respuesta más, el aterrizaje se corre solo.
+  Set<SetupStep> get _resueltos => {
+        if (_campo != null) SetupStep.campo,
+        // La nómina siempre: de aquí no se sale con la lista sin decidir.
+        SetupStep.jugadores,
+        if (_ventaja != null) SetupStep.ventaja,
+        // Y con grupo, todo lo que el grupo responde.
+        if (widget.grupo != null) ...resueltosPorGrupo(),
+      };
+
   /// Si esta ronda hereda las apuestas de un punto de partida.
   ///
   /// Un grupo SIEMPRE las trae. Un torneo solo si tiene plantilla, y el seguidor
@@ -888,15 +922,32 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
   /// en la instantánea.
   bool get _heredaApuestas => widget.grupo != null;
 
+  /// Si esta ronda tiene que pasar por el paso de elegir apuestas.
+  ///
+  /// Con grupo nunca: las trae. Sin grupo lo decide cómo puntúa el torneo —ver
+  /// PuntoDeTorneo.pideApuestas—: por score no hace falta nada y se lanza; por
+  /// dinero la medida sale de lo apostado y arrancar en blanco daría cero a todo
+  /// el mundo.
+  ///
+  /// Y sin torneo ni grupo esta pantalla no existe, así que el caso no se da.
+  bool get _pideApuestas => !_heredaApuestas && (_tor?.pideApuestas ?? true);
+
   void _empezar({required bool directo}) {
     Navigator.of(context).pushReplacement(MaterialPageRoute(
       builder: (_) => SetupScreen(
         grupoInicial: widget.grupo,
+        // Lo que esta pantalla YA respondió, para aterrizar en la primera
+        // pregunta de verdad en vez de en "paso 1 de 8 · Campo".
+        //
+        // Sin esto, venir de aquí volvía a preguntar el campo, los jugadores y
+        // la ventaja: el error de dirección reapareciendo en el último salto,
+        // que es donde se ha roto tres veces.
+        pasosResueltos: _resueltos,
         // LA MARCA. Sin esto la ronda se juega y no cuenta, que es el peor de los
         // dos silencios: todo parece funcionar y la tabla no se mueve.
         torneoInicial: widget.torneo?.torneoId,
         // La lista de HOY, no la de los habituales.
-        nominaInicial: List.of(_hoy),
+        nominaInicial: List.of(_jugando),
         // Los que no están en el directorio: sin esto se caerían al precargar,
         // porque _precargarDesdeGrupo los busca ahí y los omite si no aparecen.
         jugadoresNuevos: _creados.values.toList(),

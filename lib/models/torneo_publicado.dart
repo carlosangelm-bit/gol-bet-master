@@ -292,6 +292,22 @@ class TorneoPublicado {
   final VentajaDeTorneo? ventaja;
   final CourseInfo? campo;
 
+  /// Cómo puntúa el torneo, en máquina y no solo en prosa.
+  ///
+  /// [comoSePuntua] ya lo decía en texto para que se lea. Esto es el mismo dato
+  /// para poder DECIDIR con él: si el torneo puntúa por score, una ronda suya
+  /// puede empezar sin configurar apuestas —la medida es el score— y entonces al
+  /// que la crea no hay que preguntarle nada. Si puntúa por dinero, las apuestas
+  /// SON la medida y arrancar sin ellas le daría cero a todo el mundo.
+  ///
+  /// Es el método EFECTIVO, el mismo que se publica en prosa: un cuadro con "por
+  /// posición" se resuelve por dinero, y las dos cosas tienen que decir lo mismo.
+  ///
+  /// Null en instantáneas anteriores al campo. Se trata como "hace falta
+  /// preguntar", que es lo prudente: preguntar de más cuesta un paso, arrancar de
+  /// menos cuesta una tabla en blanco.
+  final MetodoDePuntuacion? metodo;
+
   const TorneoPublicado({
     required this.token,
     this.torneoId = '',
@@ -314,6 +330,7 @@ class TorneoPublicado {
     this.campeon,
     this.ventaja,
     this.campo,
+    this.metodo,
   });
 
   /// Construye la copia desde la tabla YA CALCULADA.
@@ -415,6 +432,7 @@ class TorneoPublicado {
       campeon: conNombre(llave?.campeon),
       ventaja: torneo.ventaja,
       campo: torneo.campo,
+      metodo: metodoEfectivo(torneo),
     );
   }
 
@@ -441,6 +459,7 @@ class TorneoPublicado {
         if (campeon != null) 'campeon': campeon,
         if (ventaja != null) 'ventaja': ventaja!.name,
         if (campo != null) 'campo': campo!.toJson(),
+        if (metodo != null) 'metodo': metodo!.name,
       };
 
   factory TorneoPublicado.fromJson(String token, Map<String, dynamic> j) =>
@@ -484,6 +503,10 @@ class TorneoPublicado {
         campo: j['campo'] is Map
             ? CourseInfo.fromJson(Map<String, dynamic>.from(j['campo'] as Map))
             : null,
+        metodo: j['metodo'] == null
+            ? null
+            : MetodoDePuntuacion.values.firstWhere((m) => m.name == j['metodo'],
+                orElse: () => MetodoDePuntuacion.dinero),
       );
 
   /// Cuánto hace que se publicó, en palabras.

@@ -113,6 +113,12 @@ void main() {
         // falta porque quien sigue el torneo tiene que poder publicarle
         // resultados con el id por el que el organizador los consulta.
         'torneoId',
+        // REVISADO al añadirlo: cómo puntúa el torneo. Es CONFIGURACIÓN, no
+        // datos de nadie, y ya viajaba en prosa como comoSePuntua. Está en
+        // máquina porque hay que DECIDIR con él: si el torneo puntúa por score,
+        // una ronda suya empieza sin configurar apuestas —la medida es el
+        // score— y a quien la crea no hay que preguntarle nada.
+        'metodo',
       }, reason: 'la lista es cerrada a propósito: revisar antes de ampliarla');
     });
 

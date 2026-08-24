@@ -40,6 +40,8 @@ import 'package:golf_bet_master/providers/user_profile_provider.dart';
 import 'package:golf_bet_master/services/player_service.dart';
 import 'package:golf_bet_master/services/user_profile_service.dart';
 import 'package:golf_bet_master/screens/setup/quick_start_screen.dart';
+import 'package:golf_bet_master/screens/setup/setup_flow.dart';
+import 'package:golf_bet_master/screens/setup/setup_screen.dart';
 import 'package:golf_bet_master/providers/auth_provider.dart';
 import 'package:golf_bet_master/screens/torneos/torneo_editor_screen.dart';
 import 'package:golf_bet_master/screens/torneos/torneos_screen.dart';
@@ -461,7 +463,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       await tester.tap(find.text('+ Ana Ruiz'));
       await tester.pump(const Duration(milliseconds: 300));
-      expect(_pantalla(tester), contains('la ronda ya queda marcada'));
+      // Y se dice POR QUÉ hace falta el paso: este torneo puntúa por dinero, así
+      // que la medida sale de lo apostado.
+      expect(_pantalla(tester), contains('la medida sale de lo apostado'));
+      expect(_pantalla(tester), contains('incluida la marca del torneo'));
     });
 
     testWidgets('la marca va SIEMPRE, con plantilla y sin ella', (tester) async {
@@ -498,6 +503,7 @@ void main() {
   _pantallaDelTorneo();
   _quienSoy();
   _laRondaLlegaALaTabla();
+  _elUltimoSalto();
 }
 
 // ── Montaje ─────────────────────────────────────────────────────────────────
@@ -954,6 +960,156 @@ void _laRondaLlegaALaTabla() {
       expect(ResultadoDeTorneo.fromJson(d.toJson()).jugadorId, 'mio_yo');
       // Y la instantánea pública sigue sin ids de jugador.
       expect(_publicar(_liga()).toJson().toString().contains('pid_'), isFalse);
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11 · EL ÚLTIMO SALTO
+//
+// Donde se ha roto tres veces: la pantalla compone bien y el último salto va a
+// otro sitio. Aquí eran dos cosas — yo como casilla que había que marcar, y el
+// botón cayendo en "paso 1 de 8 · Campo" a preguntar lo que el torneo ya fijó.
+// ─────────────────────────────────────────────────────────────────────────────
+void _elUltimoSalto() {
+  group('11 · el último salto', () {
+    testWidgets('CRITERIO 1: mi fila es un hecho, no una casilla',
+        (tester) async {
+      final errores = await _montarArranque(
+          tester,
+          PuntoDeTorneo.seguido(
+              _publicar(_liga(ventaja: VentajaDeTorneo.ninguna)),
+              yoSoy: 'Luis Herrera'),
+          miFicha: 'mi_ficha');
+      expect(errores, isEmpty);
+      expect(find.text('tú'), findsOneWidget);
+      expect(_pantalla(tester), contains('1 jugando esta ronda'));
+
+      // Y tocarla no me saca de mi propia ronda: no hay casilla que desmarcar.
+      await tester.tap(find.text('CAV'));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(_pantalla(tester), contains('1 jugando esta ronda'));
+    });
+
+    testWidgets('ni se me ofrece como "del directorio" en mi propia ronda',
+        (tester) async {
+      // Salía ahí al dejar de estar en la lista editable: soy un hecho, y los
+      // dos sitios que ofrecen gente tienen que saberlo.
+      final errores = await _montarArranque(
+          tester,
+          PuntoDeTorneo.seguido(
+              _publicar(_liga(ventaja: VentajaDeTorneo.ninguna)),
+              yoSoy: 'Luis Herrera'),
+          miFicha: 'mi_ficha');
+      expect(errores, isEmpty);
+      expect(find.text('+ CAV'), findsNothing);
+      expect(find.text('+ Luis Herrera'), findsNothing);
+    });
+
+    testWidgets('CRITERIO 2: elegir campo se queda en el arranque',
+        (tester) async {
+      final errores = await _montarArranque(
+          tester,
+          PuntoDeTorneo.seguido(
+              _publicar(_liga(ventaja: VentajaDeTorneo.ninguna)),
+              yoSoy: 'Luis Herrera'),
+          miFicha: 'mi_ficha');
+      expect(errores, isEmpty);
+      await tester.tap(find.text('Campo'));
+      await tester.pump(const Duration(milliseconds: 400));
+      // La hoja de campo es la del asistente, pero se abre ENCIMA: el arranque
+      // sigue ahí debajo y al elegir se vuelve a él.
+      expect(find.byType(QuickStartScreen), findsOneWidget);
+      expect(find.byType(SetupScreen), findsNothing);
+    });
+
+    testWidgets('CRITERIO 3: por score se lanza sin pasar por el asistente',
+        (tester) async {
+      // La medida es el score, así que no hay nada que apostar y no queda
+      // ninguna pregunta: la ronda empieza.
+      final errores = await _montarArranque(
+          tester,
+          PuntoDeTorneo.seguido(_publicar(Torneo(
+            id: 'cp',
+            nombre: 'Copa de Primavera',
+            fuente: FuenteDeRondas.marcadas,
+            metodo: MetodoDePuntuacion.scoreNeto,
+            participantes: cuatro,
+            ventaja: VentajaDeTorneo.ninguna,
+            campo: _campoPrueba,
+          )), yoSoy: 'Luis Herrera'),
+          miFicha: 'mi_ficha');
+      expect(errores, isEmpty);
+      expect(find.text('⛳ Empezar ronda'), findsOneWidget);
+      expect(find.text('⛳ Elegir qué se juega y empezar'), findsNothing);
+      // Con dos dentro ya no falta nada, y ahí se dice por qué se puede lanzar.
+      await tester.tap(find.text('+ Ana Ruiz'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('No falta nada por decidir.'), findsOneWidget);
+      expect(_pantalla(tester), contains('no hace falta apostar nada'));
+    });
+
+    test('y la decisión de lanzar o preguntar vive en el modelo', () {
+      TorneoPublicado pub(MetodoDePuntuacion m) => _publicar(Torneo(
+          id: 'cp',
+          nombre: 'Copa',
+          fuente: FuenteDeRondas.marcadas,
+          metodo: m,
+          participantes: cuatro));
+      // Por score: nada que preguntar.
+      for (final m in [
+        MetodoDePuntuacion.scoreNeto,
+        MetodoDePuntuacion.stableford
+      ]) {
+        expect(PuntoDeTorneo.seguido(pub(m)).pideApuestas, isFalse,
+            reason: m.name);
+      }
+      // Por dinero y por posición: la medida sale de lo apostado.
+      for (final m in [
+        MetodoDePuntuacion.dinero,
+        MetodoDePuntuacion.posicion
+      ]) {
+        final p = PuntoDeTorneo.seguido(pub(m));
+        expect(p.pideApuestas, isTrue, reason: m.name);
+        expect(p.motivoApuestas, contains('la medida sale de lo apostado'));
+      }
+      // Instantánea vieja, sin método: se pregunta. Preguntar de más cuesta un
+      // paso; arrancar de menos cuesta una tabla en blanco.
+      const vieja = PuntoDeTorneo(
+          torneoId: 'cp', nombre: 'Copa', emoji: '🏆', padron: ['Luis']);
+      expect(vieja.pideApuestas, isTrue);
+      expect(vieja.motivoApuestas, contains('no dice cómo puntúa'));
+      // Y con plantilla nunca: las trae puestas.
+      expect(
+          PuntoDeTorneo.propio(_liga(plantillaId: 'bg_1'), nombres: nombres)
+              .pideApuestas,
+          isFalse);
+    });
+
+    test('el asistente aterriza en la primera pregunta SIN responder', () {
+      // Es lo que evita volver a "paso 1 de 8 · Campo" con el campo ya elegido.
+      final pasos = setupSteps(
+          porEquipos: false,
+          conCuenta: true,
+          conParticipantes: true,
+          conVentaja: true,
+          jugadores: 3);
+      // Lo que deja resuelto el arranque de un torneo sin plantilla.
+      expect(
+          primerPasoSinResolver(pasos, {
+            SetupStep.campo,
+            SetupStep.jugadores,
+            SetupStep.ventaja,
+          }),
+          SetupStep.compiten);
+      // Y con plantilla no queda nada: se aterriza donde se confirma.
+      expect(
+          primerPasoSinResolver(pasos, {
+            SetupStep.campo,
+            SetupStep.ventaja,
+            ...resueltosPorGrupo(),
+          }),
+          SetupStep.revisar);
     });
   });
 }

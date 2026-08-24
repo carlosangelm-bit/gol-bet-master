@@ -92,6 +92,21 @@ class SetupScreen extends StatefulWidget {
   /// es que cuenta.
   final String? torneoInicial;
 
+  /// Los pasos que YA están respondidos al entrar.
+  ///
+  /// ── El desvío del último salto, otra vez ──────────────────────────────────
+  ///
+  /// Con esto la pantalla aterriza en el primer paso SIN responder, en vez de en
+  /// el paso 1 siempre. Sin ello, venir de un arranque que ya fijó el campo, los
+  /// jugadores y la ventaja llevaba a "paso 1 de 8 · Campo" y volvía a
+  /// preguntarlo todo: el error de dirección que acabábamos de corregir,
+  /// reapareciendo en el último salto.
+  ///
+  /// [primerPasoSinResolver] ya calculaba esto y no lo usaba nadie. Aterrizar no
+  /// es bloquear: se puede retroceder a cambiar cualquier cosa, y por eso el
+  /// nombre habla de dónde se ATERRIZA y no de qué se permite.
+  final Set<SetupStep> pasosResueltos;
+
   const SetupScreen({
     super.key,
     this.partidoInicial,
@@ -102,6 +117,7 @@ class SetupScreen extends StatefulWidget {
     this.campoInicial,
     this.ventajaInicial,
     this.lanzarAlEntrar = false,
+    this.pasosResueltos = const {},
   });
   @override State<SetupScreen> createState() => _SetupScreenState();
 }
@@ -114,7 +130,9 @@ class _SetupScreenState extends State<SetupScreen> {
   /// Con pasos condicionales un índice es una bomba: al pasar de equipos a
   /// individual la lista se acorta y el mismo número apunta a otra pantalla.
   /// Guardando el enum, quitar un paso no mueve al usuario de sitio.
-  SetupStep _current = SetupStep.campo;
+  late SetupStep _current = widget.pasosResueltos.isEmpty
+      ? SetupStep.campo
+      : primerPasoSinResolver(_steps, widget.pasosResueltos);
 
   /// Los pasos de ESTA ronda. La lista la decide [setupSteps], que es lógica
   /// pura y testeable: qué pasos existen no debería depender de un widget.

@@ -154,6 +154,18 @@ extension MetodoLabel on MetodoDePuntuacion {
   bool get necesitaScore =>
       this == MetodoDePuntuacion.scoreNeto ||
       this == MetodoDePuntuacion.stableford;
+
+  /// Si la medida de este método SALE de las apuestas.
+  ///
+  /// Decide si una ronda de este torneo puede empezar sin configurar apuestas.
+  /// Con score neto o Stableford la medida es el score, así que una tarjeta sin
+  /// nada apostado cuenta perfectamente y no hay ninguna pregunta que hacer.
+  ///
+  /// Con dinero o por posición la medida ES el dinero —la posición se decide por
+  /// el dinero de la ronda—, así que arrancar sin apuestas daría cero a todo el
+  /// mundo y la tabla no lo distinguiría de un empate. Otro número plausible y
+  /// equivocado, que es la categoría que más caro nos ha salido.
+  bool get necesitaApuestas => !necesitaScore;
 }
 
 /// Qué pasa cuando dos empatan en una ronda.

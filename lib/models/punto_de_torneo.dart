@@ -48,6 +48,9 @@ class PuntoDeTorneo {
   /// Con qué nombre juego yo en este torneo, si lo he reclamado.
   final String? yoSoy;
 
+  /// Cómo puntúa el torneo. Null = no se sabe, así que hay que preguntar.
+  final MetodoDePuntuacion? metodo;
+
   /// Si la ronda puede heredar las apuestas del torneo.
   ///
   /// ── Por qué el seguidor no puede, y no es un descuido ─────────────────────
@@ -72,6 +75,7 @@ class PuntoDeTorneo {
     this.campo,
     this.yoSoy,
     this.conPlantilla = false,
+    this.metodo,
   });
 
   /// Desde MI torneo. El padrón son los inscritos, con el nombre del directorio.
@@ -102,6 +106,7 @@ class PuntoDeTorneo {
       campo: t.campo,
       yoSoy: yoSoy,
       conPlantilla: t.plantillaId != null,
+      metodo: metodoEfectivo(t),
     );
   }
 
@@ -125,6 +130,7 @@ class PuntoDeTorneo {
         yoSoy: yoSoy,
         // Nunca. Ver [conPlantilla].
         conPlantilla: false,
+        metodo: c.metodo,
       );
 
   /// Si con esto se puede crear una ronda que de verdad cuente.
@@ -159,6 +165,7 @@ class PuntoDeTorneo {
       campo: campo,
       yoSoy: yoSoy,
       conPlantilla: conPlantilla,
+      metodo: metodo,
     );
   }
 
@@ -193,6 +200,7 @@ class PuntoDeTorneo {
       campo: campo,
       yoSoy: yoSoy,
       conPlantilla: conPlantilla,
+      metodo: metodo,
     );
   }
 
@@ -234,12 +242,40 @@ class PuntoDeTorneo {
   /// Sin ventaja decidida se pregunta: no saber no es lo mismo que no importar.
   bool get pideHandicap => ventaja?.usaHandicap ?? true;
 
+  /// Si una ronda de este torneo NECESITA que se configuren apuestas.
+  ///
+  /// ── Lo que decide si el arranque lanza o pregunta ─────────────────────────
+  ///
+  /// Con plantilla nunca hace falta: las apuestas vienen puestas.
+  ///
+  /// Sin plantilla —el seguidor, que no puede leer las del organizador— depende
+  /// de cómo puntúe el torneo. Por score neto o Stableford la medida es el score,
+  /// así que una tarjeta sin nada apostado cuenta igual y no hay NADA que
+  /// preguntar: se lanza. Por dinero o por posición la medida es el dinero, y
+  /// arrancar sin apuestas le daría cero a todo el mundo sin que la tabla lo
+  /// distinguiera de un empate.
+  ///
+  /// Sin método conocido se pregunta. Preguntar de más cuesta un paso; arrancar
+  /// de menos cuesta una tabla en blanco.
+  bool get pideApuestas =>
+      !conPlantilla && (metodo?.necesitaApuestas ?? true);
+
+  /// Por qué hace falta configurar apuestas, para decirlo en vez de que se note.
+  String? get motivoApuestas => !pideApuestas
+      ? null
+      : metodo == null
+          ? 'Este enlace no dice cómo puntúa el torneo, así que hace falta '
+              'elegir qué se juega.'
+          : 'Este torneo puntúa ${metodo!.label.toLowerCase()}, así que la '
+              'medida sale de lo apostado: hay que decir qué se juega.';
+
   /// Qué fija el torneo, en una línea. Para el resumen de la pantalla.
   List<String> get loQueFija => [
         '${padron.length} inscrito${padron.length == 1 ? '' : 's'} en el padrón',
         if (ventaja != null) 'Ventaja: ${ventaja!.label}',
         if (campo != null) 'Campo: ${campo!.name}',
         if (conPlantilla) 'Las apuestas del torneo',
+        if (metodo != null) 'Puntúa ${metodo!.label.toLowerCase()}',
         'La ronda cuenta para $nombre',
       ];
 }
