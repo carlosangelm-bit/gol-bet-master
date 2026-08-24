@@ -625,10 +625,16 @@ class FirestoreService {
   ///
   /// La procedencia viaja porque la tabla la necesita: solo cuentan los de gente
   /// inscrita, y eso es lo que la regla no puede comprobar al escribir.
-  static Future<List<ResultadoPublicado>> resultadosPublicados(
-      String torneoId) async {
+  /// Devuelve también el ERROR, si lo hubo.
+  ///
+  /// Antes se tragaba cualquier fallo y devolvía la lista vacía, así que "nadie
+  /// ha publicado nada" y "no se pudo leer —sin permiso, sin índice, sin
+  /// conexión—" se veían igual: una tabla en cero. Son cosas distintas con
+  /// arreglos distintos, y confundirlas costó una entrega de diagnóstico.
+  static Future<({List<ResultadoPublicado> lista, String? error})>
+      resultadosPublicados(String torneoId) async {
     final uid = AuthService.uid;
-    if (uid == null) return const [];
+    if (uid == null) return (lista: const <ResultadoPublicado>[], error: null);
     try {
       final snap = await _torneoResultados()
           .where('torneoOwnerUid', isEqualTo: uid)
@@ -653,11 +659,12 @@ class FirestoreService {
           debugPrint('[Torneo] resultado publicado ilegible ${d.id}: $e');
         }
       }
-      return out;
+      return (lista: out, error: null);
     } catch (e) {
-      // Sin conexión o sin permiso: la tabla sale con lo propio y no revienta.
+      // Sin conexión o sin permiso: la tabla sale con lo propio y no revienta,
+      // pero AHORA se dice.
       debugPrint('[Torneo] no se pudieron leer los publicados: $e');
-      return const [];
+      return (lista: const <ResultadoPublicado>[], error: '$e');
     }
   }
 

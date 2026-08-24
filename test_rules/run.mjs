@@ -17,7 +17,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'node:fs';
 import {
-  doc, getDoc, setDoc, deleteDoc, collection, getDocs,
+  doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where,
 } from 'firebase/firestore';
 
 const ORG = 'uid_organizador';
@@ -387,6 +387,38 @@ await prueba('y el autor también, para poder corregirlo', () =>
     assertSucceeds(getDoc(doc(invitado, 'torneoResultados', DOC_OK))));
 await prueba('pero un tercero NO lo lee', () =>
     assertFails(getDoc(doc(otro, 'torneoResultados', DOC_OK))));
+
+// ── LA CONSULTA, no el documento ────────────────────────────────────────────
+//
+// Esto faltaba, y es la diferencia que importa: la app no lee el documento por
+// su id, hace una CONSULTA con dos filtros. Una regla puede dejar pasar un getDoc
+// y tumbar la consulta —basta con que un documento del resultado no cumpla— y el
+// síntoma sería una tabla en cero sin ningún error a la vista, porque la lectura
+// se traga la excepción.
+//
+// Es exactamente la forma de fallo que llevamos tres eslabones persiguiendo: el
+// dato existe y la capa siguiente no lo lee. Probar el getDoc y no la consulta es
+// probar otra cosa.
+await prueba('el organizador CONSULTA los resultados de su torneo', () =>
+    assertSucceeds(getDocs(query(
+        collection(organizador, 'torneoResultados'),
+        where('torneoOwnerUid', '==', ORG),
+        where('torneoId', '==', 'tor_liga')))));
+
+await prueba('y la consulta devuelve el documento que se publicó', async () => {
+  const snap = await getDocs(query(
+      collection(organizador, 'torneoResultados'),
+      where('torneoOwnerUid', '==', ORG),
+      where('torneoId', '==', 'tor_liga')));
+  if (snap.empty) throw new Error('la consulta no devolvió nada');
+  const hay = snap.docs.some((d) => d.id === DOC_OK);
+  if (!hay) throw new Error(`no está ${DOC_OK} entre los devueltos`);
+});
+
+await prueba('sin el filtro por dueño la consulta se cae, y eso está bien', () =>
+    assertFails(getDocs(query(
+        collection(organizador, 'torneoResultados'),
+        where('torneoId', '==', 'tor_liga')))));
 
 await prueba('volver a cerrar la ronda ACTUALIZA, no duplica', () =>
     assertSucceeds(setDoc(doc(invitado, 'torneoResultados', DOC_OK), {

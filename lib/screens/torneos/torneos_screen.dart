@@ -276,6 +276,17 @@ class _TorneoTablaScreenState extends State<TorneoTablaScreen> {
   List<RoundResult> _publicados = const [];
   int _descartados = 0;
 
+  /// Cuántos resultados de seguidores LLEGARON, contados antes de filtrar.
+  ///
+  /// Es la cifra que resuelve el diagnóstico de un solo golpe: con cero, la
+  /// cadena se paró antes —marca o envío—; con más de cero y todos descartados,
+  /// se paró en el filtro. Sin ella las dos cosas se ven igual: una tabla vacía.
+  int _llegaron = 0;
+
+  /// Si la lectura falló. Distinto de "no ha llegado nada".
+  String? _errorAlLeer;
+  bool _cargado = false;
+
   @override
   void initState() {
     super.initState();
@@ -283,9 +294,10 @@ class _TorneoTablaScreenState extends State<TorneoTablaScreen> {
   }
 
   Future<void> _cargarPublicados() async {
-    final crudos =
+    final leido =
         await FirestoreService.resultadosPublicados(widget.torneo.id);
     if (!mounted) return;
+    final crudos = leido.lista;
     // Solo los de gente INSCRITA. Es la comprobación que la regla no puede
     // hacer, y por eso se hace aquí. Ver resultadosQueCuentan.
     final vivo = context.read<TorneoProvider>().torneos
@@ -299,6 +311,9 @@ class _TorneoTablaScreenState extends State<TorneoTablaScreen> {
     setState(() {
       _publicados = buenos;
       _descartados = crudos.length - buenos.length;
+      _llegaron = crudos.length;
+      _errorAlLeer = leido.error;
+      _cargado = true;
     });
   }
 
@@ -307,6 +322,9 @@ class _TorneoTablaScreenState extends State<TorneoTablaScreen> {
         torneo: widget.torneo,
         publicados: _publicados,
         descartados: _descartados,
+        llegaron: _llegaron,
+        errorAlLeer: _errorAlLeer,
+        cargado: _cargado,
       );
 }
 
@@ -324,10 +342,18 @@ class _TorneoTabla extends StatelessWidget {
   /// silencio aquí es exactamente el fallo que esto viene a arreglar.
   final int descartados;
 
+  /// Cuántos LLEGARON, antes de filtrar, y si la lectura falló. Ver el aviso.
+  final int llegaron;
+  final String? errorAlLeer;
+  final bool cargado;
+
   const _TorneoTabla(
       {required this.torneo,
       this.publicados = const [],
-      this.descartados = 0});
+      this.descartados = 0,
+      this.llegaron = 0,
+      this.errorAlLeer,
+      this.cargado = false});
 
   /// El torneo VIVO. Es la diferencia entre enseñar lo guardado y enseñar lo que
   /// llegó al abrir la pantalla.
@@ -389,6 +415,19 @@ class _TorneoTabla extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          // ── Qué ha llegado de quien sigue el torneo ───────────────────────
+          //
+          // Va arriba y se dice SIEMPRE que el torneo esté compartido, porque es
+          // la línea que contesta "¿por qué está la tabla en cero?" sin tener
+          // que abrir la consola de Firestore. Tres respuestas distintas con
+          // tres arreglos distintos, y antes las tres se veían igual.
+          if (torneo.tokenCompartido != null && cargado)
+            _AvisoDeLoQuePublicaron(
+                t: t,
+                llegaron: llegaron,
+                descartados: descartados,
+                error: errorAlLeer),
+
           // ── Jugar una ronda DEL torneo ────────────────────────────────────
           //
           // La corrección de dirección, en el sitio donde más se nota: el torneo
@@ -1425,5 +1464,91 @@ class _BotonJugarDelTorneo extends StatelessWidget {
                   'y ya marcada.',
           style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
     ]);
+  }
+}
+
+
+/// La línea que contesta "¿por qué está la tabla en cero?".
+///
+/// ── Tres causas, tres frases ──────────────────────────────────────────────
+///
+/// Un resultado de alguien que sigue el torneo pasa por tres puertas: que su
+/// ronda quede MARCADA, que al cerrarla se PUBLIQUE, y que el filtro de
+/// inscritos la CUENTE. Las tres fallan igual de callado y tienen arreglos
+/// distintos, así que llevaron una entrega entera de diagnóstico a ciegas.
+///
+/// Esto las separa con la única cifra que hace falta: cuántos documentos
+/// LLEGARON, contados antes de filtrar.
+///
+///   · Error al leer      → no es la cadena, es el acceso
+///   · 0 llegaron         → se paró antes: la marca o el envío. Y quien cerró la
+///                          ronda vio en su pantalla cuál de los dos —ver
+///                          EnvioAlTorneo—
+///   · N llegaron, N fuera → se paró en el filtro: el nombre reclamado no está
+///                          entre los inscritos
+///   · N llegaron, algunos dentro → funciona, y se dice cuántos
+class _AvisoDeLoQuePublicaron extends StatelessWidget {
+  final GolfTheme t;
+  final int llegaron;
+  final int descartados;
+  final String? error;
+  const _AvisoDeLoQuePublicaron(
+      {required this.t,
+      required this.llegaron,
+      required this.descartados,
+      this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    final err = error;
+    final (texto, alerta) = switch (0) {
+      _ when err != null => (
+          'No se pudieron leer los resultados que otros publicaron. No es que no '
+              'haya llegado nada: es que no se pudo consultar. ($err)',
+          true
+        ),
+      _ when llegaron == 0 => (
+          'Todavía no ha llegado ningún resultado de quien sigue este torneo. Si '
+              'alguien cerró una ronda marcada para el torneo y no aparece aquí, '
+              'el aviso que vio al cerrarla dice si se envió o no.',
+          false
+        ),
+      _ when descartados == llegaron => (
+          '$llegaron resultado${llegaron == 1 ? '' : 's'} '
+              '${llegaron == 1 ? 'llegó' : 'llegaron'}, y '
+              '${llegaron == 1 ? 'se descartó' : 'se descartaron'} '
+              '${llegaron == 1 ? 'el' : 'todos'}: el nombre que '
+              '${llegaron == 1 ? 'reclama' : 'reclaman'} no está entre los '
+              'inscritos. Si debería estar, añádelo a los participantes con ese '
+              'nombre exacto.',
+          true
+        ),
+      _ => (
+          '${llegaron - descartados} de $llegaron resultado'
+              '${llegaron == 1 ? '' : 's'} publicado'
+              '${llegaron == 1 ? '' : 's'} '
+              '${llegaron - descartados == 1 ? 'cuenta' : 'cuentan'} en esta '
+              'tabla.',
+          false
+        ),
+    };
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+            color: alerta ? t.scoreOver.withValues(alpha: 0.55) : t.divider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('LO QUE HAN PUBLICADO', style: GolfType.label(t.sub)),
+        const SizedBox(height: 5),
+        Text(texto,
+            style: TextStyle(color: t.text, fontSize: 12, height: 1.4)),
+      ]),
+    );
   }
 }

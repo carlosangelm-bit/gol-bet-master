@@ -17,6 +17,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/round_result.dart';
 import 'package:golf_bet_master/models/torneo.dart';
+import 'package:golf_bet_master/screens/torneos/republicar_al_cerrar.dart';
 import 'package:golf_bet_master/models/torneo_publicado.dart';
 import 'package:golf_bet_master/models/torneo_seguido.dart';
 
@@ -55,6 +56,7 @@ Torneo _t({List<String>? participantes, double entrada = 0}) => Torneo(
     );
 
 void main() {
+  _elDiagnostico();
   group('1 · cinco grupos, veinte personas: la tabla los agrega', () {
     final rondas = [for (var n = 1; n <= 5; n++) _grupo(n)];
 
@@ -508,6 +510,49 @@ void main() {
       final ids =
           [...tabla.filas, ...tabla.bajoMinimo].map((f) => f.playerId);
       expect(ids, contains('pid_no_vino'));
+    });
+  });
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EL DIAGNÓSTICO: cada puerta de la cadena dice lo que hizo
+//
+// Tres eslabones seguidos se rompieron en el mismo sitio —el dato existe, la capa
+// siguiente no lo lee— y las tres veces el síntoma fue el mismo: una tabla en
+// cero y ningún mensaje. La causa de que costara tanto no era el fallo: era que
+// cinco salidas distintas devolvían lo mismo, nada.
+//
+// Estos tests fijan que cada una diga algo distinto.
+// ─────────────────────────────────────────────────────────────────────────────
+void _elDiagnostico() {
+  group('el envío al torneo dice lo que hizo', () {
+    test('enviado limpio', () {
+      const e = EnvioAlTorneo('Liga por Score', enviado: true);
+      expect(e.frase, 'Resultado enviado a Liga por Score.');
+    });
+
+    test('enviado con reserva: yo no juego en la ronda', () {
+      // Se envía igual —el organizador puede quererla— pero no me va a contar, y
+      // eso hay que decirlo en el momento: después no queda rastro.
+      const e = EnvioAlTorneo('Liga por Score',
+          enviado: true, motivo: 'tú no juegas en esta ronda, así que no te va a contar');
+      expect(e.frase, contains('pero tú no juegas'));
+    });
+
+    test('no enviado: cada motivo es distinguible del resto', () {
+      final motivos = [
+        'no sigues ese torneo desde esta cuenta',
+        'la referencia que guardaste no trae el enlace',
+        'la escritura falló',
+      ];
+      final frases = motivos
+          .map((m) => EnvioAlTorneo('X', enviado: false, motivo: m).frase)
+          .toSet();
+      expect(frases.length, 3, reason: 'tres causas, tres frases');
+      for (final f in frases) {
+        expect(f, startsWith('No se envió a X:'));
+      }
     });
   });
 }
