@@ -384,6 +384,12 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
   Widget _filaJugador(GolfTheme t, String nombre, bool dentro,
           {required bool habitual, required VoidCallback onTap}) =>
       GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 5),
@@ -416,6 +422,12 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
       );
 
   Widget _bloqueCampo(GolfTheme t) => GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
         onTap: () => showModalBottomSheet(
           context: context,
           backgroundColor: t.card,

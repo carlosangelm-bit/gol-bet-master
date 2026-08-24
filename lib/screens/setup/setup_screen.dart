@@ -1065,7 +1065,24 @@ class _SetupScreenState extends State<SetupScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
+        // opaque: una fila de lista se toca donde caiga, no solo sobre las
+        // letras. El + es un círculo de 21 px con un glifo dentro, y sin esto ni
+        // el anillo de alrededor ni el hueco de la fila responden.
+        //
+        // NO se reporta como el arreglo de "solo se añade uno por carga": ese
+        // fallo no se reproduce en el harness —cinco seguidos tocando el +, el
+        // nombre y el hueco, con y sin PlayerLink, entran los cinco— así que la
+        // causa sigue sin localizar. Esto agranda la zona tocable, que hace falta
+        // igual en una pantalla que se usa con guante.
+        behavior: HitTestBehavior.opaque,
         onTap: () {
+          // El toque NO puede quedarse mudo.
+          //
+          // Si algo de aquí dentro lanza, el framework lo caza y el toque "no
+          // hace nada": indistinguible de una zona muerta. Así se pierde media
+          // sesión buscando dónde está el problema. Con esto, la próxima vez el
+          // fallo se delata y dice qué pasó.
+          try {
           if (inRound) {
             setState(() => _players.removeWhere((p) => p.id == pw.player.id));
           } else if (canAdd) {
@@ -1084,6 +1101,24 @@ class _SetupScreenState extends State<SetupScreen> {
               final slide = pw.link?.defaultSlidingAdjustment ?? 0;
               _applyDefaultSliding(player.id, -slide);
             });
+          } else {
+            // El tercer caso, que antes era silencio puro: la ronda está llena.
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('La ronda ya tiene ${_players.length} jugadores, '
+                  'que es el máximo.'),
+              duration: const Duration(seconds: 3),
+            ));
+          }
+          } catch (e, pila) {
+            debugPrint('[Jugadores] fallo al tocar ${pw.player.id}: $e\n$pila');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('No se pudo ${inRound ? "quitar" : "añadir"} a '
+                    '${pw.displayName}: $e'),
+                backgroundColor: t.danger,
+                duration: const Duration(seconds: 6),
+              ));
+            }
           }
         },
         child: AnimatedContainer(
@@ -1330,7 +1365,13 @@ class _SetupScreenState extends State<SetupScreen> {
             Text(p.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w700)),
             Text('HCP Index ${p.handicapBase.toStringAsFixed(1)}', style: TextStyle(color: t.sub, fontSize: 12)),
           ])),
-          GestureDetector(onTap: () => _editPlayer(i, p, t), child: Icon(Icons.edit_outlined, color: t.sub, size: 18)),
+          GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,onTap: () => _editPlayer(i, p, t), child: Icon(Icons.edit_outlined, color: t.sub, size: 18)),
           const SizedBox(width: 8),
           GestureDetector(onTap: () => setState(() => _players.removeAt(i)), child: Icon(Icons.delete_outline, color: t.danger.withValues(alpha: 0.7), size: 18)),
         ]),
@@ -3913,6 +3954,12 @@ class _SetupScreenState extends State<SetupScreen> {
           Expanded(child: Text(g.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 16))),
           if (g.modules.isNotEmpty) ...[
             GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
               onTap: () => _saveGroupAsGame(g, t),
               child: Icon(Icons.bookmark_add_outlined, color: t.sub, size: 18),
             ),
@@ -5685,6 +5732,12 @@ class _SetupScreenState extends State<SetupScreen> {
     return Row(children: options.asMap().entries.map((e) {
       final isSel = e.key == selected;
       return Expanded(child: GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
         onTap: () => onSelect(e.key),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
@@ -6104,6 +6157,12 @@ class _SetupScreenState extends State<SetupScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
         onTap: bloqueada ? null : () => setSt(() { if (isSel) {
           selected.remove(bt);
         } else {

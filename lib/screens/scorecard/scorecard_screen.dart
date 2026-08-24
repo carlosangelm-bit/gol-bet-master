@@ -1951,6 +1951,12 @@ class _PlayerSelector extends StatelessWidget {
 
   Widget _playerChip(BuildContext context, Player p, void Function(String) onSelect) {
     return GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
       onTap: () => _showPicker(context, onSelect),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         GAvatar(name: p.name, colorIndex: p.colorIndex, size: 32),

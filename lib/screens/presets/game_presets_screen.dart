@@ -197,6 +197,12 @@ class _GamePresetsScreenState extends State<GamePresetsScreen> {
             ])),
             // Botón editar
             GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
               onTap: () => _openPresetEditor(context, t, preset),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -514,6 +520,12 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
             Text(mod.summaryLabel, style: TextStyle(color: t.sub, fontSize: 11)),
           ])),
           GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
             onTap: () => _editModule(context, idx, mod, t),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -641,6 +653,12 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
         onTap: () => setSt(() {
           if (isSel) {
             selected.remove(bt);
@@ -1382,6 +1400,12 @@ class _FormatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),

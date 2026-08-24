@@ -1294,6 +1294,12 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     Widget? trailing,
   }) =>
     GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1316,6 +1322,12 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     if (available.length == 1) {
       // Un solo disponible: acción directa
       return GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
         onTap: () => onAdd(available.first.id),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),

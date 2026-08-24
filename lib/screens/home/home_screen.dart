@@ -2771,6 +2771,12 @@ class _ActiveRoundView extends StatelessWidget {
     final shortLabel = _shortChipLabel(template);
 
     return GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
       onTap: () => _openGroupBetEdit(context, prov, group, family, t),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -3285,6 +3291,12 @@ class _ActiveRoundView extends StatelessWidget {
     final hasTeams = m.hasTeamSides;
     
     return GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
       onTap: () => _openBetEdit(context, prov, group, m, t),
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: 10, vertical: hasTeams ? 8 : 5),
@@ -3459,6 +3471,12 @@ class _ActiveRoundView extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
+        // opaque: una fila o tarjeta de selección se toca donde caiga, no solo
+        // sobre sus letras. Sin esto el GestureDetector responde únicamente donde
+        // pintan los hijos, así que el hueco de la fila y el anillo alrededor de
+        // un icono quedan muertos. Es el fallo que hacía que el + de la lista de
+        // jugadores no respondiera.
+        behavior: HitTestBehavior.opaque,
         onTap: bloqueada ? null : () => setSt(() {
           if (isSel) {
             selected.remove(bt);
