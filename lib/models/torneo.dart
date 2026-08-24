@@ -1,11 +1,29 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// TORNEO — una VISTA sobre rondas que ya existen
+// TORNEO — y CUÁL de las dos cosas es, porque son dos
 //
-// La idea que ordena todo el archivo: un torneo no cambia cómo se juega. Es
-// *qué rondas cuentan* + *cómo puntúa cada una* + *cómo se acumula* + *quién
-// entra*. Nada de eso toca el motor de apuestas, y por eso el formato corto y el
-// de temporada son EL MISMO objeto con parámetros distintos, no dos
-// funcionalidades.
+// Durante todo el diseño este archivo dijo: "un torneo no cambia cómo se juega:
+// es una VISTA sobre rondas que ya existen". Es cierto para el caso con el que
+// nació —una liga de amigos que ya juegan cada sábado, donde el torneo solo suma
+// lo que iba a pasar igual— y es FALSO para el evento organizado, donde el
+// torneo ES el evento: define quién juega, en qué formato y qué día, y las
+// rondas ocurren dentro de él.
+//
+// Queda escrito aquí porque el principio equivocado no produjo un error: produjo
+// CINCO, y todos parecían independientes. Los participantes no están en mi
+// directorio; hay que marcar la ronda para que cuente; hay que repetir el
+// formato; hay que elegir jugadores otra vez; seguir un torneo no deja jugarlo
+// con su gente. Cinco parches, cada uno correcto en su sitio, que juntos
+// describen un flujo que nadie querría usar en un torneo real. Es el mismo fallo
+// que las cuatro cifras distintas del asistente, un nivel más arriba: pasos
+// correctos por separado e incoherentes puestos en fila.
+//
+// LO QUE ESTE MODELO NO GUARDA, y hay que saberlo antes de decir "lo fija el
+// torneo": nada de cómo se juega una ronda. No hay campo, ni ventaja, ni
+// apuestas, ni equipos. [formato] es liga o cuadro —la estructura— y [metodo] es
+// cómo puntúa la TABLA. Ninguno de los dos dice cómo se juega. Así que "el
+// formato lo fija el torneo" no es una dirección que se esté ignorando: es un
+// campo que todavía no existe. El día que exista, el atajo ya está construido
+// —ver preguntasPendientes en setup_flow.dart— y se acorta solo.
 //
 // Y la tabla se DERIVA, nunca se guarda calculada. Es la lección del RoundResult
 // desfasado: el tablero de Inicio guardó los balances al cerrar la ronda y

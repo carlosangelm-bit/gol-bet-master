@@ -144,8 +144,9 @@ class TorneosScreen extends StatelessWidget {
                       color: t.text, fontSize: 17, fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
               Text(
-                  'Un torneo no cambia cómo se juega: es una vista sobre las '
-                  'rondas que ya tienes. Eliges cuáles cuentan y cómo puntúan.',
+                  'Eliges quién está inscrito, qué rondas cuentan y cómo '
+                  'puntúan. Los participantes los define el torneo, no tu '
+                  'lista de compañeros.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: t.sub, fontSize: 13, height: 1.45)),
             ],
