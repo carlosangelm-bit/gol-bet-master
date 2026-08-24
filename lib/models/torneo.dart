@@ -246,6 +246,45 @@ extension FormatoInfo on FormatoDeTorneo {
       };
 }
 
+/// La ventaja que fija el torneo para sus rondas.
+///
+/// Es el ÚNICO parámetro de juego que un torneo tiene que fijar sí o sí, porque
+/// cambia el resultado: dos jornadas de la misma liga, una con handicap y otra
+/// sin, no son comparables y la tabla las suma como si lo fueran.
+///
+/// Y fijarla tiene una consecuencia que va más allá de ahorrar una pregunta: con
+/// [ninguna], el handicap NO INTERVIENE en nada. Eso es lo que permite no
+/// preguntarlo al materializar a los del padrón —ver [PuntoDeTorneo]— y que el
+/// riesgo del handicap 0 desaparezca por construcción en vez de por aviso.
+enum VentajaDeTorneo { handicap, sliding, ninguna }
+
+extension VentajaDeTorneoInfo on VentajaDeTorneo {
+  String get label => switch (this) {
+        VentajaDeTorneo.handicap => 'Handicap',
+        VentajaDeTorneo.sliding => 'Sliding',
+        VentajaDeTorneo.ninguna => 'Sin ventaja',
+      };
+
+  String get descripcion => switch (this) {
+        VentajaDeTorneo.handicap => 'Golpes según el handicap registrado.',
+        VentajaDeTorneo.sliding => 'Se ajusta según cómo terminó la anterior.',
+        VentajaDeTorneo.ninguna => 'Todos brutos. El handicap no interviene.',
+      };
+
+  /// El vocabulario que ya entiende SetupScreen.ventajaInicial.
+  ///
+  /// Se traduce en vez de guardar el texto suelto: el enum es lo que se
+  /// almacena y se compara, y la cadena existe solo en la frontera. Guardar
+  /// cadenas libres habría dado dos vocabularios para lo mismo.
+  String get paraSetup => name;
+
+  /// Si el handicap de un jugador cambia algo en una ronda con esta ventaja.
+  ///
+  /// Sliding SÍ lo mira: el ajuste parte del handicap y se mueve con el
+  /// resultado, así que un 0 falso arrastra igual.
+  bool get usaHandicap => this != VentajaDeTorneo.ninguna;
+}
+
 class Torneo {
   final String id;
   final String nombre;
@@ -341,6 +380,38 @@ class Torneo {
   /// regla que el grupo no pactó.
   final Map<String, String> desempates;
 
+  /// La PLANTILLA DE RONDA: cómo se juega una ronda de este torneo.
+  ///
+  /// Es el campo que faltaba, y el que convierte "hay que configurar el formato
+  /// otra vez" de error de dirección en campo inexistente. Apunta a un
+  /// [BettingGroup] porque ese objeto ya lleva jugadores, reglas por duelo y
+  /// módulos de partida con sus montos, y [resueltosPorGrupo] ya declara qué
+  /// pasos del asistente responde. Inventar una segunda forma de plantilla
+  /// habría sido la tercera vez que dos caminos al mismo sitio se comportan
+  /// distinto.
+  ///
+  /// ── Y POR QUÉ NO ES [bettingGroupId] ──────────────────────────────────────
+  ///
+  /// Aquel campo significa otra cosa: QUÉ RONDAS CUENTAN. [rondasDelTorneo]
+  /// filtra con él —`r.bettingGroupIds.contains(t.bettingGroupId)`— así que
+  /// reutilizarlo haría que elegir una plantilla cambiara en silencio las filas
+  /// de la tabla, añadiendo o quitando rondas. Dos significados, dos campos.
+  /// Pueden apuntar al mismo grupo, y eso es normal; lo que no puede es que uno
+  /// mueva al otro.
+  final String? plantillaId;
+
+  /// La ventaja de las rondas del torneo. Null = sin decidir, se pregunta.
+  final VentajaDeTorneo? ventaja;
+
+  /// El campo, si el torneo lo fija. Null = se pregunta cada jornada.
+  ///
+  /// Opcional a propósito, y con eso caben los dos modelos sin bandera de modo:
+  /// en una liga el campo varía por jornada y se deja vacío; en un shotgun es
+  /// uno para todos y puesto aquí desaparece la pregunta. [preguntasPendientes]
+  /// ya calcula lo que queda por preguntar, así que la pantalla de arranque se
+  /// acorta sola.
+  final CourseInfo? campo;
+
   /// Si el torneo está cerrado y liquidado.
   ///
   /// Cerrado no significa "pagado" —la app no procesa pagos— significa que la
@@ -370,6 +441,9 @@ class Torneo {
     this.formato = FormatoDeTorneo.liga,
     this.siembra = const [],
     this.desempates = const {},
+    this.plantillaId,
+    this.ventaja,
+    this.campo,
   });
 
   Torneo copyWith({
@@ -397,6 +471,12 @@ class Torneo {
     FormatoDeTorneo? formato,
     List<String>? siembra,
     Map<String, String>? desempates,
+    String? plantillaId,
+    VentajaDeTorneo? ventaja,
+    CourseInfo? campo,
+    bool limpiarPlantilla = false,
+    bool limpiarVentaja = false,
+    bool limpiarCampo = false,
   }) =>
       Torneo(
         id: id,
@@ -423,6 +503,10 @@ class Torneo {
         formato: formato ?? this.formato,
         siembra: siembra ?? this.siembra,
         desempates: desempates ?? this.desempates,
+        plantillaId:
+            limpiarPlantilla ? null : (plantillaId ?? this.plantillaId),
+        ventaja: limpiarVentaja ? null : (ventaja ?? this.ventaja),
+        campo: limpiarCampo ? null : (campo ?? this.campo),
       );
 
   Map<String, dynamic> toJson() => {
@@ -450,6 +534,9 @@ class Torneo {
         if (formato != FormatoDeTorneo.liga) 'formato': formato.name,
         if (siembra.isNotEmpty) 'siembra': siembra,
         if (desempates.isNotEmpty) 'desempates': desempates,
+        if (plantillaId != null) 'plantillaId': plantillaId,
+        if (ventaja != null) 'ventaja': ventaja!.name,
+        if (campo != null) 'campo': campo!.toJson(),
       };
 
   factory Torneo.fromJson(Map<String, dynamic> j) => Torneo(
@@ -482,6 +569,17 @@ class Torneo {
         bote: j['bote'] == null
             ? BoteConfig.def
             : BoteConfig.fromJson(Map<String, dynamic>.from(j['bote'] as Map)),
+        plantillaId: j['plantillaId'] as String?,
+        ventaja: j['ventaja'] == null
+            ? null
+            : VentajaDeTorneo.values
+                .firstWhere((v) => v.name == j['ventaja'], orElse: () => VentajaDeTorneo.handicap),
+        // `is Map` y no `!= null`: es la misma familia del "holes: 3" que tiró
+        // el buscador de campos. Un campo malformado deja el torneo sin campo,
+        // no ilegible.
+        campo: j['campo'] is Map
+            ? CourseInfo.fromJson(Map<String, dynamic>.from(j['campo'] as Map))
+            : null,
         tokenCompartido: j['tokenCompartido'] as String?,
         publicadoEn: DateTime.tryParse((j['publicadoEn'] as String?) ?? ''),
         cerrado: j['cerrado'] == true,
@@ -2089,13 +2187,13 @@ List<RoundResult> resultadosQueCuentan(
   if (t.participantes.isEmpty) return const [];
   final inscritos = {
     for (final pid in t.participantes)
-      if (nombres[pid] != null) _comparable(nombres[pid]!),
+      if (nombres[pid] != null) nombreComparable(nombres[pid]!),
   };
   if (inscritos.isEmpty) return const [];
   return [
     for (final p in publicados)
       if (p.jugadorNombre.isNotEmpty &&
-          inscritos.contains(_comparable(p.jugadorNombre)))
+          inscritos.contains(nombreComparable(p.jugadorNombre)))
         p.resultado,
   ];
 }
@@ -2104,7 +2202,14 @@ List<RoundResult> resultadosQueCuentan(
 ///
 /// Igual que en la importación por pegado, y por el mismo motivo: es lo único que
 /// las dos partes escriben a mano.
-String _comparable(String s) {
+///
+/// Público porque el puente por nombre se usa ya en tres sitios y tienen que
+/// normalizar IGUAL o el puente no cruza: filtrar los resultados publicados por
+/// inscrito, importar participantes pegados, y resolver el padrón de un torneo
+/// contra las fichas que ya existen para no crear a la misma persona dos veces.
+/// Dos normalizaciones distintas darían un fallo silencioso: el nombre coincide
+/// para el ojo y no para el código.
+String nombreComparable(String s) {
   const con = 'áàäâãéèëêíìïîóòöôõúùüûñçÁÀÄÂÃÉÈËÊÍÌÏÎÓÒÖÔÕÚÙÜÛÑÇ';
   const sin = 'aaaaaeeeeiiiiooooouuuuncAAAAAEEEEIIIIOOOOOUUUUNC';
   final b = StringBuffer();

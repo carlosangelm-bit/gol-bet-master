@@ -17,11 +17,27 @@
 // wizard, y el lanzamiento pasa por SetupScreen con lanzarAlEntrar, o sea por
 // _createAndStartRound. Un segundo camino de lanzamiento habría sido la tercera
 // vez en la sesión que dos rutas al mismo sitio se comportan distinto.
+//
+// ── Y AHORA UN TORNEO TAMBIÉN ES UN PUNTO DE PARTIDA ────────────────────────
+//
+// Es la corrección de dirección: el torneo no es una vista sobre rondas que ya
+// existen, es el evento del que salen. Y lo que responde por adelantado —el
+// padrón, la ventaja, el campo, y que la ronda CUENTA— es exactamente la forma
+// de un punto de partida. Así que entra por aquí en vez de por un asistente en
+// blanco de diez pasos donde todas esas respuestas ya se sabían.
+//
+// Los dos puntos de partida caben en la misma pantalla porque preguntan lo
+// mismo: qué falta. Un torneo con plantilla no deja NADA sin responder salvo el
+// campo, así que lanza; uno sin plantilla —el caso del seguidor, que no puede
+// leer las apuestas del organizador— deja abierto qué se juega y por eso lleva
+// al asistente con todo lo demás puesto.
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../models/models.dart';
+import '../../models/punto_de_torneo.dart';
+import '../../models/torneo.dart';
 import '../../providers/round_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../widgets/common_widgets.dart';
@@ -31,32 +47,71 @@ import 'setup_flow.dart';
 import 'setup_screen.dart';
 
 class QuickStartScreen extends StatefulWidget {
-  /// El grupo de apuesta del que se parte.
-  final BettingGroup grupo;
-  const QuickStartScreen({super.key, required this.grupo});
+  /// El grupo de apuesta del que se parte. Null si se parte de un torneo sin
+  /// plantilla: entonces la ronda no hereda apuestas y se eligen en el asistente.
+  final BettingGroup? grupo;
+
+  /// El torneo del que sale esta ronda, si sale de uno.
+  final PuntoDeTorneo? torneo;
+
+  const QuickStartScreen({super.key, this.grupo, this.torneo})
+      : assert(grupo != null || torneo != null,
+            'Sin grupo ni torneo no hay punto de partida del que arrancar');
 
   @override
   State<QuickStartScreen> createState() => _QuickStartScreenState();
 }
 
 class _QuickStartScreenState extends State<QuickStartScreen> {
-  CourseInfo? _campo;
+  late CourseInfo? _campo = widget.torneo?.campo;
 
-  /// Quiénes juegan HOY. Arranca con los habituales del grupo, todos marcados.
+  /// El punto de torneo con las fichas ya resueltas contra MI directorio.
+  ///
+  /// Se recalcula en cada build porque el directorio llega por stream y porque
+  /// materializar a alguien lo cambia. Resolver por nombre normalizado es lo que
+  /// evita que la segunda ronda del torneo cree a Luis Herrera otra vez.
+  PuntoDeTorneo? get _tor {
+    final t = widget.torneo;
+    if (t == null) return null;
+    final dir = context.read<PlayerProvider>().directory;
+    return t.conFichas({
+      for (final pw in dir) pw.displayName: pw.player.id,
+      // Los creados aquí mismo todavía no están en el directorio del provider.
+      for (final e in _creados.entries) e.value.name: e.key,
+    });
+  }
+
+  /// Quiénes juegan HOY. Con grupo, sus habituales marcados.
   ///
   /// Es una COPIA: quitar a alguien de aquí no lo saca del grupo. Reutilizar la
   /// lista del grupo haría que jugar sin uno lo borrara para siempre.
-  late final List<String> _hoy = List.of(widget.grupo.playerIds);
+  ///
+  /// Desde un torneo sin plantilla arranca con QUIEN SOY YO y nadie más: marcar
+  /// a los veinte del padrón sería peor que no marcar a ninguno, porque hay que
+  /// desmarcar diecisiete para jugar un cuarteto. Los demás se añaden del padrón.
+  late final List<String> _hoy = _inicial();
+
+  List<String> _inicial() {
+    final g = widget.grupo;
+    if (g != null) return List.of(g.playerIds);
+    final t = widget.torneo;
+    final mio = t?.yoSoy == null ? null : t!.fichaDe[t.yoSoy];
+    return mio == null ? <String>[] : [mio];
+  }
 
   /// 'handicap' · 'sliding' · 'ninguna'. Sin elegir hasta que se toque.
-  String? _ventaja;
+  ///
+  /// Si el torneo la fija, entra ya puesta: es el único parámetro de juego que un
+  /// torneo tiene que fijar sí o sí, porque dos jornadas con ventajas distintas
+  /// no son comparables y la tabla las suma como si lo fueran.
+  late String? _ventaja = widget.torneo?.ventaja?.paraSetup;
 
   /// Lo que este punto de partida NO sabe. Calculado, no fijado.
   List<SetupStep> get _pendientes => preguntasPendientes(
-        // Ningún modelo guarda campo todavía; en cuanto uno lo guarde, aquí se
-        // lee de él y la pregunta desaparece.
-        traeCampo: false,
-        traeVentaja: false,
+        // Un grupo de apuesta no guarda campo; un torneo PUEDE fijarlo. En cuanto
+        // lo trae, la pregunta desaparece sola — es para lo que se calculaba.
+        traeCampo: widget.torneo?.campo != null,
+        traeVentaja: widget.torneo?.ventaja != null,
       );
 
   bool get _listo =>
@@ -69,6 +124,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
     final t = context.watch<RoundProvider>().theme;
     GolfThemeExt.setCurrent(t);
     final bg = widget.grupo;
+    final tor = _tor;
 
     return Scaffold(
       backgroundColor: t.bg,
@@ -77,7 +133,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
         elevation: 0,
         iconTheme: IconThemeData(color: t.text),
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(bg.name,
+          Text(tor == null ? bg!.name : '${tor.emoji} ${tor.nombre}',
               style: TextStyle(
                   color: t.text, fontWeight: FontWeight.w800, fontSize: 18)),
           Text(faltaPorDecidir(_pendientes),
@@ -97,17 +153,26 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
             border: Border.all(color: t.divider),
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('YA CONFIGURADO', style: GolfType.label(t.primary)),
+            Text(tor == null ? 'YA CONFIGURADO' : 'LO QUE FIJA EL TORNEO',
+                style: GolfType.label(t.primary)),
             const SizedBox(height: 8),
             // Los jugadores NO faltan: vienen del grupo. Lo que se ofrece es
             // AJUSTAR una lista que ya está, así que van aquí y no en "falta
             // decidir".
-            _fila(t, Icons.people_outline,
-                '${_hoy.length} de ${bg.playerIds.length} jugadores'),
-            _fila(t, Icons.compare_arrows,
-                '$_duelosHoy duelos con apuesta'),
-            _fila(t, Icons.paid_outlined,
-                '$_apuestasHoy apuestas con sus montos'),
+            if (tor != null) ...[
+              for (final linea in tor.loQueFija)
+                _fila(t, Icons.check_circle_outline, linea),
+              _fila(t, Icons.people_outline,
+                  '$_marcados jugando esta ronda'),
+            ] else
+              _fila(t, Icons.people_outline,
+                  '${_hoy.length} de ${bg!.playerIds.length} jugadores'),
+            if (bg != null) ...[
+              _fila(t, Icons.compare_arrows,
+                  '$_duelosHoy duelos con apuesta'),
+              _fila(t, Icons.paid_outlined,
+                  '$_apuestasHoy apuestas con sus montos'),
+            ],
             // Las apuestas de partida van en su propia línea: no son "una más"
             // de las de duelo, aplican a todos a la vez.
             if (_partidaJugables.isNotEmpty)
@@ -116,6 +181,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
                   '${_partidaJugables.map((a) => a.plantilla.type.label).join(', ')}'),
             const SizedBox(height: 4),
             GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () => setState(() => _abierto = !_abierto),
               child: Text(_abierto ? 'Cerrar' : '¿Quiénes juegan hoy?',
                   style: GolfType.label(t.primary)
@@ -180,34 +246,65 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
         if (_pendientes.contains(SetupStep.ventaja)) _bloqueVentaja(t),
 
         const SizedBox(height: 22),
-        GPrimaryButton(
-          label: '⛳ Empezar ronda',
-          onTap: _listo ? () => _empezar(directo: true) : null,
-        ),
-        const SizedBox(height: 8),
-        // Salida para quien quiera cambiar algo de lo precargado. El wizard
-        // completo sigue siendo el sitio donde se cambia cualquier cosa.
-        GSecButton(
-          label: 'Revisar todo antes de empezar',
-          onTap: () => _empezar(directo: false),
-        ),
+
+        // ── Y aquí se bifurca, según si hay apuestas que heredar ───────────
+        //
+        // Con plantilla no queda nada por decidir: se lanza y la ronda existe,
+        // que es lo que "jugar mi ronda de Copa de Primavera" tiene que
+        // significar.
+        //
+        // Sin plantilla —el seguidor, que no puede leer las apuestas del
+        // organizador— falta lo más importante de una ronda, así que ofrecer
+        // "empezar" a secas arrancaría una ronda sin apuestas sin decirlo. Lleva
+        // al asistente con el padrón, la ventaja, el campo y la marca ya puestos:
+        // lo que queda por responder es lo único que de verdad es suyo.
+        if (_heredaApuestas) ...[
+          GPrimaryButton(
+            label: '⛳ Empezar ronda',
+            onTap: _listo ? () => _empezar(directo: true) : null,
+          ),
+          const SizedBox(height: 8),
+          // Salida para quien quiera cambiar algo de lo precargado. El wizard
+          // completo sigue siendo el sitio donde se cambia cualquier cosa.
+          GSecButton(
+            label: 'Revisar todo antes de empezar',
+            onTap: () => _empezar(directo: false),
+          ),
+        ] else
+          GPrimaryButton(
+            label: '⛳ Elegir qué se juega y empezar',
+            onTap: _listo ? () => _empezar(directo: false) : null,
+          ),
         const SizedBox(height: 10),
         Text(
-            _listo
-                ? 'Empezar usa los jugadores y las apuestas del grupo tal cual.'
+            !_listo
                 // Antes concatenaba la frase de la tarjeta y salía "Elige falta
                 // elegir campo y ventaja para empezar".
-                : _queFaltaFrase,
+                ? _queFaltaFrase
+                : _heredaApuestas
+                    ? 'Empezar usa los jugadores y las apuestas del grupo tal '
+                        'cual.'
+                    : 'El torneo fija con quién juegas y con qué ventaja. Las '
+                        'apuestas se eligen en el siguiente paso, y la ronda ya '
+                        'queda marcada para el torneo.',
             style: GolfType.label(t.sub)),
       ]),
     );
   }
 
   /// Panel de nómina abierto.
-  bool _abierto = false;
+  ///
+  /// Desde un torneo arranca ABIERTO: la lista de hoy es justo la pregunta que
+  /// queda, y esconderla detrás de un toque sería el mismo fallo que ya nos costó
+  /// tiempo —la lógica está y la superficie no se alcanza—.
+  late bool _abierto = widget.torneo != null;
+
+  /// Cuántos juegan hoy. Con torneo no hay "de N habituales" que enseñar.
+  int get _marcados => _hoy.length;
 
   /// Reglas de hoy. Derivadas, para que el resumen se recalcule en vivo.
-  List<PairBetRule> get _reglasHoy => widget.grupo.rulesForToday(_hoy);
+  List<PairBetRule> get _reglasHoy =>
+      widget.grupo?.rulesForToday(_hoy) ?? const [];
   int get _duelosHoy => _reglasHoy.where((r) => r.modules.isNotEmpty).length;
   int get _apuestasHoy =>
       _reglasHoy.fold(0, (s, r) => s + r.modules.length);
@@ -218,7 +315,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
   /// quitar un jugador puede volver jugable un Wolf que con seis no entraba, y
   /// eso se ve al momento.
   List<ApuestaDePartidaHoy> get _partidaHoy =>
-      widget.grupo.modulosDePartidaHoy(_hoy);
+      widget.grupo?.modulosDePartidaHoy(_hoy) ?? const [];
   List<ApuestaDePartidaHoy> get _partidaJugables =>
       _partidaHoy.where((a) => a.jugable).toList();
   List<ApuestaDePartidaHoy> get _partidaFuera =>
@@ -254,8 +351,8 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
   /// Quiénes juegan hoy. Los habituales marcados, y se puede invitar a alguien.
   Widget _bloqueNomina(GolfTheme t) {
     final dir = context.watch<PlayerProvider>().directory;
-    final habituales = widget.grupo.playerIds;
-    final pat = widget.grupo.patron;
+    final habituales = widget.grupo?.playerIds ?? const <String>[];
+    final pat = widget.grupo?.patron;
 
     String nombre(String id) {
       final creado = _creados[id];
@@ -264,9 +361,14 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
       return pw?.displayName ?? id;
     }
 
+    // Los del padrón salen en SU sección, con su propio significado. Sin este
+    // filtro la misma persona aparecía dos veces —una como inscrito y otra como
+    // "del directorio"— y elegir entre dos chips idénticos no es una elección.
+    final delPadron = _tor?.padron.map(nombreComparable).toSet() ?? const {};
     final invitables = dir
         .where((x) => !_hoy.contains(x.player.id))
         .where((x) => !habituales.contains(x.player.id))
+        .where((x) => !delPadron.contains(nombreComparable(x.displayName)))
         .toList();
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -276,10 +378,48 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
             onTap: () => setState(() {
                   if (!_hoy.remove(id)) _hoy.add(id);
                 })),
-      // Invitados: los que no son del grupo pero juegan hoy.
+      // Invitados: los que no son del grupo pero juegan hoy. Un inscrito del
+      // torneo NO es un invitado —está en el padrón— así que no lleva la
+      // etiqueta: decirle invitado a quien pagó el bote sería raro.
       for (final id in _hoy.where((x) => !habituales.contains(x)))
-        _filaJugador(t, nombre(id), true, habitual: false,
+        _filaJugador(t, nombre(id), true, habitual: _delPadron(id),
             onTap: () => setState(() => _hoy.remove(id))),
+
+      // ── El padrón del torneo ─────────────────────────────────────────────
+      //
+      // El hueco que empezó todo esto: "los participantes del torneo no están en
+      // mi directorio". Los define el torneo, así que salen de él, y quien sigue
+      // el torneo los tiene por el nombre que viaja en la instantánea.
+      if (_tor != null && _delPadronSinMarcar.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        Text('DEL PADRÓN DEL TORNEO', style: GolfType.label(t.sub)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          for (final n in _delPadronSinMarcar)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _sumarDelPadron(t, n),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                decoration: BoxDecoration(
+                  color: t.primary.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+                ),
+                child: Text('+ $n', style: GolfType.label(t.primary)),
+              ),
+            ),
+        ]),
+        if (_tor!.pideHandicap && _tor!.sinFicha.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+                'A quien no tengas todavía se le pregunta el handicap al '
+                'añadirlo: esta ronda lo usa.',
+                style: GolfType.label(t.sub)),
+          ),
+      ],
 
       const SizedBox(height: 8),
       Text('INVITAR A ALGUIEN MÁS', style: GolfType.label(t.sub)),
@@ -330,7 +470,9 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
 
       // Qué juega un invitado. Si el grupo no es uniforme se DICE en vez de
       // adivinar: elegir por mayoría le inventaría un acuerdo que nadie pactó.
-      if (_hoy.any((x) => !habituales.contains(x)) && !pat.uniforme) ...[
+      if (pat != null &&
+          _hoy.any((x) => !habituales.contains(x)) &&
+          !pat.uniforme) ...[
         const SizedBox(height: 8),
         Text(pat.motivo!, style: GolfType.label(t.danger)),
       ],
@@ -340,6 +482,88 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
             style: GolfType.label(t.danger)),
       ],
     ]);
+  }
+
+  /// Si este id es de alguien del padrón del torneo.
+  bool _delPadron(String id) => _tor?.fichaDe.values.contains(id) ?? false;
+
+  /// Los del padrón que hoy no están marcados, por nombre.
+  ///
+  /// Se compara por FICHA cuando la hay y por nombre cuando no: alguien del
+  /// padrón sin ficha todavía no puede estar en _hoy, porque _hoy son ids.
+  List<String> get _delPadronSinMarcar {
+    final tor = _tor;
+    if (tor == null) return const [];
+    return tor.padron.where((n) {
+      final id = tor.fichaDe[n];
+      return id == null || !_hoy.contains(id);
+    }).toList();
+  }
+
+  /// Añade a alguien del padrón, materializando su ficha si hace falta.
+  ///
+  /// ── Aquí es donde el handicap 0 podía colar un número mal ─────────────────
+  ///
+  /// La instantánea no lleva handicaps —es un atributo personal de un tercero,
+  /// no clasificación del torneo— así que una ficha nueva nace en 0. Con ventaja,
+  /// un 0 falso da netos falsos sin avisar, que es la categoría que más caro nos
+  /// ha salido.
+  ///
+  /// Con [VentajaDeTorneo.ninguna] el handicap no interviene en ningún cálculo,
+  /// así que no se pregunta y entra directo: el riesgo desaparece POR
+  /// CONSTRUCCIÓN, no por aviso, y de paso es una pregunta menos en el caso más
+  /// común de un torneo. Con handicap o sliding se abre el formulario, con el
+  /// nombre ya puesto, y lo único que hay que responder es el número.
+  Future<void> _sumarDelPadron(GolfTheme t, String nombre) async {
+    final tor = _tor;
+    if (tor == null) return;
+
+    // Ya tiene ficha: es un jugador más de la lista de hoy.
+    final ya = tor.fichaDe[nombre];
+    if (ya != null) {
+      setState(() => _hoy.add(ya));
+      return;
+    }
+
+    double hcp = 0;
+    if (tor.pideHandicap) {
+      final r = await showPlayerEditSheet(
+        context,
+        t: t,
+        nombreInicial: nombre,
+        handicapInicial: 0,
+        teeInicial: TeeInfo.standard,
+        nombreFallback: nombre,
+        creando: true,
+      );
+      if (r == null || !mounted) return;
+      hcp = r.handicap;
+    }
+
+    // El id se genera aquí y es el MISMO que va al directorio: si el directorio
+    // le diera otro, la misma persona saldría dos veces y su historial se
+    // partiría en dos. Es la lección del jugador creado en el asistente.
+    final id = 'pad_${DateTime.now().microsecondsSinceEpoch}';
+    final nuevo =
+        Player(id: id, name: nombre, handicapBase: hcp, colorIndex: _hoy.length);
+    setState(() {
+      _creados[id] = nuevo;
+      _hoy.add(id);
+    });
+    try {
+      await context.read<PlayerProvider>().createPlayer(
+          id: id, name: nombre, handicap: hcp, colorIndex: nuevo.colorIndex);
+    } catch (e) {
+      // Juega igual: la ficha es local a la ronda. Se dice porque la próxima
+      // ronda del torneo volvería a pedirlo, y eso hay que poder explicarlo.
+      debugPrint('[Torneo] no se pudo guardar $nombre en el directorio: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('$nombre juega esta ronda, pero no se pudo guardar en '
+            'tus compañeros.'),
+        duration: const Duration(seconds: 4),
+      ));
+    }
   }
 
   /// Crea un jugador con EL formulario compartido.
@@ -553,10 +777,21 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
   /// Las dos salidas van por SetupScreen: con [directo] lanza al entrar sin
   /// mostrar los pasos, y sin él se queda en el wizard para cambiar lo que sea.
   /// Un solo camino de lanzamiento.
+  /// Si esta ronda hereda las apuestas de un punto de partida.
+  ///
+  /// Un grupo SIEMPRE las trae. Un torneo solo si tiene plantilla, y el seguidor
+  /// nunca la tiene: vive en el espacio del organizador y sus reglas por duelo
+  /// llevan ids de jugador, así que publicarla rompería la regla de qué no entra
+  /// en la instantánea.
+  bool get _heredaApuestas => widget.grupo != null;
+
   void _empezar({required bool directo}) {
     Navigator.of(context).pushReplacement(MaterialPageRoute(
       builder: (_) => SetupScreen(
         grupoInicial: widget.grupo,
+        // LA MARCA. Sin esto la ronda se juega y no cuenta, que es el peor de los
+        // dos silencios: todo parece funcionar y la tabla no se mueve.
+        torneoInicial: widget.torneo?.torneoId,
         // La lista de HOY, no la de los habituales.
         nominaInicial: List.of(_hoy),
         // Los que no están en el directorio: sin esto se caerían al precargar,

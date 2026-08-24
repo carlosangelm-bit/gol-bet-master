@@ -17,6 +17,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/course_picker_sheet.dart';
 import '../../widgets/importar_jugadores_sheet.dart';
 import '../../models/models.dart';
 import '../../models/round_result.dart';
@@ -149,8 +150,22 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           ],
           const SizedBox(height: 22),
 
-          // ── 2 · Qué rondas cuentan ─────────────────────────────────────
-          _titulo('2 · QUÉ RONDAS CUENTAN', t),
+          // ── 2 · Cómo se juega una ronda ────────────────────────────────
+          //
+          // La sección que faltaba, y su ausencia produjo cinco parches. El
+          // torneo no guardaba NADA de cómo se juega: ni campo, ni ventaja, ni
+          // apuestas. Así que "hay que configurar el formato otra vez" no era
+          // una dirección que se estuviera ignorando —era un campo inexistente—.
+          //
+          // Con esto puesto, una ronda del torneo se crea desde el torneo con la
+          // gente, la ventaja y el campo ya respondidos, y la marca puesta sin
+          // que nadie tenga que acordarse.
+          _titulo('2 · CÓMO SE JUEGA UNA RONDA', t),
+          _bloqueComoSeJuega(t, grupos),
+          const SizedBox(height: 22),
+
+          // ── 3 · Qué rondas cuentan ─────────────────────────────────────
+          _titulo('3 · QUÉ RONDAS CUENTAN', t),
           // Solo las fuentes que se OFRECEN. La retirada por fechas sigue en el
           // enum para que un torneo guardado se lea igual, pero no se puede
           // elegir de nuevo: un rango arrastra rondas que nadie marcó.
@@ -261,7 +276,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           // La lista explícita. Participa quien SE INSCRIBE, no quien juegue: con
           // un bote de por medio, poner $500 es una decisión y no algo que te
           // pase por jugar un sábado.
-          _titulo('3 · QUIÉN PARTICIPA', t),
+          _titulo('4 · QUIÉN PARTICIPA', t),
           if (_t.participantes.isEmpty) ...[
             Container(
               padding: const EdgeInsets.all(11),
@@ -355,8 +370,8 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           // ── 3 · Cómo puntúa cada ronda ─────────────────────────────────
           _titulo(
               _t.formato == FormatoDeTorneo.eliminacion
-                  ? '4 · QUIÉN GANA EL PARTIDO'
-                  : '4 · CÓMO PUNTÚA CADA RONDA',
+                  ? '5 · QUIÉN GANA EL PARTIDO'
+                  : '5 · CÓMO PUNTÚA CADA RONDA',
               t),
           // En un cuadro no se ofrece "por posición": entre dos personas el
           // puesto lo decide el dinero de la ronda —es lo que ese método
@@ -434,7 +449,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           // pasas. Lo guardado NO se borra —volver a liga lo devuelve entero—
           // porque esconder y reescribir no son lo mismo.
           if (aplicaEnFormato(SeccionDelTorneo.acumulacion, _t.formato)) ...[
-          _titulo('5 · CÓMO SE ACUMULA', t),
+          _titulo('6 · CÓMO SE ACUMULA', t),
           for (final a in Acumulacion.values)
             _opcion(
               t: t,
@@ -463,7 +478,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           // eso se sentía insuficiente pareciendo el adecuado.
           // Fuera con eliminación: no hay mínimo que valga, hay una final.
           if (aplicaEnFormato(SeccionDelTorneo.minimoRondas, _t.formato)) ...[
-          _titulo('6 · CUÁNTAS RONDAS PARA OPTAR AL PREMIO', t),
+          _titulo('7 · CUÁNTAS RONDAS PARA OPTAR AL PREMIO', t),
           _contador(t, 'Rondas jugadas mínimas', _t.minimoRondas, 0, 40,
               (v) => setState(() => _t = _t.copyWith(minimoRondas: v))),
           const SizedBox(height: 6),
@@ -485,7 +500,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
           ],
 
           // ── 7 · El bote ────────────────────────────────────────────────
-          _titulo('7 · EL BOTE', t),
+          _titulo('8 · EL BOTE', t),
           TextField(
             controller: _entradaCtrl,
             keyboardType: TextInputType.number,
@@ -879,6 +894,117 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
       ]),
     );
   }
+
+  /// La plantilla, la ventaja y el campo: lo que el torneo fija de sus rondas.
+  Widget _bloqueComoSeJuega(GolfTheme t, List<BettingGroup> grupos) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('LAS APUESTAS', style: GolfType.label(t.sub)),
+          const SizedBox(height: 6),
+          if (grupos.isEmpty)
+            _nota(
+                'No tienes plantillas guardadas. Se crean en Plantillas, y sin '
+                'una el torneo no puede fijar qué se apuesta: cada ronda lo '
+                'elige.',
+                t)
+          else ...[
+            _opcion(
+              t: t,
+              titulo: 'Las elige cada ronda',
+              detalle: 'El torneo no fija las apuestas.',
+              activa: _t.plantillaId == null,
+              onTap: () =>
+                  setState(() => _t = _t.copyWith(limpiarPlantilla: true)),
+            ),
+            for (final g in grupos)
+              _opcion(
+                t: t,
+                titulo: '${g.emoji} ${g.name}',
+                detalle: '${g.totalModules} apuesta'
+                    '${g.totalModules == 1 ? '' : 's'} con sus montos',
+                activa: _t.plantillaId == g.id,
+                onTap: () =>
+                    setState(() => _t = _t.copyWith(plantillaId: g.id)),
+              ),
+            // Que sean el mismo grupo es normal; que uno mueva al otro, no. Ver
+            // Torneo.plantillaId.
+            if (_t.plantillaId != null &&
+                _t.fuente == FuenteDeRondas.grupo &&
+                _t.plantillaId != _t.bettingGroupId)
+              _nota(
+                  'La plantilla dice CÓMO se juega; la fuente de arriba dice QUÉ '
+                  'rondas cuentan. Aquí son grupos distintos, y puede estar '
+                  'bien: solo conviene saberlo.',
+                  t),
+          ],
+          const SizedBox(height: 14),
+
+          Text('LA VENTAJA', style: GolfType.label(t.sub)),
+          const SizedBox(height: 6),
+          // Es el único parámetro de juego que un torneo tiene que fijar sí o sí:
+          // dos jornadas de la misma liga, una con handicap y otra sin, no son
+          // comparables y la tabla las suma como si lo fueran.
+          _opcion(
+            t: t,
+            titulo: 'La elige cada ronda',
+            detalle: 'Dos jornadas pueden salir con ventajas distintas.',
+            activa: _t.ventaja == null,
+            onTap: () => setState(() => _t = _t.copyWith(limpiarVentaja: true)),
+          ),
+          for (final v in VentajaDeTorneo.values)
+            _opcion(
+              t: t,
+              titulo: v.label,
+              detalle: v.descripcion,
+              activa: _t.ventaja == v,
+              onTap: () => setState(() => _t = _t.copyWith(ventaja: v)),
+            ),
+          if (_t.ventaja == VentajaDeTorneo.ninguna)
+            _nota(
+                'Sin ventaja, el handicap no interviene: a quien siga el torneo '
+                'y cree su ronda no se le pregunta, porque no cambiaría nada.',
+                t),
+          const SizedBox(height: 14),
+
+          Text('EL CAMPO', style: GolfType.label(t.sub)),
+          const SizedBox(height: 6),
+          // Opcional a propósito: en una liga varía por jornada y se deja vacío;
+          // en un shotgun es uno para todos y puesto aquí desaparece la pregunta.
+          _opcion(
+            t: t,
+            titulo: _t.campo?.name ?? 'Lo elige cada jornada',
+            detalle: _t.campo == null
+                ? 'Una liga suele rotar de campo. Toca para fijar uno.'
+                : 'Fijo para todas las rondas del torneo.',
+            activa: _t.campo != null,
+            onTap: () => showModalBottomSheet(
+              context: context,
+              backgroundColor: t.card,
+              isScrollControlled: true,
+              useRootNavigator: true,
+              shape: const RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius.vertical(top: Radius.circular(20))),
+              // El MISMO selector del wizard y del arranque rápido.
+              builder: (_) => CoursePickerSheet(
+                t: t,
+                onSelected: (info, _) =>
+                    setState(() => _t = _t.copyWith(campo: info)),
+              ),
+            ),
+          ),
+          if (_t.campo != null)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _t = _t.copyWith(limpiarCampo: true)),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('Quitar el campo fijo',
+                    style: GolfType.label(t.primary)),
+              ),
+            ),
+        ],
+      );
 
   Widget _titulo(String txt, GolfTheme t) => Padding(
         padding: const EdgeInsets.only(bottom: 8),

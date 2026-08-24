@@ -27,6 +27,7 @@
 // sobre users/** que alguien tenga que razonar. El criterio se cumple POR
 // CONSTRUCCIÓN, no porque la regla esté bien escrita — que es mejor, porque no
 // depende de que lo esté.
+import 'models.dart';
 import 'torneo.dart';
 
 /// Una fila de la clasificación, aplanada para publicar.
@@ -271,6 +272,26 @@ class TorneoPublicado {
   /// Quién ganó, por nombre. Null mientras la final no se juegue.
   final String? campeon;
 
+  /// La ventaja que fija el torneo, y el campo si lo fija. Null = no lo fija.
+  ///
+  /// ── Por qué SÍ entran en la instantánea ───────────────────────────────────
+  ///
+  /// Son CONFIGURACIÓN DEL TORNEO, no datos de personas: qué ventaja se juega y
+  /// en qué campo. Cero riesgo de exponer a nadie, y la regla de qué no entra
+  /// —ids de jugador, roundId, resultados ajenos, el directorio— se respeta tal
+  /// cual está. [comoSePuntua] ya viajaba por el mismo motivo.
+  ///
+  /// Y hacen falta: sin ellos, quien sigue el torneo y crea su ronda vuelve a
+  /// elegir la ventaja, que es justo lo que el torneo tiene que fijar para que
+  /// dos jornadas sean comparables.
+  ///
+  /// Lo que NO viaja aquí, y es deliberado: la PLANTILLA. Vive en el espacio del
+  /// organizador y sus reglas por duelo llevan ids de jugador, así que
+  /// publicarla rompería la regla. El seguidor hereda con quién juega, con qué
+  /// ventaja y dónde; qué se apuesta lo elige él, que además es lo suyo.
+  final VentajaDeTorneo? ventaja;
+  final CourseInfo? campo;
+
   const TorneoPublicado({
     required this.token,
     this.torneoId = '',
@@ -291,6 +312,8 @@ class TorneoPublicado {
     this.boteJornadaEntrada = 0,
     this.llave = const [],
     this.campeon,
+    this.ventaja,
+    this.campo,
   });
 
   /// Construye la copia desde la tabla YA CALCULADA.
@@ -390,6 +413,8 @@ class TorneoPublicado {
             ),
       ],
       campeon: conNombre(llave?.campeon),
+      ventaja: torneo.ventaja,
+      campo: torneo.campo,
     );
   }
 
@@ -414,6 +439,8 @@ class TorneoPublicado {
         if (boteJornadaEntrada != 0) 'boteJornadaEntrada': boteJornadaEntrada,
         if (llave.isNotEmpty) 'llave': llave.map((e) => e.toJson()).toList(),
         if (campeon != null) 'campeon': campeon,
+        if (ventaja != null) 'ventaja': ventaja!.name,
+        if (campo != null) 'campo': campo!.toJson(),
       };
 
   factory TorneoPublicado.fromJson(String token, Map<String, dynamic> j) =>
@@ -450,6 +477,13 @@ class TorneoPublicado {
                 PartidoPublicado.fromJson(Map<String, dynamic>.from(x as Map)))
             .toList(),
         campeon: j['campeon'] as String?,
+        ventaja: j['ventaja'] == null
+            ? null
+            : VentajaDeTorneo.values.firstWhere((v) => v.name == j['ventaja'],
+                orElse: () => VentajaDeTorneo.handicap),
+        campo: j['campo'] is Map
+            ? CourseInfo.fromJson(Map<String, dynamic>.from(j['campo'] as Map))
+            : null,
       );
 
   /// Cuánto hace que se publicó, en palabras.
@@ -470,4 +504,34 @@ class TorneoPublicado {
   /// True si la copia lleva tanto tiempo que conviene decirlo más alto.
   bool estaRancia(DateTime ahora) =>
       ahora.difference(publicadoEn).inDays >= 7;
+
+  /// EL PADRÓN, como nombres. Los inscritos del torneo, jueguen o no.
+  ///
+  /// Verificado antes de construir nada sobre él: una liga con inscritos y CERO
+  /// rondas publica una fila por inscrito con su nombre real —[tablaDe] los
+  /// añade y el nombre sale del directorio del organizador, que el publicador le
+  /// pasa entero—. Y un cuadro los trae además en la llave. Así que el padrón
+  /// está aquí desde antes de que nadie juegue, que es justo cuando hace falta
+  /// para crear la primera ronda.
+  ///
+  /// Sale de la tabla Y de la llave porque el que tiene bye puede no aparecer en
+  /// ninguna fila. El '—' se filtra: es lo que se enseña cuando un nombre no se
+  /// pudo resolver, y no es una persona a la que se pueda invitar.
+  ///
+  /// Esta era la lista que la pantalla de invitado calculaba por su cuenta para
+  /// "¿Cuál eres tú?". Vive aquí para que el padrón que se elige y el padrón con
+  /// el que se juega sean el mismo — dos definiciones habrían sido la cuarta vez
+  /// que dos caminos al mismo sitio divergen.
+  List<String> get padron {
+    final out = <String>{};
+    for (final f in tabla) {
+      if (f.nombre.isNotEmpty && f.nombre != '—') out.add(f.nombre);
+    }
+    for (final p in llave) {
+      for (final n in [p.a, p.b]) {
+        if (n != null && n.isNotEmpty && n != '—') out.add(n);
+      }
+    }
+    return out.toList();
+  }
 }

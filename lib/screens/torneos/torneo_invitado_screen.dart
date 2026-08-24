@@ -20,7 +20,8 @@ import '../../models/torneo_seguido.dart';
 import '../../providers/torneo_provider.dart';
 import '../../services/auth_service.dart';
 import '../../app_shell.dart';
-import '../setup/setup_screen.dart';
+import '../../models/punto_de_torneo.dart';
+import '../setup/quick_start_screen.dart';
 import '../../core/app_theme.dart';
 import '../../widgets/bracket_tree.dart';
 import '../../models/torneo_publicado.dart';
@@ -472,6 +473,7 @@ class _TorneoInvitadoScreenState extends State<TorneoInvitadoScreen> {
             copia: copia,
             t: t,
             pendiente: pendiente,
+            jugadorNombre: _yoSoy,
             rival: pendiente == null ? null : _rivalDe(pendiente, mio, arbol),
             onPedirCuenta: () => _pedirCuenta(
                 t,
@@ -1011,6 +1013,10 @@ class _BotonJugar extends StatelessWidget {
   final GolfTheme t;
   final NodoDeLlave? pendiente;
   final String? rival;
+
+  /// Con qué nombre juego yo, si lo he reclamado. Es lo que hace que la ronda
+  /// arranque conmigo dentro en vez de con la lista vacía.
+  final String? jugadorNombre;
   final VoidCallback onPedirCuenta;
 
   const _BotonJugar(
@@ -1018,6 +1024,7 @@ class _BotonJugar extends StatelessWidget {
       required this.t,
       required this.pendiente,
       required this.rival,
+      required this.jugadorNombre,
       required this.onPedirCuenta});
 
   @override
@@ -1032,6 +1039,16 @@ class _BotonJugar extends StatelessWidget {
     // justo encima. Ofrecer los dos a la vez sería preguntar dos cosas para una.
     if (!sinSesion && !sigue) return const SizedBox.shrink();
 
+    // Sin id del torneo la ronda no se puede marcar, y una ronda que se juega y
+    // no cuenta es el peor de los dos silencios: todo parece ir bien y la tabla
+    // no se mueve. Instantáneas viejas, publicadas antes de que el id existiera.
+    if (!sinSesion && copia.torneoId.isEmpty) {
+      return Text(
+          'Este enlace es de antes de que las rondas pudieran contar. Pídele al '
+          'organizador que lo comparta de nuevo.',
+          style: TextStyle(color: t.sub, fontSize: 11, height: 1.35));
+    }
+
     final etiqueta = pendiente == null
         ? 'Crear una ronda para este torneo'
         : 'Jugar mi partido${rival == null ? '' : rival!.replaceFirst('.', '')}';
@@ -1045,14 +1062,20 @@ class _BotonJugar extends StatelessWidget {
               onPedirCuenta();
               return;
             }
-            // Al shell PRIMERO y el asistente encima: ver la nota de arriba.
+            // Al shell PRIMERO y el arranque encima: ver la nota de arriba.
+            //
+            // Y va al ARRANQUE, no al asistente de diez pasos: el torneo ya
+            // responde el padrón, la ventaja, el campo y la marca. Pasar por los
+            // diez pasos era preguntar cuatro veces lo que el torneo ya dijo, y
+            // es el error de dirección que esto corrige.
             final nav = Navigator.of(context);
             nav.pushAndRemoveUntil(
                 MaterialPageRoute(builder: (_) => const AppShell()),
                 (r) => false);
             nav.push(MaterialPageRoute(
-                builder: (_) =>
-                    SetupScreen(torneoInicial: copia.torneoId)));
+                builder: (_) => QuickStartScreen(
+                    torneo: PuntoDeTorneo.seguido(copia,
+                        yoSoy: jugadorNombre))));
           },
           style: ElevatedButton.styleFrom(
               backgroundColor: t.primary,
@@ -1067,8 +1090,8 @@ class _BotonJugar extends StatelessWidget {
       Text(
           sinSesion
               ? 'Para anotar scores hace falta cuenta. Mirar no.'
-              : 'Se abre el asistente con este torneo ya marcado, así que no hay '
-                  'que acordarse de nada.',
+              : 'Se abre con los inscritos del torneo, su ventaja y la marca ya '
+                  'puestas. Solo eliges quién juega hoy.',
           style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
     ]);
   }

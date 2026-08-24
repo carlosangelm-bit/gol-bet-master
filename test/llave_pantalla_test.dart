@@ -164,7 +164,11 @@ Future<List<String>> _montarLista(
 Future<List<String>> _montarEditor(
   WidgetTester tester, {
   required Torneo torneo,
-  Size tamano = const Size(390, 2400),
+  // Alto de mentira a propósito: el editor es una lista larga y lazy, así que
+  // sin esto las secciones de abajo no se construyen y "no está" se confunde con
+  // "no se ha pintado todavía". Subió a 3200 al entrar la sección 2, que añade
+  // tres bloques arriba de todo lo demás.
+  Size tamano = const Size(390, 3200),
 }) async {
   tester.view.physicalSize = tamano;
   tester.view.devicePixelRatio = 1.0;
@@ -242,8 +246,12 @@ void main() {
     const deLiga = [
       'Puntos por puesto',
       'SI DOS EMPATAN EN UNA RONDA',
-      '5 · CÓMO SE ACUMULA',
-      '6 · CUÁNTAS RONDAS PARA OPTAR AL PREMIO',
+      // Los números subieron uno al entrar "2 · CÓMO SE JUEGA UNA RONDA", que
+      // es la sección que el modelo no tenía y cuya ausencia produjo cinco
+      // parches. Se fija el número, no solo el texto, porque el orden de las
+      // preguntas del editor es parte de lo que se está probando.
+      '6 · CÓMO SE ACUMULA',
+      '7 · CUÁNTAS RONDAS PARA OPTAR AL PREMIO',
     ];
 
     testWidgets('con eliminación no sale ninguna sección de liga',
@@ -275,10 +283,12 @@ void main() {
         (tester) async {
       final errores = await _montarEditor(tester, torneo: _t());
       expect(errores, isEmpty);
-      expect(find.text('4 · QUIÉN GANA EL PARTIDO'), findsOneWidget);
+      expect(find.text('5 · QUIÉN GANA EL PARTIDO'), findsOneWidget);
       expect(find.text('LA SIEMBRA'), findsOneWidget);
-      expect(find.text('7 · EL BOTE'), findsOneWidget);
-      expect(find.text('3 · QUIÉN PARTICIPA'), findsOneWidget);
+      expect(find.text('8 · EL BOTE'), findsOneWidget);
+      expect(find.text('4 · QUIÉN PARTICIPA'), findsOneWidget);
+      // Y la nueva, que es la que faltaba.
+      expect(find.text('2 · CÓMO SE JUEGA UNA RONDA'), findsOneWidget);
     });
 
     testWidgets('"por posición" no se ofrece, y se dice qué pasa con el guardado',
@@ -311,6 +321,13 @@ void main() {
       expect(errores, isEmpty);
       expect(find.text('CÓMO SE REPARTE'), findsNothing);
       expect(find.text('Los tres primeros'), findsNothing);
+      // Hay que bajar: con la sección nueva arriba, el bote se sale del alto que
+      // el ListView construye. No es un fallo de la pantalla —es lazy a
+      // propósito— pero el test tiene que llegar hasta donde mira.
+      await tester.dragUntilVisible(
+          find.textContaining('quien gane la final'),
+          find.byType(ListView),
+          const Offset(0, -300));
       expect(find.textContaining('quien gane la final'), findsOneWidget);
     });
   });

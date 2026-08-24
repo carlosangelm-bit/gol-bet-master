@@ -15,6 +15,9 @@ import '../../services/firestore_service.dart';
 import '../../services/live_round_service.dart';
 import '../../services/auth_service.dart';
 import '../../models/torneo_publicado.dart';
+import '../../models/punto_de_torneo.dart';
+import '../../providers/betting_group_provider.dart';
+import '../setup/quick_start_screen.dart';
 import 'package:flutter/services.dart';
 import '../../providers/perfil_provider.dart';
 import '../../providers/player_provider.dart';
@@ -386,6 +389,15 @@ class _TorneoTabla extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          // ── Jugar una ronda DEL torneo ────────────────────────────────────
+          //
+          // La corrección de dirección, en el sitio donde más se nota: el torneo
+          // es el evento del que salen las rondas, no una vista sobre las que ya
+          // hay. Va PRIMERO porque durante un torneo en marcha es lo que se viene
+          // a hacer; la tabla se mira después de jugar.
+          _BotonJugarDelTorneo(torneo: torneo, t: t, nombres: nombres),
+          const SizedBox(height: 14),
+
           // Las reglas a la vista. Una tabla sin ellas invita a discutir el
           // número en vez de la regla.
           Container(
@@ -1337,5 +1349,81 @@ class _GruposDelTorneoState extends State<_GruposDelTorneo> {
         ]),
       ),
     );
+  }
+}
+
+
+/// "Jugar mi ronda de Copa de Primavera" — desde el torneo, no desde un
+/// asistente en blanco.
+///
+/// Lo que decide qué se ofrece es lo que el torneo puede responder:
+///
+///   · Sin participantes → no hay padrón, y sin padrón esto no ahorra nada. Se
+///     dice qué falta en vez de ofrecer un atajo que no atajaría.
+///   · Con padrón y plantilla → la ronda existe con su gente y sus apuestas.
+///   · Con padrón y sin plantilla → la gente y la ventaja puestas, las apuestas
+///     se eligen. Es el mismo trato que recibe quien sigue el torneo.
+class _BotonJugarDelTorneo extends StatelessWidget {
+  final Torneo torneo;
+  final GolfTheme t;
+  final Map<String, String> nombres;
+  const _BotonJugarDelTorneo(
+      {required this.torneo, required this.t, required this.nombres});
+
+  @override
+  Widget build(BuildContext context) {
+    // Un torneo cerrado ya no admite rondas: la tabla no va a cambiar. Ofrecer
+    // jugar ahí sería prometer que cuenta cuando no cuenta.
+    if (torneo.cerrado) return const SizedBox.shrink();
+
+    final punto = PuntoDeTorneo.propio(torneo, nombres: nombres);
+    if (!punto.utilizable) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: t.divider),
+        ),
+        child: Text(
+            'Define los participantes y este torneo podrá crear sus rondas: con '
+            'el padrón puesto, una ronda del torneo sale con su gente y su '
+            'ventaja sin volver a elegirlas.',
+            style: TextStyle(color: t.sub, fontSize: 12, height: 1.35)),
+      );
+    }
+
+    final grupos = context.watch<BettingGroupProvider>().groups;
+    final plantilla = torneo.plantillaId == null
+        ? null
+        : grupos.where((g) => g.id == torneo.plantillaId).firstOrNull;
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) =>
+                      QuickStartScreen(grupo: plantilla, torneo: punto))),
+          style: ElevatedButton.styleFrom(
+              backgroundColor: t.primary,
+              foregroundColor: t.onPrimary,
+              padding: const EdgeInsets.symmetric(vertical: 13)),
+          child: Text('⛳ Jugar una ronda de ${torneo.nombre}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w800)),
+        ),
+      ),
+      const SizedBox(height: 5),
+      Text(
+          plantilla == null
+              ? 'Sale con los inscritos y la ventaja del torneo, y ya marcada. '
+                  'Fija una plantilla en el editor y traerá también las apuestas.'
+              : 'Sale con los inscritos, la ventaja y las apuestas del torneo, '
+                  'y ya marcada.',
+          style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
+    ]);
   }
 }

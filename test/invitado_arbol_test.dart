@@ -303,6 +303,24 @@ void main() {
       expect(txt, contains('Seguir mirando no necesita nada'));
     });
 
+    testWidgets('y lo que promete es lo que el torneo ya respondió',
+        (tester) async {
+      // El texto de debajo del botón es el contrato: si dijera "se abre el
+      // asistente" estaría prometiendo diez pasos. Dice qué trae hecho.
+      await _montar(tester, _publicar(rondas: [
+        _r('s1', 7, {ana: 300, dani: -300}),
+      ]));
+      await tester.tap(find.text('Alejandro').first);
+      await tester.pumpAndSettle();
+      final txt = _pantalla(tester);
+      // Sin sesión en el harness, así que lo que se puede fijar aquí es que la
+      // promesa vieja —"se abre el asistente"— ya no está en ninguna parte: era
+      // prometer diez pasos donde ahora hay uno. El texto con sesión se fija en
+      // ronda_de_torneo_test, contra el objeto que la pantalla construye.
+      expect(txt, isNot(contains('Se abre el asistente')));
+      expect(txt, contains('hace falta cuenta'));
+    });
+
     testWidgets('sin partido pendiente se ofrece CREAR una ronda', (tester) async {
       // El eslabón que faltaba: quien sigue el torneo y no tiene partido asignado
       // —una liga, o un cuadro del que ya salió— igual quiere jugar una ronda que
