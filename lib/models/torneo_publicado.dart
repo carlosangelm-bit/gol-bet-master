@@ -193,6 +193,24 @@ class TorneoPublicado {
   /// El token del enlace. Es el id del documento.
   final String token;
 
+  /// El id del torneo del organizador.
+  ///
+  /// ── Por qué SÍ entra, cuando los ids de jugador y el roundId no ───────────
+  ///
+  /// Lo que se excluye de la instantánea son los ids que identifican PERSONAS y
+  /// RONDAS: no le sirven a quien mira y enseñan la forma interna. Este es el id
+  /// del propio objeto que se está compartiendo, y el token ya lo identifica
+  /// públicamente igual de bien.
+  ///
+  /// Y hace falta: quien sigue el torneo tiene que publicarle resultados, y la
+  /// tabla del organizador los consulta por SU id. Sin esto se usaba el token
+  /// como identidad, y entonces lo escrito y lo consultado no coincidían.
+  ///
+  /// Vacío en las instantáneas publicadas antes de que este campo existiera. Se
+  /// trata como "todavía no se puede seguir" y se dice, en vez de crear una
+  /// referencia que no funcionaría.
+  final String torneoId;
+
   /// Quién publicó. Lo usa la regla de Firestore para saber quién puede
   /// actualizar y revocar; no se enseña.
   final String ownerUid;
@@ -255,6 +273,7 @@ class TorneoPublicado {
 
   const TorneoPublicado({
     required this.token,
+    this.torneoId = '',
     required this.ownerUid,
     required this.nombre,
     required this.emoji,
@@ -318,6 +337,7 @@ class TorneoPublicado {
 
     return TorneoPublicado(
       token: token,
+      torneoId: torneo.id,
       ownerUid: ownerUid,
       nombre: torneo.nombre,
       emoji: torneo.emoji,
@@ -375,6 +395,7 @@ class TorneoPublicado {
 
   Map<String, dynamic> toJson() => {
         'ownerUid': ownerUid,
+        if (torneoId.isNotEmpty) 'torneoId': torneoId,
         'nombre': nombre,
         'emoji': emoji,
         'publicadoEn': publicadoEn.toIso8601String(),
@@ -398,6 +419,7 @@ class TorneoPublicado {
   factory TorneoPublicado.fromJson(String token, Map<String, dynamic> j) =>
       TorneoPublicado(
         token: token,
+        torneoId: (j['torneoId'] as String?) ?? '',
         ownerUid: (j['ownerUid'] as String?) ?? '',
         nombre: (j['nombre'] as String?) ?? 'Torneo',
         emoji: (j['emoji'] as String?) ?? '🏆',

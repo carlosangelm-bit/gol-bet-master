@@ -1,14 +1,29 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // SEGUIR UN TORNEO AJENO — lo que hace que una liga funcione
 //
-// El fallo que esto arregla: en una liga de temporada cada jugador marca sus
-// propias rondas. Pero la lista de torneos que se pueden marcar sale de
-// users/{miUid}/torneos, o sea SOLO los míos, así que Copa de Primavera —del
-// organizador— no aparecía en el asistente de nadie más. Ni siquiera se podía
-// intentar.
+// ══════════════════════════════════════════════════════════════════════════════
+// POR QUÉ ESTE FALLO SOBREVIVIÓ: DOS SILENCIOS ENCADENADOS
+// ══════════════════════════════════════════════════════════════════════════════
 //
-// Y encima, si se hubiera podido, el resultado habría caído en la cuenta de quien
-// cerró y la tabla lo habría ignorado. Dos silencios encadenados.
+// En una liga de temporada cada jugador marca sus propias rondas. Había DOS cosas
+// roas, y ninguna se veía:
+//
+//   1 · La lista de torneos marcables salía de users/{miUid}/torneos, o sea SOLO
+//       los míos. Copa de Primavera —del organizador— no aparecía en el asistente
+//       de nadie más. Ni se podía intentar.
+//   2 · Y si se hubiera podido, el resultado habría caído en users/{quienCierra}
+//       y la tabla del organizador lo habría ignorado.
+//
+// EL PRIMERO IMPEDÍA LLEGAR AL SEGUNDO, y ahí está la razón de que durara: nadie
+// podía producir el caso que habría destapado el otro fallo. Un torneo probado por
+// su organizador funcionaba perfectamente, porque él sí veía sus torneos y él sí
+// cerraba las rondas.
+//
+// Es el patrón que conviene reconocer: cuando una función está roa en dos puntos
+// de la misma cadena, el primero ESCONDE al segundo, y arreglar solo uno deja el
+// fallo intacto con otra cara. Aquí se arreglaron los dos a la vez a propósito
+// —seguir el torneo Y publicar el resultado— porque cualquiera de los dos solo no
+// habría cambiado nada observable.
 //
 // Un torneo seguido es una REFERENCIA, no una copia: nombre y emoji para poderlo
 // enseñar, y el token y el dueño para poder publicarle resultados. Nada de la

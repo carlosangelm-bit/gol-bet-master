@@ -107,6 +107,12 @@ void main() {
         'ownerUid', 'nombre', 'emoji', 'publicadoEn',
         'comoSePuntua', 'comoSeAcumula', 'rondas', 'tabla',
         'boteTotal', 'boteReparto', 'boteProvisional',
+        // REVISADO al añadirlo: es el id del PROPIO objeto que se comparte, no
+        // el de una persona ni el de una ronda —que es lo que esta lista
+        // protege—. El token ya lo identifica públicamente igual de bien, y hace
+        // falta porque quien sigue el torneo tiene que poder publicarle
+        // resultados con el id por el que el organizador los consulta.
+        'torneoId',
       }, reason: 'la lista es cerrada a propósito: revisar antes de ampliarla');
     });
 

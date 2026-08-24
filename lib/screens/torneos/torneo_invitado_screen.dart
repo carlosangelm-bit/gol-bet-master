@@ -782,11 +782,21 @@ class _BotonSeguirState extends State<_BotonSeguir> {
   Widget build(BuildContext context) {
     final t = widget.t;
     final prov = context.watch<TorneoProvider>();
-    // El id del torneo no viaja en la instantánea —no hace falta para mirarla—
-    // así que el token hace de identidad aquí: es único por torneo y estable
-    // toda su vida.
-    final id = widget.copia.token;
+    // El id DEL TORNEO, no el token. Es lo que la tabla del organizador consulta,
+    // así que usar el token como identidad dejaba lo escrito y lo consultado sin
+    // coincidir. Ver TorneoPublicado.torneoId.
+    final id = widget.copia.torneoId;
     final siguiendo = prov.seguidos.any((s) => s.torneoId == id);
+
+    // Instantánea vieja, publicada antes de que el id viajara. Seguirla crearía
+    // una referencia que no funcionaría, así que se dice qué hace falta en vez de
+    // dejar un botón que no lleva a nada.
+    if (id.isEmpty) {
+      return Text(
+          'Para que tus rondas cuenten aquí, el organizador tiene que volver a '
+          'compartir el torneo: este enlace se publicó antes de que se pudiera.',
+          style: TextStyle(color: t.sub, fontSize: 11, height: 1.35));
+    }
 
     return SizedBox(
       width: double.infinity,

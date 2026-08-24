@@ -2017,18 +2017,32 @@ String resumenDeLlave(LlaveDelTorneo llave, Map<String, String> nombres) {
 
 /// Los resultados publicados que SÍ cuentan para [t].
 ///
-/// La regla de Firestore no puede comprobar que quien publica un resultado jugó
-/// esa ronda: la ronda de una liga no es una ronda en vivo, así que no hay
-/// documento compartido donde mirarlo. Así que se cierra AQUÍ, en la lectura,
-/// donde sí está la lista de inscritos.
+/// ══════════════════════════════════════════════════════════════════════════
+/// LA GARANTÍA ESTÁ REPARTIDA EN DOS SITIOS. ESTE ES UNO DE LOS DOS.
+/// ══════════════════════════════════════════════════════════════════════════
 ///
-/// Cuenta el resultado si quien lo escribió está inscrito. Con la lista vacía no
-/// cuenta ninguno: sin saber quién entra, aceptar lo que llegue es peor que no
-/// aceptar nada —y es el mismo criterio que el bote, que no se calcula sin
-/// lista—.
+/// La regla de Firestore comprueba que quien publica firma con su uid y que el
+/// organizador que declara es el del enlace. Lo que NO puede comprobar es que
+/// JUGÓ esa ronda: la ronda de una liga no es una ronda en vivo, así que no hay
+/// documento compartido donde mirarlo.
 ///
-/// Se dice en los dos sitios a propósito: quien quite esta comprobación pensando
-/// que la regla ya la hacía, rompe la única que hay.
+/// Eso se cierra AQUÍ, en la lectura, donde sí está la lista de inscritos. Cuenta
+/// el resultado si quien lo escribió está inscrito; con la lista vacía no cuenta
+/// ninguno —sin saber quién entra, aceptar lo que llegue es peor que no aceptar
+/// nada, y es el mismo criterio que el bote—.
+///
+/// ── Por qué está anotado en los DOS lados ────────────────────────────────
+///
+/// Es la lección de _BetInfo.all aplicada a seguridad. Allí el catálogo de tipos
+/// vivía duplicado sin que ninguna de las copias dijera que la otra existía, y se
+/// quedó vieja en silencio. Aquí el riesgo es peor: quien lea la REGLA puede
+/// pensar "esto ya valida la procedencia" y quitar este filtro; quien lea ESTE
+/// filtro puede pensar "la regla ya lo hace" y quitarlo.
+///
+/// Ninguno de los dos lados es redundante. Quitar cualquiera deja que alguien con
+/// el enlace meta una fila inventada en la tabla de otro. Está dicho en firestore
+/// .rules —bloque torneoResultados— y está dicho aquí, y las dos notas se nombran
+/// la una a la otra a propósito.
 List<RoundResult> resultadosQueCuentan(
   Torneo t,
   Iterable<({String escritoPor, RoundResult resultado})> publicados,
@@ -2046,6 +2060,17 @@ List<RoundResult> resultadosQueCuentan(
 /// Pasa de verdad: el organizador cierra una ronda suya —va a su colección— y
 /// además está publicada porque alguien la siguió. Sin deduplicar, esa ronda
 /// contaría doble y el dinero saldría al doble.
+///
+/// ── Por qué esto necesita SU PROPIO test ──────────────────────────────────
+///
+/// Es el caso que ningún test de "publica bien" ve, porque las dos mitades
+/// funcionan por separado: la ronda propia se cuenta bien, y la publicada se
+/// cuenta bien. Lo que falla es TENERLAS LAS DOS, y eso solo aparece si el test
+/// monta las dos a la vez con el mismo roundId.
+///
+/// O sea que la cobertura de las partes no implica la cobertura de la suma. Es la
+/// misma familia que el hueco tratado como bye y el contador que retrocedía:
+/// fallos que solo existen en la composición.
 ///
 /// Gana lo PROPIO: es lo que el dueño de la tabla cerró con sus manos.
 List<RoundResult> resultadosUnidos(

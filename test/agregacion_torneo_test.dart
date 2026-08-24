@@ -17,6 +17,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/round_result.dart';
 import 'package:golf_bet_master/models/torneo.dart';
+import 'package:golf_bet_master/models/torneo_publicado.dart';
 import 'package:golf_bet_master/models/torneo_seguido.dart';
 
 /// Un grupo de cuatro con su ronda cerrada, como la que cierra el organizador.
@@ -297,6 +298,83 @@ void main() {
           escritoPor: 'yo',
           resultado: {});
       expect(r.docId, 'tor_1_ronda_9');
+    });
+  });
+
+  group('7 · el id del torneo viaja en la instantánea, y es la identidad', () {
+    // Sin esto se usaba el token como identidad de un torneo seguido, y la tabla
+    // del organizador consulta por SU id: lo escrito y lo consultado no
+    // coincidían. Se localizó leyendo el código, antes de que apareciera.
+    test('la instantánea lleva el id, y no engorda si está vacío', () {
+      final t = Torneo(
+          id: 'tor_liga_2026',
+          nombre: 'Copa de Primavera',
+          fuente: FuenteDeRondas.marcadas,
+          participantes: const ['pid_a']);
+      final tabla = tablaDe(t, const []);
+      final copia = TorneoPublicado.desde(
+        token: 'tok_x',
+        ownerUid: 'uid_org',
+        torneo: t,
+        tabla: tabla,
+        bote: boteDe(t, tabla),
+        jornadas: botesPorJornada(t, tabla),
+        cuando: DateTime(2026, 4, 1),
+      );
+      expect(copia.torneoId, 'tor_liga_2026');
+      expect(copia.toJson()['torneoId'], 'tor_liga_2026');
+      // Y sobrevive el viaje, que es lo que el seguidor necesita.
+      expect(TorneoPublicado.fromJson('tok_x', copia.toJson()).torneoId,
+          'tor_liga_2026');
+    });
+
+    test('una instantánea vieja llega sin id, y se trata como tal', () {
+      // No se inventa nada: sin id, seguir crearía una referencia que no
+      // funcionaría, así que la pantalla dice qué hace falta.
+      final vieja = TorneoPublicado.fromJson('tok', const {'nombre': 'X'});
+      expect(vieja.torneoId, isEmpty);
+    });
+
+    test('el id del torneo NO es un id de jugador ni un roundId', () {
+      // La regla de qué no va en la instantánea sigue en pie: lo excluido son los
+      // ids que identifican PERSONAS y RONDAS. Este es el id del propio objeto
+      // que se comparte.
+      final t = Torneo(
+          id: 'tor_1',
+          nombre: 'T',
+          fuente: FuenteDeRondas.marcadas,
+          participantes: const ['pid_secreto']);
+      final rs = [
+        RoundResult(
+          roundId: 'ronda_secreta',
+          roundName: 'Sábado',
+          courseName: 'C',
+          playedAt: DateTime(2026, 3, 7),
+          holesPlayed: 18,
+          playerIds: const ['pid_secreto'],
+          playerNames: const {'pid_secreto': 'ANA'},
+          balances: const {'pid_secreto': 100},
+          pairBalances: const {},
+          grossByPlayer: const {},
+          netByPlayer: const {},
+          stablefordByPlayer: const {},
+          bettingGroupIds: const [],
+          torneoIds: const ['tor_1'],
+        )
+      ];
+      final tabla = tablaDe(t, rs, nombres: const {'pid_secreto': 'ANA'});
+      final json = TorneoPublicado.desde(
+        token: 'tok',
+        ownerUid: 'uid',
+        torneo: t,
+        tabla: tabla,
+        bote: boteDe(t, tabla),
+        jornadas: botesPorJornada(t, tabla),
+        cuando: DateTime(2026, 4, 1),
+      ).toJson().toString();
+      expect(json.contains('tor_1'), isTrue, reason: 'el id del torneo sí va');
+      expect(json.contains('pid_secreto'), isFalse);
+      expect(json.contains('ronda_secreta'), isFalse);
     });
   });
 
