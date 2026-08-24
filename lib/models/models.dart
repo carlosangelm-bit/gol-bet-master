@@ -941,7 +941,12 @@ class Player {
     colorIndex: (j['colorIndex'] as int?) ?? 0,
     linkedUserId: j['linkedUserId'] as String?,
     isVirtual: j['isVirtual'] as bool? ?? false,
-    teamMemberIds: j['teamMemberIds'] != null ? List<String>.from(j['teamMemberIds'] as List) : [],
+    // `is List` y no `!= null`: un valor con otra forma —un número, un texto—
+    // reventaba la deserialización de la ronda entera. Mismo criterio que el
+    // parseo de campos de la API.
+    teamMemberIds: j['teamMemberIds'] is List
+        ? List<String>.from(j['teamMemberIds'] as List)
+        : const [],
     initials: j['initials'] as String?,
   );
 }
@@ -1754,7 +1759,7 @@ class OyesesConfig {
   };
   factory OyesesConfig.fromJson(Map<String, dynamic> j) => OyesesConfig(
     value: (j['value'] as num?)?.toDouble() ?? 50,
-    eligibleHoles: j['eligibleHoles'] != null
+    eligibleHoles: j['eligibleHoles'] is List
         ? List<int>.from(j['eligibleHoles'] as List)
         : const [],
     payoutRule: PayoutRule.values.firstWhere(

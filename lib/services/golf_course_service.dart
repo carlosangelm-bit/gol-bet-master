@@ -83,6 +83,37 @@ class ApiHole {
   static num? _n(dynamic v) => v is num ? v : null;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// LO QUE LLEGA DE LA API NO SE DA POR BUENO
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// El fallo que esto arregla: "Error al buscar: TypeError: 3: type 'int' is not a
+// subtype of type 'List<dynamic>?'". Un campo devolvió un NÚMERO donde el parseo
+// esperaba una lista, el cast lanzó, y la búsqueda entera se cayó —no ese campo:
+// TODA la búsqueda—.
+//
+// Y es un dato de un tercero, así que no hay forma de garantizar su forma. Lo que
+// sí se puede garantizar es que un campo con la forma inesperada no tumbe la
+// pantalla. Dos reglas:
+//
+//   1 · Ningún `as List` ni `as Map` desnudo sobre datos de la API. Si no es lo
+//       que se esperaba, se trata como vacío.
+//   2 · Un campo que no se puede parsear se OMITE y los demás salen. Antes uno
+//       malo dejaba al usuario sin poder buscar nada.
+//
+// Es el mismo criterio que ya usaba _n para los números, extendido a las
+// colecciones —donde faltaba, y donde más duele porque tumba la lista entera—.
+
+/// La lista que hay en [v], o vacía si [v] no es una lista.
+List<dynamic> _comoLista(dynamic v) => v is List ? v : const [];
+
+/// El mapa que hay en [v], o vacío si [v] no es un mapa.
+///
+/// Acepta Map<Object?, Object?>, que es lo que devuelve Firestore Web.
+Map<String, dynamic> _comoMapa(dynamic v) => v is Map
+    ? {for (final e in v.entries) '${e.key}': e.value}
+    : const {};
+
 class ApiTeeBox {
   final String teeName;
   final double courseRating;
@@ -103,14 +134,20 @@ class ApiTeeBox {
   });
 
   factory ApiTeeBox.fromJson(Map<String, dynamic> j) {
-    final rawHoles = (j['holes'] as List?) ?? [];
+    // "holes" ha llegado como número —el CONTEO de hoyos en vez de la lista— y
+    // el cast tumbaba la búsqueda entera. Si no es una lista, no hay hoyos que
+    // parsear y el tee sale con los suyos vacíos: el campo se puede seguir
+    // eligiendo, que es lo que el usuario quería.
+    final rawHoles = _comoLista(j['holes']);
 
     // 1. Parsear hoyos — fromJson ya toma el campo "handicap" de la API si existe
-    final parsed = rawHoles
-        .asMap()
-        .entries
-        .map((e) => ApiHole.fromJson(e.value as Map<String, dynamic>, e.key + 1))
-        .toList();
+    //    Un hoyo con la forma rara se omite; los demás entran.
+    final parsed = <ApiHole>[];
+    for (final e in rawHoles.asMap().entries) {
+      final mapa = _comoMapa(e.value);
+      if (mapa.isEmpty) continue;
+      parsed.add(ApiHole.fromJson(mapa, e.key + 1));
+    }
 
     // 2. Solo calcular strokeIndex por yardas si NINGÚN hoyo tiene handicap real.
     //    Si al menos uno lo tiene, confiamos en que la API los provee todos.
@@ -118,7 +155,7 @@ class ApiTeeBox {
     final holes = hasRealHandicaps ? parsed : _assignStrokeIndex(parsed);
 
     return ApiTeeBox(
-      teeName: j['tee_name'] as String? ?? 'Tee',
+      teeName: j['tee_name'] is String ? j['tee_name'] as String : 'Tee',
       courseRating: (j['course_rating'] as num?)?.toDouble() ?? 72.0,
       slopeRating: (j['slope_rating'] as num?)?.toInt() ?? 113,
       parTotal: (j['par_total'] as num?)?.toInt() ?? 72,
@@ -266,20 +303,36 @@ class ApiCourse {
   }
 
   factory ApiCourse.fromJson(Map<String, dynamic> j) {
-    final loc = j['location'] as Map<String, dynamic>? ?? {};
-    final tees = j['tees'] as Map<String, dynamic>? ?? {};
-    final maleList   = (tees['male']   as List?) ?? [];
-    final femaleList = (tees['female'] as List?) ?? [];
+    final loc = _comoMapa(j['location']);
+    final tees = _comoMapa(j['tees']);
+    final maleList = _comoLista(tees['male']);
+    final femaleList = _comoLista(tees['female']);
+
+    /// Los tees que se puedan parsear. Uno raro se omite en vez de tumbar el
+    /// campo entero: con un solo tee ya se puede jugar.
+    List<ApiTeeBox> teesDe(List<dynamic> lista) {
+      final out = <ApiTeeBox>[];
+      for (final t in lista) {
+        final mapa = _comoMapa(t);
+        if (mapa.isEmpty) continue;
+        try {
+          out.add(ApiTeeBox.fromJson(mapa));
+        } catch (e) {
+          debugPrint('[GolfCourse] tee ignorado: $e');
+        }
+      }
+      return out;
+    }
 
     return ApiCourse(
       id:         j['id']?.toString() ?? '',
-      clubName:   j['club_name']   as String? ?? 'Campo sin nombre',
-      courseName: j['course_name'] as String? ?? '',
-      city:       loc['city']    as String? ?? '',
-      state:      loc['state']   as String? ?? '',
-      country:    loc['country'] as String? ?? '',
-      maleTees:   maleList  .map((t) => ApiTeeBox.fromJson(t as Map<String, dynamic>)).toList(),
-      femaleTees: femaleList.map((t) => ApiTeeBox.fromJson(t as Map<String, dynamic>)).toList(),
+      clubName:   j['club_name']   is String ? j['club_name'] as String : 'Campo sin nombre',
+      courseName: j['course_name'] is String ? j['course_name'] as String : '',
+      city:       loc['city']    is String ? loc['city'] as String : '',
+      state:      loc['state']   is String ? loc['state'] as String : '',
+      country:    loc['country'] is String ? loc['country'] as String : '',
+      maleTees:   teesDe(maleList),
+      femaleTees: teesDe(femaleList),
     );
   }
 
@@ -379,13 +432,43 @@ class GolfCourseService {
       throw Exception('Error ${resp.statusCode}');
     }
 
-    final body = json.decode(resp.body) as Map<String, dynamic>;
-    final courses = (body['courses'] as List?) ?? [];
-    final result = courses
-        .map((c) => ApiCourse.fromJson(c as Map<String, dynamic>))
-        .toList();
-
+    final result = camposDeLaRespuesta(json.decode(resp.body), etiqueta: q);
     _searchCache[q.toLowerCase()] = result;
+    return result;
+  }
+
+  /// Los campos de una respuesta de búsqueda, saltándose los ilegibles.
+  ///
+  /// Pura y separada del HTTP a propósito: el fallo que arregla —"TypeError: 3:
+  /// type 'int' is not a subtype of type 'List<dynamic>?'"— venía de la FORMA de
+  /// los datos, no de la red, así que la prueba tiene que poder darle esa forma
+  /// sin pedir nada a nadie.
+  ///
+  /// Un campo que no se puede leer se OMITE y los demás salen. Antes uno malo
+  /// dejaba al usuario sin poder buscar nada, que es la diferencia entre "ese
+  /// campo no aparece" y "la búsqueda no funciona".
+  static List<ApiCourse> camposDeLaRespuesta(dynamic body,
+      {String etiqueta = ''}) {
+    final courses = _comoLista(_comoMapa(body)['courses']);
+    final result = <ApiCourse>[];
+    var omitidos = 0;
+    for (final c in courses) {
+      final mapa = _comoMapa(c);
+      if (mapa.isEmpty) {
+        omitidos++;
+        continue;
+      }
+      try {
+        result.add(ApiCourse.fromJson(mapa));
+      } catch (e) {
+        omitidos++;
+        debugPrint('[GolfCourse] campo ignorado: $e');
+      }
+    }
+    if (omitidos > 0) {
+      debugPrint('[GolfCourse] "$etiqueta": $omitidos de ${courses.length} '
+          'campos llegaron con una forma que no se pudo leer.');
+    }
     return result;
   }
 
@@ -418,10 +501,11 @@ class GolfCourseService {
       throw Exception('Error ${resp.statusCode}');
     }
 
-    final body = json.decode(resp.body) as Map<String, dynamic>;
+    final body = _comoMapa(json.decode(resp.body));
 
     // ⚠️ El wrapper es "course" (singular), NO el objeto directo
-    final courseJson = body['course'] as Map<String, dynamic>? ?? body;
+    final courseJson =
+        body['course'] is Map ? _comoMapa(body['course']) : body;
     final course = ApiCourse.fromJson(courseJson);
     _detailCache[id] = course;
     return course;

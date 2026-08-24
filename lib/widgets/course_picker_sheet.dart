@@ -6,6 +6,7 @@
 //   2. Tap en un resultado → carga hoyos completos y muestra selector de tee
 //   3. Tap en un tee → devuelve CourseInfo listo para usar en la ronda
 // ─────────────────────────────────────────────────────────────────────────────
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../core/app_theme.dart';
 import '../models/models.dart';
@@ -96,9 +97,26 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
         if (res.isEmpty) _searchError = 'No se encontraron campos para "$q"';
       });
     } catch (e) {
+      // Un TypeError crudo en pantalla no le dice nada a nadie y además hace
+      // pensar que el error es del teléfono. Se distingue lo que el usuario
+      // puede resolver —conexión— de lo que no, y el detalle técnico va al log.
+      debugPrint('[CoursePicker] fallo buscando "$q": $e');
+      // Por el texto y no por el tipo: SocketException vive en dart:io, que en
+      // web no existe. La app es web además de móvil, así que importarlo rompería
+      // el build.
+      final texto = e.toString();
+      final esRed = e is TimeoutException ||
+          texto.contains('Failed host lookup') ||
+          texto.contains('SocketException') ||
+          texto.contains('XMLHttpRequest') ||
+          texto.contains('ClientException');
       setState(() {
         _searching = false;
-        _searchError = 'Error al buscar: $e';
+        _searchError = esRed
+            ? 'Sin conexión con el buscador de campos. Puedes seguir sin '
+                'campo: se usa el Campo Estándar.'
+            : 'El buscador devolvió algo que no se pudo leer. Prueba con otro '
+                'nombre, o sigue sin campo: se usa el Campo Estándar.';
       });
     }
   }
