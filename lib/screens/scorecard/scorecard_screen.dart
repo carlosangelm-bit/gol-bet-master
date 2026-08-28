@@ -3849,25 +3849,36 @@ class _HoleByHoleMatch extends StatelessWidget {
     final double hcpBase;
     final double hcpReceiver;
 
+    // ── El HCPj que se enseña es el DEL JUGADOR ────────────────────────────
+    //
+    // Aquí decía `hcpReceiver = hcpBase + recv`: el handicap del OTRO más los
+    // golpes recibidos, presentado con la etiqueta "HCPj" del receptor. En la
+    // ronda del 28 de agosto eso hacía que la tarjeta anunciara HCPj 19 para
+    // Dylan, cuyo handicap real es 0, y HCPj 20 para AAM, que tiene 17.
+    //
+    // Un número derivado del emparejamiento vendido como atributo de la persona
+    // es la forma exacta de cifra plausible que no se puede verificar de un
+    // vistazo. Los golpes ya se dicen aparte —"recibe 6 · F9 3 · B9 3"— así que
+    // no hacía falta esconderlos dentro del handicap.
     if (recv > 0) {
       // p1 recibe de p2 → p2=base, p1=receptor
       basePlayer     = p2;
       receiverPlayer = p1;
       hcpBase        = hcp2;
-      hcpReceiver    = hcp2 + recv;
+      hcpReceiver    = hcp1;
     } else if (recv < 0) {
       // p1 da a p2 → p1=base, p2=receptor
       basePlayer     = p1;
       receiverPlayer = p2;
       hcpBase        = hcp1;
-      hcpReceiver    = hcp1 + (-recv);
+      hcpReceiver    = hcp2;
     } else if (hasExplicitHoleByHole) {
       // Acuerdo explícito de parejo (0 strokes) — la leyenda debe mostrar
       // 'Sin ventaja' y NO calcular diff por HCP. Igualamos hcpReceiver = hcpBase.
       basePlayer     = p1;
       receiverPlayer = p2;
       hcpBase        = hcp1;
-      hcpReceiver    = hcp1; // forzar diff = 0 en la leyenda
+      hcpReceiver    = hcp2;
     } else {
       // Sin acuerdo — fallback: diferencia de HCP del campo
       basePlayer     = p1;
@@ -3903,7 +3914,11 @@ class _HoleByHoleMatch extends StatelessWidget {
 
       // ── Leyenda de ventaja ───────────────────────────────────────────────
       const SizedBox(height: 6),
-      _handicapLegend(basePlayer, receiverPlayer, hcpBase, hcpReceiver, allHoles, t, round.startingNine),
+      // Los GOLPES, no la resta de handicaps. Con una ventaja pactada a mano los
+      // dos números no coinciden —Dylan tiene handicap 0 y recibe 6— y el que
+      // vale es el que el motor reparte.
+      _handicapLegend(basePlayer, receiverPlayer, recv.abs().round(),
+          hasExplicitHoleByHole, allHoles, t, round.startingNine, round),
       const SizedBox(height: 8),
 
       // ── Cabecera de columnas ─────────────────────────────────────────────
@@ -4123,11 +4138,10 @@ class _HoleByHoleMatch extends StatelessWidget {
   // Leyenda compacta: muestra la diferencia y cómo se distribuye
   Widget _handicapLegend(
     Player base, Player receiver,
-    double hcpBase, double hcpReceiver,
+    int diff, bool pactado,
     List<CourseHole> allHoles, GolfTheme t,
-    StartingNine startingNine,
+    StartingNine startingNine, Round round,
   ) {
-    final diff = (hcpReceiver - hcpBase).round();
     if (diff <= 0) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -4139,7 +4153,10 @@ class _HoleByHoleMatch extends StatelessWidget {
         child: Row(children: [
           Icon(Icons.sports_golf, color: t.sub, size: 13),
           const SizedBox(width: 6),
-          Text('Sin ventaja — handicaps iguales',
+          Text(
+              pactado
+                  ? 'Sin ventaja — acordado entre ustedes'
+                  : 'Sin ventaja — handicaps iguales',
               style: TextStyle(color: t.sub, fontSize: 11)),
         ]),
       );
@@ -4188,15 +4205,57 @@ class _HoleByHoleMatch extends StatelessWidget {
             'F9: $frontStrokes stroke${frontStrokes != 1 ? 's' : ''} · B9: $backStrokes stroke${backStrokes != 1 ? 's' : ''} · $startLabel',
             style: TextStyle(color: t.sub, fontSize: 10),
           ),
+          // Y dónde NO se usa esta ventaja, que es la mitad que faltaba.
+          if (_poteConAncla(round) case final pote?) ...[
+            const SizedBox(height: 3),
+            Text(
+                'En ${pote.modulos} se juega en pote: la ventaja se cuenta '
+                'contra ${pote.ancla}, no entre ustedes dos.',
+                style: TextStyle(
+                    color: t.scoreOver, fontSize: 10, height: 1.25)),
+          ],
         ])),
-        // Chips HCP
+        // Chips HCP — el handicap DE CADA UNO, tal como está en la ronda.
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          _hcpChip(base.shortName,     hcpBase,     t),
+          _hcpChip(base.shortName, round.getHandicap(base.id), t),
           const SizedBox(height: 3),
-          _hcpChip(receiver.shortName, hcpReceiver, t, isHigher: true),
+          _hcpChip(receiver.shortName, round.getHandicap(receiver.id), t,
+              isHigher: true),
         ]),
       ]),
     );
+  }
+
+  /// Si algún módulo de la ronda liquida en POTE con más de dos jugadores.
+  ///
+  /// ── Por qué esto se tiene que decir ───────────────────────────────────────
+  ///
+  /// Con más de dos, un pote con ventaja elige un ANCLA y calcula el neto de
+  /// todos contra ella. Así que la ventaja pactada entre dos que no son el ancla
+  /// no toca el dinero de ese módulo — verificado en la ronda del 28 de agosto:
+  /// cambiar el pacto AAM–KAWA de 4 a 9 daba balances idénticos.
+  ///
+  /// Con handicaps del directorio no se nota, porque salen de diferencias
+  /// coherentes en todo el grupo y el ancla las reproduce todas. Con ventajas
+  /// puestas a mano sí: la tarjeta anuncia una ventaja que ese módulo no usa.
+  ///
+  /// Anunciar una cosa y liquidar otra es el fallo; decirlo es lo mínimo
+  /// mientras el pote no respete los pactos por par.
+  static ({String modulos, String ancla})? _poteConAncla(Round round) {
+    final nombres = <String>{};
+    String? ancla;
+    for (final g in round.betGroups) {
+      for (final m in g.modules) {
+        if (m.formatMode != BetFormatMode.onePot || !m.useHandicap) continue;
+        final pids = round.participantesDe(m, g.playerIds);
+        if (pids.length <= 2) continue;
+        nombres.add(m.type.label);
+        ancla ??= BetEngine.groupAnchor(round, pids);
+      }
+    }
+    if (nombres.isEmpty || ancla == null) return null;
+    final quien = round.players.where((p) => p.id == ancla).firstOrNull;
+    return (modulos: nombres.join(' y '), ancla: quien?.shortName ?? '—');
   }
 
   Widget _hcpChip(String name, double hcp, GolfTheme t, {bool isHigher = false}) =>
@@ -4451,6 +4510,19 @@ class _SkinsTotalsRow extends StatelessWidget {
 }
 
 // ── Desglose financiero ───────────────────────────────────────────────────────
+/// La tarjeta de desglose 1v1, para tests.
+///
+/// Mismo patrón que resultsTabsForTest: la tarjeta es privada y lo que hay que
+/// poder probar es justo lo que enseña. Aquí vivían dos cifras que no cuadraban
+/// con el ledger —el Snake que no se listaba pero sí sumaba, y el Nassau en vivo
+/// que seguía mandando con la ronda cerrada—, así que merece puerta.
+Widget desgloseParaTest(
+        {required Round round,
+        required Player p1,
+        required Player p2,
+        required GolfTheme t}) =>
+    _FinancialBreakdown(round: round, p1: p1, p2: p2, t: t);
+
 class _FinancialBreakdown extends StatelessWidget {
   final Round round;
   final Player p1, p2;
@@ -4484,8 +4556,18 @@ class _FinancialBreakdown extends StatelessWidget {
         types.add(m.type);
       }
     }
-    // Mantener orden canónico
-    final order = [
+    // ── El orden es una PREFERENCIA, no un filtro ──────────────────────────
+    //
+    // Esta lista era un filtro, y por eso el Snake no salía en el desglose: no
+    // estaba aquí. Pero el NETO de la tarjeta suma breakdown.values, que sí lo
+    // incluye — así que la tarjeta enseñaba cinco líneas que sumaban −550 y un
+    // neto de −450, con $100 sin explicar. Verificado contra la ronda del 28 de
+    // agosto en producción.
+    //
+    // Ahora lo conocido va en su orden y lo demás va detrás. Una apuesta nueva
+    // puede quedar mal ordenada; lo que no puede es desaparecer del desglose y
+    // seguir estando en el total.
+    const orden = [
       BetModuleType.skins,
       BetModuleType.nassau,
       BetModuleType.matchAutoPress,
@@ -4494,7 +4576,27 @@ class _FinancialBreakdown extends StatelessWidget {
       BetModuleType.oyeses,
       BetModuleType.units,
     ];
-    return order.where((t) => types.contains(t)).toList();
+    return [
+      ...orden.where(types.contains),
+      ...types.where((t) => !orden.contains(t)),
+    ];
+  }
+
+  /// Quién se lleva el pote de [tipo], si ese módulo liquida en pote.
+  ///
+  /// Se lee de los asientos, no se recalcula: el ledger es el que reparte, así
+  /// que preguntarle a él es lo único que no puede discrepar de lo que se cobra.
+  String? _ganadorDelPote(BetModuleType tipo) {
+    final recibe = <String, int>{};
+    for (final e in LedgerEngine.entriesOf(round)) {
+      if (e.betType != tipo || e.amount <= 0) continue;
+      recibe[e.toPlayerId] = (recibe[e.toPlayerId] ?? 0) + 1;
+    }
+    // Un pote tiene UN cobrador con varios pagadores. Con dos o más cobradores
+    // no es un pote: es que este par simplemente no se cruzó en ese módulo.
+    if (recibe.length != 1 || recibe.values.first < 2) return null;
+    final id = recibe.keys.first;
+    return round.players.where((p) => p.id == id).firstOrNull?.shortName;
   }
 
   @override
@@ -4502,8 +4604,24 @@ class _FinancialBreakdown extends StatelessWidget {
     context.watch<RoundProvider>(); // rebuilda al cambiar la ronda
     final breakdown = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
 
+    // ── El estado EN VIVO solo manda mientras se juega ─────────────────────
+    //
+    // Lo de abajo sobreescribe el breakdown del ledger con un cálculo propio,
+    // y hace falta durante la ronda: computeAll solo liquida segmentos
+    // CERRADOS, así que a mitad del F9 el desglose saldría en $0 aunque alguien
+    // vaya 3UP.
+    //
+    // Pero con la ronda TERMINADA el ledger es la verdad: es el que cierra en
+    // cero y el que se usa para cobrar. Sin esta condición la tarjeta seguía
+    // enseñando su propia cuenta para siempre — $150 de Nassau donde el ledger
+    // dice −$100, medido en la ronda del 28 de agosto.
+    //
+    // Dos cuentas para lo mismo solo pueden convivir si una tiene su momento y
+    // la otra el suyo.
+    final enVivo = !round.isFinished;
+
     // Match+Press: calcular balance desde live status (orden de pids no importa)
-    final mpMods = _modsOf(BetModuleType.matchAutoPress);
+    final mpMods = enVivo ? _modsOf(BetModuleType.matchAutoPress) : const [];
     if (mpMods.isNotEmpty) {
       double mpBal = 0.0;
       for (final mod in mpMods) {
@@ -4521,7 +4639,7 @@ class _FinancialBreakdown extends StatelessWidget {
     // computeAll solo liquida segmentos CERRADOS; durante la ronda en curso
     // el breakdown quedaría en $0 aunque alguien lleve ventaja.
     // nassauLiveStatus / nassauPressLiveStatus calculan el estado real en cada hoyo.
-    final nassauMods = _modsOf(BetModuleType.nassau);
+    final nassauMods = enVivo ? _modsOf(BetModuleType.nassau) : const [];
     if (nassauMods.isNotEmpty) {
       double npBal = 0.0;
       for (final mod in nassauMods) {
@@ -4598,6 +4716,20 @@ class _FinancialBreakdown extends StatelessWidget {
         // Filas por tipo de apuesta — se muestran TODOS los módulos configurados,
         // incluso si el monto es 0 (empate / ronda en progreso)
         ...allTypes.map((betType) {
+          // ── "AS" significaba TRES cosas ────────────────────────────────────
+          //
+          // El badge decía AS con solo mirar que el importe fuera cero, y cero
+          // sale de tres sitios distintos: un empate de verdad, un módulo que no
+          // liquida entre estos dos, y un pote que ganó un tercero. En un Medal
+          // —que es juego por golpes— "AS" es una afirmación sobre el golf que
+          // el código nunca comprobó: en la ronda del 28 de agosto decía AS
+          // entre CAM y Dylan porque el pote se lo llevó KAWA.
+          //
+          // La clave presente en el breakdown significa "se calculó y quedó en
+          // cero"; ausente significa "entre ustedes no mueve nada". Son cosas
+          // distintas y ahora se leen distinto.
+          final liquida = breakdown.containsKey(betType);
+          final pote = !liquida ? _ganadorDelPote(betType) : null;
           final amount  = breakdown[betType] ?? 0.0;
           final color   = amount > 0.005 ? t.profit : amount < -0.005 ? t.loss : t.sub;
           final sign    = amount > 0.005 ? '+' : '';
@@ -4745,11 +4877,25 @@ class _FinancialBreakdown extends StatelessWidget {
                     border: Border.all(color: color.withValues(alpha: 0.4)),
                   ),
                   child: Text(
-                    absAmt < 0.005 ? 'AS' : '$sign\$${absAmt.toStringAsFixed(0)}',
+                    !liquida
+                        ? (pote != null ? 'POTE' : '—')
+                        : absAmt < 0.005
+                            ? 'AS'
+                            : '$sign\$${absAmt.toStringAsFixed(0)}',
                     style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
                   ),
                 ),
               ]),
+              if (!liquida)
+                Padding(
+                  padding: const EdgeInsets.only(left: 22, top: 2),
+                  child: Text(
+                      pote != null
+                          ? 'Pote de la partida · lo gana $pote. Entre ustedes '
+                              'dos no mueve nada.'
+                          : 'No se liquida entre ustedes dos.',
+                      style: TextStyle(color: t.sub, fontSize: 10, height: 1.2)),
+                ),
               if (skinsSubtitle != null)
                 Padding(
                   padding: const EdgeInsets.only(left: 22),

@@ -19,6 +19,8 @@ import '../../widgets/sliding_adjustment_dialog.dart';
 import '../../services/user_profile_service.dart';
 import '../../engines/settlement_notes.dart';
 import '../../widgets/notas_liquidacion_card.dart';
+import '../../providers/torneo_provider.dart';
+import '../../providers/user_profile_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPER: paleta de colores sólidos por estado — sin gradientes que desaparezcan
@@ -340,7 +342,15 @@ class _ResultsScreenState extends State<ResultsScreen> {
         TextButton(onPressed: () async {
           Navigator.pop(ctx);
           final roundSnapshot = prov.round;
-          final ok = await prov.finishRound();
+                    // Los proveedores se leen AQUÍ, antes del await: después de cerrar,
+          // esta pantalla puede estar destruida y `context` ya no vale. Es
+          // exactamente lo que impedía que el resultado llegara al torneo.
+          final _tp = context.read<TorneoProvider>();
+          final _misTorneos = _tp.torneos;
+          final _seguidos = _tp.seguidos;
+          final _miFicha = context.read<UserProfileProvider>().profile?.myPlayerId;
+          final ok = await prov.finishRound(
+              misTorneos: _misTorneos, seguidos: _seguidos, miFicha: _miFicha);
           if (!ok && context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: const Text('⚠️ Sin conexión. La ronda se guardó localmente y se sincronizará pronto.'),

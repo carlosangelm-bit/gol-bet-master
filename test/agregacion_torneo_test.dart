@@ -17,7 +17,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/round_result.dart';
 import 'package:golf_bet_master/models/torneo.dart';
-import 'package:golf_bet_master/screens/torneos/republicar_al_cerrar.dart';
+import 'package:golf_bet_master/services/publicacion_torneo_service.dart';
 import 'package:golf_bet_master/models/torneo_publicado.dart';
 import 'package:golf_bet_master/models/torneo_seguido.dart';
 

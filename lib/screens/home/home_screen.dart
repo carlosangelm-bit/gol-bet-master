@@ -23,6 +23,8 @@ import '../setup/setup_screen.dart';
 import '../templates/templates_screen.dart';
 import 'tablero_inicio.dart';
 import '../../debug/test_round.dart';
+import '../../providers/torneo_provider.dart';
+import '../../providers/user_profile_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -3565,7 +3567,15 @@ class _ActiveRoundView extends StatelessWidget {
           Navigator.pop(ctx);
           // Capturar la ronda ANTES de que finishRound limpie el estado
           final roundSnapshot = prov.round;
-          final ok = await prov.finishRound();
+                    // Los proveedores se leen AQUÍ, antes del await: después de cerrar,
+          // esta pantalla puede estar destruida y `context` ya no vale. Es
+          // exactamente lo que impedía que el resultado llegara al torneo.
+          final _tp = context.read<TorneoProvider>();
+          final _misTorneos = _tp.torneos;
+          final _seguidos = _tp.seguidos;
+          final _miFicha = context.read<UserProfileProvider>().profile?.myPlayerId;
+          final ok = await prov.finishRound(
+              misTorneos: _misTorneos, seguidos: _seguidos, miFicha: _miFicha);
           if (!ok && context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: const Text(

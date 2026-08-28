@@ -23,6 +23,8 @@ import '../../widgets/common_widgets.dart';
 import '../../widgets/sliding_adjustment_dialog.dart';
 import '../../engines/sixes_engine.dart';
 import '../../engines/wolf_engine.dart';
+import '../../providers/torneo_provider.dart';
+import '../../providers/user_profile_provider.dart';
 
 class CaptureScreen extends StatefulWidget {
   const CaptureScreen({super.key});
@@ -1765,7 +1767,17 @@ class _HoleNavButtons extends StatelessWidget {
     // Capturar la ronda ANTES de que finishRound limpie el estado
     final round = prov.round;
 
-    final ok = await prov.finishRound();
+    // Y los proveedores también, por lo mismo pero peor: cerrar quita la
+    // pestaña Score, así que ESTA pantalla se destruye. Todo lo que se lea de
+    // `context` después del await es tarde — es lo que dejaba el resultado sin
+    // publicar, con la marca puesta y el seguimiento correcto.
+    final tp = context.read<TorneoProvider>();
+    final misTorneos = tp.torneos;
+    final seguidos = tp.seguidos;
+    final miFicha = context.read<UserProfileProvider>().profile?.myPlayerId;
+
+    final ok = await prov.finishRound(
+        misTorneos: misTorneos, seguidos: seguidos, miFicha: miFicha);
     if (!context.mounted) return;
     prov.setTab(0);
     if (!ok) {
@@ -1779,6 +1791,19 @@ class _HoleNavButtons extends StatelessWidget {
     // Mostrar diálogo de ajuste de sliding
     if (round != null && context.mounted) {
       await showSlidingAdjustmentDialog(context, round);
+    }
+
+    // Lo que pasó al enviar el resultado a los torneos. Se LEE del provider, no
+    // se calcula aquí: el envío ya ocurrió dentro de finishRound y esta pantalla
+    // puede estar destruida. Si no llega a enseñarse no se pierde nada — que era
+    // justo el problema cuando el envío vivía aquí.
+    final envios = prov.ultimosEnvios;
+    if (envios.isNotEmpty && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(envios.map((e) => e.frase).join(' ')),
+        duration: Duration(seconds: envios.any((e) => !e.enviado) ? 9 : 4),
+      ));
+      prov.limpiarEnvios();
     }
 
     // El enlace del torneo se refresca solo. Publicar por primera vez sigue

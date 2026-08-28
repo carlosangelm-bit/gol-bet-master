@@ -13,6 +13,9 @@ import '../models/models.dart';
 import '../services/firestore_service.dart';
 import '../services/live_round_service.dart';
 import '../services/auth_service.dart';
+import '../services/publicacion_torneo_service.dart';
+import '../models/torneo.dart';
+import '../models/torneo_seguido.dart';
 
 // ── Funciones top-level para serialización (usadas también por FirestoreService)
 Map<String, dynamic> roundToJson(Round r) {
@@ -466,7 +469,36 @@ class RoundProvider extends ChangeNotifier {
   ///    encola la ronda en SharedPreferences para sincronizarla después.
   /// 3. SIEMPRE limpia la ronda activa de la UI — nunca bloquea al usuario.
   /// Retorna true si se guardó en Firestore, false si quedó pendiente local.
-  Future<bool> finishRound() async {
+  /// Lo que pasó al enviar el resultado a los torneos, tras el último cierre.
+  ///
+  /// Lo lee la pantalla DESPUÉS, cuando le venga bien. Que el mensaje se enseñe
+  /// o no ya no decide si el dinero se registra.
+  List<EnvioAlTorneo> _ultimosEnvios = const [];
+  List<EnvioAlTorneo> get ultimosEnvios => _ultimosEnvios;
+  void limpiarEnvios() => _ultimosEnvios = const [];
+
+  /// Cierra la ronda Y publica su resultado a los torneos que marca.
+  ///
+  /// ── Por qué publicar vive AQUÍ y no en la pantalla ────────────────────────
+  ///
+  /// Estaba en el método de cierre de la pantalla de captura, después de un
+  /// await. Y este método hace `_round = null`, lo que quita la pestaña Score y
+  /// DESTRUYE esa pantalla: al volver del await, `context.mounted` era false y
+  /// el envío no llegaba a ejecutarse nunca. Verificado contra producción — la
+  /// marca estaba, el seguimiento estaba, y torneoResultados tenía cero
+  /// documentos.
+  ///
+  /// Publicar es parte de cerrar, así que cierra y publica el mismo método. Lo
+  /// que la pantalla haga después con [ultimosEnvios] es cosa suya.
+  ///
+  /// [misTorneos], [seguidos] y [miFicha] entran por parámetro porque el
+  /// servicio no puede tocar un BuildContext — que es justo lo que lo rompía—.
+  /// Quien llama los lee ANTES del await.
+  Future<bool> finishRound({
+    List<Torneo> misTorneos = const [],
+    List<TorneoSeguido> seguidos = const [],
+    String? miFicha,
+  }) async {
     if (_round == null) return false;
     _cancelLiveListener();
 
@@ -491,13 +523,29 @@ class RoundProvider extends ChangeNotifier {
       await _enqueuePendingFinished(finishedRound);
     }
 
-    // 2. Limpiar caché de ronda activa
+    // 2. Publicar a los torneos ajenos que la ronda marcó.
+    //
+    // ANTES de limpiar el estado, y sin depender de ninguna pantalla. Si falla,
+    // el servicio lo encola y se reintenta solo: una ronda se cierra donde se
+    // acabó de jugar, no donde hay buena cobertura.
+    try {
+      _ultimosEnvios = await PublicacionTorneoService.publicar(
+        round: finishedRound,
+        misTorneos: misTorneos,
+        seguidos: seguidos,
+        miFicha: miFicha,
+      );
+    } catch (e) {
+      debugPrint('[finishRound] publicación a torneos: $e');
+    }
+
+    // 3. Limpiar caché de ronda activa
     try {
       final p = await _prefs();
       await p.remove('round');
     } catch (_) {}
 
-    // 3. Limpiar estado de UI — siempre, independiente del resultado de Firestore
+    // 4. Limpiar estado de UI — siempre, independiente del resultado de Firestore
     _round = null;
     _tabIndex = 0;
     notifyListeners();
@@ -1322,6 +1370,14 @@ class RoundProvider extends ChangeNotifier {
     final synced = await syncPendingFinished();
     if (synced > 0 && kDebugMode) {
       debugPrint('syncFromFirestore: \$synced ronda(s) pendiente(s) sincronizadas');
+    }
+
+    // 1b. Y las publicaciones a torneos que no salieron. Va aquí porque es el
+    // sitio por el que pasa toda sesión que arranca: reintentar sin que nadie
+    // se acuerde es la mitad de "que se pueda repetir".
+    final republicadas = await PublicacionTorneoService.reintentarPendientes();
+    if (republicadas > 0) {
+      debugPrint('[Torneo] $republicadas publicación(es) pendiente(s) enviadas');
     }
 
     // 2. Cargar ronda activa remota
