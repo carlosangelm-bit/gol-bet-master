@@ -581,6 +581,74 @@ extension PartidaFormatExt on PartidaFormat {
 /// - [allVsAll]: cada par de jugadores tiene su propio duelo independiente.
 ///   Ejemplo skins: A vs B, A vs C, B vs C tienen sus propias skins.
 enum BetFormatMode { onePot, allVsAll }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CÓMO SE DICE UNA CONFIGURACIÓN DE APUESTA — fuente única
+//
+// El criterio de Carlos, dicho entero después de cuatro fallos que eran el
+// mismo: "lo importante sería que toda la UI se base en la misma configuración
+// de apuesta". Una superficie que muestra un dato tiene que mostrar EL DATO, no
+// su propia versión.
+//
+// El barrido encontró el formato descrito en CUATRO sitios con TRES pares de
+// literales distintos —'Todos vs todos' con t minúscula en Apuestas, 'Todos vs
+// Todos' en el asistente y en Plantillas, y otro par en la hoja de edición— y la
+// explicación larga copiada dos veces palabra por palabra. Cada copia es una
+// oportunidad de que una cambie y las otras no; ya pasó con el chip que decía
+// una cosa mientras se construía otra.
+//
+// Esto NO decide nada: solo pone en un sitio cómo se dice lo que el modelo ya
+// sabe. Misma forma que betTypeSections y aplicaEnFormato, y por el mismo
+// motivo: enumerar en un catálogo lo que si no se escribe suelto en cada
+// pantalla.
+// ─────────────────────────────────────────────────────────────────────────────
+
+extension BetFormatModeTexto on BetFormatMode {
+  /// La etiqueta corta. La MISMA en el asistente, en Plantillas, en la hoja de
+  /// edición y en la proyección de Apuestas.
+  String get label => switch (this) {
+        BetFormatMode.onePot => '1 Pot',
+        BetFormatMode.allVsAll => 'Todos vs Todos',
+      };
+
+  /// Qué significa, en una línea.
+  String get explicacion => switch (this) {
+        BetFormatMode.onePot =>
+          '1 Pot: un solo ganador por hoyo/segmento toma del resto del grupo.',
+        BetFormatMode.allVsAll =>
+          'Todos vs Todos: A vs B, A vs C y B vs C cada uno con su apuesta '
+              'propia.',
+      };
+
+  /// La versión corta para una tarjeta, sin repetir el nombre del modo.
+  String get resumen => switch (this) {
+        BetFormatMode.onePot => 'Un solo pozo grupal.\nEl ganador cobra a todos.',
+        BetFormatMode.allVsAll =>
+          'Cada pareja tiene su\nduelo independiente.',
+      };
+}
+
+extension BetScopeKindTexto on BetScopeKind {
+  /// La etiqueta corta del alcance, para una insignia.
+  ///
+  /// En mayúsculas porque los tres sitios que la enseñan son insignias. Si algún
+  /// día hace falta en minúsculas, se añade aquí y no en la pantalla.
+  String get insignia => switch (this) {
+        BetScopeKind.everyone => 'TODA LA PARTIDA',
+        BetScopeKind.pair => 'USTEDES DOS',
+        BetScopeKind.subset => 'ALGUNOS',
+        BetScopeKind.teams => 'POR EQUIPOS',
+      };
+
+  /// Qué implica para el dinero. Es lo que faltaba decir al elegirlo.
+  String get consecuencia => switch (this) {
+        BetScopeKind.everyone =>
+          'La juegan todos los de la partida, y se liquida en cada pareja.',
+        BetScopeKind.pair => 'Solo se liquida entre esos dos.',
+        BetScopeKind.subset => 'Solo se liquida entre los elegidos.',
+        BetScopeKind.teams => 'Los participantes salen de los lados.',
+      };
+}
 enum BetModuleStatus { draft, configured, active, closed }
 enum GrossNetMode { gross, net }
 enum TieRule { carryOver, halved, push }

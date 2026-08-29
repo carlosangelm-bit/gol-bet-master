@@ -682,6 +682,53 @@ class BetRecipe {
     ];
   }
 
+  /// Trasplanta la configuración tipada de [previo] sobre [base].
+  ///
+  /// ── Editar en un sitio no puede deshacerse en otro ────────────────────────
+  ///
+  /// El asistente RECONSTRUYE los módulos del flujo desde la receta cada vez que
+  /// se sale de Cuenta, Participantes o Montos. Sin esto, lo ajustado en Detalle
+  /// —los hoyos de un Medal, el modo de Putts, los valores de un Nassau— se
+  /// perdía al volver atrás y avanzar otra vez. Reproducido recorriendo el
+  /// asistente: Medal a 9 hoyos, atrás hasta Cuenta, adelante → 18 otra vez, y
+  /// sin decir nada.
+  ///
+  /// La receta sigue mandando en la FORMA —qué módulos hay y cómo se expanden—
+  /// y esto pone encima lo que el usuario ajustó. Los mapas del asistente
+  /// (reparto, monto base, cruces) se aplican DESPUÉS, así que tocar Montos
+  /// sigue ganando: es la única precedencia y queda escrita aquí.
+  ///
+  /// Vive con la receta y no en la pantalla porque es una REGLA, no un detalle
+  /// de interfaz — y porque así se puede probar sin montar el asistente entero.
+  ///
+  /// Solo el campo del tipo del módulo está poblado, así que copiarlos todos es
+  /// copiar uno. Se enumeran a mano a propósito: añadir un formato obliga a
+  /// pasar por aquí, y si se olvida, el ajuste de ese formato se pierde en
+  /// silencio — que es justo el fallo que esto arregla.
+  ///
+  /// Devuelve [base] sin tocar si los tipos no coinciden: cambiar la bola de
+  /// equipo puede cambiar el tipo de la misma cuenta, y trasplantar la config de
+  /// otro formato sería peor que perderla.
+  static BetModuleInstance conservandoAjustes(
+      BetModuleInstance previo, BetModuleInstance base) {
+    if (previo.type != base.type) return base;
+    return base.copyWith(
+      skinsConfig: previo.skinsConfig,
+      nassauConfig: previo.nassauConfig,
+      nassauLowHighConfig: previo.nassauLowHighConfig,
+      matchAutoPressConfig: previo.matchAutoPressConfig,
+      medalConfig: previo.medalConfig,
+      puttsConfig: previo.puttsConfig,
+      oyesesConfig: previo.oyesesConfig,
+      unitsConfig: previo.unitsConfig,
+      snakeConfig: previo.snakeConfig,
+      rabbitConfig: previo.rabbitConfig,
+      wolfConfig: previo.wolfConfig,
+      sixesConfig: previo.sixesConfig,
+      stablefordConfig: previo.stablefordConfig,
+    );
+  }
+
   /// Fija el importe base de un módulo, sea de uno o de tres segmentos.
   ///
   /// En las apuestas partidas el Total sube al doble del segmento, que es la

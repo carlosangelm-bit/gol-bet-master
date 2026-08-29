@@ -2056,6 +2056,27 @@ class _SetupScreenState extends State<SetupScreen> {
     if (pids.length < 2) return;
     final lados = _ladosProvisionales();
 
+    // ── Lo que ya estaba, para no perderlo al reconstruir ──────────────────
+    //
+    // Esto se reconstruía entero desde la receta, así que lo editado en Detalle
+    // —los hoyos de un Medal, el modo de Putts, los valores de un Nassau— se
+    // perdía al volver atrás a "Qué se cuenta" y avanzar de nuevo.
+    //
+    // Reproducido antes de tocarlo: Medal a 9 hoyos, atrás hasta Cuenta, y
+    // adelante otra vez → vuelve a 18. Sin decir nada.
+    //
+    // Es el criterio de Carlos por dentro: editar en un sitio no puede
+    // deshacerse en otro. La receta sigue mandando en la FORMA —qué módulos hay,
+    // cómo se expanden— y lo que el usuario ajustó se trasplanta encima. Los
+    // mapas del asistente (_reparto, _montoBase, cruces) se aplican DESPUÉS, así
+    // que tocar Montos sigue ganando sobre lo que había: es la única precedencia
+    // y queda escrita aquí.
+    final previos = {
+      for (final g in _groups)
+        for (final m in g.modules)
+          if (m.id.startsWith('flujo_')) m.id: m,
+    };
+
     final delFlujo = <BetModuleInstance>[];
     for (final cuenta in _conteos) {
       final propios = _participantesDe(cuenta);
@@ -2067,6 +2088,12 @@ class _SetupScreenState extends State<SetupScreen> {
       );
       if (!res.ok) continue; // se rechazó: no se ofrecía, no hay nada que crear
       var m = res.module!;
+
+      // Lo ajustado en Detalle, encima de la receta. Solo si el TIPO coincide:
+      // cambiar la bola de equipo puede cambiar el tipo de la misma cuenta, y
+      // trasplantar la config de otro formato sería peor que perderla.
+      final previo = previos[m.id];
+      if (previo != null) m = BetRecipe.conservandoAjustes(previo, m);
       // El MISMO valor que resalta el chip. Antes se aplicaba solo si el usuario
       // había tocado algo, y el chip enseñaba otra cosa cuando no lo había
       // tocado.
@@ -5188,8 +5215,8 @@ class _SetupScreenState extends State<SetupScreen> {
         Expanded(child: _FormatModeCard(
           isSelected: cfg.formatMode == BetFormatMode.onePot,
           icon: '🏆',
-          title: '1 Pot',
-          description: 'Un solo pozo grupal.\nEl ganador cobra a todos.',
+          title: BetFormatMode.onePot.label,
+          description: BetFormatMode.onePot.resumen,
           t: t,
           onTap: () => setSt(() {
             _recordarReparto(cfg, BetFormatMode.onePot);
@@ -5200,8 +5227,8 @@ class _SetupScreenState extends State<SetupScreen> {
         Expanded(child: _FormatModeCard(
           isSelected: cfg.formatMode == BetFormatMode.allVsAll,
           icon: '⚔️',
-          title: 'Todos vs Todos',
-          description: 'Cada pareja tiene su\nduelo independiente.',
+          title: BetFormatMode.allVsAll.label,
+          description: BetFormatMode.allVsAll.resumen,
           t: t,
           onTap: () => setSt(() {
             _recordarReparto(cfg, BetFormatMode.allVsAll);
@@ -5211,9 +5238,7 @@ class _SetupScreenState extends State<SetupScreen> {
       ]),
       const SizedBox(height: 6),
       Text(
-        cfg.formatMode == BetFormatMode.onePot
-            ? '1 Pot: un solo ganador por hoyo/segmento toma del resto del grupo.'
-            : 'Todos vs Todos: A vs B, A vs C y B vs C cada uno con su apuesta propia.',
+        cfg.formatMode.explicacion,
         style: TextStyle(color: t.sub, fontSize: 11, fontStyle: FontStyle.italic),
       ),
       const SizedBox(height: 20),
@@ -6030,7 +6055,9 @@ class _SetupScreenState extends State<SetupScreen> {
           if (pids.where((id) => id != anchor).isEmpty) return 'El ancla necesita al menos 1 rival.';
           return null;
         case BetStructure.roundRobin:
-          return pids.length < 3 ? 'Todos vs todos requiere mínimo 3 jugadores.' : null;
+          return pids.length < 3
+              ? 'Una apuesta por pareja requiere mínimo 3 jugadores.'
+              : null;
       }
     }
 
@@ -6299,14 +6326,29 @@ class _SetupScreenState extends State<SetupScreen> {
     if (playerCount == 2)
       (BetStructure.headToHead, '⚔️', 'Head to head',        '1 vs 1, exactamente 2 jugadores'),
     (BetStructure.anchorVsMany,'🎯', 'Jugador vs varios',   'Un ancla enfrenta a cada rival por separado'),
-    (BetStructure.roundRobin,  '🔄', 'Todos contra todos',  'Un duelo por cada combinación de jugadores'),
+    // "Una apuesta por pareja" y no "todos contra todos": eso último es el
+    // FORMATO de un módulo, no cuántos módulos se crean. Ver _structureLabelShort.
+    (BetStructure.roundRobin,  '🔄', 'Una apuesta por pareja', 'Un módulo aparte por cada combinación, con su importe'),
   ];
 
+  /// ── Dos conceptos que se llamaban igual ──────────────────────────────────
+  ///
+  /// Esto decía lo mismo que el formato para BetStructure.roundRobin, que es la MISMA
+  /// frase que BetFormatMode.allVsAll — y no son lo mismo:
+  ///
+  ///   · La ESTRUCTURA decide cuántos módulos se crean. roundRobin crea uno por
+  ///     pareja, cada uno con su importe editable por separado.
+  ///   · El FORMATO decide cómo reparte UN módulo entre los suyos. allVsAll
+  ///     liquida par a par dentro del mismo módulo.
+  ///
+  /// Se puede tener un solo módulo en allVsAll —una apuesta, seis duelos— o seis
+  /// módulos en onePot. Llamar igual a las dos cosas garantiza que alguien las
+  /// confunda, y este barrido salió justamente de una confusión así.
   String _structureLabelShort(BetStructure s) => switch (s) {
     BetStructure.group       => 'Grupo',
     BetStructure.headToHead  => '1v1',
     BetStructure.anchorVsMany=> 'Ancla vs varios',
-    BetStructure.roundRobin  => 'Todos vs todos',
+    BetStructure.roundRobin  => 'Una por pareja',
     BetStructure.manual      => 'Manual',
   };
 

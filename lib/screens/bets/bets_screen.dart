@@ -148,8 +148,10 @@ class _BetRule {
           miembros > 1 ? '$miembros enfrentamientos' : 'Duelo',
       };
 
-  String get formatLabel =>
-      module.isAllVsAll ? 'Todos vs todos' : '1 Pot';
+  /// Del catálogo, no de un literal: era el único sitio que lo escribía con
+  /// 't' minúscula, y una etiqueta distinta para el mismo dato es exactamente
+  /// lo que hay que quitar.
+  String get formatLabel => module.formatMode.label;
 }
 
 enum _ExceptionKind {

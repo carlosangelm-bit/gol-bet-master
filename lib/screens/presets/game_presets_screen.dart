@@ -826,7 +826,7 @@ class _PresetConfigWidgets {
       Row(children: [
         Expanded(child: _FormatCard(
           isSelected: cfg.formatMode == BetFormatMode.onePot,
-          icon: '🏆', title: '1 Pot',
+          icon: '🏆', title: BetFormatMode.onePot.label,
           description: 'Un solo pozo grupal.\nEl ganador cobra a todos.',
           t: t,
           onTap: () => setSt(() => update(cfg.copyWith(formatMode: BetFormatMode.onePot))),
@@ -834,7 +834,7 @@ class _PresetConfigWidgets {
         const SizedBox(width: 10),
         Expanded(child: _FormatCard(
           isSelected: cfg.formatMode == BetFormatMode.allVsAll,
-          icon: '⚔️', title: 'Todos vs Todos',
+          icon: '⚔️', title: BetFormatMode.allVsAll.label,
           description: 'Cada pareja tiene su\nduelo independiente.',
           t: t,
           onTap: () => setSt(() => update(cfg.copyWith(formatMode: BetFormatMode.allVsAll))),
@@ -842,9 +842,7 @@ class _PresetConfigWidgets {
       ]),
       const SizedBox(height: 6),
       Text(
-        cfg.formatMode == BetFormatMode.onePot
-            ? '1 Pot: un solo ganador por hoyo/segmento toma del resto del grupo.'
-            : 'Todos vs Todos: A vs B, A vs C y B vs C cada uno con su apuesta propia.',
+        cfg.formatMode.explicacion,
         style: TextStyle(color: t.sub, fontSize: 11, fontStyle: FontStyle.italic),
       ),
       const SizedBox(height: 20),

@@ -3143,37 +3143,29 @@ class _NassauLivePanel extends StatelessWidget {
               //
               // Los paneles no mentían: hay tres módulos y cada uno mueve
               // dinero. Lo que faltaba era decir cuál es cuál.
-              if (mod.effectiveScope.isEveryone) ...[
-                const SizedBox(width: 6),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: t.scoreOver.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(6),
+              () {
+                // La insignia sale del catálogo del alcance, no de un literal:
+                // la hoja que lo elige y el panel que lo enseña tienen que decir
+                // la misma palabra o vuelven a poder separarse.
+                final abierto = mod.effectiveScope.isEveryone;
+                final color = abierto ? t.scoreOver : t.primary;
+                return Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: abierto ? 0.18 : 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(mod.effectiveScope.kind.insignia,
+                        style: TextStyle(
+                            color: color,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w800)),
                   ),
-                  child: Text('TODA LA PARTIDA',
-                      style: TextStyle(
-                          color: t.scoreOver,
-                          fontSize: 8,
-                          fontWeight: FontWeight.w800)),
-                ),
-              ] else ...[
-                const SizedBox(width: 6),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: t.primary.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text('USTEDES DOS',
-                      style: TextStyle(
-                          color: t.primary,
-                          fontSize: 8,
-                          fontWeight: FontWeight.w800)),
-                ),
-              ],
+                );
+              }(),
               if (carryActive) ...[
                 const SizedBox(width: 6),
                 Container(

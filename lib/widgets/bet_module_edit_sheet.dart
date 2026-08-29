@@ -693,8 +693,11 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         t: t,
         selected: _scopeIsOpen,
         title: 'Todos los de la partida ($groupCount)',
-        subtitle: 'Quien se sume después entra automáticamente, '
-                  'sin volver a configurar la apuesta.',
+        // La consecuencia va PRIMERO, que es lo que faltaba: la frase de antes
+        // solo hablaba de comodidad y esta opción multiplica la apuesta por el
+        // número de parejas.
+        subtitle: '${BetScopeKind.everyone.consecuencia} '
+            'Quien se sume después entra automáticamente.',
         onTap: () => setState(() => _scopeIsOpen = true),
       ),
       const SizedBox(height: 8),
@@ -702,7 +705,8 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         t: t,
         selected: !_scopeIsOpen,
         title: 'Solo $fixedLabel',
-        subtitle: 'La lista de jugadores es parte del acuerdo y no cambia.',
+        subtitle: '${fixedIds.length == 2 ? BetScopeKind.pair.consecuencia : BetScopeKind.subset.consecuencia} '
+            'La lista es parte del acuerdo y no cambia.',
         onTap: fixedIds.length >= 2
             ? () => setState(() => _scopeIsOpen = false)
             : null,
@@ -1702,16 +1706,15 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       // ── ESTRUCTURA DE APUESTA ───────────────────────────────────────────────
       _label('ESTRUCTURA DE APUESTA', t),
       const SizedBox(height: 8),
-      _segmented(['1 Pot', 'Todos vs Todos'], isAllVsAll ? 1 : 0, t, (i) {
+      _segmented([BetFormatMode.onePot.label, BetFormatMode.allVsAll.label],
+          isAllVsAll ? 1 : 0, t, (i) {
         _update(_current.copyWith(
           formatMode: i == 1 ? BetFormatMode.allVsAll : BetFormatMode.onePot,
         ));
       }),
       const SizedBox(height: 6),
       Text(
-        isAllVsAll
-            ? 'Todos vs Todos: A vs B, A vs C y B vs C con duelo independiente.'
-            : '1 Pot: el mejor oyés por hoyo cobra al resto del grupo.',
+        _current.formatMode.explicacion,
         style: TextStyle(color: t.sub, fontSize: 11, fontStyle: FontStyle.italic),
       ),
       const SizedBox(height: 20),
