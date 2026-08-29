@@ -1606,6 +1606,31 @@ class NassauConfig {
   final bool allowMultiplePresses;  // permite más de un press por segmento
   final int? maxPresses;            // max por segmento (null = ilimitado)
 
+  /// La PRESIÓN DE APERTURA de la vuelta trasera, por pareja.
+  ///
+  /// ── Qué es, y por qué es una apuesta y no un ajuste ───────────────────────
+  ///
+  /// Al entrar en los nueve traseros, cualquiera de los dos puede abrir una
+  /// apuesta que se juega esos nueve DESDE CERO, en paralelo al B9 del Nassau.
+  /// Algunos grupos la llaman "adjust bet". Se comporta igual que la apuesta
+  /// original se comportó en el hoyo 1: marcador a cero y los nueve por delante.
+  ///
+  /// No es una presión automática: aquella nace de ir 2 abajo y arranca en el
+  /// hoyo siguiente. Esta se pide, cubre los nueve completos, y vale lo mismo
+  /// que el segmento original.
+  ///
+  /// ── Y LA PIDE CUALQUIERA DE LOS DOS ───────────────────────────────────────
+  ///
+  /// La convención más extendida dice que solo la pide el que va perdiendo,
+  /// porque el propósito es darle una vía de recuperación. **El grupo de Carlos
+  /// juega que la pide cualquiera**, y esa es la regla de esta app. Queda escrito
+  /// aquí, donde se decide, para que nadie lo "corrija" más adelante creyendo
+  /// que es un descuido.
+  ///
+  /// Clave: [carryPairKey], la misma que el carry. En un grupo de cuatro, A
+  /// puede abrirla contra B y no contra C.
+  final Map<String, bool> aperturaB9ByPair;
+
   const NassauConfig({
     this.frontValue           = 50,
     this.backValue            = 50,
@@ -1619,8 +1644,14 @@ class NassauConfig {
     this.autoPressTrigger     = 2,
     this.frontPressValue      = 50,
     this.backPressValue       = 50,
-    this.allowMultiplePresses = true,
+    // Una por nueve, que es como lo juega el grupo. Sigue siendo configurable
+    // —el campo estaba y no lo leía nadie— pero el default obedece la regla.
+    //
+    // El respaldo de fromJson se queda en true: las rondas guardadas se leen
+    // como se jugaron. Esto decide lo que se crea de cero.
+    this.allowMultiplePresses = false,
     this.maxPresses,
+    this.aperturaB9ByPair = const {},
     this.carryByPair = const {},
   });
 
@@ -1639,6 +1670,10 @@ class NassauConfig {
     return carryApplied && carryByPair.isEmpty;
   }
 
+  /// ¿Esta pareja abrió la presión de apertura del B9?
+  bool aperturaB9For(String id1, String id2) =>
+      aperturaB9ByPair[carryPairKey(id1, id2)] == true;
+
   /// Factor de carry de esta pareja. 1.0 = sin carry.
   double carryFactorForPair(String id1, String id2) {
     final key = carryPairKey(id1, id2);
@@ -1654,6 +1689,7 @@ class NassauConfig {
     bool? pressEnabled, int? autoPressTrigger,
     double? frontPressValue, double? backPressValue,
     bool? allowMultiplePresses, int? maxPresses,
+    Map<String, bool>? aperturaB9ByPair,
   }) => NassauConfig(
     frontValue:           frontValue           ?? this.frontValue,
     backValue:            backValue            ?? this.backValue,
@@ -1670,6 +1706,7 @@ class NassauConfig {
     backPressValue:       backPressValue       ?? this.backPressValue,
     allowMultiplePresses: allowMultiplePresses ?? this.allowMultiplePresses,
     maxPresses:           maxPresses           ?? this.maxPresses,
+    aperturaB9ByPair:     aperturaB9ByPair     ?? this.aperturaB9ByPair,
   );
 
   // Valores efectivos considerando carry
@@ -1693,6 +1730,7 @@ class NassauConfig {
     'backPressValue':       backPressValue,
     'allowMultiplePresses': allowMultiplePresses,
     if (maxPresses != null) 'maxPresses': maxPresses,
+    if (aperturaB9ByPair.isNotEmpty) 'aperturaB9ByPair': aperturaB9ByPair,
   };
 
   factory NassauConfig.fromJson(Map<String, dynamic> j) {
@@ -1719,6 +1757,8 @@ class NassauConfig {
       backPressValue:       (j['backPressValue']      as num?)?.toDouble() ?? back,
       allowMultiplePresses: j['allowMultiplePresses'] as bool? ?? true,
       maxPresses:           j['maxPresses']           as int?,
+      aperturaB9ByPair: ((j['aperturaB9ByPair'] as Map?) ?? const {})
+          .map((k, v) => MapEntry('$k', v == true)),
     );
   }
 

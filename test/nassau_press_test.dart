@@ -30,6 +30,11 @@ BetModuleInstance _nassauPressMod(List<String> pids, {
     pressEnabled:    true,
     autoPressTrigger: trigger,
     mode:            mode,
+    // EXPLÍCITO: estos tests comprueban el SIGNO de presiones encadenadas, así
+    // que necesitan más de una por nueve. El default del modelo pasa a ser una
+    // —es como lo juega el grupo— y sin decirlo aquí estos casos se quedarían
+    // con la primera y dejarían de probar lo que prueban.
+    allowMultiplePresses: true,
   ),
 );
 
@@ -196,9 +201,14 @@ void main() {
     expect(st.front, -2,
         reason: 'F9: CAV +2UP → front=-2 (perspectiva cam=p1)');
 
-    // Debe haber 3 presiones (H3, H7, H9)
-    expect(st.frontPresses.length, 3,
-        reason: 'Debe haber 3 presiones en F9 con trigger=2 y estos scores');
+    // Dos presiones (H3 y H7). La tercera nacía en H9 y YA NO SE ABRE.
+    //
+    // No es que el detector se rompiera: la convención dice que no se presiona
+    // en el hoyo 9 ni en el 18, "para evitar que todo se decida en un solo
+    // golpe" — una presión que solo cubre el último hoyo es exactamente eso.
+    // Este test documentaba el comportamiento anterior; ahora fija la regla.
+    expect(st.frontPresses.length, 2,
+        reason: 'H3 y H7. En H9 no se presiona: es el último del segmento');
 
     // Press H3: CAV ganó H3-H6 vs CAM→ score debe ser negativo (CAV arriba)
     final pressH3 = st.frontPresses.firstWhere((p) => p.startHole == 3);
@@ -219,11 +229,9 @@ void main() {
     expect(pressH7.loser, 'cam',
         reason: 'Loser de press H7 es cam (quien estaba -2DOWN relativo al disparar desde H6)');
 
-    // Press H9: AS (solo H9 disponible, resultado empate)
-    final pressH9 = st.frontPresses.firstWhere((p) => p.startHole == 9);
-    print('Press H9 score=${pressH9.score} (esperado 0 = AS)');
-    expect(pressH9.score, 0,
-        reason: 'Press H9: H9 fue AS → score=0');
+    // Y NINGUNA presión empieza en el último hoyo del segmento.
+    expect(st.frontPresses.any((p) => p.startHole == 9), isFalse,
+        reason: 'no se presiona en el 9: dejaría la apuesta a un solo golpe');
   });
 
   test('nassauPressLiveStatus - p1IsBase=true (p1 da strokes, p2 recibe) no invierte presiones', () {

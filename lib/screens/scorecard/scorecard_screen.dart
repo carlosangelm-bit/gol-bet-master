@@ -1349,6 +1349,8 @@ class _OneVOneViewState extends State<_OneVOneView> {
                 myPlayerId: myPlayer?.id,
                 onApplyCarry: (ctx, factor, nassauMods, matchMods) =>
                     _applyCarry(ctx, effP1.id, effP2.id, factor, nassauMods, matchMods),
+                onAbrirApertura: (ctx, nassauMods) =>
+                    _abrirApertura(ctx, effP1.id, effP2.id, nassauMods),
               ),
             );
           }),
@@ -1437,6 +1439,36 @@ class _OneVOneViewState extends State<_OneVOneView> {
     }
 
     return pairs;
+  }
+
+  /// Abre la presión de apertura de la 2ª vuelta para esta pareja.
+  ///
+  /// La pide CUALQUIERA de los dos —decisión de Carlos, escrita en
+  /// NassauConfig.aperturaB9ByPair— así que no hay que preguntar quién va
+  /// perdiendo. Se guarda por pareja: en un cuarteto, A puede abrirla contra B
+  /// y no contra C.
+  void _abrirApertura(BuildContext context, String p1Id, String p2Id,
+      List<BetModuleInstance> nassauMods) {
+    final prov = context.read<RoundProvider>();
+    final round = prov.round;
+    if (round == null) return;
+    final clave = NassauConfig.carryPairKey(p1Id, p2Id);
+    final newGroups = round.betGroups.map((g) {
+      final mods = g.modules.map((m) {
+        if (!nassauMods.any((nm) => nm.id == m.id)) return m;
+        final mapa = Map<String, bool>.from(m.nassau.aperturaB9ByPair)
+          ..[clave] = true;
+        return m.copyWith(
+            nassauConfig: m.nassau.copyWith(aperturaB9ByPair: mapa));
+      }).toList();
+      return BetGroup(
+          id: g.id,
+          name: g.name,
+          format: g.format,
+          playerIds: g.playerIds,
+          modules: mods);
+    }).toList();
+    prov.updateBetGroups(newGroups);
   }
 
   void _applyCarry(BuildContext context, String p1Id, String p2Id, double factor,
@@ -1779,10 +1811,15 @@ class _MatchDuelCard extends StatefulWidget {
       List<BetModuleInstance> nassauMods,
       List<BetModuleInstance> matchMods) onApplyCarry;
 
+  /// Abrir la presión de apertura de la 2ª vuelta.
+  final void Function(BuildContext, List<BetModuleInstance> nassauMods)
+      onAbrirApertura;
+
   const _MatchDuelCard({
     required this.round, required this.p1, required this.p2,
     required this.t, required this.expanded,
     required this.onApplyCarry,
+    required this.onAbrirApertura,
     this.myPlayerId,
   });
 
@@ -1917,6 +1954,24 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
               onApplyCarry: (factor) =>
                   widget.onApplyCarry(context, factor, nassauModules, matchMods),
             ),
+
+            // ── La presión de apertura, en SU PROPIO bloque ─────────────────
+            //
+            // Comparte momento con el carry —"al entrar la 2ª vuelta"— y no
+            // sitio: son decisiones distintas. El carry multiplica lo que ya
+            // hay y solo existe si el F9 empató; esta abre una apuesta nueva y
+            // no depende de cómo fuera el F9. Juntarlas obligaría a explicar en
+            // un párrafo por qué a veces se puede una y no la otra.
+            if (nassauModules.isNotEmpty)
+              _AperturaPanel(
+                round: round,
+                p1: p1,
+                p2: p2,
+                t: t,
+                nassauModules: nassauModules,
+                onAbrir: () =>
+                    widget.onAbrirApertura(context, nassauModules),
+              ),
 
             // Desglose financiero por duelo
             _FinancialBreakdown(round: round, p1: p1, p2: p2, t: t),
@@ -3681,6 +3736,31 @@ class _CarryPanelState extends State<_CarryPanel> {
   bool get _hasCarryModules =>
       widget.nassauModules.isNotEmpty || widget.matchPressModules.isNotEmpty;
 
+  /// Quién ganó la primera vuelta, o null si quedó empatada.
+  ///
+  /// ── La condición que faltaba ──────────────────────────────────────────────
+  ///
+  /// El carry del golf existe SOLO cuando el segmento anterior queda en push: lo
+  /// que se traslada es un dinero que no tiene dueño. Si el F9 lo ganó alguien,
+  /// ese dinero ya está adjudicado y no hay nada que llevar.
+  ///
+  /// El motor ya lo exigía —`carryActive` pide `front == 0`— así que activarlo
+  /// con el F9 ganado no multiplicaba nada. Pero la pantalla lo ofrecía igual, y
+  /// eso es peor que no ofrecerlo: el grupo cree que pactó algo y el dinero sale
+  /// igual que antes.
+  ///
+  /// Se ATENÚA con el motivo en vez de esconderlo, por el criterio de siempre:
+  /// quien vino a buscarlo necesita saber por qué no está.
+  String? get _ganadorDelPrimerNueve {
+    final st = BetEngine.nassauLiveStatus(
+        widget.round, widget.p1.id, widget.p2.id,
+        widget.nassauModules.isNotEmpty
+            ? widget.nassauModules.first
+            : widget.matchPressModules.first);
+    if (st.frontPlayed == 0 || st.front == 0) return null;
+    return st.front > 0 ? widget.p1.shortName : widget.p2.shortName;
+  }
+
   @override
   Widget build(BuildContext context) {
     final round = widget.round;
@@ -3733,6 +3813,36 @@ class _CarryPanelState extends State<_CarryPanel> {
             const SizedBox(height: 2),
             Text('Las apuestas de la 2ª vuelta están duplicadas', style: TextStyle(color: t.sub, fontSize: 11)),
           ])),
+        ])),
+      );
+    }
+
+    // ── El F9 no quedó empatado: no hay nada que trasladar ────────────────
+    final ganador = _ganadorDelPrimerNueve;
+    if (ganador != null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: GCard(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.currency_exchange, color: t.divider, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('CARRY',
+                    style: TextStyle(
+                        color: t.divider,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 10,
+                        letterSpacing: 0.8)),
+                const SizedBox(height: 3),
+                Text(
+                    'No aplica: la primera vuelta la ganó $ganador, así que no '
+                    'hay nada que trasladar. El carry solo existe cuando el '
+                    'segmento anterior queda empatado.',
+                    style: TextStyle(color: t.sub, fontSize: 11, height: 1.3)),
+              ])),
         ])),
       );
     }
@@ -5356,4 +5466,145 @@ class LowHighTeamCard extends StatelessWidget {
           ],
         ),
       );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LA PRESIÓN DE APERTURA DE LA 2ª VUELTA
+//
+// Una apuesta sobre los nueve traseros, DESDE CERO, en paralelo al B9 del
+// Nassau. Algunos grupos la llaman "adjust bet". Se comporta igual que la
+// apuesta original en el hoyo 1: marcador a cero y los nueve por delante.
+//
+// ── Por qué es un bloque aparte del carry ────────────────────────────────────
+//
+// Comparten momento —"al entrar la 2ª vuelta"— y no sitio. El carry MULTIPLICA
+// lo que ya hay y solo existe si el F9 quedó empatado; esta ABRE una apuesta
+// nueva y no depende de cómo fuera el F9. Juntarlas obligaría a explicar en un
+// párrafo por qué a veces se puede una y no la otra.
+//
+// ── Y por qué se ve como apuesta propia ──────────────────────────────────────
+//
+// Va a convivir con el B9, sobre los mismos hoyos y por el mismo importe. Ya
+// sabemos lo que pasa cuando dos apuestas así se ven iguales: tres filas
+// idénticas y $3550 que nadie entendía. Su asiento se llama "Apertura 2ª
+// vuelta", no "Nassau", y el panel lo dice antes de abrirla.
+class _AperturaPanel extends StatelessWidget {
+  final Round round;
+  final Player p1, p2;
+  final GolfTheme t;
+  final List<BetModuleInstance> nassauModules;
+  final VoidCallback onAbrir;
+  const _AperturaPanel({
+    required this.round,
+    required this.p1,
+    required this.p2,
+    required this.t,
+    required this.nassauModules,
+    required this.onAbrir,
+  });
+
+  /// Ya abierta con cualquiera de los módulos de esta pareja.
+  bool get _yaAbierta =>
+      nassauModules.any((m) => m.nassau.aperturaB9For(p1.id, p2.id));
+
+  /// La primera vuelta está completa: es cuando se puede pedir.
+  bool get _entrandoEnLaSegunda {
+    final primeros = BetEngine.segmentsOf(round).firstNine;
+    if (primeros.isEmpty) return false;
+    return primeros.every((h) =>
+        round.getScore(p1.id, h).hasScore && round.getScore(p2.id, h).hasScore);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (round.totalHoles < 18 || nassauModules.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    if (!_entrandoEnLaSegunda && !_yaAbierta) return const SizedBox.shrink();
+
+    final valor = nassauModules.first.nassau.backValue;
+    final n1 = p1.shortName;
+    final n2 = p2.shortName;
+
+    if (_yaAbierta) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: GCard(
+            child: Row(children: [
+          Icon(Icons.add_circle_outline, color: t.primary, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('APERTURA 2ª VUELTA',
+                    style: TextStyle(
+                        color: t.primary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11,
+                        letterSpacing: 0.8)),
+                const SizedBox(height: 2),
+                Text(
+                    'Apuesta aparte sobre los nueve traseros, desde cero · '
+                    '\$${valor.toStringAsFixed(0)}',
+                    style: TextStyle(color: t.sub, fontSize: 11)),
+              ])),
+        ])),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GCard(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.add_circle_outline, color: t.primary, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Text('APERTURA 2ª VUELTA',
+                  style: TextStyle(
+                      color: t.sub,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 10,
+                      letterSpacing: 0.8))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: t.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: t.primary.withValues(alpha: 0.3)),
+            ),
+            child: Text('Al entrar la 2ª vuelta',
+                style: TextStyle(
+                    color: t.primary,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700)),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        Text(
+            '$n1 o $n2 pueden abrir una apuesta NUEVA sobre los nueve traseros, '
+            'desde cero y por \$${valor.toStringAsFixed(0)}. Es aparte del B9: '
+            'los mismos hoyos, dos apuestas.',
+            style: TextStyle(color: t.sub, fontSize: 11, height: 1.3)),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text('Abrir apuesta de la 2ª vuelta',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+            onPressed: onAbrir,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: t.primary,
+              foregroundColor: t.onPrimary,
+              padding: const EdgeInsets.symmetric(vertical: 11),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ),
+      ])),
+    );
+  }
 }

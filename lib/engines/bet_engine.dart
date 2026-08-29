@@ -823,6 +823,36 @@ class BetEngine {
     }
 
     final total = front + back;
+
+    // ── El carry SOLO si el primer segmento quedó empatado ─────────────────
+    //
+    // La rama con presiones ya lo exigía; ESTA no. Usaba cfg.effectiveBackValue,
+    // que es un getter y solo mira carryApplied: multiplicaba aunque el F9 lo
+    // hubiera ganado alguien. Medido: A gana el F9 y el B9, y el B9 salía a 100
+    // en vez de 50.
+    //
+    // Lo que se traslada es dinero SIN DUEÑO. Si el segmento anterior tuvo
+    // ganador, ese dinero ya está adjudicado y no hay nada que llevar.
+    final carryVale = cfg.carryApplied && front == 0;
+    final backVal = carryVale ? cfg.backValue * cfg.carryFactor : cfg.backValue;
+    final totalVal =
+        carryVale ? cfg.totalValue * cfg.carryFactor : cfg.totalValue;
+
+    // ── La PRESIÓN DE APERTURA de la vuelta trasera ────────────────────────
+    //
+    // Una apuesta aparte sobre los mismos nueve hoyos, desde cero y por el mismo
+    // importe. Se liquida con el marcador del B9 —son los mismos hoyos y el
+    // mismo marcador— pero es SU PROPIO asiento, con su propio motivo.
+    //
+    // Que sea un asiento aparte no es cosmética: dos módulos con el mismo
+    // importe sobre los mismos hoyos ya nos dieron tres filas idénticas y $3550
+    // que nadie entendía. Aquí conviven a propósito, así que tienen que poder
+    // distinguirse en el desglose sin contar cuál es cuál.
+    if (cfg.aperturaB9For(p1Id, p2Id) && !seg.singleNine) {
+      _addNassauSegment(entries, p1Id, p2Id, back, cfg.backValue,
+          'Apertura 2ª vuelta');
+    }
+
     if (seg.singleNine) {
       _addNassauSegment(entries, p1Id, p2Id, front, cfg.frontValue, 'Nassau 9 hoyos');
     } else {
@@ -830,9 +860,9 @@ class BetEngine {
       // RoundSegments.etiqueta. Saliendo por el 1 dice Front 9 como siempre.
       _addNassauSegment(entries, p1Id, p2Id, front, cfg.frontValue,
           'Nassau ${seg.etiqueta(true, round.startingNine)}');
-      _addNassauSegment(entries, p1Id, p2Id, back, cfg.effectiveBackValue,
+      _addNassauSegment(entries, p1Id, p2Id, back, backVal,
           'Nassau ${seg.etiqueta(false, round.startingNine)}');
-      _addNassauSegment(entries, p1Id, p2Id, total, cfg.effectiveTotalValue, 'Nassau Total 18');
+      _addNassauSegment(entries, p1Id, p2Id, total, totalVal, 'Nassau Total 18');
     }
     return entries;
   }
@@ -1026,6 +1056,20 @@ class BetEngine {
         segLabel: 'Nassau ${seg.etiqueta(false, round.startingNine)}'
             '${carryActive ? ' (x${cfg.carryFactor.toStringAsFixed(0)})' : ''}',
       );
+      // ── La PRESIÓN DE APERTURA, también con presiones activadas ──────────
+      //
+      // Mismos nueve hoyos y mismo importe que el B9, pero apuesta propia. Va
+      // SIN presiones automáticas —pressValue 0— porque es una apuesta que se
+      // pide entera; encadenarle presiones sería otra cosa y nadie la pactó.
+      if (cfg.aperturaB9For(p1Id, p2Id)) {
+        liquidateSegment(
+          holes: seg.secondNine,
+          segValue: cfg.backValue,
+          pressValue: 0,
+          segLabel: 'Apertura 2ª vuelta',
+        );
+      }
+
       // Total 18: suma todos los deltas disponibles
       int total = 0;
       for (final delta in deltaByHole.values) {
@@ -2025,9 +2069,13 @@ class BetEngine {
     final List<NassauPress> presses = [];
     if (cfg.pressEnabled) {
       _detectPressesInSegment(presses, frontHistory, seg.firstNine, frontPlayed,
-          idA, idB, cfg.autoPressTrigger);
+          idA, idB, cfg.autoPressTrigger,
+          variasPorSegmento: cfg.allowMultiplePresses,
+          maxPorSegmento: cfg.maxPresses);
       _detectPressesInSegment(presses, backHistory, seg.secondNine, backPlayed,
-          idA, idB, cfg.autoPressTrigger);
+          idA, idB, cfg.autoPressTrigger,
+          variasPorSegmento: cfg.allowMultiplePresses,
+          maxPorSegmento: cfg.maxPresses);
     }
 
     return NassauLiveStatus(
@@ -2877,9 +2925,13 @@ class BetEngine {
     final List<NassauPress> presses = [];
     if (cfg.pressEnabled) {
       _detectPressesInSegment(presses, frontHistory, seg.firstNine, frontPlayed,
-          p1Id, p2Id, cfg.autoPressTrigger);
+          p1Id, p2Id, cfg.autoPressTrigger,
+          variasPorSegmento: cfg.allowMultiplePresses,
+          maxPorSegmento: cfg.maxPresses);
       _detectPressesInSegment(presses, backHistory, seg.secondNine, backPlayed,
-          p1Id, p2Id, cfg.autoPressTrigger);
+          p1Id, p2Id, cfg.autoPressTrigger,
+          variasPorSegmento: cfg.allowMultiplePresses,
+          maxPorSegmento: cfg.maxPresses);
     }
 
     return NassauLiveStatus(
@@ -2971,11 +3023,15 @@ class BetEngine {
     // Presiones del primer segmento (vuelta de inicio)
     final List<NassauPress> frontPresses = [];
     _detectPressesInSegment(frontPresses, frontHistory, seg.firstNine, frontPlayed,
-        p1Id, p2Id, cfg.autoPressTrigger);
+        p1Id, p2Id, cfg.autoPressTrigger,
+        variasPorSegmento: cfg.allowMultiplePresses,
+        maxPorSegmento: cfg.maxPresses);
     // Presiones del segundo segmento
     final List<NassauPress> backPresses  = [];
     _detectPressesInSegment(backPresses, backHistory, seg.secondNine, backPlayed,
-        p1Id, p2Id, cfg.autoPressTrigger);
+        p1Id, p2Id, cfg.autoPressTrigger,
+        variasPorSegmento: cfg.allowMultiplePresses,
+        maxPorSegmento: cfg.maxPresses);
 
     return NassauPressLiveStatus(
       front: front, back: back, total: front + back,
@@ -3003,8 +3059,10 @@ class BetEngine {
     List<int> holes,
     int played,
     String p1Id, String p2Id,
-    int trigger,
-  ) {
+    int trigger, {
+    bool variasPorSegmento = true,
+    int? maxPorSegmento,
+  }) {
     if (holes.isEmpty) return;
     final holeEnd = holes.last;
     // Misma lógica de marcador relativo que liquidateSegment:
@@ -3019,18 +3077,44 @@ class BetEngine {
     //            el índice donde empieza la siguiente press (o history.last si es la última).
     final List<({int trigIdx, String loser, int startHole})> triggers = [];
 
+    // ── Las tres restricciones del match play con presiones ────────────────
+    //
+    // Confirmadas por Carlos como la forma en que su grupo lo juega, y son del
+    // mismo tipo: acotan cuándo una presión tiene sentido.
+    //
+    // 1 · NO SE PRESIONA EN EL ÚLTIMO HOYO DEL SEGMENTO —el 9 ni el 18—. Una
+    //     presión que solo cubre un hoyo deja toda la apuesta a un golpe, que es
+    //     justo lo que la convención evita. Antes bastaba con que el hoyo
+    //     siguiente EXISTIERA, así que una presión podía nacer en el 9.
+    //
+    // 2 · MÁXIMO UNA POR NUEVE, si así está configurado. El detector las
+    //     encadenaba sin mirar allowMultiplePresses ni maxPresses, que existían
+    //     en el modelo y no los leía nadie: un control sin efecto.
+    //
+    // 3 · NO SE PRESIONA UN SEGMENTO YA DECIDIDO. Si la ventaja es mayor que los
+    //     hoyos que quedan, el segmento está cerrado aunque queden hoyos por
+    //     jugar, y abrir una presión ahí es apostar sobre algo que ya pasó.
+    final tope = variasPorSegmento ? (maxPorSegmento ?? 1 << 30) : 1;
+
     int refIdx = 0;
     for (int i = 0; i < history.length; i++) {
+      if (triggers.length >= tope) break; // R2
       final relDiff = history[i] - (refIdx == 0 ? 0 : history[refIdx - 1]);
-      if (relDiff.abs() >= trigger) {
-        // La press empieza en el hoyo siguiente, si existe dentro del segmento
-        if (i + 1 < holes.length) {
-          final startHole = holes[i + 1];
-          final loser = relDiff < 0 ? p1Id : p2Id;
-          triggers.add((trigIdx: i, loser: loser, startHole: startHole));
-          refIdx = i + 1;
-        }
-      }
+      if (relDiff.abs() < trigger) continue;
+
+      final inicio = i + 1; // la presión empieza en el hoyo siguiente
+      if (inicio > holes.length - 1) continue; // no hay hoyo siguiente
+      if (holes[inicio] == holeEnd) continue; // R1: ni el 9 ni el 18
+
+      final restantes = holes.length - inicio;
+      if (history[i].abs() > restantes) continue; // R3: ya decidido
+
+      triggers.add((
+        trigIdx: i,
+        loser: relDiff < 0 ? p1Id : p2Id,
+        startHole: holes[inicio],
+      ));
+      refIdx = inicio;
     }
 
     final segmentHoles = holes.length;
