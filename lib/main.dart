@@ -17,6 +17,7 @@ import 'providers/user_profile_provider.dart';
 import 'providers/handicap_provider.dart';
 import 'providers/perfil_provider.dart';
 import 'providers/torneo_provider.dart';
+import 'screens/torneos/leaderboard_tv_screen.dart';
 import 'screens/torneos/torneo_enlace_screen.dart';
 import 'providers/betting_group_provider.dart';
 import 'app_shell.dart';
@@ -106,46 +107,46 @@ void main() {
 class GolfBetApp extends StatelessWidget {
   const GolfBetApp({super.key});
 
-  // ── Detectar ruta /guest/:token o /caddie/:token en la URL del navegador ────
-  static String? _extractGuestToken() {
+  /// El token que sigue a [prefijo] en una ruta, o null.
+  ///
+  /// Es una función PURA sobre los segmentos, aparte de `Uri.base`, para que se
+  /// pueda probar sin navegador. El motivo tiene historia en este proyecto: el
+  /// fallo que más veces se ha repetido aquí es "la lógica existe, la capa
+  /// siguiente no la lee", y un enrutado que solo se puede comprobar abriendo
+  /// el navegador es justo la capa donde eso no salta en ninguna prueba.
+  static String? tokenDeRuta(List<String> segmentos, String prefijo) {
+    if (segmentos.length < 2 || segmentos[0] != prefijo) return null;
+    final token = segmentos[1].trim();
+    return token.isEmpty ? null : token;
+  }
+
+  static String? _deLaUrl(String prefijo) {
     if (!kIsWeb) return null;
     try {
-      final uri      = Uri.base;
-      final segments = uri.pathSegments;
-      if (segments.length >= 2 && segments[0] == 'guest') {
-        return segments[1];
-      }
-    } catch (_) {}
-    return null;
+      return tokenDeRuta(Uri.base.pathSegments, prefijo);
+    } catch (_) {
+      return null;
+    }
   }
+
+  // ── Detectar ruta /guest/:token o /caddie/:token en la URL del navegador ────
+  static String? _extractGuestToken() => _deLaUrl('guest');
 
   /// El token de /torneo/:token.
   ///
   /// Mismo patrón que guest y caddie: no se inventa un segundo enrutado. El
   /// rewrite de hosting manda cualquier ruta a index.html, así que el enlace
   /// funciona sin hash.
-  static String? _extractTorneoToken() {
-    if (!kIsWeb) return null;
-    try {
-      final segments = Uri.base.pathSegments;
-      if (segments.length >= 2 && segments[0] == 'torneo') {
-        return segments[1];
-      }
-    } catch (_) {}
-    return null;
-  }
+  static String? _extractTorneoToken() => _deLaUrl('torneo');
 
-  static String? _extractCaddieToken() {
-    if (!kIsWeb) return null;
-    try {
-      final uri      = Uri.base;
-      final segments = uri.pathSegments;
-      if (segments.length >= 2 && segments[0] == 'caddie') {
-        return segments[1];
-      }
-    } catch (_) {}
-    return null;
-  }
+  /// El enlace de la TELE. `/tv/{token}`.
+  ///
+  /// Va aparte del de torneo porque son dos superficies distintas con dos
+  /// documentos distintos: `/torneo/` lee la instantánea CON dinero y pide
+  /// cuenta; esta lee la pública, que no lleva importes y se ve sin sesión.
+  static String? _extractTvToken() => _deLaUrl('tv');
+
+  static String? _extractCaddieToken() => _deLaUrl('caddie');
 
   @override
   Widget build(BuildContext context) {
@@ -153,29 +154,45 @@ class GolfBetApp extends StatelessWidget {
     final guestToken  = _extractGuestToken();
     final caddieToken = _extractCaddieToken();
     final torneoToken = _extractTorneoToken();
+    final tvToken     = _extractTvToken();
 
     return MaterialApp(
       title: 'Golf Bet Master', // v1.1.0+5
       debugShowCheckedModeBanner: false,
       theme: prov.theme.toMaterial(),
       // Mostrar errores de widget en pantalla (no pantalla en blanco)
+      //
+      // En la TELE no. Este `builder` corre en CADA reconstrucción de la app
+      // —un cambio de tema, por ejemplo— así que si aquí se pusiera sin mirar,
+      // volvería a dejar el volcado técnico puesto en cualquier momento de las
+      // ocho horas, y esa pantalla está proyectada delante de los socios del
+      // club. La pantalla de la tele instala el suyo. Ver
+      // leaderboard_tv_screen.dart, punto 2.
       builder: (context, child) {
-        ErrorWidget.builder = (FlutterErrorDetails details) {
-          return _AppErrorWidget(details: details);
-        };
+        if (tvToken == null) {
+          ErrorWidget.builder = (FlutterErrorDetails details) {
+            return _AppErrorWidget(details: details);
+          };
+        }
         return child ?? const SizedBox.shrink();
       },
       // Prioridad: caddie > guest > torneo > app normal.
       //
       // El torneo va DESPUÉS de los dos de ronda: quien llega con un enlace de
       // ronda en vivo está a punto de jugar, y eso manda sobre mirar una tabla.
-      home: caddieToken != null
-          ? CaddieJoinScreen(token: caddieToken)
-          : guestToken != null
-              ? GuestJoinScreen(token: guestToken)
-              : torneoToken != null
-                  ? TorneoEnlaceScreen(token: torneoToken)
-                  : const AppShell(),
+      // La TELE va PRIMERO, y no por importancia: es la única que no pasa por
+      // AppShell ni por la pantalla de login. Si quedara detrás de cualquier
+      // rama que exija sesión, una pantalla proyectada acabaría pidiendo entrar
+      // con Google delante de los socios del club.
+      home: tvToken != null
+          ? LeaderboardTvScreen(token: tvToken)
+          : caddieToken != null
+              ? CaddieJoinScreen(token: caddieToken)
+              : guestToken != null
+                  ? GuestJoinScreen(token: guestToken)
+                  : torneoToken != null
+                      ? TorneoEnlaceScreen(token: torneoToken)
+                      : const AppShell(),
       onGenerateRoute: (settings) {
         final name = settings.name ?? '';
         if (name.startsWith('/caddie/')) {
@@ -190,9 +207,15 @@ class GolfBetApp extends StatelessWidget {
             builder: (_) => GuestJoinScreen(token: token),
           );
         }
-        // El enlace de torneo. Va aquí además de en home porque una navegación
-        // dentro de la app tambien puede llegar por nombre de ruta, y dejarlo
-        // solo en home lo haria funcionar al abrir y no al navegar.
+        // Estos dos van aquí ADEMÁS de en home porque una navegación dentro de
+        // la app también puede llegar por nombre de ruta, y dejarlos solo en
+        // home los haría funcionar al abrir y no al navegar.
+        if (name.startsWith('/tv/')) {
+          final token = name.replaceFirst('/tv/', '');
+          return MaterialPageRoute(
+            builder: (_) => LeaderboardTvScreen(token: token),
+          );
+        }
         if (name.startsWith('/torneo/')) {
           final token = name.replaceFirst('/torneo/', '');
           return MaterialPageRoute(
