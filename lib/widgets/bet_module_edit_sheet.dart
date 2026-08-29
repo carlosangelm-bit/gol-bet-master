@@ -711,6 +711,45 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
             : null,
       ),
 
+      // ── Ensanchar cuesta más que acotar, y no avisaba ────────────────────
+      //
+      // El aviso de abajo solo salía al ACOTAR. Ensanchar —dejar "todos los de
+      // la partida" en una apuesta abierta desde un duelo— multiplica la
+      // apuesta por el número de parejas, y salía sin decir nada.
+      //
+      // Medido en la ronda del 28 de agosto: dos Nassau creados entre dos
+      // jugadores quedaron con alcance abierto y liquidaron entre los CUATRO.
+      // Seis parejas cada uno en vez de una, y el duelo enseñaba tres paneles de
+      // Nassau idénticos sin forma de distinguirlos. \$3550 movidos solo por
+      // Nassau.
+      //
+      // Así que se avisa en las DOS direcciones. La cara es la de ensanchar.
+      if (_scopeIsOpen && groupCount > 2 && fixedIds.length == 2) ...[
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(11),
+          decoration: BoxDecoration(
+            color: t.scoreOver.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: t.scoreOver.withValues(alpha: 0.5)),
+          ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(Icons.warning_amber_rounded, color: t.scoreOver, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                  'Abriste esta apuesta desde un duelo, pero así la juegan los '
+                  '$groupCount de la partida: se liquida en cada pareja, no '
+                  'solo entre ${_playerName(fixedIds[0])} y '
+                  '${_playerName(fixedIds[1])}.',
+                  style: TextStyle(
+                      color: t.text, fontSize: 11.5, height: 1.35)),
+            ),
+          ]),
+        ),
+      ],
+
       // ── Y qué le pasa a los DEMÁS ─────────────────────────────────────────
       //
       // El alcance se decide en dos superficies: al configurar la apuesta de

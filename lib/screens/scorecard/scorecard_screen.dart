@@ -3133,6 +3133,47 @@ class _NassauLivePanel extends StatelessWidget {
               Text('NASSAU',
                   style: TextStyle(color: t.sub, fontSize: 10,
                       fontWeight: FontWeight.w800, letterSpacing: 1.2)),
+              // ── De cuál de los Nassau estamos hablando ────────────────────
+              //
+              // Un duelo puede tener varios módulos del mismo tipo, y en la
+              // ronda del 28 de agosto tenía TRES: uno pactado entre esos dos y
+              // dos con alcance abierto, que liquidan entre los cuatro. Los tres
+              // paneles salían idénticos —mismo nombre, mismo importe— y no
+              // había forma de saber cuál era cuál.
+              //
+              // Los paneles no mentían: hay tres módulos y cada uno mueve
+              // dinero. Lo que faltaba era decir cuál es cuál.
+              if (mod.effectiveScope.isEveryone) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: t.scoreOver.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text('TODA LA PARTIDA',
+                      style: TextStyle(
+                          color: t.scoreOver,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w800)),
+                ),
+              ] else ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: t.primary.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text('USTEDES DOS',
+                      style: TextStyle(
+                          color: t.primary,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w800)),
+                ),
+              ],
               if (carryActive) ...[
                 const SizedBox(width: 6),
                 Container(
