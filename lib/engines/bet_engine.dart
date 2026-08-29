@@ -3280,6 +3280,22 @@ class RoundSegments {
   /// ni el test que lo comprueba— y quien salió por el 10 ve de qué hoyos
   /// habla. Sustituirla habría roto catorce tests que existen justamente para
   /// fijar el comportamiento con salida por el 10, y esos avisan de algo real.
+  /// Una línea que dice qué hoyos son F9 y B9, o null si no hace falta.
+  ///
+  /// La etiqueta del asiento lleva el rango pegado, pero eso solo se ve en el
+  /// desglose. Las superficies donde se miran los segmentos —los tres chips del
+  /// duelo y la tarjeta de Apuestas— solo tienen sitio para "F9", así que la
+  /// aclaración va debajo, una vez, en vez de tres veces dentro de los chips.
+  ///
+  /// Null saliendo por el 1: ahí F9 son los hoyos 1-9 y no hay nada que aclarar.
+  /// Un aviso que sale siempre deja de leerse.
+  String? aclaracionDeVueltas(StartingNine inicio) {
+    if (inicio != StartingNine.back) return null;
+    if (firstNine.isEmpty || secondNine.isEmpty) return null;
+    return 'F9 = hoyos ${firstNine.first}-${firstNine.last} (se jugó primero)'
+        ' · B9 = hoyos ${secondNine.first}-${secondNine.last}';
+  }
+
   String etiqueta(bool primera, StartingNine inicio) {
     final base = primera ? 'Front 9' : 'Back 9';
     if (inicio != StartingNine.back) return base;

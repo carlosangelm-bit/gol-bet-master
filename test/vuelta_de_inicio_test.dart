@@ -155,6 +155,26 @@ void main() {
     });
   });
 
+  group('3b · y la pantalla dice qué vuelta es cada segmento', () {
+    test('con salida por el 10 hay aclaración, con los hoyos', () {
+      // La etiqueta del asiento lleva el rango pegado, pero eso solo se ve en
+      // el desglose. Los chips del duelo y la tarjeta de Apuestas solo tienen
+      // sitio para "F9", así que la aclaración va debajo, una vez.
+      final segs = BetEngine.segmentsOf(_r(StartingNine.back, {'A': []}));
+      final a = segs.aclaracionDeVueltas(StartingNine.back);
+      expect(a, isNotNull);
+      expect(a, contains('hoyos 10-18'));
+      expect(a, contains('se jugó primero'));
+      expect(a, contains('hoyos 1-9'));
+    });
+
+    test('y por el 1 no hay ninguna: ahí no hay nada que aclarar', () {
+      // Un aviso que sale siempre deja de leerse.
+      final segs = BetEngine.segmentsOf(_r(StartingNine.front, {'A': []}));
+      expect(segs.aclaracionDeVueltas(StartingNine.front), isNull);
+    });
+  });
+
   group('4 · las etiquetas no engañan, y no pierden la palabra de siempre', () {
     test('por el 10 se añade la vuelta y el rango', () {
       final segs = BetEngine.segmentsOf(_r(StartingNine.back, {'A': []}));

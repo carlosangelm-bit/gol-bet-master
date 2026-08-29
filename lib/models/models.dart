@@ -556,7 +556,10 @@ extension PartidaFormatExt on PartidaFormat {
   
   String get label {
     switch (this) {
-      case PartidaFormat.allInOnePot: return '1 Pot';
+      // La misma palabra que BetFormatMode.onePot.label, y a propósito: son
+      // conceptos distintos —esto es el formato de la PARTIDA— pero si alguna
+      // vez se enseñan juntos no pueden llamarse de dos maneras.
+      case PartidaFormat.allInOnePot: return 'Bote único';
       case PartidaFormat.oneVsOne: return 'Todos vs Todos';
       case PartidaFormat.groupVsGroup: return 'Grupo vs Grupo';
       case PartidaFormat.teams2v2: return 'Equipos 2v2';
@@ -606,15 +609,29 @@ enum BetFormatMode { onePot, allVsAll }
 extension BetFormatModeTexto on BetFormatMode {
   /// La etiqueta corta. La MISMA en el asistente, en Plantillas, en la hoja de
   /// edición y en la proyección de Apuestas.
+  /// ── Por qué ya no dice "1 Pot" ────────────────────────────────────────────
+  ///
+  /// El catálogo nació con '1 Pot' junto a 'Todos vs Todos': una insignia en
+  /// inglés al lado de otra en español, en la misma pantalla. Se vio en Apuestas
+  /// con las dos tarjetas a la vista.
+  ///
+  /// Y conviene decir por qué el test que lee el código fuente NO lo cazó: ese
+  /// test comprueba que no haya una segunda COPIA de la palabra, y no la había
+  /// —la insignia leía de aquí—. Un catálogo centraliza dónde vive la palabra,
+  /// no si la palabra es buena. Lo que sí cambió es que arreglarla es un sitio.
+  ///
+  /// 'Bote único' usa el vocabulario que el resto del código ya tiene:
+  /// admiteBote, boteDe, "un solo bote".
   String get label => switch (this) {
-        BetFormatMode.onePot => '1 Pot',
+        BetFormatMode.onePot => 'Bote único',
         BetFormatMode.allVsAll => 'Todos vs Todos',
       };
 
   /// Qué significa, en una línea.
   String get explicacion => switch (this) {
         BetFormatMode.onePot =>
-          '1 Pot: un solo ganador por hoyo/segmento toma del resto del grupo.',
+          'Bote único: un solo ganador por hoyo/segmento toma del resto del '
+              'grupo.',
         BetFormatMode.allVsAll =>
           'Todos vs Todos: A vs B, A vs C y B vs C cada uno con su apuesta '
               'propia.',

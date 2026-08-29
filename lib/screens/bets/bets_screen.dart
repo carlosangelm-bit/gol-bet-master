@@ -492,6 +492,25 @@ class _BetsBodyState extends State<_BetsBody> {
           SliverToBoxAdapter(
             child: _AvisoDeVentajaNoAplicada(avisos: avisos, t: t),
           ),
+        // Qué vuelta es cada segmento. Una vez arriba y no en cada tarjeta:
+        // vale para Nassau, para Putts y para cualquier apuesta partida, y
+        // repetirlo por tarjeta lo volvería ruido.
+        if (BetEngine.segmentsOf(round).aclaracionDeVueltas(round.startingNine)
+            case final aclara?)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Row(children: [
+                Icon(Icons.golf_course, size: 14, color: t.sub),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(aclara,
+                      style: TextStyle(
+                          color: t.sub, fontSize: 11, height: 1.25)),
+                ),
+              ]),
+            ),
+          ),
         if (notasDeLiquidacion(round).isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(

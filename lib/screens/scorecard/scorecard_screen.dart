@@ -3231,6 +3231,17 @@ class _NassauLivePanel extends StatelessWidget {
             ]),
           ),
 
+          // Qué vuelta es cada chip. Solo con salida por el 10, que es donde
+          // "F9" y los hoyos 1-9 dejan de ser lo mismo.
+          if (BetEngine.segmentsOf(round).aclaracionDeVueltas(
+                  round.startingNine)
+              case final aclara?)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+              child: Text(aclara,
+                  style: TextStyle(color: t.sub, fontSize: 9.5, height: 1.25)),
+            ),
+
           // ── Presiones: tokens visuales por segmento ──────────────────────
           if (totalPressCount > 0) ...[
             Divider(color: t.divider.withValues(alpha: 0.5), height: 1),

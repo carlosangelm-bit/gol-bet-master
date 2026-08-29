@@ -75,6 +75,24 @@ void main() {
     });
   });
 
+  group('1b · y las dice en el mismo idioma', () {
+    test('ninguna etiqueta mezcla inglés con español', () {
+      // El catálogo nació con "1 Pot" junto a "Todos vs Todos", y las dos
+      // insignias salían en la misma pantalla de Apuestas.
+      //
+      // El test que lee el código fuente NO podía cazarlo: comprueba que no haya
+      // una segunda COPIA, y no la había. Un catálogo centraliza DÓNDE vive la
+      // palabra, no si la palabra es buena. Esto cubre lo otro.
+      const enIngles = ['Pot', 'All vs', 'Head to head', 'Skins pot'];
+      for (final m in BetFormatMode.values) {
+        for (final p in enIngles) {
+          expect(m.label.contains(p), isFalse,
+              reason: '${m.name}: "${m.label}" mezcla idiomas');
+        }
+      }
+    });
+  });
+
   group('2 · ninguna superficie escribe su propia versión', () {
     test('las etiquetas de formato solo viven en el catálogo', () {
       final prohibidos = [
@@ -121,11 +139,18 @@ void main() {
 
     test('el contrapeso: el catálogo SÍ las tiene', () {
       // Sin esto, borrar las frases de todas partes pasaría los tests de arriba.
-      final modelo = File('lib/models/models.dart').readAsStringSync();
-      expect(modelo, contains("'Todos vs Todos'"));
-      expect(modelo, contains("'1 Pot'"));
-      expect(modelo, contains("'TODA LA PARTIDA'"));
-      expect(modelo, contains('un solo ganador por hoyo/segmento'));
+      //
+      // Se comprueba contra el ENUM y no grepeando el archivo: la primera
+      // versión buscaba "'1 Pot'" como texto en models.dart y siguió pasando
+      // cuando ese literal ya solo estaba dentro de un comentario. Un
+      // contrapeso que se satisface con un comentario no es un contrapeso.
+      for (final m in BetFormatMode.values) {
+        expect(m.label.trim(), isNotEmpty);
+        expect(m.explicacion.length, greaterThan(m.label.length));
+      }
+      for (final k in BetScopeKind.values) {
+        expect(k.insignia.trim(), isNotEmpty);
+      }
     });
   });
 }
