@@ -363,6 +363,22 @@ await prueba('el organizador publica su leaderboard', () =>
 await prueba('y la TELE lo lee SIN SESIÓN', () =>
     assertSucceeds(getDoc(doc(anonimo, 'leaderboards', LB))));
 
+// ── GET no es LIST ──────────────────────────────────────────────────────────
+//
+// El fallo que había aquí y no saltaba en ninguna prueba: `allow read: if true`
+// concede LIST además de GET, así que cualquiera sin cuenta podía pedir la
+// colección entera y recibir todos los torneos publicados —nombre del torneo y
+// nombre de cada participante, de todos los clubes— sin tener ningún enlace.
+//
+// Comprobado contra producción sin credenciales antes de arreglarlo: el listado
+// respondía 200 (vacío, porque nadie publica todavía). Estas dos pruebas son lo
+// que impide que vuelva.
+await prueba('CLAVE: nadie recorre la colección, ni con cuenta', () =>
+    assertFails(getDocs(collection(anonimo, 'leaderboards'))));
+
+await prueba('ni siquiera el propio organizador la lista', () =>
+    assertFails(getDocs(collection(organizador, 'leaderboards'))));
+
 await prueba('lectura pública NO es escritura pública', () =>
     assertFails(setDoc(doc(anonimo, 'leaderboards', LB), {
       ownerUid: ORG, nombre: 'Secuestrado',

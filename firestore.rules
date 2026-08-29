@@ -223,7 +223,23 @@ service cloud.firestore {
     // Y la escritura sigue siendo del dueño y solo del dueño. Lectura pública no
     // significa escritura pública.
     match /leaderboards/{token} {
-      allow read: if true;
+      // GET, no READ. La diferencia no es cosmética.
+      //
+      // `read` son dos permisos: `get` (traer UN documento, que es lo que hace
+      // la tele) y `list` (recorrer la colección entera). Con `read` cualquiera
+      // sin cuenta puede pedir /leaderboards y recibir TODOS los torneos
+      // publicados —nombre del torneo y nombre de cada participante, de todos
+      // los clubes— sin tener ningún enlace. El token dejaría de ser lo que hay
+      // que tener.
+      //
+      // Comprobado contra producción sin credenciales: con `read` el listado
+      // respondía 200. La colección estaba vacía, así que no se filtró nada,
+      // pero se habría llenado en cuanto el organizador publicara.
+      //
+      // Así que: quien tiene el enlace lee su documento; nadie recorre la
+      // colección. Es la misma línea que ya sostiene sharedTorneos.
+      allow get: if true;
+      allow list: if false;
 
       allow create: if request.auth != null
                     && request.auth.uid == request.resource.data.ownerUid;
