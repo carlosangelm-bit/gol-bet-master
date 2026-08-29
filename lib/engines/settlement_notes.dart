@@ -22,6 +22,7 @@ import '../models/models.dart';
 import 'ledger_engine.dart';
 import 'rabbit_engine.dart';
 import 'wolf_engine.dart';
+import 'bet_engine.dart';
 import 'snake_engine.dart';
 
 /// Qué tono le toca a la nota.
@@ -128,7 +129,11 @@ List<NotaDeLiquidacion> _snake(
     Round round, BetGroup grupo, BetModuleInstance mod) {
   final pids = round.participantesDe(mod, grupo.playerIds);
   final cfg = mod.snake;
-  final r = SnakeEngine.buscar(round, pids, cfg);
+  // Con el MISMO orden con el que se liquida: si la nota recorriera los hoyos
+  // de otra forma, la pantalla diría que la tiene uno y el ledger le cobraría al
+  // otro. Es la razón por la que este motor expone la búsqueda.
+  final r = SnakeEngine.buscar(round, pids, cfg,
+      ordenDeJuego: BetEngine.segmentsOf(round).playOrder);
 
   NotaDeLiquidacion nota(String texto, TonoNota tono) => NotaDeLiquidacion(
       moduleId: mod.id, tipo: BetModuleType.snake, texto: texto, tono: tono);

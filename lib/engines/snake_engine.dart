@@ -61,9 +61,32 @@ class SnakeEngine {
   /// del umbral: ese es el último. Recorrer hacia adelante guardando el máximo
   /// daría lo mismo, pero así queda dicho en el código que lo que se busca es
   /// EL ÚLTIMO y no el peor.
+  /// [ordenDeJuego] es la secuencia real de hoyos. Con salida por el 10 es
+  /// 10..18 seguido de 1..9, y ES OBLIGATORIO pasarla para que "el último"
+  /// signifique el último JUGADO.
+  ///
+  /// ── El fallo, medido ──────────────────────────────────────────────────────
+  ///
+  /// Esto ordenaba los hoyos por NÚMERO y los recorría al revés. Con salida por
+  /// el 10 eso hace que "el último" sea el 18, que se juega noveno. Ejecutado:
+  /// A hace 3 putts en el 16 y B en el 5 —el 5 es el decimocuarto hoyo jugado,
+  /// o sea el último de los dos— y la serpiente se le quedaba a A. **A le pagaba
+  /// $100 a B teniendo B la serpiente.** No es una etiqueta: es el dinero al
+  /// revés.
+  ///
+  /// Se pide por parámetro en vez de calcularlo aquí para no tener dos
+  /// definiciones del orden de juego. La que manda es BetEngine.segmentsOf, y
+  /// este motor no puede importarla —BetEngine lo importa a él—, así que la
+  /// recibe. Un segundo cálculo del mismo orden es exactamente la clase de
+  /// duplicado que esta sesión lleva entera persiguiendo.
+  ///
+  /// Null solo para los tests que no dependan del orden: entonces cae al orden
+  /// por número, que es lo que había.
   static SnakeResultado buscar(
-      Round round, List<String> pids, SnakeConfig cfg) {
-    final hoyos = round.course.holes.map((h) => h.hole).toList()..sort();
+      Round round, List<String> pids, SnakeConfig cfg,
+      {List<int>? ordenDeJuego}) {
+    final hoyos = ordenDeJuego ??
+        (round.course.holes.map((h) => h.hole).toList()..sort());
 
     var sinCapturar = 0;
     for (final h in hoyos) {
@@ -113,9 +136,10 @@ class SnakeEngine {
   ///   · dividen    → el monto se reparte entre los dueños, así que el bolsillo
   ///     de cada uno de los demás recibe lo mismo que con un solo dueño.
   static List<LedgerEntry> liquidar(
-      Round round, List<String> pids, BetModuleInstance mod) {
+      Round round, List<String> pids, BetModuleInstance mod,
+      {List<int>? ordenDeJuego}) {
     final cfg = mod.snake;
-    final r = buscar(round, pids, cfg);
+    final r = buscar(round, pids, cfg, ordenDeJuego: ordenDeJuego);
     if (!r.hayDueno) return const [];
 
     final duenos = r.duenos.where(pids.contains).toList();

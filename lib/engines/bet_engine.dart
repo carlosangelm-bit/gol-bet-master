@@ -552,7 +552,10 @@ class BetEngine {
         // como un fallo del cálculo. Lo que falta no es un asiento, es una
         // frase, y esa la pone notasDeLiquidacion() desde la misma búsqueda que
         // usa esto. Ver settlement_notes.dart.
-        entries.addAll(SnakeEngine.liquidar(round, pids, mod));
+        // El orden REAL de juego: sin él, "el último 3-putt" es el del número
+        // de hoyo más alto, que con salida por el 10 se juega a mitad de ronda.
+        entries.addAll(SnakeEngine.liquidar(round, pids, mod,
+            ordenDeJuego: segmentsOf(round).playOrder));
         break;
       case BetModuleType.rabbit:
         // Otra rama nueva, otro motor aparte. Reutiliza GameEngine.holeWinner
@@ -823,8 +826,12 @@ class BetEngine {
     if (seg.singleNine) {
       _addNassauSegment(entries, p1Id, p2Id, front, cfg.frontValue, 'Nassau 9 hoyos');
     } else {
-      _addNassauSegment(entries, p1Id, p2Id, front, cfg.frontValue,          'Nassau Front 9');
-      _addNassauSegment(entries, p1Id, p2Id, back,  cfg.effectiveBackValue,  'Nassau Back 9');
+      // La etiqueta solo se desambigua con salida por el 10: ver
+      // RoundSegments.etiqueta. Saliendo por el 1 dice Front 9 como siempre.
+      _addNassauSegment(entries, p1Id, p2Id, front, cfg.frontValue,
+          'Nassau ${seg.etiqueta(true, round.startingNine)}');
+      _addNassauSegment(entries, p1Id, p2Id, back, cfg.effectiveBackValue,
+          'Nassau ${seg.etiqueta(false, round.startingNine)}');
       _addNassauSegment(entries, p1Id, p2Id, total, cfg.effectiveTotalValue, 'Nassau Total 18');
     }
     return entries;
@@ -1007,7 +1014,7 @@ class BetEngine {
         holes:      seg.firstNine,
         segValue:   cfg.frontValue,
         pressValue: cfg.frontPressValue,
-        segLabel:   'Nassau Front 9',
+        segLabel:   'Nassau ${seg.etiqueta(true, round.startingNine)}',
       );
       // Segundo segmento (lógicamente "Back 9", con carry si aplica)
       final effBack      = carryActive ? cfg.backValue      * cfg.carryFactor : cfg.backValue;
@@ -1016,7 +1023,8 @@ class BetEngine {
         holes:      seg.secondNine,
         segValue:   effBack,
         pressValue: effBackPress,
-        segLabel:   'Nassau Back 9${carryActive ? ' (x${cfg.carryFactor.toStringAsFixed(0)})' : ''}',
+        segLabel: 'Nassau ${seg.etiqueta(false, round.startingNine)}'
+            '${carryActive ? ' (x${cfg.carryFactor.toStringAsFixed(0)})' : ''}',
       );
       // Total 18: suma todos los deltas disponibles
       int total = 0;
@@ -1161,9 +1169,24 @@ class BetEngine {
     final entries = <LedgerEntry>[];
     final cfg = mod.putts;
 
+    // ── Los segmentos son los de LA RONDA ─────────────────────────────────
+    //
+    // Estaban fijos en 1-9 y 10-18. Con salida por el 10 eso parte la ronda al
+    // revés que Nassau, que usa segmentsOf: dos apuestas de la misma partida
+    // usando las mismas palabras para conjuntos opuestos. Ejecutado con salida
+    // por el 10: "Putts F9" liquidaba los hoyos 1 al 9, que se juegan al final.
+    final vueltas = segmentsOf(round);
+    (int, int, String) tramo(List<int> hoyos, bool primera) => (
+          hoyos.isEmpty ? 1 : hoyos.first,
+          hoyos.isEmpty ? 18 : hoyos.last,
+          'Putts ${vueltas.etiqueta(primera, round.startingNine).replaceFirst('Front 9', 'F9').replaceFirst('Back 9', 'B9')}',
+        );
     final segs = cfg.puttsMode == PuttsMode.total
         ? [(1, 18, 'Putts Total')]
-        : [(1, 9, 'Putts F9'), (10, 18, 'Putts B9')];
+        : [
+            tramo(vueltas.firstNine, true),
+            tramo(vueltas.secondNine, false),
+          ];
 
     if (mod.isAllVsAll) {
       // allVsAll: cada par (A, B) es completamente independiente.
@@ -1544,8 +1567,10 @@ class BetEngine {
     if (seg.singleNine) {
       addSegment(front, cfg.frontValue, 'Nassau 9 hoyos (${sideA.name} vs ${sideB.name})');
     } else {
-      addSegment(front, cfg.frontValue,          'Nassau Front 9 (${sideA.name} vs ${sideB.name})');
-      addSegment(back,  cfg.effectiveBackValue,  'Nassau Back 9 (${sideA.name} vs ${sideB.name})');
+      addSegment(front, cfg.frontValue,
+          'Nassau ${seg.etiqueta(true, round.startingNine)} (${sideA.name} vs ${sideB.name})');
+      addSegment(back, cfg.effectiveBackValue,
+          'Nassau ${seg.etiqueta(false, round.startingNine)} (${sideA.name} vs ${sideB.name})');
       addSegment(total, cfg.effectiveTotalValue, 'Nassau Total 18 (${sideA.name} vs ${sideB.name})');
     }
     return entries;
@@ -3235,6 +3260,34 @@ class RoundSegments {
 
   /// true si [hole] pertenece al primer segmento jugado.
   bool isFirst(int hole) => firstNine.contains(hole);
+
+  /// Cómo se llama un segmento SIN engañar con salida por el 10.
+  ///
+  /// ── Por qué solo cambia con salida por el 10 ──────────────────────────────
+  ///
+  /// "Front 9" y "Back 9" significan la vuelta que se juega primero y la
+  /// segunda, no los hoyos 1-9 y 10-18. Saliendo por el 1 las dos lecturas
+  /// coinciden y la palabra de siempre es la correcta. Saliendo por el 10
+  /// significan lo contrario de lo que parecen: "Nassau Front 9" liquida los
+  /// hoyos 10 al 18, y en la auditoría del 28 de agosto salía "Press H18–H18
+  /// (Nassau Front 9)", que se lee como un error y no lo es.
+  ///
+  /// Así que la etiqueta solo se desambigua donde puede engañar, y ahí lleva el
+  /// rango: no hay forma de leerla al revés. Donde no engaña se queda la palabra
+  /// de siempre, que es la que el grupo usa en el campo.
+  /// La aclaración es ADITIVA: se suma a la palabra de siempre, no la
+  /// sustituye. Así nadie pierde información —ni el jugador que busca "Front 9"
+  /// ni el test que lo comprueba— y quien salió por el 10 ve de qué hoyos
+  /// habla. Sustituirla habría roto catorce tests que existen justamente para
+  /// fijar el comportamiento con salida por el 10, y esos avisan de algo real.
+  String etiqueta(bool primera, StartingNine inicio) {
+    final base = primera ? 'Front 9' : 'Back 9';
+    if (inicio != StartingNine.back) return base;
+    final hoyos = primera ? firstNine : secondNine;
+    if (hoyos.isEmpty) return base;
+    return '$base · ${primera ? '1ª' : '2ª'} vuelta '
+        '(H${hoyos.first}–H${hoyos.last})';
+  }
 }
 
 // ── _MatchNode: nodo interno para el árbol de matches activos ────────────────
