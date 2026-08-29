@@ -474,6 +474,8 @@ class _BetsBodyState extends State<_BetsBody> {
     final round = prov.round!;
     // Módulos que no se pudieron liquidar por ventajas contradictorias.
     final integrityErrors = LedgerEngine.integrityErrors(round);
+    // Y las que SÍ se liquidaron pero con una regla distinta de la pactada.
+    final avisos = LedgerEngine.avisos(round);
     // Jugadores de la ronda que no pertenecen a ninguna partida de apuestas.
     final orphans = _playersOutsideBets(round);
 
@@ -483,6 +485,10 @@ class _BetsBodyState extends State<_BetsBody> {
         if (integrityErrors.isNotEmpty)
           SliverToBoxAdapter(
             child: _IntegrityBanner(errors: integrityErrors, t: t),
+          ),
+        if (avisos.isNotEmpty)
+          SliverToBoxAdapter(
+            child: _AvisoDeVentajaNoAplicada(avisos: avisos, t: t),
           ),
         if (notasDeLiquidacion(round).isNotEmpty)
           SliverToBoxAdapter(
@@ -3634,4 +3640,56 @@ class _TypeSummarySection extends StatelessWidget {
       ]),
     );
   }
+}
+
+// ── Aviso INFORMATIVO: la ventaja que el formato no aplica ───────────────────
+//
+// Canal distinto del de integridad, y la diferencia importa: aquel dice "falta
+// dinero en el balance", este dice "el balance está completo, pero una regla que
+// pactaron no se usó". Meterlos juntos hizo que el banner rojo anunciara "3
+// apuestas no se pudieron liquidar" cuando era una y sí se liquidó.
+class _AvisoDeVentajaNoAplicada extends StatelessWidget {
+  final List<String> avisos;
+  final GolfTheme t;
+  const _AvisoDeVentajaNoAplicada(
+      {required this.avisos, required this.t});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: t.primary.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.info_outline, color: t.primary, size: 16),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                  avisos.length == 1
+                      ? 'Una ventaja pactada no aplica en este formato'
+                      : '${avisos.length} ventajas pactadas no aplican en este '
+                          'formato',
+                  style: TextStyle(
+                      color: t.text,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800)),
+            ),
+          ]),
+          const SizedBox(height: 3),
+          Text('El dinero de abajo está completo: la apuesta SÍ se liquidó.',
+              style: TextStyle(color: t.sub, fontSize: 11)),
+          const SizedBox(height: 7),
+          for (final a in avisos)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Text('· $a',
+                  style: TextStyle(color: t.text, fontSize: 11.5, height: 1.35)),
+            ),
+        ]),
+      );
 }

@@ -258,6 +258,12 @@ class _ResultsScreenState extends State<ResultsScreen> {
                         errors: LedgerEngine.integrityErrors(round), t: t),
                     const SizedBox(height: 20),
                   ],
+                  // Y aparte, lo que SÍ se liquidó con otra regla de la pactada.
+                  if (LedgerEngine.avisos(round).isNotEmpty) ...[
+                    _AvisoVentajaNoAplicada(
+                        avisos: LedgerEngine.avisos(round), t: t),
+                    const SizedBox(height: 20),
+                  ],
 
                   // Lo que las apuestas DICEN sin que sea un error: la
                   // serpiente que nadie agarró, el conejo suelto, el hoyo sin
@@ -1505,10 +1511,15 @@ class _ResultsBodyState extends State<ResultsBody> {
     // existía solo en la pestaña de Apuestas, que no es donde se leen los
     // números finales.
     final integrityErrors = LedgerEngine.integrityErrors(round);
+    final avisos = LedgerEngine.avisos(round);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (avisos.isNotEmpty) ...[
+          _AvisoVentajaNoAplicada(avisos: avisos, t: t),
+          const SizedBox(height: 12),
+        ],
         if (integrityErrors.isNotEmpty) ...[
           _ResultsIntegrityBanner(errors: integrityErrors, t: t),
           const SizedBox(height: 16),
@@ -2278,4 +2289,56 @@ class _HeroNeto extends StatelessWidget {
       ),
     );
   }
+}
+
+
+// ── Aviso INFORMATIVO: la ventaja que el formato no aplica ───────────────────
+//
+// Distinto del banner de integridad, y la diferencia es toda la cuestión:
+// aquel dice "falta dinero en el balance de abajo", este dice "el balance está
+// completo, pero una regla que pactaron no se usó".
+//
+// Nacieron juntos y el resultado fue un banner rojo anunciando "3 apuestas no se
+// pudieron liquidar" cuando era UNA y sí se liquidó. Un aviso informativo en el
+// canal de las alarmas gasta la alarma: la próxima vez que de verdad falte
+// dinero, ya nadie la mira.
+class _AvisoVentajaNoAplicada extends StatelessWidget {
+  final List<String> avisos;
+  final GolfTheme t;
+  const _AvisoVentajaNoAplicada({required this.avisos, required this.t});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: t.primary.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: t.primary.withValues(alpha: 0.35)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.info_outline, color: t.primary, size: 17),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                  avisos.length == 1
+                      ? 'Una ventaja pactada no aplica en este formato'
+                      : '\${avisos.length} ventajas pactadas no aplican en este formato',
+                  style: TextStyle(
+                      color: t.text, fontSize: 13, fontWeight: FontWeight.w800)),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Text('El dinero de abajo está completo: la apuesta SÍ se liquidó.',
+              style: TextStyle(color: t.sub, fontSize: 11.5)),
+          const SizedBox(height: 9),
+          for (final a in avisos)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text('· \$a',
+                  style: TextStyle(color: t.text, fontSize: 12, height: 1.35)),
+            ),
+        ]),
+      );
 }

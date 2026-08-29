@@ -2335,8 +2335,12 @@ class BetEngine {
         }
       }
     }
-    errors.addAll(pactosQueElPoteIgnora(round));
-    return LedgerComputation(entries: entries, errors: errors);
+    return LedgerComputation(
+        entries: entries,
+        errors: errors,
+        // Canal aparte: esto NO es dinero que falte, es dinero que se repartió
+        // con una regla que no es la que se pactó.
+        avisos: pactosQueElPoteIgnora(round));
   }
 
   /// Las ventajas pactadas que un POTE no puede usar, con su cifra.
@@ -3034,11 +3038,26 @@ class BetEngine {
 class LedgerComputation {
   final List<LedgerEntry> entries;
 
-  /// Mensajes de integridad de los módulos que no se pudieron calcular.
+  /// Mensajes de integridad de los módulos que NO SE PUDIERON CALCULAR.
   /// Vacío si todo está correcto.
   final List<String> errors;
 
-  const LedgerComputation({required this.entries, required this.errors});
+  /// Cosas que hay que saber de apuestas que SÍ se liquidaron.
+  ///
+  /// ── Por qué esto no cabía en [errors] ─────────────────────────────────────
+  ///
+  /// Metí ahí los pactos que un pote no puede honrar, y el banner de integridad
+  /// los anunció como "3 apuestas no se pudieron liquidar · El balance de abajo
+  /// NO las incluye". Las dos frases eran falsas: es UNA apuesta, y sí se
+  /// liquidó — el balance la incluye. Lo que no cuentan son tres pactos.
+  ///
+  /// El contenido era correcto y el canal no. Un aviso informativo en el canal
+  /// de los errores gasta la alarma: la próxima vez que diga "no se pudo
+  /// liquidar" —que es dinero que falta— ya nadie la mira.
+  final List<String> avisos;
+
+  const LedgerComputation(
+      {required this.entries, required this.errors, this.avisos = const []});
 
   bool get hasErrors => errors.isNotEmpty;
 }

@@ -41,6 +41,15 @@ class LedgerEngine {
   /// Vacío si todo está correcto. La UI debería mostrarlos como aviso.
   static List<String> integrityErrors(Round round) => _computation(round).errors;
 
+  /// Cosas que saber de apuestas que SÍ se liquidaron.
+  ///
+  /// Canal aparte de [integrityErrors] a propósito: aquel significa "falta
+  /// dinero en el balance de abajo" y este significa "el balance está completo,
+  /// pero una regla que pactaron no se aplicó". Mezclarlos hacía que el banner
+  /// dijera dos cosas falsas a la vez —el número de apuestas y que no se
+  /// liquidaron— y gastaba la alarma del que sí es grave.
+  static List<String> avisos(Round round) => _computation(round).avisos;
+
   /// Balance neto por jugador (positivo = gana, negativo = debe)
   static Map<String, double> playerBalances(Round round) {
     final entries = entriesOf(round);

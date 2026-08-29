@@ -22,6 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/models.dart';
+import 'package:golf_bet_master/models/bet_recipe.dart';
 import 'package:golf_bet_master/engines/bet_engine.dart';
 import 'package:golf_bet_master/engines/ledger_engine.dart';
 
@@ -190,11 +191,18 @@ void main() {
     });
   });
 
+  _elDefaultQueMentia();
+
   group('3 · los pactos que el pote no puede honrar se dicen', () {
     test('los tres que no tocan al ancla salen como aviso, con dirección', () {
       final r = _ronda(_medal(scope: const BetScope.everyone()));
       LedgerEngine.invalidateCache();
-      final avisos = LedgerEngine.integrityErrors(r);
+      // Por el canal de AVISOS, no por el de integridad: la apuesta SÍ se
+      // liquidó. Mezclarlos hizo que el banner rojo dijera "3 apuestas no se
+      // pudieron liquidar" siendo una y estando liquidada.
+      expect(LedgerEngine.integrityErrors(r), isEmpty,
+          reason: 'esto no es un fallo de liquidación');
+      final avisos = LedgerEngine.avisos(r);
       expect(avisos.length, 3, reason: 'AAM–KAWA, AAM–Dylan y KAWA–Dylan');
       expect(avisos.join(' '), contains('se mide contra CAM'));
       // La dirección importa: en AAM–Dylan el pacto y el implícito van al revés,
@@ -217,13 +225,13 @@ void main() {
       final r = _ronda(_medal(scope: const BetScope.everyone()),
           pactos: coherentes);
       LedgerEngine.invalidateCache();
-      expect(LedgerEngine.integrityErrors(r), isEmpty);
+      expect(LedgerEngine.avisos(r), isEmpty);
     });
 
     test('y un duelo de dos tampoco avisa: ahí no hay ancla', () {
       final r = _ronda(_medal(scope: BetScope.pair('CAM', 'Dylan')));
       LedgerEngine.invalidateCache();
-      expect(LedgerEngine.integrityErrors(r), isEmpty);
+      expect(LedgerEngine.avisos(r), isEmpty);
     });
 
     test('Nassau en pote NO avisa: reparte par a par y sí honra los pactos', () {
@@ -242,6 +250,44 @@ void main() {
       ));
       LedgerEngine.invalidateCache();
       expect(BetEngine.pactosQueElPoteIgnora(r), isEmpty);
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EL SELECTOR ENSEÑABA UNA COSA Y LA APP CONSTRUÍA OTRA
+//
+// Carlos: "según yo no configuré el Medal como pote sino todos contra todos".
+// Tenía razón en lo que vio. Los chips de CÓMO SE COBRA resaltaban con
+// `?? allVsAll` y el módulo se construye con el default de BetModuleInstance,
+// que es onePot. Sin tocar nada: se veía "Todos vs Todos" y se jugaba un pote.
+//
+// Y no es cosmético — onePot y allVsAll reparten distinto, y el pote con
+// handicap mide contra un ancla, así que se come los pactos por par. Se podía
+// pactar ventajas creyendo que se jugaban duelos.
+// ─────────────────────────────────────────────────────────────────────────────
+void _elDefaultQueMentia() {
+  group('4 · el default que se enseña es el que se aplica', () {
+    test('ninguna receta construye allVsAll por su cuenta', () {
+      // Es la mitad medida del fallo: da igual la cuenta, sale onePot.
+      for (final c in BetCount.values) {
+        final res = BetRecipe.build(
+            cuenta: c,
+            participantIds: const ['a', 'b', 'c', 'd'],
+            holesInRound: 18,
+            id: 'flujo_${c.name}');
+        if (!res.ok) continue;
+        expect(res.module!.formatMode, BetFormatMode.onePot, reason: c.name);
+      }
+    });
+
+    test('y el default del modelo es onePot, que es lo que hay que enseñar', () {
+      // El selector usaba allVsAll como valor de resaltado. Este test fija de
+      // dónde tiene que salir el default para que las dos mitades no puedan
+      // volver a discrepar.
+      const vacio = BetModuleInstance(
+          id: '', type: BetModuleType.medal, name: '', participantIds: []);
+      expect(vacio.formatMode, BetFormatMode.onePot);
     });
   });
 }

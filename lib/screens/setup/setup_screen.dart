@@ -184,6 +184,28 @@ class _SetupScreenState extends State<SetupScreen> {
   /// Cómo se cobra. Solo se ofrece donde el motor lee formatMode.
   final Map<BetCount, BetFormatMode> _reparto = {};
 
+  /// Cómo se cobra una cuenta, con el default REAL.
+  ///
+  /// ── El selector enseñaba una cosa y la app construía otra ─────────────────
+  ///
+  /// El resaltado de los chips usaba `?? allVsAll` y el módulo se construye con
+  /// `BetModuleInstance.formatMode`, que vale onePot. Así que sin tocar nada el
+  /// usuario veía "Todos vs Todos" marcado y jugaba un pote. Medido: las cinco
+  /// cuentas que admiten reparto construyen onePot y todas enseñaban allVsAll.
+  ///
+  /// No es un detalle de pintura: onePot y allVsAll reparten el dinero distinto
+  /// —el pote lo cobra uno solo— y además el pote con handicap mide contra un
+  /// ancla, así que se come los pactos por par. Alguien podía pactar ventajas
+  /// creyendo que jugaba duelos y estar jugando un pote.
+  ///
+  /// Ahora el default sale de UN sitio y lo usan el resaltado y la construcción,
+  /// así que no pueden discrepar. Cuál deba ser el default es otra decisión, y
+  /// esa no la toma este arreglo.
+  BetFormatMode _repartoDe(BetCount c) =>
+      _reparto[c] ?? const BetModuleInstance(
+              id: '', type: BetModuleType.medal, name: '', participantIds: [])
+          .formatMode;
+
   // ── Participantes, dos niveles ─────────────────────────────────────────────
   //
   // Son preguntas distintas y el caso de los cinco jugadores necesita las dos:
@@ -1988,12 +2010,12 @@ class _SetupScreenState extends State<SetupScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: BoxDecoration(
-                    color: (_reparto[cuenta] ?? BetFormatMode.allVsAll) == m
+                    color: _repartoDe(cuenta) == m
                         ? t.primary.withValues(alpha: 0.12)
                         : t.card,
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
-                        color: (_reparto[cuenta] ?? BetFormatMode.allVsAll) == m
+                        color: _repartoDe(cuenta) == m
                             ? t.primary
                             : t.divider),
                   ),
@@ -2039,8 +2061,12 @@ class _SetupScreenState extends State<SetupScreen> {
       );
       if (!res.ok) continue; // se rechazó: no se ofrecía, no hay nada que crear
       var m = res.module!;
-      final rep = _reparto[cuenta];
-      if (rep != null && cuenta.admiteBote) m = m.copyWith(formatMode: rep);
+      // El MISMO valor que resalta el chip. Antes se aplicaba solo si el usuario
+      // había tocado algo, y el chip enseñaba otra cosa cuando no lo había
+      // tocado.
+      if (cuenta.admiteBote) {
+        m = m.copyWith(formatMode: _repartoDe(cuenta));
+      }
 
       // Los cruces excluidos solo aplican en individual: con equipos el único
       // enfrentamiento es lado contra lado, y los cruces A1–B2 no son apuestas
@@ -5121,6 +5147,26 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
+  /// Recuerda el reparto elegido en el paso Detalle, para que sobreviva.
+  ///
+  /// ── La segunda forma de perder la elección ────────────────────────────────
+  ///
+  /// _sincronizarModulos() RECONSTRUYE los módulos del flujo desde la receta, y
+  /// corre al salir de Cuenta, Participantes y Montos. Así que elegir "Todos vs
+  /// Todos" aquí y luego volver atrás a tocar un monto lo devolvía a la receta
+  /// —sin decir nada—. Escribiendo también _reparto, la reconstrucción lo
+  /// respeta: el único sitio del que sale el formato es ese mapa.
+  ///
+  /// Solo para los módulos DEL FLUJO. Uno creado a mano en Detalle no se
+  /// reconstruye, así que su formato ya vive en el propio módulo.
+  void _recordarReparto(BetModuleInstance cfg, BetFormatMode modo) {
+    if (!cfg.id.startsWith('flujo_')) return;
+    final nombre = cfg.id.substring('flujo_'.length);
+    final cuenta =
+        BetCount.values.where((c) => c.name == nombre).firstOrNull;
+    if (cuenta != null) _reparto[cuenta] = modo;
+  }
+
   // ── Widgets de config según tipo ─────────────────────────────────────────
   // [groupMode] = true → editor agrupado: para Units muestra solo el campo
   // de valor base único en lugar de la lista detallada por evento.
@@ -5139,7 +5185,10 @@ class _SetupScreenState extends State<SetupScreen> {
           title: '1 Pot',
           description: 'Un solo pozo grupal.\nEl ganador cobra a todos.',
           t: t,
-          onTap: () => setSt(() => update(cfg.copyWith(formatMode: BetFormatMode.onePot))),
+          onTap: () => setSt(() {
+            _recordarReparto(cfg, BetFormatMode.onePot);
+            update(cfg.copyWith(formatMode: BetFormatMode.onePot));
+          }),
         )),
         const SizedBox(width: 10),
         Expanded(child: _FormatModeCard(
@@ -5148,7 +5197,10 @@ class _SetupScreenState extends State<SetupScreen> {
           title: 'Todos vs Todos',
           description: 'Cada pareja tiene su\nduelo independiente.',
           t: t,
-          onTap: () => setSt(() => update(cfg.copyWith(formatMode: BetFormatMode.allVsAll))),
+          onTap: () => setSt(() {
+            _recordarReparto(cfg, BetFormatMode.allVsAll);
+            update(cfg.copyWith(formatMode: BetFormatMode.allVsAll));
+          }),
         )),
       ]),
       const SizedBox(height: 6),
