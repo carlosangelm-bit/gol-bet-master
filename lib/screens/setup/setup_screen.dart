@@ -198,13 +198,11 @@ class _SetupScreenState extends State<SetupScreen> {
   /// ancla, así que se come los pactos por par. Alguien podía pactar ventajas
   /// creyendo que jugaba duelos y estar jugando un pote.
   ///
-  /// Ahora el default sale de UN sitio y lo usan el resaltado y la construcción,
-  /// así que no pueden discrepar. Cuál deba ser el default es otra decisión, y
-  /// esa no la toma este arreglo.
-  BetFormatMode _repartoDe(BetCount c) =>
-      _reparto[c] ?? const BetModuleInstance(
-              id: '', type: BetModuleType.medal, name: '', participantIds: [])
-          .formatMode;
+  /// Ahora el default sale de UN sitio —BetCount.repartoPorDefecto— y lo usan el
+  /// resaltado y la construcción, así que no pueden discrepar. Y ese default ya
+  /// es allVsAll, que es lo que el chip llevaba prometiendo; las razones y la
+  /// excepción de Skins están escritas allí.
+  BetFormatMode _repartoDe(BetCount c) => _reparto[c] ?? c.repartoPorDefecto;
 
   // ── Participantes, dos niveles ─────────────────────────────────────────────
   //
@@ -345,6 +343,14 @@ class _SetupScreenState extends State<SetupScreen> {
 
   late final _nameCtrl = TextEditingController(text: _defaultRoundName());
   final List<Player> _players = [];
+
+  /// Los módulos que esta ronda va a tener. **Para tests.**
+  ///
+  /// Existe por lo mismo que jugadoresDeLaRonda: el fallo del reparto vivía en
+  /// la distancia entre lo que el chip resaltaba y lo que se construía, y un
+  /// test que solo mire la pantalla no ve la segunda mitad.
+  List<BetModuleInstance> get modulosDeLaRonda =>
+      [for (final g in _groups) ...g.modules];
 
   /// Los jugadores que esta ronda va a tener. **Para tests.**
   ///

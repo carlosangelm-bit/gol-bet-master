@@ -143,6 +143,45 @@ extension BetCountLabel on BetCount {
     };
   }
 
+  /// Cómo se reparte una cuenta cuando nadie toca el selector.
+  ///
+  /// ── El cambio, y las tres razones ─────────────────────────────────────────
+  ///
+  /// Era onePot para todo, mientras el chip resaltado decía "Todos vs Todos".
+  /// Pasa a allVsAll, que es lo que la pantalla llevaba prometiendo, por
+  /// decisión de Carlos y con su razonamiento:
+  ///
+  ///   · Es lo que quien jugó con el default creía que estaba jugando.
+  ///   · SIN ANCLA, las ventajas pactadas par a par valen tal cual. Un pote con
+  ///     handicap mide a todos contra un ancla y se come los pactos que no la
+  ///     tocan — es lo que le falló en la ronda del 28 de agosto.
+  ///   · El pote es el formato ESPECIAL. Un bote donde gana uno es una decisión
+  ///     consciente; "cada uno contra cada uno" es lo que se da por hecho en una
+  ///     partida de cuatro.
+  ///
+  /// ── Y por qué Skins se queda en pote ──────────────────────────────────────
+  ///
+  /// Porque en Skins el bote no es el reparto: ES EL FORMATO. El hoyo empatado
+  /// acumula —SkinsConfig.carryOver— y el siguiente ganador se lleva lo
+  /// arrastrado. En allVsAll el motor juega N duelos independientes, cada uno
+  /// con SU carry, así que el arrastre se multiplica por pareja y se puede ganar
+  /// el skin contra uno mientras se pierde el hoyo del grupo. Eso no es "el
+  /// mismo juego repartido de otra forma": es otro juego.
+  ///
+  /// Los demás son comparaciones de totales o de hoyos sin arrastre —Medal,
+  /// Putts, Stableford, Oyeses— y ahí par a par es la lectura natural. Oyeses se
+  /// miró aparte por tener forma de bote por hoyo: no tiene arrastre, y el motor
+  /// resuelve el zapato en los dos modos, así que sigue el default general.
+  ///
+  /// LAS RONDAS YA GUARDADAS NO SE TOCAN. `formatMode` se serializa siempre, y
+  /// el respaldo de las que no lo traen sigue siendo onePot en fromJson. Esto
+  /// decide qué se construye de cero, no cómo se lee lo que ya se jugó: cambiar
+  /// el reparto de una ronda cerrada sería reescribir dinero ya pagado.
+  BetFormatMode get repartoPorDefecto => switch (this) {
+        BetCount.skins => BetFormatMode.onePot,
+        _ => BetFormatMode.allVsAll,
+      };
+
   /// true si el conteo admite el reparto "un solo bote".
   ///
   /// Verificado contra el motor, no supuesto: consumen BetFormatMode los
