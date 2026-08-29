@@ -338,6 +338,64 @@ await prueba('pero eso NO mete nada en la tabla del organizador', () =>
 //        aquí, y se cierra en la lectura: la tabla solo cuenta resultados de
 //        gente inscrita. Está probado en Dart —resultadosQueCuentan— y dicho en
 //        los dos sitios.
+// ══════════════════════════════════════════════════════════════════════════════
+// 14 · EL LEADERBOARD PROYECTABLE — el único documento sin sesión
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Se proyecta en la casa club desde un navegador cualquiera, sin cuenta. Así que
+// es la superficie MÁS EXPUESTA del sistema, y por eso no lleva un solo importe:
+// la garantía es que el dato no esté, no que no se muestre.
+//
+// Lo que se prueba aquí es el permiso. Que el CONTENIDO no lleve dinero lo fija
+// el test de lista cerrada en Dart, y las dos mitades hacen falta: la regla deja
+// leer a cualquiera, así que lo único que protege el dinero es que no se escriba.
+console.log('\n14 · Leaderboard proyectable');
+
+const LB = 'tor_leaderboard';
+
+await prueba('el organizador publica su leaderboard', () =>
+    assertSucceeds(setDoc(doc(organizador, 'leaderboards', LB), {
+      ownerUid: ORG,
+      nombre: 'Copa de Primavera',
+      tabla: [{ puesto: 1, nombre: 'Luis Herrera', jugadas: 3 }],
+    })));
+
+await prueba('y la TELE lo lee SIN SESIÓN', () =>
+    assertSucceeds(getDoc(doc(anonimo, 'leaderboards', LB))));
+
+await prueba('lectura pública NO es escritura pública', () =>
+    assertFails(setDoc(doc(anonimo, 'leaderboards', LB), {
+      ownerUid: ORG, nombre: 'Secuestrado',
+    })));
+
+await prueba('ni siquiera con cuenta: solo el dueño actualiza', () =>
+    assertFails(setDoc(doc(otro, 'leaderboards', LB), {
+      ownerUid: OTRO, nombre: 'Mío ahora',
+    })));
+
+await prueba('nadie puede apropiarse del token publicando a su nombre', () =>
+    assertFails(setDoc(doc(otro, 'leaderboards', 'tor_libre'), {
+      ownerUid: ORG, nombre: 'Firmando por otro',
+    })));
+
+await prueba('el dueño lo apaga', () =>
+    assertSucceeds(setDoc(doc(organizador, 'leaderboards', LB), {
+      ownerUid: ORG, activo: false,
+    })));
+
+await prueba('y un tercero NO lo borra', () =>
+    assertFails(deleteDoc(doc(otro, 'leaderboards', LB))));
+
+// EL CONTRAPESO, y es el que da sentido a todo lo anterior: la instantánea CON
+// dinero sigue exigiendo cuenta. Si esta prueba dejara de fallar, el leaderboard
+// público habría dejado de ser necesario — y el dinero estaría al alcance de
+// cualquiera.
+await prueba('la instantánea CON dinero sigue pidiendo sesión', () =>
+    assertFails(getDoc(doc(anonimo, 'sharedTorneos', TOKEN))));
+
+await prueba('y sin sesión tampoco se leen las rondas de nadie', () =>
+    assertFails(getDoc(doc(anonimo, 'liveRounds', 'ronda_x'))));
+
 console.log('\n13 · Publicar un resultado a un torneo ajeno');
 
 const DOC_OK = `tor_liga_${'ronda_luis'}`;

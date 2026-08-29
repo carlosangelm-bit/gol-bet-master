@@ -539,6 +539,25 @@ class RoundProvider extends ChangeNotifier {
       debugPrint('[finishRound] publicación a torneos: $e');
     }
 
+    // ── §13.2 DEL ANEXO DE PATROCINIOS: EL INTERSTICIAL VA DESPUÉS ────────
+    //
+    // El anexo pone un intersticial "al cerrar la ronda", que es AQUÍ. Y el
+    // §13.5 dice que no puede bloquear el paso al resultado ni cargar antes de
+    // que el resultado esté visible: "primero el score, después la marca".
+    //
+    // Traducido a este método: el intersticial NO va en finishRound. Va después,
+    // en la pantalla, cuando el resultado ya está guardado y publicado — y NUNCA
+    // esperando entre medias.
+    //
+    // Se escribe aquí porque es donde alguien lo rompería sin querer. Publicar
+    // vivía en la pantalla de captura y no se ejecutaba porque esa pantalla se
+    // destruye al cerrar; costó tres entregas encontrarlo. Un `await` de un
+    // vídeo de quince segundos metido en este punto reproduce el mismo fallo con
+    // una causa nueva: la ronda se cierra, el patrocinador se ve, y el resultado
+    // no llega al torneo de nadie.
+    //
+    // Regla, corta: en finishRound se guarda y se publica. La marca va después.
+
     // 3. Limpiar caché de ronda activa
     try {
       final p = await _prefs();

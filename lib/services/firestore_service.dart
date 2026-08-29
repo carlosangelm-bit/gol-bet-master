@@ -13,6 +13,7 @@ import 'handicap_service.dart';
 import 'user_profile_service.dart';
 import '../models/round_result.dart';
 import '../models/torneo.dart';
+import '../models/leaderboard_publico.dart';
 import '../models/torneo_seguido.dart';
 import '../models/torneo_publicado.dart';
 
@@ -526,6 +527,68 @@ class FirestoreService {
     if (AuthService.uid == null) throw Exception('No autenticado');
     await _sharedTorneos().doc(copia.token).set(copia.toJson());
     return copia.token;
+  }
+
+  // ── LEADERBOARD PROYECTABLE ───────────────────────────────────────────────
+  //
+  // Colección aparte de sharedTorneos a propósito: esta se lee SIN SESIÓN, y por
+  // eso no lleva un solo importe. Ver LeaderboardPublico y el bloque
+  // /leaderboards de firestore.rules, que se nombran el uno al otro.
+
+  static CollectionReference<Map<String, dynamic>> _leaderboards() =>
+      _db.collection('leaderboards');
+
+  /// Publica —o actualiza— el leaderboard proyectable.
+  ///
+  /// Mismo token que el enlace del torneo, así que el organizador tiene una
+  /// dirección para la gente y otra para la tele, y las dos sobreviven a
+  /// republicar.
+  static Future<String> publicarLeaderboard(LeaderboardPublico copia) async {
+    if (AuthService.uid == null) throw Exception('No autenticado');
+    await _leaderboards().doc(copia.token).set(copia.toJson());
+    return copia.token;
+  }
+
+  /// Escucha el leaderboard EN VIVO.
+  ///
+  /// ── Por qué stream y no sondeo ────────────────────────────────────────────
+  ///
+  /// El documento se reescribe POR EVENTO —cuando alguien cierra una ronda—, así
+  /// que un stream entrega el cambio en segundos y cuesta una conexión abierta.
+  /// Sondear cada N segundos cuesta N lecturas por hora para no encontrar nada
+  /// el 99% del tiempo.
+  ///
+  /// Lo que el stream NO cubre: una pantalla que lleva ocho horas encendida es
+  /// justo donde una conexión se cae en silencio y nadie lo nota, porque nadie
+  /// la está mirando. Por eso quien consuma esto debe además releer cada pocos
+  /// minutos con [leerLeaderboard] — el stream es la vía normal y el latido es
+  /// el cinturón. Es un fallo que no aparece probando: aparece el día del
+  /// torneo.
+  static Stream<LeaderboardPublico?> leaderboardStream(String token) =>
+      _leaderboards().doc(token).snapshots().map((d) {
+        final data = d.data();
+        if (data == null) return null;
+        return LeaderboardPublico.fromJson(token, data);
+      });
+
+  /// Una lectura suelta. El latido del que habla [leaderboardStream].
+  static Future<LeaderboardPublico?> leerLeaderboard(String token) async {
+    try {
+      final d = await _leaderboards().doc(token).get();
+      final data = d.data();
+      if (data == null) return null;
+      return LeaderboardPublico.fromJson(token, data);
+    } catch (e) {
+      debugPrint('[Leaderboard] no se pudo leer $token: $e');
+      return null;
+    }
+  }
+
+  /// Apaga la pantalla SIN romper el enlace. Mismo trato que apagarEnlace.
+  static Future<void> apagarLeaderboard(String token) async {
+    final uid = AuthService.uid;
+    if (uid == null) return;
+    await _leaderboards().doc(token).set({'ownerUid': uid, 'activo': false});
   }
 
   /// Apaga el enlace SIN romperlo.

@@ -201,6 +201,46 @@ service cloud.firestore {
                         || request.auth.uid == resource.data.torneoOwnerUid);
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // LEADERBOARD PROYECTABLE — el ÚNICO documento que se lee sin sesión
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Es la pantalla de la casa club: se proyecta desde un navegador cualquiera,
+    // sin cuenta, y la ve todo el que pase por delante.
+    //
+    // ── Por qué NO es sharedTorneos con la regla relajada ──────────────────
+    //
+    // sharedTorneos pide cuenta porque lleva dinero y nombres de terceros. Abrir
+    // esa regla para que una tele pueda leerlo pondría los botes y los balances
+    // delante de cualquiera. Así que son dos documentos: aquel sigue pidiendo
+    // cuenta, y este NO LLEVA UN SOLO IMPORTE.
+    //
+    // La garantía es que el dato no esté, no que no se muestre. Lo que se
+    // publica lo decide LeaderboardPublico, y hay un test de lista cerrada que
+    // falla si alguien añade un campo sin pensarlo — que es el riesgo real: no
+    // el código de hoy, sino el campo útil de dentro de seis meses.
+    //
+    // Y la escritura sigue siendo del dueño y solo del dueño. Lectura pública no
+    // significa escritura pública.
+    match /leaderboards/{token} {
+      allow read: if true;
+
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.ownerUid;
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.ownerUid
+                    && request.auth.uid == request.resource.data.ownerUid;
+      allow delete: if request.auth != null
+                    && request.auth.uid == resource.data.ownerUid;
+
+      // Nada de subcolecciones, igual que en sharedTorneos: una subcolección
+      // bajo un documento de lectura pública se lleva la lectura pública con
+      // ella, y ahí es donde entraría el dinero sin que nadie lo revisara.
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+
     match /sharedTorneos/{token} {
       // Cualquiera autenticado que tenga el enlace lee. Se pide cuenta —aunque
       // sea ligera— porque aquí hay dinero y nombres de terceros a la vista.
