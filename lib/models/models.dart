@@ -4195,6 +4195,26 @@ class Round {
           ? [...scoreCarriersOf(mod.sideA), ...scoreCarriersOf(mod.sideB)]
           : participantesDe(mod, groupPlayerIds);
 
+  /// ── PRECEDENCIA DEL ALCANCE, medida y no supuesta ─────────────────────────
+  ///
+  /// Tres campos deciden quién juega una apuesta y se pusieron en tres momentos
+  /// distintos: `structure` al crearla —que EXPANDE en varios módulos—, `scope`
+  /// al editarla, y `participantIds` como lista cruda. Comprobado ejecutando los
+  /// seis casos contra la ronda del 28 de agosto:
+  ///
+  ///   · `scope` MANDA sobre `participantIds`. Con scope=everyone y
+  ///     participantIds=[CAM,Dylan], juegan los cuatro.
+  ///   · Sin `scope` —rondas anteriores al campo— deciden los participantIds.
+  ///     Así que la MISMA lista significa cosas distintas según exista scope o
+  ///     no, y eso hay que saberlo al leer una ronda vieja.
+  ///   · `formatMode` no decide QUIÉN, solo CÓMO reparte entre los que hay. Con
+  ///     dos participantes, onePot y allVsAll dan lo mismo.
+  ///
+  /// Y la consecuencia que importa: editar el alcance desde un duelo escribe
+  /// sobre el MISMO módulo, así que no crea una apuesta paralela — sustituye la
+  /// de todos. Un pote de cuatro acotado a un par deja a los otros dos en cero.
+  /// El aviso vive en la pantalla que lo permite, BetModuleEditSheet.
+  ///
   /// Los participantes de [mod] tal como los entiende SU formato.
   ///
   /// Para casi todos es [BetModuleInstance.effectivePids] sin más. Para los que

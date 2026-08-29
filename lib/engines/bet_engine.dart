@@ -2335,7 +2335,92 @@ class BetEngine {
         }
       }
     }
+    errors.addAll(pactosQueElPoteIgnora(round));
     return LedgerComputation(entries: entries, errors: errors);
+  }
+
+  /// Las ventajas pactadas que un POTE no puede usar, con su cifra.
+  ///
+  /// ── Qué significa "de todos" cuando las ventajas son par a par ────────────
+  ///
+  /// Un pote con handicap y más de dos jugadores necesita UN número por
+  /// jugador, no uno por pareja. Así que elige un ancla y mide a todos contra
+  /// ella. Con handicaps del directorio eso es exacto: salen de diferencias, y
+  /// las diferencias son transitivas —si A da 7 a B y 4 a C, entonces B recibe 3
+  /// de C, siempre—.
+  ///
+  /// Con ventajas pactadas a mano no tiene por qué serlo. En la ronda del 28 de
+  /// agosto los tres pactos que no tocaban al ancla contradecían a los tres que
+  /// sí: KAWA→AAM valía 4 pactado y 3 implícito, y KAWA→Dylan valía 6 pactado y
+  /// 2 implícito. El pote usa el implícito y el pacto no existe para él —
+  /// verificado: cambiar el pacto AAM–KAWA de 4 a 9 daba balances idénticos—.
+  ///
+  /// Eso NO se arregla eligiendo mejor el ancla: no hay ancla que reproduzca
+  /// tres pactos incoherentes entre sí. Es una imposibilidad del formato, no un
+  /// fallo del cálculo. Y por eso la salida correcta es DECIRLO, no corregirlo
+  /// por dentro: el grupo pactó algo que este formato no puede honrar, y quien
+  /// lo pactó tiene que poder enterarse antes de pagar.
+  ///
+  /// Sale por el mismo canal que el resto de avisos de integridad, que ya se
+  /// pinta en Apuestas y en Resultados.
+  /// Los formatos cuyo pote reduce las ventajas a UN número por jugador.
+  ///
+  /// Salen de quién llama a [groupAnchor] y está verificado contra los asientos
+  /// de una ronda real. Nassau no está: reparte par a par aunque el módulo diga
+  /// pote, así que respeta cada pacto.
+  static const _conAncla = {
+    BetModuleType.medal,
+    BetModuleType.skins,
+    BetModuleType.matchAutoPress,
+  };
+
+  static List<String> pactosQueElPoteIgnora(Round round) {
+    final out = <String>[];
+    final vistos = <String>{};
+    for (final group in round.betGroups) {
+      for (final mod in group.modules) {
+        if (mod.formatMode != BetFormatMode.onePot || !mod.useHandicap) continue;
+        // Solo los que de verdad usan ancla. Comprobado leyendo quién llama a
+        // groupAnchor y confirmado con los asientos de la ronda real: Nassau
+        // liquida PAR A PAR aunque esté en pote, así que sus pactos sí valen y
+        // avisar ahí sería una falsa alarma.
+        if (!_conAncla.contains(mod.type)) continue;
+        final pids = round.participantesDe(mod, group.playerIds);
+        if (pids.length <= 2) continue;
+        final ancla = groupAnchor(round, pids);
+        String nombre(String id) =>
+            round.players.where((p) => p.id == id).firstOrNull?.shortName ?? id;
+
+        for (var i = 0; i < pids.length; i++) {
+          for (var k = i + 1; k < pids.length; k++) {
+            final a = pids[i], b = pids[k];
+            if (a == ancla || b == ancla) continue;
+            if (!hasExplicitAgreement(round, a, b)) continue;
+            final pactado = strokesP1ReceivesFromP2(round, a, b);
+            final implicito = strokesP1ReceivesFromP2(round, a, ancla) -
+                strokesP1ReceivesFromP2(round, b, ancla);
+            if ((pactado - implicito).abs() <= 0.01) continue;
+            final clave = '${mod.type.name}|${pairKey(a, b)}';
+            if (!vistos.add(clave)) continue;
+            // Con la DIRECCIÓN, no solo la cifra: entre AAM y Dylan el pacto
+            // dice que recibe uno y el implícito que recibe el otro, y decir
+            // "cuenta como 1 y pactaron 5" escondería justo eso.
+            String quien(double v) => v == 0
+                ? 'nadie da golpes'
+                : v > 0
+                    ? '${nombre(a)} recibe ${v.abs().toStringAsFixed(0)} de ${nombre(b)}'
+                    : '${nombre(b)} recibe ${v.abs().toStringAsFixed(0)} de ${nombre(a)}';
+            out.add(
+                '${mod.type.label} se juega en pote: la ventaja entre '
+                '${nombre(a)} y ${nombre(b)} se mide contra ${nombre(ancla)}. '
+                'Ahí ${quien(implicito)}, y ustedes pactaron que '
+                '${quien(pactado)}. El pacto no cambia el dinero de esta '
+                'apuesta.');
+          }
+        }
+      }
+    }
+    return out;
   }
 
   // ── DIAGNÓSTICO DE MEDAL ──────────────────────────────────────────────────

@@ -4582,6 +4582,17 @@ class _FinancialBreakdown extends StatelessWidget {
     ];
   }
 
+  /// Los tipos que SÍ mueven dinero entre este par.
+  List<BetModuleType> get _entreLosDos => _allModuleTypes()
+      .where(LedgerEngine.breakdownBetween(round, p1.id, p2.id).containsKey)
+      .toList();
+
+  /// Y los que son de la partida entera, donde este par no se cruza.
+  List<BetModuleType> get _deLaPartida => _allModuleTypes()
+      .where((x) =>
+          !LedgerEngine.breakdownBetween(round, p1.id, p2.id).containsKey(x))
+      .toList();
+
   /// Quién se lleva el pote de [tipo], si ese módulo liquida en pote.
   ///
   /// Se lee de los asientos, no se recalcula: el ledger es el que reparte, así
@@ -4690,7 +4701,8 @@ class _FinancialBreakdown extends StatelessWidget {
     }
 
     // Obtener todos los tipos de módulo configurados para este par
-    final allTypes = _allModuleTypes();
+    // Primero lo que se cruza entre estos dos, después lo de la partida.
+    final allTypes = [..._entreLosDos, ..._deLaPartida];
     if (allTypes.isEmpty) return const SizedBox.shrink();
 
     // El total neto es la suma del breakdown corregido (incluye match+press por liveStatus)
@@ -4712,6 +4724,22 @@ class _FinancialBreakdown extends StatelessWidget {
           ),
         ]),
         const SizedBox(height: 10),
+
+        // ── Dos bloques: lo de ustedes dos y lo de la partida ──────────────
+        //
+        // Un pote de cuatro no es una apuesta entre dos, y listarlo aquí sin
+        // más hacía creer que sí —de ahí el "AS" que se leía como empate—. Pero
+        // tampoco se puede esconder: afecta al dinero de los dos, así que
+        // pertenece a la tarjeta. Lo que faltaba era la separación.
+        if (_deLaPartida.isNotEmpty && _entreLosDos.isNotEmpty) ...[
+          Text('ENTRE USTEDES DOS',
+              style: TextStyle(
+                  color: t.sub,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8)),
+          const SizedBox(height: 6),
+        ],
 
         // Filas por tipo de apuesta — se muestran TODOS los módulos configurados,
         // incluso si el monto es 0 (empate / ronda en progreso)
@@ -4861,9 +4889,24 @@ class _FinancialBreakdown extends StatelessWidget {
           // Para Match+Press: sin sub-filas, solo encabezado
           // (el detalle lo muestra el panel _MatchPressLivePanel)
 
+          // La cabecera del segundo bloque va con su primera fila, para que la
+          // separación exista sin partir el .map en dos listas.
+          final abreBloqueDePartida =
+              _entreLosDos.isNotEmpty && betType == _deLaPartida.firstOrNull;
+
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (abreBloqueDePartida) ...[
+                const SizedBox(height: 6),
+                Text('DE LA PARTIDA · no se cruza entre ustedes',
+                    style: TextStyle(
+                        color: t.sub,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8)),
+                const SizedBox(height: 6),
+              ],
               Row(children: [
                 Text(icon, style: const TextStyle(fontSize: 14)),
                 const SizedBox(width: 8),

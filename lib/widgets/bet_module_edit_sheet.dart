@@ -710,7 +710,58 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
             ? 'Necesitas al menos 2 jugadores fijos'
             : null,
       ),
+
+      // ── Y qué le pasa a los DEMÁS ─────────────────────────────────────────
+      //
+      // El alcance se decide en dos superficies: al configurar la apuesta de
+      // partida, y otra vez al abrir un duelo. La segunda guarda sobre EL MISMO
+      // módulo, así que no crea nada nuevo: SOBREESCRIBE.
+      //
+      // Medido con la ronda del 28 de agosto: un Medal en pote entre cuatro
+      // —KAWA +300, los otros tres −100— pasa a `pair(CAM, Dylan)` y queda en
+      // CAM +100, Dylan −100, y AAM y KAWA en CERO. La apuesta de los cuatro
+      // desaparece porque dos de ellos la acotaron.
+      //
+      // No es una decisión local aunque se tome en una pantalla local, así que
+      // se dice antes de guardar y con nombres. Quitar la segunda superficie
+      // sería la otra salida; mientras esté, tiene que decir lo que hace.
+      if (!_scopeIsOpen && fixedIds.length < groupCount) ...[
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(11),
+          decoration: BoxDecoration(
+            color: t.scoreOver.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: t.scoreOver.withValues(alpha: 0.5)),
+          ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(Icons.warning_amber_rounded, color: t.scoreOver, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                  'Esto cambia la apuesta para todos, no solo para ustedes: '
+                  '${_fueraDelAlcance(fixedIds)} '
+                  '${_fueraDelAlcance(fixedIds).contains(' y ') ? 'dejan' : 'deja'} '
+                  'de jugarla y su dinero de esta apuesta pasa a cero.',
+                  style: TextStyle(
+                      color: t.text, fontSize: 11.5, height: 1.35)),
+            ),
+          ]),
+        ),
+      ],
     ]);
+  }
+
+  /// Los del grupo que se quedarían fuera con el alcance fijo elegido.
+  String _fueraDelAlcance(List<String> dentro) {
+    final fuera = widget.group.playerIds
+        .where((id) => !dentro.contains(id))
+        .map(_playerName)
+        .toList();
+    if (fuera.isEmpty) return 'nadie';
+    if (fuera.length == 1) return fuera.first;
+    return '${fuera.sublist(0, fuera.length - 1).join(', ')} y ${fuera.last}';
   }
 
   Widget _scopeCard({
