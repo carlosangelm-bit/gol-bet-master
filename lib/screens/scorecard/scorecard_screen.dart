@@ -1858,6 +1858,16 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
     }
   }
 
+  /// Si ya se está jugando la segunda vuelta.
+  ///
+  /// El aviso de "faltan hoyos del primer nueve" solo tiene sentido cuando ya
+  /// se pasó de vuelta: durante el F9 faltan hoyos porque se están jugando, y
+  /// decirlo cada hoyo sería ruido.
+  bool _algoDelSegundoNueve(Round round, String p1Id, String p2Id) =>
+      BetEngine.segmentsOf(round).secondNine.any((h) =>
+          round.getScore(p1Id, h).hasScore ||
+          round.getScore(p2Id, h).hasScore);
+
   List<BetModuleInstance> _findModules(BetModuleType type) {
     final round = widget.round;
     final p1Id  = widget.p1.id;
@@ -1945,6 +1955,18 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
               skinsMod: skinsModules.isNotEmpty ? skinsModules.first : null,
             ),
             const SizedBox(height: 10),
+
+            // ── Si el primer nueve no está completo, se dice ───────────────
+            //
+            // Antes los dos bloques de abajo simplemente no aparecían. Una vez
+            // dicho qué falta, no hace falta repetirlo en cada uno.
+            if (round.totalHoles >= 18 &&
+                nassauModules.isNotEmpty &&
+                hoyosQueFaltanDelPrimerNueve(round, p1.id, p2.id).isNotEmpty &&
+                _algoDelSegundoNueve(round, p1.id, p2.id))
+              _FaltanScoresDelPrimerNueve(
+                  hoyos: hoyosQueFaltanDelPrimerNueve(round, p1.id, p2.id),
+                  t: t),
 
             // Carry
             _CarryPanel(
@@ -3704,6 +3726,53 @@ class _CarryPanel extends StatefulWidget {
     required this.onApplyCarry,
   });
   @override State<_CarryPanel> createState() => _CarryPanelState();
+}
+
+/// Los hoyos del primer nueve que le faltan a alguno de los dos.
+///
+/// ── Por qué esto existe ───────────────────────────────────────────────────
+///
+/// El carry y la apertura de la 2ª vuelta piden el primer nueve COMPLETO, y si
+/// no lo está desaparecen sin decir nada. Con un hoyo sin capturar —uno solo, y
+/// el círculo de captura enseñaba el par en gris, que se lee como un score— los
+/// dos bloques se esconden y no hay forma de saber por qué.
+///
+/// Es el criterio de siempre aplicado a una ausencia: quien vino a buscarlo
+/// necesita saber qué falta. Y aquí además se puede decir EXACTAMENTE qué.
+List<int> hoyosQueFaltanDelPrimerNueve(Round round, String p1Id, String p2Id) {
+  final primeros = BetEngine.segmentsOf(round).firstNine;
+  return [
+    for (final h in primeros)
+      if (!round.getScore(p1Id, h).hasScore ||
+          !round.getScore(p2Id, h).hasScore)
+        h
+  ];
+}
+
+/// La tarjeta que dice qué falta para poder pedir carry o abrir la 2ª vuelta.
+class _FaltanScoresDelPrimerNueve extends StatelessWidget {
+  final List<int> hoyos;
+  final GolfTheme t;
+  const _FaltanScoresDelPrimerNueve({required this.hoyos, required this.t});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: GCard(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.pending_outlined, color: t.sub, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+                hoyos.length == 1
+                    ? 'Carry y apertura de la 2ª vuelta: falta capturar el hoyo '
+                        '${hoyos.first} para poder pedirlos.'
+                    : 'Carry y apertura de la 2ª vuelta: faltan los hoyos '
+                        '${hoyos.join(', ')} para poder pedirlos.',
+                style: TextStyle(color: t.sub, fontSize: 11, height: 1.3)),
+          ),
+        ])),
+      );
 }
 
 class _CarryPanelState extends State<_CarryPanel> {

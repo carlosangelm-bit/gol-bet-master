@@ -910,9 +910,18 @@ class _ScoreStepper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Cuando no hay score aún, mostramos el par como placeholder visual.
-    // El círculo tiene estilo atenuado para distinguirlo de un score real.
-    final displayScore = hasScore ? score : par;
+    // ── Sin score se enseña un GUION, no el par ────────────────────────────
+    //
+    // Se enseñaba el par en gris como pista de por dónde empiezan el − y el +.
+    // Y se lee como un score: un jugador se quedó sin capturar el hoyo 4, su
+    // círculo decía "4" —el par— y al lado el chip del acumulado decía "E",
+    // porque iba a la par en los hoyos que SÍ tenía. Las dos cosas juntas se
+    // leen como "hoyo 4 hecho en par", y nadie lo cazó hasta que un bloque de la
+    // 2ª vuelta no salía y hubo que averiguar por qué.
+    //
+    // El guion no se puede confundir con nada. La pista se mantiene: tocar el
+    // círculo sigue registrando el par, y el − y el + siguen partiendo de él.
+    final displayScore = hasScore ? '$score' : '–';
     final displayColor = hasScore ? scoreColor : t.sub;
     final bgColor      = hasScore
         ? scoreColor.withValues(alpha: 0.15)
@@ -937,7 +946,7 @@ class _ScoreStepper extends StatelessWidget {
           ),
           alignment: Alignment.center,
           child: Text(
-            '$displayScore',
+            displayScore,
             style: TextStyle(
               color: displayColor,
               fontWeight: FontWeight.w900,
