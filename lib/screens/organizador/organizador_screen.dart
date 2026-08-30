@@ -49,6 +49,7 @@ import '../../providers/torneo_provider.dart';
 import '../../widgets/importar_jugadores_sheet.dart';
 import '../auth/auth_screen.dart';
 import 'inscritos_tabla.dart';
+import 'patrocinio_seccion.dart';
 
 class OrganizadorScreen extends StatefulWidget {
   final String torneoId;
@@ -311,8 +312,7 @@ extension SeccionTexto on SeccionDelPortal {
   /// Lo que falta para que exista. Se dice en vez de enseñar un botón muerto.
   String? get pendiente => switch (this) {
         SeccionDelPortal.inscritos => null,
-        SeccionDelPortal.patrocinio =>
-          'Hoy se configura desde la app. Aquí irá con carga de creatividades.',
+        SeccionDelPortal.patrocinio => null,
         SeccionDelPortal.scores =>
           'El torneo entero en una tabla, y corregir con constancia.',
         SeccionDelPortal.salidas =>
@@ -332,6 +332,8 @@ class _PortalState extends State<_Portal> {
     final contenido = switch (_seccion) {
       SeccionDelPortal.inscritos =>
         InscritosTabla(torneo: torneo, ancho: ancho, t: t),
+      SeccionDelPortal.patrocinio =>
+        PatrocinioSeccion(torneo: torneo, ancho: ancho, t: t),
       final s => _Pendiente(t: t, seccion: s),
     };
 

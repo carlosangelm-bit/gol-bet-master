@@ -1,0 +1,81 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ARCHIVOS DE PATROCINIO
+//
+// Aquí viven los logotipos y las creatividades que el organizador pacta con las
+// marcas. Se leen SIN SESIÓN, porque las dos superficies que los pintan no la
+// tienen: la tele de la casa club y el banner que ve un invitado.
+//
+// ── LA RUTA LLEVA EL DUEÑO, Y NO ES DECORATIVO ──────────────────────────────
+//
+//     patrocinio/{ownerUid}/{torneoId}/{archivo}
+//
+// El uid va en la ruta para que la regla pueda comprobar de quién es el archivo
+// SIN preguntarle a Firestore. Se podría escribir
+// `firestore.get(/torneos/$(torneoId)).data.ownerUid`, y sería peor por dos
+// motivos: cuesta una lectura de Firestore en cada subida, y ata el permiso de
+// un archivo a que otro documento siga existiendo y siga teniendo ese campo.
+//
+// El coste de esta decisión, dicho: el uid del organizador aparece en la URL
+// pública del logotipo. Es un identificador opaco de Firebase, no un correo ni
+// un nombre, y ya viaja en otras superficies. A cambio, la regla se lee de un
+// vistazo y no depende de nada.
+//
+// ── GET NO ES LIST ──────────────────────────────────────────────────────────
+//
+// Es la tercera vez que esta distinción decide algo en este proyecto. En
+// Firestore, `allow read` concedía `list` en tres colecciones —una con dinero,
+// otra con el correo de todos los registrados— y nadie lo usaba.
+//
+// En Storage pasa lo mismo con otra forma: `read` son `get` (traer UN archivo,
+// que es lo que hace un <img>) y `list` (recorrer el prefijo con listAll).
+// Nadie de esta app lista nada: el leaderboard publica URLs completas. Con
+// `read`, cualquiera sin cuenta podría enumerar los archivos de todos los
+// torneos de todos los organizadores, y de paso todos los ownerUid.
+//
+// Así que `get` sí y `list` no, en todas partes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    match /patrocinio/{ownerUid}/{torneoId}/{archivo} {
+      // Quien tenga la URL ve la imagen. No hace falta cuenta: la pantalla de
+      // la casa club no la tiene.
+      allow get: if true;
+
+      // Nadie recorre nada. Ver la cabecera.
+      allow list: if false;
+
+      // Solo el dueño sube o reemplaza, y solo imágenes de tamaño razonable.
+      //
+      // Las dos comprobaciones van juntas a propósito: sin el tipo, este
+      // espacio de lectura pública serviría para alojar cualquier cosa a nombre
+      // del proyecto; sin el tamaño, una subida por error se lleva la factura.
+      allow create, update: if request.auth != null
+                            && request.auth.uid == ownerUid
+                            && request.resource.size < 5 * 1024 * 1024
+                            && request.resource.contentType.matches('image/.*');
+
+      // Borrar es del dueño y es EXPLÍCITO: nada borra estos archivos solo.
+      //
+      // Decisión de Carlos, y el matiz importa: un torneo puede querer conservar
+      // su resumen con los patrocinadores dentro mucho después de cerrarse.
+      // Borrar al cerrar habría destruido eso sin preguntar.
+      //
+      // Aquí NO se comprueba el tipo ni el tamaño: en un delete
+      // `request.resource` es null, y mirarlo dejaría la regla en error — que se
+      // evalúa como denegado y haría imposible limpiar.
+      allow delete: if request.auth != null && request.auth.uid == ownerUid;
+    }
+
+    // Todo lo demás, cerrado. Incluye los prefijos intermedios: sin esto, un
+    // listAll sobre `patrocinio/` o sobre `patrocinio/{uid}/` no lo cubre
+    // ninguna regla de arriba —son otras profundidades de ruta— y lo que decide
+    // es el default. Escrito, para que lo decida esta línea.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

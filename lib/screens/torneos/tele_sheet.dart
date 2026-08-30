@@ -326,6 +326,13 @@ class _InventarioScreenState extends State<InventarioScreen> {
               'Lo que aparece en la tele del club. Un espacio sin patrocinador '
               'no deja hueco: simplemente no se dibuja.',
               style: TextStyle(color: t.sub, fontSize: 12.5, height: 1.4)),
+          const SizedBox(height: 8),
+          // El móvil edita los textos; los archivos son del portal. Cargar
+          // creatividades desde un teléfono no es lo que hace un organizador.
+          Text(
+              'Los logotipos se suben desde el portal de organizador, en un '
+              'navegador. Aquí puedes ajustar los textos.',
+              style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
           const SizedBox(height: 18),
           _Espacio(
             titulo: 'Cabecera',
@@ -385,9 +392,8 @@ class _InventarioScreenState extends State<InventarioScreen> {
                     'La etiqueta ("Patrocinador oficial", "Presentado por"…) es '
                     'obligatoria en cada pieza: sin ella se pinta una marca sin '
                     'decir que es publicidad.\n\n'
-                    'La pantalla cuenta cuánto tiempo estuvo en antena y cuántas '
-                    'veces rotó cada logo, agregado por torneo. Nunca por '
-                    'persona: eso exigiría rastrear a quien pasa por delante.',
+                    'Para subir logotipos, abre el portal de organizador desde '
+                    'un navegador: /organizador/{id del torneo}.',
                     style:
                         TextStyle(color: t.sub, fontSize: 11.5, height: 1.45)),
               ),

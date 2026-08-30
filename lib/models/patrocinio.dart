@@ -131,3 +131,112 @@ class InventarioProyectado {
             (j['segundosDeRotacion'] as num?)?.toInt() ?? 12,
       );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOS ESPACIOS, CON SUS MEDIDAS — §5 y §14.3
+//
+// Existe como catálogo y no como texto suelto en la pantalla por lo mismo que
+// el catálogo de configuración de apuestas: si las medidas se escriben en el
+// editor, la tele acaba pintando una cosa y el organizador entregándole otra al
+// patrocinador. Una definición, y las dos superficies la leen.
+//
+// Los dos espacios que faltan —ranking de oyes y longest drive— no están aquí a
+// propósito: los mide alguien del staff en el campo y dependen de la web de
+// organizador. Cuando existan, entran aquí y su patrocinio con ellos.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum EspacioDePatrocinio { cabecera, pie, lateral }
+
+extension EspacioInfo on EspacioDePatrocinio {
+  String get titulo => switch (this) {
+        EspacioDePatrocinio.cabecera => 'Cabecera',
+        EspacioDePatrocinio.pie => 'Pie rotatorio',
+        EspacioDePatrocinio.lateral => 'Lateral',
+      };
+
+  /// La medida que hay que pedirle al patrocinador. §5 del manual.
+  String get medida => switch (this) {
+        EspacioDePatrocinio.cabecera => '728 × 90',
+        EspacioDePatrocinio.pie => '240 × 60 por logotipo',
+        EspacioDePatrocinio.lateral => '300 × 600',
+      };
+
+  /// Dónde sale y qué se juega ahí.
+  String get donde => switch (this) {
+        EspacioDePatrocinio.cabecera =>
+          'Banner ancho en la pantalla del club, visible las ocho horas. Es la '
+              'pieza más vista del día.',
+        EspacioDePatrocinio.pie =>
+          'Tira de logotipos al pie, rotando entre sí. En una TV la rotación es '
+              'lo esperado; dentro de la app estaría prohibida.',
+        EspacioDePatrocinio.lateral =>
+          'Columna alta, solo si la pantalla es ancha. En una más estrecha '
+              'desaparece antes de comprimir la tabla.',
+      };
+
+  /// El nombre del archivo en Storage. Sin espacios ni acentos.
+  String get clave => name;
+}
+
+/// Lo que el patrocinador tiene que entregar. §11 del manual.
+///
+/// La pantalla PIDE esto, en este orden, y dice cuál es obligatorio. Se lista
+/// aquí para que el editor no invente su propia lista: el día que el manual
+/// añada un activo, se añade en un sitio.
+class ActivoPedido {
+  final String etiqueta;
+  final String ejemplo;
+  final String porQue;
+  final bool obligatorio;
+
+  const ActivoPedido({
+    required this.etiqueta,
+    required this.ejemplo,
+    required this.porQue,
+    this.obligatorio = false,
+  });
+}
+
+const activosDelPatrocinador = <ActivoPedido>[
+  ActivoPedido(
+    etiqueta: 'Etiqueta de patrocinio',
+    ejemplo: 'Patrocinador oficial',
+    // §6: la naturaleza comercial tiene que ser clara. Sin esto se pinta una
+    // marca sin decir que es publicidad.
+    porQue: 'Obligatoria: sin ella se pinta una marca sin decir que es '
+        'publicidad.',
+    obligatorio: true,
+  ),
+  ActivoPedido(
+    etiqueta: 'Logotipo',
+    ejemplo: 'PNG con fondo transparente, o SVG',
+    porQue: 'Se guarda con el torneo, no se enlaza al servidor de la marca: si '
+        'su web cambia, el banner que pagaron sigue saliendo.',
+  ),
+  ActivoPedido(
+    etiqueta: 'Titular',
+    ejemplo: 'Eleva cada gran ronda',
+    porQue: 'Máximo siete palabras. Se avisa si pasa, no se recorta.',
+  ),
+  ActivoPedido(
+    etiqueta: 'Texto alternativo del logotipo',
+    ejemplo: 'Logotipo de la marca',
+    porQue: 'Para quien no ve la imagen. Lo entrega la marca, no se inventa.',
+  ),
+  ActivoPedido(
+    etiqueta: 'Llamada a la acción',
+    ejemplo: 'Conoce la experiencia',
+    porQue: 'Una marca, un mensaje, UNA acción.',
+  ),
+  ActivoPedido(
+    etiqueta: 'Enlace de destino',
+    ejemplo: 'https://…',
+    porQue: 'A dónde lleva la acción.',
+  ),
+];
+
+/// Las palabras de un titular. Siete es el máximo del §6.2.
+int palabrasDelTitular(String titular) =>
+    titular.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+
+const maxPalabrasTitular = 7;
