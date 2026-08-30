@@ -18,14 +18,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/resolver_tee.dart';
 
 const azules = SalidaCandidata(
-    nombre: 'AZULES', courseRating: 71.7, slopeRating: 149);
+    nombre: 'AZULES', courseRating: 71.7, slopeRating: 149, genero: 'M');
 const blancas = SalidaCandidata(
-    nombre: 'BLANCAS', courseRating: 69.5, slopeRating: 138);
+    nombre: 'BLANCAS', courseRating: 69.5, slopeRating: 138, genero: 'M');
 const doradas = SalidaCandidata(
-    nombre: 'DORADAS', courseRating: 67.1, slopeRating: 129);
+    nombre: 'DORADAS', courseRating: 67.1, slopeRating: 129, genero: 'M');
+
+/// Y la BLANCAS DE MUJERES, que se llama igual y tiene otros números.
+///
+/// Es la que hacía que una ronda nueva llegara marcada como "blancas de
+/// mujeres": el género se calculaba preguntando si alguna salida de mujeres se
+/// llamaba igual, así que la de hombres se etiquetaba como de ellas.
+const blancasF = SalidaCandidata(
+    nombre: 'BLANCAS', courseRating: 72.4, slopeRating: 131, genero: 'F');
 
 /// El campo de Carlos: azules PRIMERO, que es lo que hacía el daño.
 const campo = [azules, blancas, doradas];
+
+/// El mismo campo con las salidas de mujeres detrás, como los da la API.
+const campoConDamas = [azules, blancas, doradas, blancasF];
 
 void main() {
   group('1 · el caso que falló', () {
@@ -188,6 +199,85 @@ void main() {
       // nombre feo que ninguno.
       expect(limpiarNombreDeTee('12345'), '12345');
       expect(limpiarNombreDeTee(''), '');
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 6 · DOS SALIDAS QUE SE LLAMAN IGUAL
+  //
+  // El campo de Carlos tiene BLANCAS de hombres y BLANCAS de mujeres. Es el
+  // caso que la cascada ya preveía —"el nombre exacto gana al rating porque los
+  // tees de hombre y mujer comparten CR y Slope"— y encima destapó un tercer
+  // caso de la misma familia: el género se calculaba por NOMBRE, así que la de
+  // hombres se etiquetaba como de mujeres.
+  // ───────────────────────────────────────────────────────────────────────────
+  group('6 · el género es de la lista, no del nombre', () {
+    test('CLAVE: cada candidata sabe de qué lista viene', () {
+      expect(blancas.genero, 'M');
+      expect(blancasF.genero, 'F');
+      expect(blancas.nombre, blancasF.nombre,
+          reason: 'y se llaman igual: por eso el nombre no sirve de género');
+    });
+
+    test('CLAVE: pedir BLANCAS sin más da la de hombres, que va primero', () {
+      // La app no guarda el género de la cuenta, así que en un empate manda el
+      // orden de la API: masculinas primero. Es lo que había, y ahora es una
+      // decisión escrita en vez de un efecto del orden.
+      final r = resolverSalida(campoConDamas, pedida: 'BLANCAS');
+      expect(r.salida!.genero, 'M');
+      expect(r.salida!.courseRating, 69.5);
+      expect(r.indice, 1);
+    });
+
+    test('CLAVE: y con género pedido, manda el género', () {
+      final r = resolverSalida(campoConDamas,
+          pedida: 'BLANCAS', generoPreferido: 'F');
+      expect(r.salida!.genero, 'F');
+      expect(r.salida!.courseRating, 72.4,
+          reason: 'y con ello el CR de SU salida, no el de la otra');
+      expect(r.indice, 3);
+    });
+
+    test('CLAVE: el ÍNDICE distingue lo que el nombre no', () {
+      // Devolver solo el nombre obliga a buscarlo otra vez, y esa segunda
+      // búsqueda se queda con el primero que se llame igual. De ahí venía que
+      // la de hombres acabara etiquetada como de mujeres.
+      final m = resolverSalida(campoConDamas, pedida: 'BLANCAS');
+      final f = resolverSalida(campoConDamas,
+          pedida: 'BLANCAS', generoPreferido: 'F');
+      expect(m.salida!.nombre, f.salida!.nombre, reason: 'mismo nombre');
+      expect(m.indice, isNot(f.indice), reason: 'y distinta salida');
+    });
+
+    test('CONTRAPESO: un género que no existe no rompe la búsqueda', () {
+      // Sin esto, pedir un género ausente podría devolver null y dejar la
+      // ronda sin salida.
+      final r = resolverSalida(campo, pedida: 'BLANCAS', generoPreferido: 'F');
+      expect(r.salida, blancas, reason: 'cae en la que hay, no en nada');
+      expect(r.hayQueAvisar, isFalse);
+    });
+
+    test('y el índice apunta siempre a la lista que se pasó', () {
+      for (var i = 0; i < campoConDamas.length; i++) {
+        final r = resolverSalida(campoConDamas,
+            pedida: campoConDamas[i].nombre,
+            generoPreferido: campoConDamas[i].genero);
+        expect(campoConDamas[r.indice].courseRating,
+            campoConDamas[i].courseRating,
+            reason: campoConDamas[i].nombre);
+      }
+    });
+  });
+
+  group('7 · deducir el histórico busca en TODO el campo', () {
+    test('CLAVE: la ronda del 28 de agosto sale AZULES', () {
+      // Buscar solo en la salida preferida habría acertado únicamente con las
+      // rondas que ya estaban bien — justo las que no hace falta deducir.
+      expect(salidaSegunRating(campoConDamas, 71.7, 149), 'AZULES');
+    });
+
+    test('y las de mujeres también entran en la búsqueda', () {
+      expect(salidaSegunRating(campoConDamas, 72.4, 131), 'BLANCAS');
     });
   });
 }

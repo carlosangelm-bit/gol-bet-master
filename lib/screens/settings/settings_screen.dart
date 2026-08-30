@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../models/borrar_ronda.dart';
+import '../../models/resolver_tee.dart';
 import '../../providers/perfil_provider.dart';
 import '../../providers/torneo_provider.dart';
 import '../../models/tendencia.dart';
@@ -737,6 +738,47 @@ class _StatBox extends StatelessWidget {
 }
 
 // ── Fila de diferencial en el tracker ─────────────────────────────────────────
+/// La salida de una ronda vieja, deducida de su CR y su Slope.
+///
+/// Busca entre TODOS los tees de los campos guardados —los de hombres y los de
+/// mujeres, no solo la salida preferida—: si buscara únicamente en la preferida,
+/// solo acertaría con las rondas que ya salieron bien, que son justo las que no
+/// hace falta deducir.
+///
+/// Y cuando no puede, DICE POR QUÉ. "No guardada" a secas deja al usuario sin
+/// saber si el dato no está o si la app no supo buscarlo.
+String _salidaDeducida(BuildContext context, ScoreDifferential diff) {
+  final numeros = 'CR ${diff.courseRating.toStringAsFixed(1)} · '
+      'Slope ${diff.slopeRating}';
+  final favs = context.read<UserProfileProvider>().favCourses;
+
+  final candidatas = <SalidaCandidata>[];
+  for (final f in favs) {
+    final c = f.cachedCourse;
+    if (c == null) continue;
+    for (final t in c.allTees) {
+      candidatas.add(SalidaCandidata(
+          nombre: t.teeName,
+          courseRating: t.courseRating,
+          slopeRating: t.slopeRating));
+    }
+  }
+
+  if (candidatas.isEmpty) {
+    // El motivo concreto: no hay contra qué comparar.
+    return 'no guardada · $numeros · sin campos guardados con los que '
+        'compararla';
+  }
+  final n = salidaSegunRating(candidatas, diff.courseRating, diff.slopeRating);
+  if (n == null) {
+    // Devolver la más parecida sería inventar el dato en vez de la cifra.
+    return 'no guardada · $numeros · no coincide con ninguna salida de tus '
+        'campos';
+  }
+  // Con la marca: deducida no es lo mismo que guardada.
+  return '$n · deducida del CR y el Slope';
+}
+
 /// Una línea de etiqueta y valor del detalle de una ronda.
 class _DatoDeRonda extends StatelessWidget {
   final String etiqueta;
@@ -803,11 +845,19 @@ class _DiffRow extends StatelessWidget {
             child: Column(children: [
               // Con qué se calculó, explícito: el nombre del campo lleva un tee
               // horneado que llegó a no ser el de la fórmula.
+              // ── QUÉ SALIDA SE USÓ, INCLUSO EN LAS RONDAS VIEJAS ──────────
+              //
+              // Las de antes no guardaban el tee, pero SÍ el CR y el Slope con
+              // los que se calcularon — y esos dos números identifican la
+              // salida dentro del campo. Así que el nombre se RECUPERA exacto
+              // buscándolo entre TODOS los tees de los campos guardados, no se
+              // adivina.
+              //
+              // Es lo que permite saber qué rondas del histórico salieron con
+              // el tee equivocado, que era la pregunta abierta.
               _DatoDeRonda(
                   etiqueta: 'SALIDA',
-                  valor: diff.teeName ??
-                      'no guardada · CR ${diff.courseRating.toStringAsFixed(1)} '
-                          '· Slope ${diff.slopeRating}',
+                  valor: diff.teeName ?? _salidaDeducida(context, diff),
                   t: t),
               _DatoDeRonda(
                   etiqueta: 'IDA · VUELTA',

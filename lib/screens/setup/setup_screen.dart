@@ -490,30 +490,47 @@ class _SetupScreenState extends State<SetupScreen> {
   TeeInfo? _teeByName(String teeName, {double? cr, int? slope}) {
     final course = _selectedApiCourse;
     if (course == null) return null;
+    // El género sale de la LISTA de la que viene cada tee, no de su nombre.
+    // Con dos salidas llamadas BLANCAS, preguntar "¿hay alguna de mujeres que
+    // se llame así?" etiquetaba la de hombres como de mujeres — y eso es lo que
+    // hacía que una ronda nueva llegara con "blancas de mujeres" por defecto.
+    final candidatas = [
+      for (final t in course.maleTees)
+        SalidaCandidata(
+            nombre: t.teeName,
+            courseRating: t.courseRating,
+            slopeRating: t.slopeRating,
+            genero: 'M'),
+      for (final t in course.femaleTees)
+        SalidaCandidata(
+            nombre: t.teeName,
+            courseRating: t.courseRating,
+            slopeRating: t.slopeRating,
+            genero: 'F'),
+    ];
     final r = resolverSalida(
-      [
-        for (final t in course.allTees)
-          SalidaCandidata(
-              nombre: t.teeName,
-              courseRating: t.courseRating,
-              slopeRating: t.slopeRating)
-      ],
+      candidatas,
       pedida: teeName,
       crPedido: cr,
       slopePedido: slope,
+      // La app no guarda el género de la cuenta, así que en un empate manda el
+      // orden: masculinas primero, que es lo que había. Ver el informe: añadir
+      // género al perfil es una decisión, no un descuido.
+      generoPreferido: null,
     );
     _ultimaSalida = r;
     if (r.como == ComoSeResolvio.noSeEncontro) return null;
-    final elegido = course.allTees
-        .firstWhere((t) => t.teeName == r.salida!.nombre);
-    final gender =
-        course.femaleTees.any((f) => f.teeName == elegido.teeName) ? 'F' : 'M';
+    // Por ÍNDICE, no por nombre: buscarlo otra vez se quedaría con el primero
+    // que se llame igual, que es de donde venía toda esta confusión.
+    final elegido = r.indice < course.maleTees.length
+        ? course.maleTees[r.indice]
+        : course.femaleTees[r.indice - course.maleTees.length];
     return TeeInfo(
         name: elegido.teeName,
         courseRating: elegido.courseRating,
         slopeRating: elegido.slopeRating,
         parTotal: elegido.parTotal,
-        gender: gender);
+        gender: r.salida!.genero);
   }
 
   /// Auto-asigna el tee a todos los jugadores que aún no tienen tee asignado.

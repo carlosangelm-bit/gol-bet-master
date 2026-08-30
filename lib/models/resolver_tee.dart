@@ -55,10 +55,18 @@ class SalidaCandidata {
   final double courseRating;
   final int slopeRating;
 
+  /// 'M', 'F' o vacío. De qué LISTA de la API salió, no lo que diga su nombre.
+  ///
+  /// Es la corrección del tercer caso de la misma familia: el género se
+  /// calculaba preguntando si alguna salida de mujeres se llamaba igual, y con
+  /// dos BLANCAS eso etiquetaba la de hombres como de mujeres.
+  final String genero;
+
   const SalidaCandidata({
     required this.nombre,
     required this.courseRating,
     required this.slopeRating,
+    this.genero = '',
   });
 }
 
@@ -66,10 +74,25 @@ class SalidaResuelta {
   final SalidaCandidata? salida;
   final ComoSeResolvio como;
 
+  /// La POSICIÓN en la lista que se pasó, o -1.
+  ///
+  /// ── Por qué el índice y no solo el nombre ─────────────────────────────────
+  ///
+  /// Un campo puede tener DOS salidas con el mismo nombre: la de hombres y la
+  /// de mujeres. Devolver solo el nombre obliga a quien llama a buscarlo otra
+  /// vez, y esa segunda búsqueda se queda con la primera que encuentra — que no
+  /// tiene por qué ser la que se eligió.
+  ///
+  /// Es exactamente lo que pasaba con el género: se calculaba mirando si
+  /// ALGUNA salida de mujeres se llamaba igual, así que la de hombres se
+  /// etiquetaba como de mujeres. Con el índice no hay ambigüedad.
+  final int indice;
+
   /// Lo que se pidió, para poder decirlo.
   final String? pedida;
 
-  const SalidaResuelta(this.salida, this.como, {this.pedida});
+  const SalidaResuelta(this.salida, this.como,
+      {this.pedida, this.indice = -1});
 
   /// Si hay que avisar al crear la ronda.
   ///
@@ -114,43 +137,60 @@ SalidaResuelta resolverSalida(
   String? pedida,
   double? crPedido,
   int? slopePedido,
+  String? generoPreferido,
 }) {
   if (tees.isEmpty) {
     return SalidaResuelta(null, ComoSeResolvio.noSeEncontro, pedida: pedida);
   }
   if (pedida == null || pedida.trim().isEmpty) {
-    return SalidaResuelta(tees.first, ComoSeResolvio.sinPreferencia);
+    return SalidaResuelta(tees.first, ComoSeResolvio.sinPreferencia, indice: 0);
+  }
+
+  /// El primero que cumpla [cual], prefiriendo el género pedido.
+  ///
+  /// El desempate por género es lo que resuelve que un campo tenga dos salidas
+  /// llamadas BLANCAS. Sin él manda el orden de la lista, que es una decisión
+  /// que nadie tomó.
+  SalidaResuelta? buscar(bool Function(SalidaCandidata) cual, ComoSeResolvio como) {
+    final iguales = <int>[];
+    for (var i = 0; i < tees.length; i++) {
+      if (cual(tees[i])) iguales.add(i);
+    }
+    if (iguales.isEmpty) return null;
+    final conGenero = generoPreferido == null
+        ? -1
+        : iguales.firstWhere((i) => tees[i].genero == generoPreferido,
+            orElse: () => -1);
+    final i = conGenero >= 0 ? conGenero : iguales.first;
+    return SalidaResuelta(tees[i], como, pedida: pedida, indice: i);
   }
 
   // 1 · El nombre, tal cual. Es lo que pasa el 99% de las veces.
-  for (final t in tees) {
-    if (t.nombre.toLowerCase() == pedida.toLowerCase()) {
-      return SalidaResuelta(t, ComoSeResolvio.porNombre, pedida: pedida);
-    }
-  }
+  final porNombre = buscar((t) => t.nombre.toLowerCase() == pedida.toLowerCase(),
+      ComoSeResolvio.porNombre);
+  if (porNombre != null) return porNombre;
 
   // 2 · El nombre limpio. Caza el caso de guardar lo que se VE y buscar lo que
   //     la API MANDA, o al revés.
   final limpiaPedida = limpiarNombreDeTee(pedida);
-  for (final t in tees) {
-    if (limpiarNombreDeTee(t.nombre) == limpiaPedida) {
-      return SalidaResuelta(t, ComoSeResolvio.porNombreLimpio, pedida: pedida);
-    }
-  }
+  final porLimpio = buscar((t) => limpiarNombreDeTee(t.nombre) == limpiaPedida,
+      ComoSeResolvio.porNombreLimpio);
+  if (porLimpio != null) return porLimpio;
 
   // 3 · El CR y el Slope. Si la API renombró el tee, estos no cambian.
   if (crPedido != null && slopePedido != null) {
-    for (final t in tees) {
-      if ((t.courseRating - crPedido).abs() < 0.05 &&
-          t.slopeRating == slopePedido) {
-        return SalidaResuelta(t, ComoSeResolvio.porRating, pedida: pedida);
-      }
-    }
+    final porRating = buscar(
+        (t) =>
+            (t.courseRating - crPedido).abs() < 0.05 &&
+            t.slopeRating == slopePedido,
+        ComoSeResolvio.porRating);
+    if (porRating != null) return porRating;
   }
 
   // 4 · No está. Se devuelve la primera para que la ronda pueda seguir, pero
   //     marcada, porque lo que no puede pasar es que nadie se entere.
-  return SalidaResuelta(tees.first, ComoSeResolvio.noSeEncontro, pedida: pedida);
+  return SalidaResuelta(tees.first, ComoSeResolvio.noSeEncontro,
+      pedida: pedida, indice: 0);
 }
 
 /// Qué salida se usó en una ronda vieja, deducida de su CR y su Slope.
