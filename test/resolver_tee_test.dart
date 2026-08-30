@@ -16,6 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/resolver_tee.dart';
+import 'package:golf_bet_master/services/golf_course_service.dart';
 
 const azules = SalidaCandidata(
     nombre: 'AZULES', courseRating: 71.7, slopeRating: 149, genero: 'M');
@@ -278,6 +279,103 @@ void main() {
 
     test('y las de mujeres también entran en la búsqueda', () {
       expect(salidaSegunRating(campoConDamas, 72.4, 131), 'BLANCAS');
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 8 · EL NOMBRE ES PARA LEERLO, NO PARA LLEVAR DATOS DENTRO
+  //
+  // Cuarta vez en el proyecto que un dato horneado en un nombre acaba
+  // mintiendo: el nombre del lado en las apuestas, el "1 Pot" del catálogo, y
+  // el tee dentro del nombre del campo.
+  //
+  // Siempre por lo mismo: el nombre se guarda una vez y el dato cambia después,
+  // o se construye desde un sitio distinto del que lo lee.
+  // ───────────────────────────────────────────────────────────────────────────
+  group('8 · quitar el tee del nombre del campo', () {
+    const conocidos = ['AZULES', 'BLANCAS', 'DORADAS'];
+
+    test('CLAVE: se quita cuando lo de dentro es una salida', () {
+      expect(
+          nombreDeCampoSinTee(
+              'Club De Golf Mexico — Mexico (AZULES)', conocidos),
+          'Club De Golf Mexico — Mexico');
+    });
+
+    test('CLAVE: y NO se quita cuando es parte del nombre del club', () {
+      // Sería cambiar un dato mentiroso por un dato mutilado.
+      expect(nombreDeCampoSinTee('Club de Golf (Norte)', conocidos),
+          'Club de Golf (Norte)');
+      expect(nombreDeCampoSinTee('Real Club (1904)', conocidos),
+          'Real Club (1904)');
+    });
+
+    test('reconoce el tee aunque venga con los prefijos de la API', () {
+      expect(
+          nombreDeCampoSinTee('Campo (50715, USGA, Blancas)', conocidos),
+          'Campo');
+    });
+
+    test('CONTRAPESO: sin lista de tees no se toca nada', () {
+      // Preferimos un nombre feo a uno cortado.
+      expect(nombreDeCampoSinTee('Campo (AZULES)', const []),
+          'Campo (AZULES)');
+    });
+
+    test('y un nombre sin paréntesis se queda igual', () {
+      for (final n in ['Campo', 'Campo — Sur', '', 'Campo ()']) {
+        expect(nombreDeCampoSinTee(n, conocidos), n, reason: n);
+      }
+    });
+
+    test('solo el paréntesis FINAL, no uno del medio', () {
+      // "Campo (AZULES) — Sur" no acaba en paréntesis: no se toca.
+      expect(nombreDeCampoSinTee('Campo (AZULES) — Sur', conocidos),
+          'Campo (AZULES) — Sur');
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 9 · EN EL ORIGEN
+  //
+  // De aquí salía el nombre con el tee dentro. Sin esta prueba, volver a
+  // hornearlo no rompía nada: los tests de limpieza pasan igual, porque limpian
+  // lo que ya está escrito.
+  // ───────────────────────────────────────────────────────────────────────────
+  group('9 · el nombre del campo, en el origen', () {
+    ApiTeeBox tee(String nombre) => ApiTeeBox(
+          teeName: nombre,
+          courseRating: 71.7,
+          slopeRating: 149,
+          parTotal: 72,
+          totalYards: 6500,
+          numberOfHoles: 18,
+          holes: [
+            for (var i = 1; i <= 18; i++)
+              ApiHole(holeNumber: i, par: 4, yardage: 380, strokeIndex: i)
+          ],
+        );
+
+    test('CLAVE: el nombre NO lleva la salida dentro', () {
+      final c = tee('AZULES').toCourseInfo('Club De Golf Mexico', 'Mexico');
+      expect(c.name, 'Club De Golf Mexico — Mexico');
+      expect(c.name.contains('AZULES'), isFalse,
+          reason: 'el nombre es para leerlo, no para llevar datos dentro');
+    });
+
+    test('y da igual qué salida sea: el nombre es el mismo', () {
+      // Es la propiedad de verdad: dos salidas del mismo campo no pueden dar
+      // dos nombres, porque entonces el nombre lleva el dato otra vez.
+      final a = tee('AZULES').toCourseInfo('Club', 'Sur');
+      final b = tee('BLANCAS').toCourseInfo('Club', 'Sur');
+      expect(a.name, b.name);
+    });
+
+    test('CONTRAPESO: y sigue distinguiendo club de recorrido', () {
+      // Sin esto, devolver siempre el nombre del club pasaría lo de arriba.
+      expect(tee('X').toCourseInfo('Club', 'Sur').name, 'Club — Sur');
+      expect(tee('X').toCourseInfo('Club', '').name, 'Club');
+      expect(tee('X').toCourseInfo('Club', 'Club').name, 'Club');
     });
   });
 }

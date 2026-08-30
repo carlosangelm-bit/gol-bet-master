@@ -216,3 +216,45 @@ String? salidaSegunRating(
   }
   return null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EL TEE QUE SE QUEDÓ DENTRO DEL NOMBRE
+//
+// Los campos guardados hasta hoy llevan la salida horneada en su nombre —
+// "Club de Golf México — México (AZULES)"— porque así se construía. Y esa
+// salida es la que hacía que la misma pantalla dijera AZULES arriba y BLANCAS
+// abajo.
+//
+// A partir de ahora el nombre ya no la lleva. Lo que queda es lo ya escrito, y
+// se limpia AL LEERLO.
+//
+// ── Por qué no se quita el paréntesis a secas ───────────────────────────────
+//
+// Porque un club puede llamarse "Club de Golf (Norte)", y entonces quitarlo
+// borra parte del nombre de verdad. Sería cambiar un dato mentiroso por un dato
+// mutilado.
+//
+// Así que solo se quita cuando lo de dentro ES una salida conocida. Con los
+// tees de los campos guardados delante, la pregunta se contesta exacto en vez
+// de adivinarse.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Quita del nombre la salida horneada, si la lleva y si es reconocible.
+///
+/// [teesConocidos] son los nombres de las salidas de los campos guardados.
+/// Sin lista, no se toca nada: preferimos un nombre feo a uno cortado.
+String nombreDeCampoSinTee(String nombre, List<String> teesConocidos) {
+  final t = nombre.trimRight();
+  if (!t.endsWith(')')) return nombre;
+  final abre = t.lastIndexOf('(');
+  if (abre <= 0) return nombre;
+
+  final dentro = t.substring(abre + 1, t.length - 1).trim();
+  if (dentro.isEmpty) return nombre;
+
+  final limpio = limpiarNombreDeTee(dentro);
+  final esTee = teesConocidos.any((x) => limpiarNombreDeTee(x) == limpio);
+  if (!esTee) return nombre;
+
+  return t.substring(0, abre).trimRight();
+}

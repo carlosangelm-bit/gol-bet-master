@@ -212,18 +212,29 @@ class ApiTeeBox {
       }
     });
 
-    // Nombre limpio del campo
+    // ── EL NOMBRE ES PARA LEERLO, NO PARA LLEVAR DATOS DENTRO ────────────────
+    //
+    // Aquí iba el tee horneado: `Club de Golf México — México (AZULES)`. Y es
+    // la CUARTA vez en este proyecto que un dato metido dentro de un nombre
+    // acaba mintiendo:
+    //
+    //   · el nombre del lado en las apuestas
+    //   · el "1 Pot" del catálogo de formatos
+    //   · el nombre del campo con su tee, aquí
+    //
+    // Siempre por lo mismo: el nombre se guarda una vez y el dato cambia
+    // después, o se construye desde un sitio distinto del que lo lee. Aquí el
+    // nombre se armaba con `allTees.first` mientras el jugador salía de otra,
+    // y la misma pantalla acabó diciendo AZULES arriba y BLANCAS abajo.
+    //
+    // La salida tiene su propio campo —RoundPlayer.tee— y desde hace poco viaja
+    // también en el diferencial. Ahí es donde se lee, con su procedencia. El
+    // nombre del campo vuelve a ser el nombre del campo.
     final baseName = (courseName.isNotEmpty && courseName != clubName)
         ? '$clubName — $courseName'
         : clubName;
 
-    // Limpiar nombre del tee (la API a veces incluye prefijos numéricos)
-    final cleanTee = _cleanTeeName(teeName);
-
-    return CourseInfo(
-      name: '$baseName ($cleanTee)',
-      holes: courseHoles,
-    );
+    return CourseInfo(name: baseName, holes: courseHoles);
   }
 
   /// Elimina prefijos numéricos que la API agrega al nombre del tee

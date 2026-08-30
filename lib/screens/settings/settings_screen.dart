@@ -738,6 +738,43 @@ class _StatBox extends StatelessWidget {
 }
 
 // ── Fila de diferencial en el tracker ─────────────────────────────────────────
+/// Las salidas de todos los campos guardados. Es la lista contra la que se
+/// reconoce un tee, tanto para deducirlo como para quitarlo de un nombre.
+List<SalidaCandidata> _salidasConocidas(BuildContext context) {
+  final out = <SalidaCandidata>[];
+  for (final f in context.read<UserProfileProvider>().favCourses) {
+    final c = f.cachedCourse;
+    if (c == null) continue;
+    for (final t in c.allTees) {
+      out.add(SalidaCandidata(
+          nombre: t.teeName,
+          courseRating: t.courseRating,
+          slopeRating: t.slopeRating));
+    }
+  }
+  return out;
+}
+
+/// El nombre del campo SIN la salida horneada dentro.
+///
+/// Los campos guardados hasta hoy la llevan —"… (AZULES)"— y esa es la que hacía
+/// que la misma pantalla dijera una salida arriba y otra abajo. Se quita al
+/// leer, y solo cuando lo de dentro es una salida conocida: un club puede
+/// llamarse "Club de Golf (Norte)".
+String _campoLimpio(BuildContext context, String nombre) =>
+    nombreDeCampoSinTee(
+        nombre, _salidasConocidas(context).map((s) => s.nombre).toList());
+
+/// El tee de una ronda: el guardado, o el deducido, o null.
+///
+/// Null y no una cadena: la lista prefiere no decir nada a decir el equivocado,
+/// que es de donde vino todo esto.
+String? _teeDeLaRonda(BuildContext context, ScoreDifferential diff) {
+  if (diff.teeName != null) return diff.teeName;
+  return salidaSegunRating(
+      _salidasConocidas(context), diff.courseRating, diff.slopeRating);
+}
+
 /// La salida de una ronda vieja, deducida de su CR y su Slope.
 ///
 /// Busca entre TODOS los tees de los campos guardados —los de hombres y los de
@@ -750,20 +787,7 @@ class _StatBox extends StatelessWidget {
 String _salidaDeducida(BuildContext context, ScoreDifferential diff) {
   final numeros = 'CR ${diff.courseRating.toStringAsFixed(1)} · '
       'Slope ${diff.slopeRating}';
-  final favs = context.read<UserProfileProvider>().favCourses;
-
-  final candidatas = <SalidaCandidata>[];
-  for (final f in favs) {
-    final c = f.cachedCourse;
-    if (c == null) continue;
-    for (final t in c.allTees) {
-      candidatas.add(SalidaCandidata(
-          nombre: t.teeName,
-          courseRating: t.courseRating,
-          slopeRating: t.slopeRating));
-    }
-  }
-
+  final candidatas = _salidasConocidas(context);
   if (candidatas.isEmpty) {
     // El motivo concreto: no hay contra qué comparar.
     return 'no guardada · $numeros · sin campos guardados con los que '
@@ -836,7 +860,12 @@ class _DiffRow extends StatelessWidget {
           const SizedBox(height: 14),
           Text(diff.roundName, style: GolfType.title(t.text)),
           const SizedBox(height: 4),
-          Text('${diff.courseName} · ${diff.holesPlayed} hoyos anotados',
+          // Sin la salida horneada: la tiene su propia fila, con su
+          // procedencia. Repetirla en el nombre es lo que permitió que las dos
+          // se separaran.
+          Text(
+              '${_campoLimpio(context, diff.courseName)} · '
+              '${diff.holesPlayed} hoyos anotados',
               textAlign: TextAlign.center,
               style: TextStyle(color: t.sub, fontSize: 12)),
           const SizedBox(height: 10),
@@ -984,10 +1013,14 @@ class _DiffRow extends StatelessWidget {
               Text(
                   fuera
                       ? 'NO CUENTA · ${diff.holesPlayed} H · $formattedDate'
-                      // El TEE que usó la fórmula, si se guardó. El nombre del
-                      // campo lleva otro horneado y llegó a no coincidir.
-                      : '${diff.teeName ?? diff.courseName} · '
-                          '${diff.holesPlayed} H · $formattedDate',
+                      // El tee REAL —guardado o deducido— o ninguno. Antes caía
+                      // al nombre del campo, que llevaba otro horneado: la
+                      // lista decía AZULES de una ronda de blancas.
+                      : [
+                          _teeDeLaRonda(context, diff),
+                          '${diff.holesPlayed} H',
+                          formattedDate,
+                        ].whereType<String>().join(' · '),
                   style: TextStyle(
                       color: t.sub,
                       fontSize: 10,
