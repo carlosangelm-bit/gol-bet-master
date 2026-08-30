@@ -846,10 +846,36 @@ extension BetModuleLabel on BetModuleType {
         BetModuleType.stableford => '📊',
       };
 
+  /// Qué hace este formato en una ronda de NUEVE hoyos.
+  ///
+  /// ── Por qué se dice, y por qué aquí ───────────────────────────────────────
+  ///
+  /// Quien pacta un Nassau espera TRES apuestas: la ida, la vuelta y el total.
+  /// Con nueve hoyos no hay tres segmentos, y el motor liquida una sola — que
+  /// es lo correcto, pero nadie lo había dicho.
+  ///
+  /// Va en el catálogo y no en una pantalla porque son varias las que lo
+  /// enseñan, y dos redacciones del mismo hecho acaban diciendo cosas
+  /// distintas. Es la lección del catálogo de configuración.
+  ///
+  /// Null = el formato no cambia: se juega igual sobre nueve que sobre
+  /// dieciocho.
+  String? get enNueveHoyos => switch (this) {
+        BetModuleType.nassau =>
+          'Una sola apuesta sobre los nueve hoyos. No hay ida, vuelta y total: '
+              'no hay dos vueltas que separar.',
+        BetModuleType.matchAutoPress =>
+          'Un solo segmento de nueve hoyos, con sus presiones dentro.',
+        BetModuleType.putts =>
+          'Un solo segmento: los putts de los nueve hoyos.',
+        _ => null,
+      };
+
   String get description => switch (this) {
         BetModuleType.skins => 'Cada hoyo vale una skin. Empates acumulan.',
         BetModuleType.nassau =>
-          'Front 9, Back 9 y Total 18. Activa presiones automáticas opcionalmente.',
+          'Front 9, Back 9 y Total 18. En una ronda de 9 hoyos es UNA sola '
+              'apuesta. Activa presiones automáticas opcionalmente.',
         BetModuleType.matchAutoPress =>
           'Match principal + presiones automáticas al llegar a X up.',
         BetModuleType.medal => 'Score neto total más bajo gana.',

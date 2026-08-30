@@ -1867,10 +1867,17 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
           ...mods.map((e) {
             final (grp, m) = e;
             final pids = _jugadoresDe(grp, m);
-            final holes = round.course.holes;
+            // Los hoyos de la RONDA, no los del campo.
+            //
+            // Con `round.course.holes` una ronda de nueve terminada salía como
+            // "9 de 18" y en rojo, listando como incompletos los hoyos del 10
+            // al 18 — que no se juegan. Los motores nunca se equivocaron: se
+            // equivocaba esta cuenta.
+            final segs = BetEngine.segmentsOf(round);
+            final holes = segs.hoyosEnJuego;
             final completos = holes
-                .where((ch) =>
-                    pids.every((pid) => round.getScore(pid, ch.hole).hasScore))
+                .where((h) =>
+                    pids.every((pid) => round.getScore(pid, h).hasScore))
                 .length;
             final total = holes.length;
             final falta = completos < total;
@@ -1881,14 +1888,13 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
             final porJugador = {
               for (final pid in pids)
                 pid: holes
-                    .where((ch) => round.getScore(pid, ch.hole).hasScore)
+                    .where((h) => round.getScore(pid, h).hasScore)
                     .length,
             };
             // Hoyos donde falta alguien, para poder ir directo a corregirlos.
             final huecos = holes
-                .where((ch) => !pids
-                    .every((pid) => round.getScore(pid, ch.hole).hasScore))
-                .map((ch) => ch.hole)
+                .where((h) =>
+                    !pids.every((pid) => round.getScore(pid, h).hasScore))
                 .toList();
 
             return Padding(
@@ -1907,7 +1913,10 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
                       Expanded(
                         child: Text(
                           '${m.type.label}: $completos de $total hoyos con '
-                          'score de sus ${pids.length} jugadores',
+                          'score de sus ${pids.length} jugadores'
+                          // Que la ronda sea de nueve se DICE: si no, "9 de 9"
+                          // parece que falta la otra vuelta.
+                          '${segs.singleNine ? " · ronda de 9 hoyos" : ""}',
                           style: TextStyle(
                               color: falta ? t.danger : t.sub, fontSize: 11),
                         ),

@@ -3340,7 +3340,29 @@ class RoundSegments {
   });
 
   /// Todos los hoyos del curso en orden real de juego.
+  ///
+  /// OJO: son los DIECIOCHO del campo, se jueguen o no. Para saber sobre qué
+  /// hoyos va la ronda, [hoyosEnJuego].
   List<int> get playOrder => [...firstNine, ...secondNine];
+
+  /// Los hoyos que esta ronda JUEGA de verdad.
+  ///
+  /// ── Por qué hacía falta, y qué se veía sin esto ───────────────────────────
+  ///
+  /// El campo tiene dieciocho hoyos siempre; la ronda no. Y quien quería
+  /// contar "cuántos hoyos van completos" tenía a mano `round.course.holes`,
+  /// que son los del CAMPO.
+  ///
+  /// Con eso, una ronda de nueve hoyos terminada salía en la pantalla de
+  /// resultados como "9 de 18 hoyos con score" y en ROJO, listando como
+  /// incompletos los hoyos del 10 al 18 — que no se iban a jugar nunca. Los
+  /// motores nunca se equivocaron: Nassau y Medal ya miraban [singleNine]. Se
+  /// equivocaba quien contaba.
+  ///
+  /// Una ronda de nueve hoyos es un caso normal —media mañana y a casa—, y
+  /// gastar el rojo de las alarmas en ella es exactamente lo que hace que la
+  /// alarma deje de significar algo.
+  List<int> get hoyosEnJuego => singleNine ? firstNine : playOrder;
 
   /// true si [hole] pertenece al primer segmento jugado.
   bool isFirst(int hole) => firstNine.contains(hole);
