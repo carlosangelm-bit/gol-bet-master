@@ -32,6 +32,7 @@
 // cambia, la tabla siguiente ya sale distinta.
 // ─────────────────────────────────────────────────────────────────────────────
 import 'models.dart';
+import 'patrocinio.dart';
 import '../engines/bet_engine.dart';
 import 'round_result.dart';
 
@@ -367,6 +368,37 @@ class Torneo {
   /// Cuándo se publicó la última copia. Null si nunca.
   final DateTime? publicadoEn;
 
+  /// El token de la PANTALLA DE LA CASA CLUB. `/tv/{tokenTele}`.
+  ///
+  /// ── Por qué no es el mismo que [tokenCompartido] ──────────────────────────
+  ///
+  /// Era la idea original y está mal. El token de la tele es el string MENOS
+  /// secreto del sistema: se proyecta en una pared ocho horas, lo lee cualquiera
+  /// que pase, y se manda al del club para que lo abra en el navegador de la
+  /// sala. El de `sharedTorneos` es lo contrario: es la única credencial que
+  /// protege el bote y los balances, porque la regla pide cuenta —cualquiera—
+  /// pero no comprueba que estés invitado.
+  ///
+  /// Con un solo token, quien leyera la URL de la tele y se registrara gratis
+  /// leería el dinero. Dos tokens, y la pantalla de la pared no abre nada más.
+  final String? tokenTele;
+
+  /// Cuándo se publicó la pantalla. Null = nunca, o apagada.
+  final DateTime? teleDesde;
+
+  /// Si la pantalla de la casa club está EN ANTENA ahora mismo.
+  ///
+  /// El token solo no basta: sobrevive al apagado a propósito, para no tener que
+  /// darle otro enlace al del club cada vez. Lo que dice "encendida" es la
+  /// fecha.
+  bool get teleEncendida => tokenTele != null && teleDesde != null;
+
+  /// Lo que el organizador pactó con las marcas para la pantalla. §14.3.
+  ///
+  /// Vive en el TORNEO y no en la instantánea porque es del torneo: se acuerda
+  /// antes de jugar nada y sobrevive a las doce republicaciones de una tarde.
+  final InventarioProyectado inventario;
+
   /// Liga o eliminación directa. Por defecto liga: es lo que había.
   final FormatoDeTorneo formato;
 
@@ -450,6 +482,9 @@ class Torneo {
     this.bote = BoteConfig.def,
     this.tokenCompartido,
     this.publicadoEn,
+    this.tokenTele,
+    this.teleDesde,
+    this.inventario = const InventarioProyectado(),
     this.cerrado = false,
     this.formato = FormatoDeTorneo.liga,
     this.siembra = const [],
@@ -480,6 +515,13 @@ class Torneo {
     String? tokenCompartido,
     DateTime? publicadoEn,
     bool limpiarCompartido = false,
+    String? tokenTele,
+    DateTime? teleDesde,
+    InventarioProyectado? inventario,
+    /// Apaga la pantalla SIN perder el token, igual que [limpiarCompartido]
+    /// conserva el suyo: el enlace de la tele se le dio al del club, y
+    /// obligarle a pedir otro cada vez que se apaga no es apagar, es romper.
+    bool apagarTele = false,
     bool? cerrado,
     FormatoDeTorneo? formato,
     List<String>? siembra,
@@ -512,6 +554,11 @@ class Torneo {
             limpiarCompartido ? null : (tokenCompartido ?? this.tokenCompartido),
         publicadoEn:
             limpiarCompartido ? null : (publicadoEn ?? this.publicadoEn),
+        tokenTele: limpiarCompartido ? null : (tokenTele ?? this.tokenTele),
+        teleDesde: (limpiarCompartido || apagarTele)
+            ? null
+            : (teleDesde ?? this.teleDesde),
+        inventario: inventario ?? this.inventario,
         cerrado: cerrado ?? this.cerrado,
         formato: formato ?? this.formato,
         siembra: siembra ?? this.siembra,
@@ -541,6 +588,9 @@ class Torneo {
         if (bote.hayAlgunBote) 'bote': bote.toJson(),
         if (tokenCompartido != null) 'tokenCompartido': tokenCompartido,
         if (publicadoEn != null) 'publicadoEn': publicadoEn!.toIso8601String(),
+        if (tokenTele != null) 'tokenTele': tokenTele,
+        if (teleDesde != null) 'teleDesde': teleDesde!.toIso8601String(),
+        if (!inventario.vacio) 'inventario': inventario.toJson(),
         if (cerrado) 'cerrado': true,
         // Aditivos: solo se escriben cuando hay algo que decir, así que un
         // torneo de liga guardado hoy se lee igual que ayer.
@@ -594,6 +644,14 @@ class Torneo {
             ? CourseInfo.fromJson(Map<String, dynamic>.from(j['campo'] as Map))
             : null,
         tokenCompartido: j['tokenCompartido'] as String?,
+        tokenTele: j['tokenTele'] as String?,
+        teleDesde: j['teleDesde'] == null
+            ? null
+            : DateTime.tryParse(j['teleDesde'] as String),
+        inventario: j['inventario'] is Map
+            ? InventarioProyectado.fromJson(
+                Map<String, dynamic>.from(j['inventario'] as Map))
+            : const InventarioProyectado(),
         publicadoEn: DateTime.tryParse((j['publicadoEn'] as String?) ?? ''),
         cerrado: j['cerrado'] == true,
         formato: FormatoDeTorneo.values.firstWhere(
@@ -1672,6 +1730,45 @@ List<Torneo> torneosARepublicar(Round round, List<Torneo> torneos) => torneos
         t.fuente == FuenteDeRondas.marcadas &&
         round.torneoIds.contains(t.id))
     .toList();
+
+/// Los torneos cuya PANTALLA hay que refrescar tras cerrar [round].
+///
+/// ── Por qué es una lista aparte y no la misma ────────────────────────────────
+///
+/// Empezó dentro del bucle de arriba, que es lo cómodo: mismo disparador, misma
+/// ronda. Pero ese bucle exige `tokenCompartido != null`, así que la pantalla de
+/// la casa club solo se refrescaba si además el enlace de WhatsApp seguía vivo
+/// —dos superficies independientes atadas por un `where` que no las nombra—.
+///
+/// Y la que se quedaba vieja en silencio era la peor de las dos: el enlace de
+/// WhatsApp lo abre alguien que ve la fecha de la copia; la pantalla del club
+/// está proyectada en una pared y nadie comprueba nada.
+///
+/// Así que cada superficie decide por su cuenta. Lo único que comparten es el
+/// disparador: una ronda de este torneo acaba de cerrarse.
+List<Torneo> torneosConTeleARefrescar(Round round, List<Torneo> torneos) =>
+    torneos
+        .where((t) =>
+            t.teleEncendida &&
+            !t.cerrado &&
+            t.fuente == FuenteDeRondas.marcadas &&
+            round.torneoIds.contains(t.id))
+        .toList();
+
+/// Si cerrar [round] tiene que mover algo hacia fuera: un enlace, una pantalla,
+/// o los dos.
+///
+/// Existe como función y no como un `&&` dentro del cierre porque ese `&&` ya
+/// se equivocó una vez. Miraba solo los enlaces —lo natural cuando solo había
+/// enlaces— y con la pantalla añadida se comía el bucle entero de la tele: un
+/// torneo con la pantalla encendida y el enlace apagado cerraba rondas todo el
+/// día sin que la pared se enterara.
+///
+/// Aquí se puede probar. Dentro de un método de pantalla que necesita sesión,
+/// no.
+bool hayQueRefrescarAlgo(Round round, List<Torneo> torneos) =>
+    torneosARepublicar(round, torneos).isNotEmpty ||
+    torneosConTeleARefrescar(round, torneos).isNotEmpty;
 
 /// Los torneos que se pueden marcar al configurar una ronda.
 ///

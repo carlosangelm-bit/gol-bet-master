@@ -73,6 +73,8 @@ Torneo _t({
   List<String> participantes = const [ana, beto],
   DateTime? desde,
   DateTime? hasta,
+  String? tokenTele,
+  DateTime? teleDesde,
 }) =>
     Torneo(
       id: id,
@@ -85,6 +87,8 @@ Torneo _t({
       cerrado: cerrado,
       desde: desde,
       hasta: hasta,
+      tokenTele: tokenTele,
+      teleDesde: teleDesde,
     );
 
 void main() {
@@ -270,6 +274,87 @@ void main() {
       ];
       expect(torneosARepublicar(r, lista).map((t) => t.id),
           ['tor_1', 'tor_2']);
+    });
+  });
+
+  // ── LA PANTALLA DEL CLUB DECIDE POR SU CUENTA ──────────────────────────────
+  //
+  // El refresco de la tele empezó DENTRO del bucle de arriba, que es lo cómodo:
+  // mismo disparador, misma ronda. Pero aquel bucle exige `tokenCompartido`, así
+  // que la pantalla solo se refrescaba mientras el enlace de WhatsApp siguiera
+  // vivo — dos superficies independientes atadas por un `where` que no las
+  // nombra, y la que se quedaba vieja en silencio era la peor de las dos: el
+  // enlace lo abre alguien que ve la fecha de la copia; la pantalla está
+  // proyectada en una pared y nadie comprueba nada.
+  group('5 · qué pantallas se refrescan al cerrar la ronda', () {
+    final encendida =
+        _t(tokenTele: 'tv_x', teleDesde: DateTime(2026, 8, 29));
+
+    test('la pantalla encendida de un torneo marcado se refresca', () {
+      final r = _round(torneoIds: const ['tor_1']);
+      expect(torneosConTeleARefrescar(r, [encendida]).map((t) => t.id),
+          ['tor_1']);
+    });
+
+    test('CLAVE: se refresca aunque el enlace de WhatsApp no exista', () {
+      // La prueba que fija la decisión. `encendida` no tiene tokenCompartido.
+      expect(encendida.tokenCompartido, isNull);
+      final r = _round(torneoIds: const ['tor_1']);
+      expect(torneosARepublicar(r, [encendida]), isEmpty,
+          reason: 'sin enlace no hay nada que republicar…');
+      expect(torneosConTeleARefrescar(r, [encendida]), hasLength(1),
+          reason: '…y aun así la pared tiene que enterarse');
+    });
+
+    test('apagada no: el token sobrevive al apagado a propósito', () {
+      final r = _round(torneoIds: const ['tor_1']);
+      expect(torneosConTeleARefrescar(r, [_t(tokenTele: 'tv_x')]), isEmpty);
+    });
+
+    test('sin encender nunca, tampoco: proyectar es una decisión', () {
+      final r = _round(torneoIds: const ['tor_1']);
+      expect(torneosConTeleARefrescar(r, [_t(token: 'tok_abc')]), isEmpty);
+    });
+
+    test('un torneo cerrado ya no refresca: la instantánea final es final', () {
+      final r = _round(torneoIds: const ['tor_1']);
+      expect(
+          torneosConTeleARefrescar(
+              r,
+              [
+                _t(
+                    tokenTele: 'tv_x',
+                    teleDesde: DateTime(2026, 8, 29),
+                    cerrado: true)
+              ]),
+          isEmpty);
+    });
+
+    test('sin marca no se toca: la tabla no cambió', () {
+      expect(torneosConTeleARefrescar(_round(), [encendida]), isEmpty);
+    });
+
+    // ── LA GUARDA QUE SE COMÍA EL BUCLE ──────────────────────────────────────
+    //
+    // El cierre corta por lo sano cuando no hay nada que refrescar. Esa guarda
+    // miraba solo los enlaces, así que un torneo con la pantalla encendida y sin
+    // enlace salía por el return antes de llegar a la tele.
+    group('y la guarda del cierre las mira a las dos', () {
+      final r = _round(torneoIds: const ['tor_1']);
+
+      test('CLAVE: solo con la pantalla encendida, hay algo que hacer', () {
+        expect(hayQueRefrescarAlgo(r, [encendida]), isTrue);
+      });
+
+      test('solo con enlace, también', () {
+        expect(hayQueRefrescarAlgo(r, [_t(token: 'tok_abc')]), isTrue);
+      });
+
+      test('y sin ninguna de las dos, no', () {
+        // El contrapeso: sin esto, un `=> true` pasaría las dos de arriba.
+        expect(hayQueRefrescarAlgo(r, [_t()]), isFalse);
+        expect(hayQueRefrescarAlgo(_round(), [encendida]), isFalse);
+      });
     });
   });
 }

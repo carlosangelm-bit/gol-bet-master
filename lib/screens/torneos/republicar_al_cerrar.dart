@@ -36,6 +36,7 @@ import '../../providers/player_provider.dart';
 import '../../providers/torneo_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
+import '../../services/tele_service.dart';
 
 /// Refresca los enlaces de los torneos para los que contaba [round].
 ///
@@ -61,8 +62,13 @@ Future<List<String>> republicarTorneosDe(
   // sí necesita el directorio y cuyo fallo no cuesta dinero.
   // ─────────────────────────────────────────────────────────────────────────
 
+  // La condición vive en el modelo —hayQueRefrescarAlgo— y no aquí porque este
+  // `return` ya se equivocó una vez: miraba solo los enlaces y se comía el bucle
+  // entero de la tele. Ahí se puede probar; dentro de esta función, que exige
+  // sesión y tres providers, no.
+  if (!hayQueRefrescarAlgo(round, torneoProv.torneos)) return const [];
   final afectados = torneosARepublicar(round, torneoProv.torneos);
-  if (afectados.isEmpty) return const [];
+  final conTele = torneosConTeleARefrescar(round, torneoProv.torneos);
 
   // La ronda recién cerrada, calculada aquí en vez de esperada del stream.
   final propio = RoundResult.fromRound(round);
@@ -109,5 +115,27 @@ Future<List<String>> republicarTorneosDe(
       debugPrint('[republicar] ${torneo.nombre}: $e');
     }
   }
+
+  // ── Y LA PANTALLA DE LA CASA CLUB ──────────────────────────────────────────
+  //
+  // Bucle propio, no una línea dentro del de arriba. Aquel exige que el enlace
+  // de WhatsApp siga vivo, y atar la pantalla a esa condición dejaba la peor de
+  // las dos quedándose vieja en silencio: el enlace lo abre alguien que ve la
+  // fecha de la copia; la pantalla está proyectada en una pared y nadie
+  // comprueba nada.
+  //
+  // Lo que NO hace: encenderla. `encender` se queda en false, así que cerrar una
+  // ronda no empieza a proyectar en una pared por su cuenta. Eso lo decide el
+  // organizador, igual que crear el enlace.
+  for (final torneo in conTele) {
+    final tabla = tablaDe(torneo, resultados, nombres: nombres);
+    await Tele.publicar(
+      ownerUid: uid,
+      torneo: torneo,
+      tabla: tabla,
+      cuando: ahora,
+    );
+  }
+
   return hechos;
 }

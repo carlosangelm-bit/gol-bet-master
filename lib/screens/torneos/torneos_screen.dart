@@ -25,6 +25,7 @@ import '../../providers/torneo_provider.dart';
 import 'torneo_editor_screen.dart';
 import 'torneo_enlace_screen.dart';
 import 'llave_screen.dart';
+import 'tele_sheet.dart';
 
 /// La cifra con signo la define el modelo: la usan la tabla, el cuadro y la
 /// vista de invitado, y tres copias habrían acabado dando tres formatos.
@@ -821,6 +822,10 @@ Future<void> _compartir(BuildContext context, Torneo torneoArg,
               'Este enlace es el mismo toda la vida del torneo: al actualizar la '
               'tabla no cambia, así que no hay que reenviarlo.',
               style: TextStyle(color: t.sub, fontSize: 11, height: 1.35)),
+          // La pantalla de la casa club. Va DESPUÉS y con separador porque es
+          // otro enlace, otra tabla y otras reglas: la de arriba pide cuenta y
+          // lleva el bote; esta se ve sin cuenta y no lleva un importe.
+          BloqueTele(torneo: torneoArg, tabla: tabla),
           const SizedBox(height: 10),
           // APAGAR, no borrar. Un enlace de WhatsApp acaba donde no se previó, así
           // que hay que poder cortarlo; pero borrarlo obligaba a generar otro
@@ -834,15 +839,26 @@ Future<void> _compartir(BuildContext context, Torneo torneoArg,
             child: OutlinedButton(
               onPressed: () async {
                 await FirestoreService.apagarEnlace(token);
-                // El token SE CONSERVA: volver a publicar usa el mismo enlace.
-                await prov.guardar(torneoArg.copyWith(publicadoEn: null));
+                // Y LA PANTALLA CON ÉL. "Dejar de compartir" tiene que apagar
+                // las dos superficies, porque la de la tele es la MÁS expuesta
+                // —se lee sin cuenta— y dejarla encendida haría del botón una
+                // mentira. Ver la cabecera de tele_sheet.dart.
+                final vivo = prov.torneos.firstWhere(
+                    (x) => x.id == torneoArg.id,
+                    orElse: () => torneoArg);
+                await apagarTele(vivo);
+                // Los tokens SE CONSERVAN: volver a publicar usa los mismos.
+                await prov.guardar(
+                    vivo.copyWith(publicadoEn: null, apagarTele: true));
                 if (ctx.mounted) Navigator.pop(ctx);
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text(
-                          'Enlace apagado. Quien lo tenga verá que ya no se '
-                          'comparte; el mismo enlace vuelve a servir si lo '
-                          'compartes otra vez.'),
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(vivo.tokenTele != null
+                          ? 'Enlace y pantalla apagados. Los mismos enlaces '
+                              'vuelven a servir si lo compartes otra vez.'
+                          : 'Enlace apagado. Quien lo tenga verá que ya no se '
+                              'comparte; el mismo enlace vuelve a servir si lo '
+                              'compartes otra vez.'),
                       duration: Duration(seconds: 5)));
                 }
               },
