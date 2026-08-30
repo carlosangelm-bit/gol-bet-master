@@ -292,8 +292,12 @@ class _Tarjeta extends StatelessWidget {
                       fit: BoxFit.contain,
                       // Una imagen que no carga se dice. Un hueco callado en la
                       // pantalla del organizador es un banner roto en la pared.
-                      errorBuilder: (_, __, ___) => Icon(Icons.broken_image,
-                          size: 22, color: t.sub)),
+                      errorBuilder: (_, __, ___) => Tooltip(
+                          message: 'El archivo está subido, pero el navegador '
+                              'no lo deja pintar. Suele ser el CORS del '
+                              'bucket: ver DESPLIEGUE.md.',
+                          child: Icon(Icons.broken_image,
+                              size: 22, color: t.sub))),
                 ),
                 const SizedBox(width: 11),
               ],
@@ -416,12 +420,58 @@ class _EditorDePiezaState extends State<EditorDePieza> {
   bool _subiendo = false;
   String? _aviso;
 
+  /// El archivo con el que se entró. Nunca cambia.
+  ///
+  /// ── El huérfano que se estaba creando ─────────────────────────────────────
+  ///
+  /// Reemplazar subía un archivo nuevo y dejaba el viejo en Storage para
+  /// siempre. Se vio en la primera subida real: dos archivos de 49 KB en la
+  /// misma carpeta, y solo uno en uso.
+  ///
+  /// Y es justo lo que este diseño venía a evitar —"los torneos usan sus
+  /// activos y los borran después"—, porque el que sobra ya no lo conoce nadie:
+  /// el modelo guarda una sola URL, y la regla no deja listar la carpeta para
+  /// encontrarlo.
+  ///
+  /// Así que se limpia en el momento, y hacia el lado que toque:
+  ///
+  ///   · al GUARDAR   → sobra el viejo, se borra el viejo
+  ///   · al SALIR sin guardar → sobra el nuevo, se borra el nuevo
+  late final String _urlOriginal = widget.pieza?.logoUrl ?? '';
+  bool _guardado = false;
+
   @override
   void dispose() {
+    // Sin guardar y con archivo nuevo: el nuevo es el que sobra. Sin await, que
+    // dispose no espera a nadie; si falla queda un huérfano, que es exactamente
+    // lo que había antes en todos los casos.
+    if (!_guardado && _logo != _urlOriginal && _logo.isNotEmpty) {
+      PatrocinioStorage.borrar(_logo);
+    }
     for (final c in [_etiqueta, _titular, _cta, _destino, _alt]) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  /// Cierra devolviendo la pieza, y limpia el archivo que deja de usarse.
+  Future<void> _guardar() async {
+    _guardado = true;
+    final viejo = _urlOriginal;
+    final pieza = _armar();
+    if (viejo.isNotEmpty && viejo != _logo) {
+      // Se borra ANTES de cerrar: después, este State ya no existe y nadie se
+      // acordaría del archivo que se quedó.
+      await PatrocinioStorage.borrar(viejo);
+    }
+    if (mounted) Navigator.pop(context, (true, pieza));
+  }
+
+  /// Quita la pieza entera, y su archivo con ella.
+  Future<void> _quitarPieza() async {
+    _guardado = true;
+    if (_logo.isNotEmpty) await PatrocinioStorage.borrar(_logo);
+    if (mounted) Navigator.pop(context, (true, null));
   }
 
   int get _palabras => palabrasDelTitular(_titular.text);
@@ -563,9 +613,7 @@ class _EditorDePiezaState extends State<EditorDePieza> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _valida && !_subiendo
-                      ? () => Navigator.pop(context, (true, _armar()))
-                      : null,
+                  onPressed: _valida && !_subiendo ? _guardar : null,
                   style: ElevatedButton.styleFrom(
                       backgroundColor: t.primary,
                       foregroundColor: t.onPrimary,
@@ -586,9 +634,7 @@ class _EditorDePiezaState extends State<EditorDePieza> {
                 ),
               if (widget.pieza != null)
                 TextButton(
-                  onPressed: _subiendo
-                      ? null
-                      : () => Navigator.pop(context, (true, null)),
+                  onPressed: _subiendo ? null : _quitarPieza,
                   style: TextButton.styleFrom(foregroundColor: t.sub),
                   child: const Text('Quitar de la pantalla'),
                 ),
@@ -616,8 +662,10 @@ class _EditorDePiezaState extends State<EditorDePieza> {
                   errorBuilder: (_, __, ___) => Column(children: [
                         Icon(Icons.broken_image, size: 26, color: t.sub),
                         const SizedBox(height: 4),
-                        Text('El archivo no se pudo cargar',
-                            style: TextStyle(color: t.sub, fontSize: 11)),
+                        Text(_porQueNoSePinta,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: t.sub, fontSize: 11, height: 1.3)),
                       ])),
             ),
           Row(children: [
@@ -657,6 +705,24 @@ class _EditorDePiezaState extends State<EditorDePieza> {
               style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
         ]),
       );
+
+  /// Por qué un archivo que SÍ está no se pinta.
+  ///
+  /// Pasó en la primera subida real y el síntoma engaña: el archivo estaba en
+  /// Storage, con su tipo y su tamaño, y en pantalla salía un icono roto.
+  ///
+  /// CanvasKit no dibuja las imágenes con un `<img>` del DOM: las lleva a un
+  /// canvas, y para eso el navegador las pide en modo CORS y exige la cabecera
+  /// `Access-Control-Allow-Origin` EN LA RESPUESTA del GET. Un bucket recién
+  /// creado no la manda —aunque el preflight sí—, así que la imagen se
+  /// descarta.
+  ///
+  /// Se dice aquí porque un icono roto sin explicación manda a buscar el
+  /// problema al sitio equivocado: parece que la subida falló, y la subida fue
+  /// bien.
+  static const _porQueNoSePinta =
+      'El archivo está subido, pero el navegador no lo deja pintar.\n'
+      'Suele ser el CORS del bucket: ver DESPLIEGUE.md.';
 
   PiezaDePatrocinio _armar() => PiezaDePatrocinio(
         etiqueta: _etiqueta.text.trim(),

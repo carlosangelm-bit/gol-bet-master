@@ -433,5 +433,54 @@ void main() {
       await abrir(tester);
       expect(find.byTooltip('Borrar el archivo'), findsNothing);
     });
+
+    testWidgets('CLAVE: el icono roto DICE por qué, no se queda callado',
+        (tester) async {
+      // Pasó en la primera subida real: el archivo estaba en Storage, con su
+      // tipo y su tamaño, y en pantalla un icono roto. Sin explicación, eso
+      // manda a buscar el problema a la subida, que había ido bien.
+      await abrir(tester,
+          pieza: const PiezaDePatrocinio(
+              etiqueta: 'Socio', logoUrl: 'https://x/no-existe.png'));
+      await tester.pump();
+      expect(find.textContaining('no lo deja pintar'), findsOneWidget);
+      expect(find.textContaining('DESPLIEGUE.md'), findsOneWidget);
+    });
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // 5 · EL HUÉRFANO QUE DEJABA REEMPLAZAR
+  //
+  // Se vio en la primera subida real: dos archivos de 49 KB en la misma
+  // carpeta, y solo uno en uso. Reemplazar subía el nuevo y no tocaba el viejo.
+  //
+  // Y es justo lo que este diseño venía a evitar: el que sobra ya no lo conoce
+  // nadie —el modelo guarda una sola URL— y la regla no deja listar la carpeta
+  // para encontrarlo. Un archivo así no se puede borrar nunca desde la app.
+  // ═════════════════════════════════════════════════════════════════════════
+  group('5 · reemplazar no deja archivos colgados', () {
+    test('CLAVE: el código limpia hacia el lado que toca', () {
+      // La lógica está en el widget y necesita Firebase para ejecutarse de
+      // verdad, así que lo que se fija aquí es que las dos ramas EXISTEN y
+      // apuntan a lo contrario. Sin esto, borrar el viejo al salir sin guardar
+      // —o el nuevo al guardar— pasaría desapercibido.
+      final src =
+          File('lib/screens/organizador/patrocinio_seccion.dart')
+              .readAsLinesSync()
+              .where((l) => !l.trimLeft().startsWith('//') &&
+                  !l.trimLeft().startsWith('///'))
+              .join('\n');
+
+      // Al salir sin guardar sobra el NUEVO.
+      expect(src, contains('if (!_guardado && _logo != _urlOriginal'));
+      expect(src, contains('PatrocinioStorage.borrar(_logo)'));
+
+      // Al guardar sobra el VIEJO.
+      expect(src, contains('if (viejo.isNotEmpty && viejo != _logo)'));
+      expect(src, contains('await PatrocinioStorage.borrar(viejo)'));
+
+      // Y quitar la pieza se lleva su archivo.
+      expect(src, contains('if (_logo.isNotEmpty) await PatrocinioStorage.borrar(_logo)'));
+    });
   });
 }
