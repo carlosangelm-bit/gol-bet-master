@@ -277,5 +277,29 @@ void main() {
       expect(GolfBetApp.tokenDeRuta(const ['caddie', 'c1'], 'caddie'), 'c1');
       expect(GolfBetApp.tokenDeRuta(const ['torneo', 't1'], 'torneo'), 't1');
     });
+
+    // ── EL PORTAL DE ORGANIZADOR ──────────────────────────────────────────
+    //
+    // Mismo extractor, quinto prefijo. Lo que sigue a /organizador/ NO es un
+    // token: es el id del torneo, y no hace falta que sea secreto —un torneo
+    // vive en users/{uid}/torneos y la regla ya dice que solo su dueño lo lee—.
+    // Es la diferencia con /tv/ y /torneo/, donde el token ES la credencial.
+    test('/organizador/{id} da el id del torneo', () {
+      expect(GolfBetApp.tokenDeRuta(const ['organizador', 'tor_1'], 'organizador'),
+          'tor_1');
+    });
+
+    test('y no se cruza con ninguno de los otros cuatro', () {
+      for (final otro in ['tv', 'torneo', 'guest', 'caddie']) {
+        expect(GolfBetApp.tokenDeRuta(const ['organizador', 'x'], otro), isNull,
+            reason: otro);
+        expect(GolfBetApp.tokenDeRuta([otro, 'x'], 'organizador'), isNull,
+            reason: otro);
+      }
+    });
+
+    test('sin id no hay portal', () {
+      expect(GolfBetApp.tokenDeRuta(const ['organizador'], 'organizador'), isNull);
+    });
   });
 }

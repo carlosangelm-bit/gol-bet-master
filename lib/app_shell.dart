@@ -4,15 +4,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/app_theme.dart';
+import 'core/escuchas.dart';
 import 'providers/round_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/player_provider.dart';
-import 'providers/user_profile_provider.dart';
-import 'providers/handicap_provider.dart';
-import 'providers/perfil_provider.dart';
-import 'providers/torneo_provider.dart';
-import 'services/user_profile_service.dart';
-import 'providers/betting_group_provider.dart';
 import 'screens/capture/capture_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/scorecard/scorecard_screen.dart';
@@ -68,13 +63,9 @@ class _AppShellState extends State<AppShell> {
     final auth = context.read<AuthProvider>();
     if (!auth.isAuth) return;
     _listenersStarted = true;
-    context.read<RoundProvider>().syncFromFirestore();
-    context.read<PlayerProvider>().startListening();
-    context.read<UserProfileProvider>().startListening();
-    context.read<HandicapProvider>().startListening();
-    context.read<PerfilProvider>().startListening();
-    context.read<TorneoProvider>().startListening();
-    context.read<BettingGroupProvider>().init();
+    // La lista vive en core/escuchas.dart: el portal de organizador es otra
+    // raíz y arranca las mismas, y dos copias se habrían separado.
+    iniciarEscuchas(context);
   }
 
   @override
@@ -131,13 +122,7 @@ class _AppShellState extends State<AppShell> {
       if (_listenersStarted) {
         _listenersStarted = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            context.read<HandicapProvider>().stopListening();
-            context.read<PerfilProvider>().stopListening();
-            context.read<TorneoProvider>().stopListening();
-            // El siguiente usuario no hereda la identidad del anterior.
-            UserProfileService.olvidaIdentidad();
-          }
+          if (mounted) detenerEscuchas(context);
         });
       }
       return const AuthScreen();

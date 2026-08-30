@@ -17,6 +17,7 @@ import 'providers/user_profile_provider.dart';
 import 'providers/handicap_provider.dart';
 import 'providers/perfil_provider.dart';
 import 'providers/torneo_provider.dart';
+import 'screens/organizador/organizador_screen.dart';
 import 'screens/torneos/leaderboard_tv_screen.dart';
 import 'screens/torneos/torneo_enlace_screen.dart';
 import 'providers/betting_group_provider.dart';
@@ -146,6 +147,14 @@ class GolfBetApp extends StatelessWidget {
   /// cuenta; esta lee la pública, que no lleva importes y se ve sin sesión.
   static String? _extractTvToken() => _deLaUrl('tv');
 
+  /// El PORTAL DE ORGANIZADOR. `/organizador/{torneoId}`.
+  ///
+  /// Lo que sigue al prefijo NO es un token: es el id del torneo, y no hace
+  /// falta que sea secreto. Un torneo vive en `users/{uid}/torneos/{id}`, así
+  /// que quien no sea su dueño no lo recibe —la regla ya lo dice—. Es la
+  /// diferencia con /tv/ y /torneo/, donde el token ES la credencial.
+  static String? _extractOrganizadorId() => _deLaUrl('organizador');
+
   static String? _extractCaddieToken() => _deLaUrl('caddie');
 
   @override
@@ -155,6 +164,7 @@ class GolfBetApp extends StatelessWidget {
     final caddieToken = _extractCaddieToken();
     final torneoToken = _extractTorneoToken();
     final tvToken     = _extractTvToken();
+    final organizador = _extractOrganizadorId();
 
     return MaterialApp(
       title: 'Golf Bet Master', // v1.1.0+5
@@ -192,7 +202,12 @@ class GolfBetApp extends StatelessWidget {
                   ? GuestJoinScreen(token: guestToken)
                   : torneoToken != null
                       ? TorneoEnlaceScreen(token: torneoToken)
-                      : const AppShell(),
+                      // El PORTAL va justo antes de la app normal: no compite
+                      // con nada —ninguna otra rama usa este primer segmento—
+                      // y necesita sesión, así que él mismo abre la puerta.
+                      : organizador != null
+                          ? OrganizadorScreen(torneoId: organizador)
+                          : const AppShell(),
       onGenerateRoute: (settings) {
         final name = settings.name ?? '';
         if (name.startsWith('/caddie/')) {
@@ -215,6 +230,19 @@ class GolfBetApp extends StatelessWidget {
           return MaterialPageRoute(
             builder: (_) => LeaderboardTvScreen(token: token),
           );
+        }
+        if (name.startsWith('/organizador/')) {
+          final id = name.replaceFirst('/organizador/', '');
+          return MaterialPageRoute(
+            builder: (_) => OrganizadorScreen(torneoId: id),
+          );
+        }
+        // La app de siempre, por nombre de ruta. La necesita el botón "ir a la
+        // app" del portal: sin esto volvería a home, home vuelve a mirar
+        // Uri.base —que sigue diciendo /organizador/…— y se quedaría dando
+        // vueltas en el portal.
+        if (name == '/app') {
+          return MaterialPageRoute(builder: (_) => const AppShell());
         }
         if (name.startsWith('/torneo/')) {
           final token = name.replaceFirst('/torneo/', '');

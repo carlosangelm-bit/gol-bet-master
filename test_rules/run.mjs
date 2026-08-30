@@ -137,6 +137,23 @@ await prueba('no lista sus roundResults', () =>
     assertFails(getDocs(collection(invitado, 'users', ORG, 'roundResults'))));
 await prueba('no lee sus torneos privados', () =>
     assertFails(getDoc(doc(invitado, 'users', ORG, 'torneos', 't1'))));
+
+// ── EL PORTAL DE ORGANIZADOR NO NECESITA REGLA NUEVA ────────────────────────
+//
+// /organizador/{torneoId} abre un torneo para editarlo. La pregunta es quién
+// puede abrirlo, y la respuesta ya estaba escrita: un torneo vive en
+// users/{uid}/torneos, y esa regla dice request.auth.uid == userId.
+//
+// Añadir una regla propia habría sido una SEGUNDA definición de lo mismo, y de
+// ahí salen las contradicciones. Estas tres pruebas son lo que permite decir
+// "no hace falta regla nueva" sin que sea una suposición.
+await prueba('PORTAL: un tercero no abre el torneo de otro', () =>
+    assertFails(getDoc(doc(otro, 'users', ORG, 'torneos', 't1'))));
+await prueba('PORTAL: ni lo edita conociendo su id', () =>
+    assertFails(setDoc(doc(otro, 'users', ORG, 'torneos', 't1'),
+        { nombre: 'Secuestrado' })));
+await prueba('PORTAL: y el dueño SÍ lista los suyos, que es de lo que vive', () =>
+    assertSucceeds(getDocs(collection(organizador, 'users', ORG, 'torneos'))));
 await prueba('no lee sus rondas', () =>
     assertFails(getDoc(doc(invitado, 'users', ORG, 'rounds', 'ronda1'))));
 await prueba('no escribe en sus datos', () =>
