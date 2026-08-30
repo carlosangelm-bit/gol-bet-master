@@ -590,6 +590,53 @@ class _HandicapTrackerSheet extends StatelessWidget {
             ),
           ),
         ],
+        // ── LAS RONDAS QUE NO CUENTAN ───────────────────────────────────────
+        //
+        // Se dicen, no se esconden. Un diferencial imposible —de una ronda que
+        // se cerró a medias— estuvo semanas en los datos sin que nadie lo
+        // viera, porque el índice salía como un número suelto y un cero no
+        // llama la atención.
+        if (result.descartadas.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: t.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: t.divider),
+              ),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Icon(Icons.report_problem_outlined, size: 15, color: t.sub),
+                      const SizedBox(width: 6),
+                      Text('NO CUENTAN', style: GolfType.label(t.sub)),
+                    ]),
+                    const SizedBox(height: 6),
+                    Text(
+                        '${result.descartadas.length} ronda'
+                        '${result.descartadas.length == 1 ? '' : 's'} con un '
+                        'diferencial que nadie puede jugar. Suele ser una ronda '
+                        'que se cerró con pocos hoyos capturados.',
+                        style: TextStyle(
+                            color: t.text, fontSize: 12, height: 1.35)),
+                    const SizedBox(height: 6),
+                    for (final d in result.descartadas.take(5))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: Text(
+                            '${d.roundName} · ${d.holesPlayed} H · '
+                            'diferencial ${d.differential.toStringAsFixed(1)}',
+                            style: TextStyle(color: t.sub, fontSize: 11)),
+                      ),
+                    if (result.descartadas.length > 5)
+                      Text('…y ${result.descartadas.length - 5} más.',
+                          style: TextStyle(color: t.sub, fontSize: 11)),
+                  ]),
+            ),
+          ),
         // ── LA TENDENCIA ────────────────────────────────────────────────────
         //
         // Va ANTES de la lista de diferenciales a propósito: la pregunta que se

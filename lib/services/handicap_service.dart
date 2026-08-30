@@ -19,6 +19,25 @@ class ScoreDifferential {
   final int holesPlayed; // 9 o 18
   final String courseName;
 
+  /// El suelo de lo humanamente posible.
+  ///
+  /// ── Un diferencial negativo NO es el problema ─────────────────────────────
+  ///
+  /// Lo parece, y no lo es: un jugador de hándicap positivo que firma por
+  /// debajo del rating del campo produce un diferencial negativo legítimo. Un
+  /// +2 que hace 68 en un campo de CR 72 da −4,2, y es correcto.
+  ///
+  /// Lo que no existe es −27. Serían veintisiete golpes por debajo del rating:
+  /// ni el mejor del mundo. Así que el corte va donde acaba lo posible, no
+  /// donde acaba lo cómodo.
+  static const suelo = -10.0;
+
+  /// Este diferencial no lo pudo producir una persona jugando.
+  ///
+  /// No se guarda: se deduce del propio valor. Guardarlo habría metido un campo
+  /// derivado en Firestore que se queda viejo en cuanto cambie el criterio.
+  bool get esImposible => differential < suelo;
+
   const ScoreDifferential({
     required this.roundId,
     required this.roundName,
@@ -77,6 +96,14 @@ class HandicapIndexResult {
   /// Ajuste por pocas rondas (tabla WHS)
   final double tableAdjustment;
 
+  /// Las rondas que se dejaron fuera por producir un diferencial imposible.
+  ///
+  /// Se guardan enteras, no solo su número: una ronda que no cuenta tiene que
+  /// poder VERSE como tal, con su fecha y su cifra. Desaparecer sin más es lo
+  /// que dejó este fallo semanas escondido, y contar cuántas sin decir cuáles
+  /// no le sirve a nadie para encontrarlas.
+  final List<ScoreDifferential> descartadas;
+
   const HandicapIndexResult({
     this.index,
     required this.totalRounds,
@@ -84,6 +111,7 @@ class HandicapIndexResult {
     required this.allDifferentials,
     this.esrAdjustment = 0.0,
     this.tableAdjustment = 0.0,
+    this.descartadas = const [],
   });
 
   bool get hasIndex => index != null;
@@ -95,6 +123,17 @@ class HandicapService {
   // Constante de referencia WHS
   static const double _refSlope = 113.0;
   static const double _maxHI = 54.0;
+
+  /// Hoyos mínimos para que una ronda cuente. **WHS Regla 3.2.**
+  ///
+  /// Lo que el estándar dice y aquí NO se hace, dicho para que sea una decisión
+  /// y no un olvido: WHS admite además que una ronda de entre 7 y 13 hoyos
+  /// cuente como score de NUEVE. No se implementa porque exige decidir cuáles
+  /// son esos nueve cuando los hoyos jugados están repartidos, y equivocarse en
+  /// eso da un diferencial plausible y falso — que es justo el fallo del que
+  /// viene todo esto. Se prefiere no contar la ronda a contarla mal.
+  static const minimoHoyos18 = 14;
+  static const minimoHoyos9 = 7;
 
   /// Calcula el Adjusted Gross Score (RBA) aplicando Net Double Bogey por hoyo.
   /// Para cada hoyo: max = par + 2 + strokes_de_handicap_en_ese_hoyo
@@ -126,14 +165,34 @@ class HandicapService {
     return rba;
   }
 
-  /// Calcula cuántos strokes de ventaja aplican en un hoyo dado el strokeIndex
+  /// Cuántos golpes de ventaja recibe un jugador en un hoyo.
+  ///
+  /// ── El fallo de los múltiplos exactos de 18 ───────────────────────────────
+  ///
+  /// Lo cazó una prueba de par neto cuya aritmética no cuadraba: un jugador de
+  /// 18 recibía DOS golpes en cada hoyo, cuando le toca uno.
+  ///
+  /// La versión anterior trataba el resto cero como "los dieciocho hoyos" y le
+  /// sumaba una vuelta de más:
+  ///
+  ///     PH 18  →  18 % 18 == 0  →  umbral 18  →  (18 ~/ 18) + 1 = 2   ✗
+  ///     PH 36  →  igual         →              →  (36 ~/ 18) + 1 = 3   ✗
+  ///
+  /// El reparto correcto no necesita ese caso especial: se dan tantas vueltas
+  /// completas como quepan, y una más en los primeros hoyos por el resto.
+  ///
+  ///     PH 18  →  base 1, resto 0  →  1 en los dieciocho          ✓
+  ///     PH 19  →  base 1, resto 1  →  2 en el SI 1, 1 en el resto ✓
+  ///     PH  9  →  base 0, resto 9  →  1 del SI 1 al 9             ✓
+  ///
+  /// Importa porque de esto sale el tope de doble bogey neto del RBA: con un
+  /// golpe de más por hoyo, el tope sube y el score ajustado sale más bajo de
+  /// lo que debe.
   static int _strokesOnHole(int strokeIndex, int playingHandicap) {
     if (playingHandicap <= 0) return 0;
-    // Rondas de 18 hoyos: si el handicap es mayor que 18, se da 2 en algunos hoyos
-    if (strokeIndex <= (playingHandicap % 18 == 0 ? 18 : playingHandicap % 18)) {
-      return (playingHandicap ~/ 18) + 1;
-    }
-    return playingHandicap ~/ 18;
+    final vueltas = playingHandicap ~/ 18;
+    final resto = playingHandicap % 18;
+    return vueltas + (strokeIndex <= resto ? 1 : 0);
   }
 
   /// Calcula el Score Differential para una ronda.
@@ -177,24 +236,52 @@ class HandicapService {
     // Hoyos jugados según startingNine y totalHoles
     final playedHoles = _getPlayedHoles(round);
 
-    // Verificar que haya al menos la mitad de los hoyos con score
-    final scoredHoles = playedHoles.where((h) => (playerScores[h]?.grossScore ?? 0) > 0).length;
-    if (scoredHoles < (playedHoles.length / 2).ceil()) return null;
-
-    // Gross score total
-    final grossScore = playedHoles.fold<int>(0, (sum, h) {
-      final s = playerScores[h]?.grossScore ?? 0;
-      return sum + s;
-    });
-    if (grossScore == 0) return null;
+    // ── CUÁNTOS HOYOS HACEN FALTA — WHS Regla 3.2 ─────────────────────────────
+    //
+    // Antes bastaba con la MITAD, y de ahí salió un fallo que estuvo semanas en
+    // los datos sin que nadie lo viera: una ronda de prueba con diez hoyos
+    // capturados producía "Gross 46 en 18 hoyos" y un diferencial de −27.
+    //
+    // WHS pide catorce hoyos para una ronda de dieciocho y siete para una de
+    // nueve. Por debajo, la ronda NO ES ACEPTABLE y no produce diferencial.
+    final anotados =
+        playedHoles.where((h) => (playerScores[h]?.grossScore ?? 0) > 0).toList();
+    final minimo = round.totalHoles == 9 ? minimoHoyos9 : minimoHoyos18;
+    if (anotados.length < minimo) return null;
 
     // Playing Handicap para este tee
     final playingHandicap = tee.playingHandicap(rp.handicapEnRonda).round();
 
+    // ── Y LOS QUE FALTAN VAN A PAR NETO, no a cero ────────────────────────────
+    //
+    // Es la otra mitad del mismo fallo, y la que hacía el daño: sumar solo los
+    // hoyos anotados da un total que se compara contra el rating de la ronda
+    // ENTERA. Diez hoyos suman 46 y el campo vale 72, así que el jugador
+    // "hizo" 26 bajo par sin haber jugado.
+    //
+    // WHS lo resuelve así: un hoyo no jugado se anota a par neto —el par más
+    // los golpes que le tocan al jugador ahí—. Ni cero ni el par a secas.
+    final conParNeto = <int, int>{};
+    for (final h in playedHoles) {
+      final real = playerScores[h]?.grossScore ?? 0;
+      if (real > 0) {
+        conParNeto[h] = real;
+        continue;
+      }
+      final info = round.course.holes.firstWhere((x) => x.hole == h,
+          orElse: () => CourseHole(hole: h, par: 4, strokeIndex: 18));
+      conParNeto[h] = info.par + _strokesOnHole(info.strokeIndex, playingHandicap);
+    }
+
+    // El score a efectos de hándicap: lo jugado más el par neto de lo que no.
+    // No es lo que el jugador firmó, y por eso la lista dice cuántos hoyos
+    // anotó de verdad.
+    final grossScore = conParNeto.values.fold<int>(0, (a, b) => a + b);
+    if (grossScore == 0) return null;
+
     // RBA (Adjusted Gross Score — Net Double Bogey)
-    final grossMap = playerScores.map((h, s) => MapEntry(h, s.grossScore));
     final rba = calculateRBA(
-      grossScores: grossMap,
+      grossScores: conParNeto,
       courseHoles: round.course.holes,
       playingHandicap: playingHandicap,
       playedHoles: playedHoles,
@@ -230,7 +317,9 @@ class HandicapService {
       courseRating: cr,
       slopeRating: slope,
       parTotal: par,
-      holesPlayed: playedHoles.length,
+      // Los hoyos que se ANOTARON, no los que la ronda decía tener. Con los
+      // segundos, la lista enseñaba "18 H" de una ronda de diez.
+      holesPlayed: anotados.length,
       courseName: round.course.name,
     );
   }
@@ -277,8 +366,25 @@ class HandicapService {
       );
     }
 
+    // ── LA GUARDA ────────────────────────────────────────────────────────────
+    //
+    // Un diferencial por debajo del suelo no lo produjo nadie jugando: lo
+    // produjo un dato roto aguas arriba. Se descarta del cálculo.
+    //
+    // Y no es solo un cinturón. Los diferenciales se GUARDAN en Firestore, así
+    // que arreglar `calculateFromRound` solo arregla las rondas futuras: los
+    // que ya están escritos siguen ahí. Esta línea es lo que repara una cuenta
+    // sin migrar nada.
+    //
+    // Se descartan, no se corrigen: no hay forma de saber qué debería haber
+    // dicho un diferencial imposible, y adivinarlo sería inventar el dato en
+    // vez de la cifra.
+    final buenos = allDiffs.where((d) => !d.esImposible).toList();
+    final descartadas = allDiffs.where((d) => d.esImposible).toList()
+      ..sort((a, b) => b.playedAt.compareTo(a.playedAt));
+
     // Ordenar por fecha descendente y tomar las últimas 20
-    final sorted = [...allDiffs]
+    final sorted = [...buenos]
       ..sort((a, b) => b.playedAt.compareTo(a.playedAt));
     final last20 = sorted.take(20).toList();
 
@@ -291,6 +397,7 @@ class HandicapService {
         usedDifferentials: [],
         allDifferentials: last20,
         tableAdjustment: entry.adj,
+        descartadas: descartadas,
       );
     }
 
@@ -333,6 +440,7 @@ class HandicapService {
       allDifferentials: last20,
       esrAdjustment: esrAdj,
       tableAdjustment: entry.adj,
+      descartadas: descartadas,
     );
   }
 
