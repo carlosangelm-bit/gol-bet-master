@@ -316,6 +316,48 @@ class FirestoreService {
     await _rounds().doc(roundId).delete();
   }
 
+  /// Borra una ronda del HISTORIAL, de los cuatro sitios donde vive.
+  ///
+  /// ── Por qué son cuatro y no uno ───────────────────────────────────────────
+  ///
+  /// Una ronda cerrada deja rastro en varias colecciones, y los tres primeros
+  /// usan el roundId como id de documento, así que borrar es directo:
+  ///
+  ///   users/{uid}/rounds/{roundId}              la ronda
+  ///   users/{uid}/roundResults/{roundId}        el balance y MIS torneos
+  ///   users/{uid}/scoreDifferentials/{roundId}  el índice
+  ///   torneoResultados/{torneoId}_{roundId}     lo enviado a torneos ajenos
+  ///
+  /// El balance y las tablas de torneo se DERIVAN de roundResults, no se
+  /// guardan, así que se arreglan solas al borrar. Lo mismo el índice.
+  ///
+  /// Lo que esto NO puede arreglar, y por eso [sePuedeBorrar] lo impide antes
+  /// de llegar aquí: una instantánea ya publicada es una copia con fecha, y
+  /// solo la cambia el organizador volviendo a publicar.
+  ///
+  /// Se borra en ORDEN INVERSO al que se escribió: primero lo que está fuera de
+  /// mi cuenta. Si algo falla a mitad, lo que queda es una ronda mía sin enviar
+  /// —que es recuperable— y no un envío huérfano en la tabla de otro.
+  static Future<void> borrarDelHistorial({
+    required String roundId,
+    List<String> torneoIds = const [],
+  }) async {
+    final uid = AuthService.uid;
+    if (uid == null) throw Exception('No autenticado');
+
+    for (final torneoId in torneoIds) {
+      try {
+        await _torneoResultados().doc('${torneoId}_$roundId').delete();
+      } catch (e) {
+        // Se sigue: puede que nunca llegara a enviarse, y eso no es un fallo.
+        debugPrint('[borrar] torneoResultados ${torneoId}_$roundId: $e');
+      }
+    }
+    await _scoreDiffs().doc(roundId).delete();
+    await _roundResults().doc(roundId).delete();
+    await _rounds().doc(roundId).delete();
+  }
+
   // ══════════════════════════════════════════════════════════════════════════════
   // HISTORIAL
   // ══════════════════════════════════════════════════════════════════════════════

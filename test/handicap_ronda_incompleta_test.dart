@@ -65,6 +65,20 @@ Round _ronda({
   );
 }
 
+/// Dieciocho hoyos con la ida a 4 y la vuelta a 6.
+///
+/// Las dos vueltas distintas a propósito: con 45 y 45 cualquier reparto
+/// acierta, y la prueba no probaría nada.
+ScoreDifferential _conVueltasDistintas({required int desde}) {
+  final r = _ronda(hoyos: 18, golpes: 4, desde: desde);
+  final scores = {
+    for (var h = 1; h <= 18; h++)
+      h: HoleScore(playerId: 'p1', hole: h, grossScore: h <= 9 ? 4 : 6, putts: 2)
+  };
+  return HandicapService.calculateFromRound(
+      round: r.copyWith(scores: {'p1': scores}), playerId: 'p1')!;
+}
+
 ScoreDifferential? _diff(Round r) =>
     HandicapService.calculateFromRound(round: r, playerId: 'p1');
 
@@ -248,6 +262,69 @@ void main() {
       expect(r.index, isNull);
       expect(r.totalRounds, 0);
       expect(r.descartadas, hasLength(5));
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  group('4 · F9, B9 y total', () {
+    test('CLAVE: una ronda de 18 trae las dos vueltas', () {
+      // Es lo que un golfista mira: no cuánto hizo, sino dónde se le fue.
+      final d = _diff(_ronda(hoyos: 18, golpes: 5))!;
+      expect(d.hayVueltas, isTrue);
+      expect(d.frontNine, 45, reason: '9 hoyos a 5');
+      expect(d.backNine, 45);
+      expect(d.frontNine! + d.backNine!, d.grossScore,
+          reason: 'las dos vueltas tienen que sumar el total');
+    });
+
+    test('CLAVE: la ida son los hoyos 1-9, salgas por donde salgas', () {
+      // Con las dos vueltas DISTINTAS, que es lo único que distingue un
+      // reparto bueno de uno malo: con 45 y 45 cualquier criterio acierta.
+      //
+      // Y con salida por el diez, que es como se jugó la ronda que destapó
+      // todo esto. En una tarjeta la ida son los nueve primeros aunque se
+      // hayan jugado los últimos: es lo que el jugador reconoce.
+      final d = _conVueltasDistintas(desde: 10);
+      expect(d.frontNine, 36, reason: '9 hoyos a 4 en la ida');
+      expect(d.backNine, 54, reason: '9 hoyos a 6 en la vuelta');
+      expect(d.frontNine! + d.backNine!, d.grossScore);
+    });
+
+    test('y saliendo por el uno, exactamente lo mismo', () {
+      // El reparto no puede depender de por dónde se salió.
+      final a = _conVueltasDistintas(desde: 1);
+      final b = _conVueltasDistintas(desde: 10);
+      expect(a.frontNine, b.frontNine);
+      expect(a.backNine, b.backNine);
+    });
+
+    test('una ronda de nueve por la ida no inventa una vuelta', () {
+      // Null y no cero: un cero ahí se leería como "hizo 0 en la vuelta".
+      final d = _diff(_ronda(hoyos: 9, totalHoles: 9))!;
+      expect(d.frontNine, isNotNull);
+      expect(d.backNine, isNull);
+      expect(d.hayVueltas, isFalse);
+    });
+
+    test('y un diferencial guardado ANTES no las trae, sin romperse', () {
+      // Los que ya están en Firestore no tienen estos campos. La pantalla
+      // enseña lo que sí hay en vez de inventar el reparto.
+      final viejo = ScoreDifferential.fromJson({
+        'roundId': 'r1',
+        'roundName': 'Vieja',
+        'playedAt': DateTime(2026, 1, 1).toIso8601String(),
+        'differential': 15.0,
+        'grossScore': 90,
+      });
+      expect(viejo.hayVueltas, isFalse);
+      expect(viejo.frontNine, isNull);
+    });
+
+    test('y viajan de ida y vuelta cuando existen', () {
+      final d = _diff(_ronda(hoyos: 18, golpes: 5))!;
+      final ida = ScoreDifferential.fromJson(d.toJson());
+      expect(ida.frontNine, d.frontNine);
+      expect(ida.backNine, d.backNine);
     });
   });
 }

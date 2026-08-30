@@ -19,6 +19,17 @@ class ScoreDifferential {
   final int holesPlayed; // 9 o 18
   final String courseName;
 
+  /// El score de la ida y el de la vuelta, si se pueden separar.
+  ///
+  /// Aparte del total porque es lo que un golfista mira: no cuánto hizo, sino
+  /// DÓNDE se le fue la ronda. El total ya está en [grossScore].
+  ///
+  /// Nulos en los diferenciales guardados antes de que esto existiera. La
+  /// pantalla enseña un guion en vez de inventar el reparto, que sería peor:
+  /// una cifra plausible que nadie puede comprobar.
+  final int? frontNine;
+  final int? backNine;
+
   /// El suelo de lo humanamente posible.
   ///
   /// ── Un diferencial negativo NO es el problema ─────────────────────────────
@@ -50,7 +61,12 @@ class ScoreDifferential {
     required this.parTotal,
     required this.holesPlayed,
     required this.courseName,
+    this.frontNine,
+    this.backNine,
   });
+
+  /// Si hay desglose por vueltas.
+  bool get hayVueltas => frontNine != null && backNine != null;
 
   Map<String, dynamic> toJson() => {
     'roundId': roundId,
@@ -64,6 +80,10 @@ class ScoreDifferential {
     'parTotal': parTotal,
     'holesPlayed': holesPlayed,
     'courseName': courseName,
+    // Aditivos: solo se escriben cuando hay algo que decir, así que un
+    // diferencial guardado ayer se lee igual que hoy.
+    if (frontNine != null) 'frontNine': frontNine,
+    if (backNine != null) 'backNine': backNine,
   };
 
   factory ScoreDifferential.fromJson(Map<String, dynamic> j) => ScoreDifferential(
@@ -78,6 +98,8 @@ class ScoreDifferential {
     parTotal:            (j['parTotal']   as num?)?.toInt() ?? 72,
     holesPlayed:         (j['holesPlayed'] as num?)?.toInt() ?? 18,
     courseName:          (j['courseName'] as String?) ?? '',
+    frontNine:           (j['frontNine'] as num?)?.toInt(),
+    backNine:            (j['backNine'] as num?)?.toInt(),
   );
 }
 
@@ -321,7 +343,22 @@ class HandicapService {
       // segundos, la lista enseñaba "18 H" de una ronda de diez.
       holesPlayed: anotados.length,
       courseName: round.course.name,
+      // Por NÚMERO de hoyo, no por orden de juego: en una tarjeta, la ida son
+      // los nueve primeros aunque se haya salido por el diez. Es lo que el
+      // jugador reconoce cuando mira dónde se le fue la ronda.
+      frontNine: _mitad(conParNeto, (h) => h <= 9),
+      backNine: _mitad(conParNeto, (h) => h > 9),
     );
+  }
+
+  /// La suma de los hoyos que cumplen [cual], o null si no hay ninguno.
+  ///
+  /// Null y no cero: una ronda de nueve por la vuelta no tiene ida, y un cero
+  /// ahí se leería como "hizo 0 en la ida".
+  static int? _mitad(Map<int, int> scores, bool Function(int) cual) {
+    final trozo = scores.entries.where((e) => cual(e.key));
+    if (trozo.isEmpty) return null;
+    return trozo.fold<int>(0, (a, e) => a + e.value);
   }
 
   /// Obtiene la lista de hoyos efectivamente jugados según la configuración de la ronda

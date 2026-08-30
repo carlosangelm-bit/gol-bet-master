@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../../models/borrar_ronda.dart';
+import '../../providers/perfil_provider.dart';
+import '../../providers/torneo_provider.dart';
 import '../../models/tendencia.dart';
 import '../../widgets/grafico_tendencia.dart';
 import '../templates/templates_screen.dart';
@@ -504,7 +507,14 @@ class _HandicapTrackerSheet extends StatelessWidget {
     final prov   = context.watch<HandicapProvider>();
     final result = prov.result;
     final hi     = result.index;
-    final diffs  = result.allDifferentials;
+    // Las descartadas VAN EN LA LISTA, no en un bloque aparte.
+    //
+    // El bloque decía lo que había que decir y ocupaba seis líneas justo donde
+    // se mira el gráfico. Una fila en gris con su motivo dice lo mismo sin
+    // desaparecer, que era el requisito de verdad: una ronda que no cuenta
+    // tiene que verse como tal.
+    final diffs = [...result.allDifferentials, ...result.descartadas]
+      ..sort((a, b) => b.playedAt.compareTo(a.playedAt));
 
     return DraggableScrollableSheet(
       expand: false,
@@ -590,53 +600,6 @@ class _HandicapTrackerSheet extends StatelessWidget {
             ),
           ),
         ],
-        // ── LAS RONDAS QUE NO CUENTAN ───────────────────────────────────────
-        //
-        // Se dicen, no se esconden. Un diferencial imposible —de una ronda que
-        // se cerró a medias— estuvo semanas en los datos sin que nadie lo
-        // viera, porque el índice salía como un número suelto y un cero no
-        // llama la atención.
-        if (result.descartadas.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: t.surface,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: t.divider),
-              ),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(children: [
-                      Icon(Icons.report_problem_outlined, size: 15, color: t.sub),
-                      const SizedBox(width: 6),
-                      Text('NO CUENTAN', style: GolfType.label(t.sub)),
-                    ]),
-                    const SizedBox(height: 6),
-                    Text(
-                        '${result.descartadas.length} ronda'
-                        '${result.descartadas.length == 1 ? '' : 's'} con un '
-                        'diferencial que nadie puede jugar. Suele ser una ronda '
-                        'que se cerró con pocos hoyos capturados.',
-                        style: TextStyle(
-                            color: t.text, fontSize: 12, height: 1.35)),
-                    const SizedBox(height: 6),
-                    for (final d in result.descartadas.take(5))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 2),
-                        child: Text(
-                            '${d.roundName} · ${d.holesPlayed} H · '
-                            'diferencial ${d.differential.toStringAsFixed(1)}',
-                            style: TextStyle(color: t.sub, fontSize: 11)),
-                      ),
-                    if (result.descartadas.length > 5)
-                      Text('…y ${result.descartadas.length - 5} más.',
-                          style: TextStyle(color: t.sub, fontSize: 11)),
-                  ]),
-            ),
-          ),
         // ── LA TENDENCIA ────────────────────────────────────────────────────
         //
         // Va ANTES de la lista de diferenciales a propósito: la pregunta que se
@@ -664,10 +627,45 @@ class _HandicapTrackerSheet extends StatelessWidget {
                   controller: sc,
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                   itemCount: diffs.length,
-                  itemBuilder: (_, i) {
+                  itemBuilder: (ctx, i) {
                     final d = diffs[i];
-                    final isUsed = result.usedDifferentials.any((u) => u.roundId == d.roundId);
-                    return _DiffRow(diff: d, isUsed: isUsed, rank: i + 1, t: t);
+                    final isUsed = result.usedDifferentials
+                        .any((u) => u.roundId == d.roundId);
+                    // Los torneos para los que cuenta esta ronda salen del
+                    // RoundResult, que es donde vive la marca. Sin él no se
+                    // puede decidir, así que se trata como no borrable.
+                    final rr = ctx
+                        .read<PerfilProvider>()
+                        .resultados
+                        .where((r) => r.roundId == d.roundId)
+                        .toList();
+                    final torneoIds =
+                        rr.isEmpty ? const <String>[] : rr.first.torneoIds;
+                    return _DiffRow(
+                      diff: d,
+                      isUsed: isUsed,
+                      rank: i + 1,
+                      t: t,
+                      borrado: rr.isEmpty && d.esImposible
+                          // Una ronda descartada sin RoundResult: no hay marca
+                          // que consultar, pero tampoco hay tabla de nadie que
+                          // dependa de ella.
+                          ? const SePuedeBorrar(PorQueNo.siSePuede)
+                          : sePuedeBorrar(
+                              torneoIds, ctx.read<TorneoProvider>().torneos),
+                      onBorrar: () async {
+                        final messenger = ScaffoldMessenger.of(ctx);
+                        try {
+                          await FirestoreService.borrarDelHistorial(
+                              roundId: d.roundId, torneoIds: torneoIds);
+                          messenger.showSnackBar(SnackBar(
+                              content: Text('${d.roundName} borrada.')));
+                        } catch (e) {
+                          messenger.showSnackBar(SnackBar(
+                              content: Text('No se pudo borrar: $e')));
+                        }
+                      },
+                    );
                   },
                 ),
         ),
@@ -744,7 +742,83 @@ class _DiffRow extends StatelessWidget {
   final bool isUsed;
   final int rank;
   final GolfTheme t;
-  const _DiffRow({required this.diff, required this.isUsed, required this.rank, required this.t});
+
+  /// Si se puede borrar, y por qué no cuando no.
+  final SePuedeBorrar borrado;
+  final Future<void> Function() onBorrar;
+
+  const _DiffRow({
+    required this.diff,
+    required this.isUsed,
+    required this.rank,
+    required this.t,
+    required this.borrado,
+    required this.onBorrar,
+  });
+
+  /// Por qué esta ronda no cuenta. Vacío si cuenta.
+  String get _porQueNoCuenta => diff.esImposible
+      ? 'No cuenta: el diferencial es imposible. Suele ser una ronda que se '
+          'cerró con pocos hoyos capturados.'
+      : '';
+
+  Future<void> _menu(BuildContext context) async {
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 14),
+          Text(diff.roundName, style: GolfType.title(t.text)),
+          const SizedBox(height: 4),
+          Text(
+              '${diff.courseName} · ${diff.holesPlayed} hoyos anotados',
+              style: TextStyle(color: t.sub, fontSize: 12)),
+          if (_porQueNoCuenta.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(_porQueNoCuenta,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: t.danger, fontSize: 12, height: 1.35)),
+            ),
+          ],
+          const SizedBox(height: 16),
+          if (borrado.si)
+            ListTile(
+              leading: Icon(Icons.delete_outline, color: t.danger, size: 20),
+              title: Text('Borrar esta ronda',
+                  style: TextStyle(color: t.danger, fontSize: 14)),
+              subtitle: Text(
+                  'Se va del historial, del índice y del balance. No se puede '
+                  'deshacer.',
+                  style: TextStyle(color: t.sub, fontSize: 11)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await onBorrar();
+              },
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(Icons.lock_outline, size: 16, color: t.sub),
+                const SizedBox(width: 9),
+                // El motivo, con los nombres. "No se puede" no le dice a nadie
+                // qué hacer.
+                Expanded(
+                  child: Text(borrado.explicacion,
+                      style: TextStyle(color: t.sub, fontSize: 12, height: 1.35)),
+                ),
+              ]),
+            ),
+          const SizedBox(height: 12),
+        ]),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -756,17 +830,25 @@ class _DiffRow extends StatelessWidget {
       formattedDate = '—';
     }
 
+    // En GRIS y a media tinta si no cuenta. Sigue estando, y se distingue de
+    // una ronda simplemente vieja sin ocupar un bloque.
+    final fuera = diff.esImposible;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Container(
+      child: Opacity(
+        opacity: fuera ? 0.55 : 1,
+        child: InkWell(
+        onTap: () => _menu(context),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isUsed
+          color: isUsed && !fuera
               ? t.primary.withValues(alpha: 0.07)
               : t.card,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: isUsed
+            color: isUsed && !fuera
                 ? t.primary.withValues(alpha: 0.25)
                 : t.sub.withValues(alpha: 0.12),
           ),
@@ -799,8 +881,15 @@ class _DiffRow extends StatelessWidget {
             ),
             const SizedBox(height: 1),
             Row(children: [
-              Text('${diff.courseName} · ${diff.holesPlayed} H · $formattedDate',
-                  style: TextStyle(color: t.sub, fontSize: 10),
+              Text(
+                  fuera
+                      ? 'NO CUENTA · ${diff.holesPlayed} H · $formattedDate'
+                      : '${diff.courseName} · ${diff.holesPlayed} H · $formattedDate',
+                  style: TextStyle(
+                      color: t.sub,
+                      fontSize: 10,
+                      fontWeight: fuera ? FontWeight.w800 : FontWeight.w400,
+                      letterSpacing: fuera ? 0.5 : 0),
                   maxLines: 1, overflow: TextOverflow.ellipsis),
             ]),
           ])),
@@ -821,12 +910,23 @@ class _DiffRow extends StatelessWidget {
                 ),
               ),
             ]),
+            // ── F9 · B9 · TOTAL ────────────────────────────────────────────
+            //
+            // Es lo que un golfista mira: no cuánto hizo, sino DÓNDE se le fue
+            // la ronda. Los diferenciales guardados antes de que esto existiera
+            // no lo traen, y entonces se enseña lo que sí hay en vez de
+            // inventar el reparto.
             Text(
-              'Gross ${diff.grossScore} · RBA ${diff.adjustedGrossScore}',
+              diff.hayVueltas
+                  ? 'F9 ${diff.frontNine} · B9 ${diff.backNine} · '
+                      '${diff.grossScore}'
+                  : 'Gross ${diff.grossScore} · RBA ${diff.adjustedGrossScore}',
               style: TextStyle(color: t.sub, fontSize: 9),
             ),
           ]),
         ]),
+        ),
+        ),
       ),
     );
   }
