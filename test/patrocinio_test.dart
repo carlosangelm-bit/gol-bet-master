@@ -401,6 +401,22 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Subir logotipo'), findsOneWidget,
           reason: 'vuelve a su estado, no se queda en "Subiendo…"');
+      expect(find.textContaining('no entregó'), findsNothing,
+          reason: 'cancelar no es un fallo y no se avisa de nada');
+    });
+
+    testWidgets('CLAVE: un archivo elegido pero sin contenido SÍ se dice',
+        (tester) async {
+      // Hasta ahora se veía igual que cancelar: el botón volvía a su sitio y no
+      // pasaba nada. Es el mismo modo de fallo que costó dos rondas con el
+      // botón de importar — una acción que no responde y no explica por qué.
+      await abrir(tester,
+          elegir: () async => PlatformFile(name: 'logo.png', size: 10));
+      await tester.tap(find.text('Subir logotipo'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('no entregó el contenido'), findsOneWidget);
+      expect(find.textContaining('logo.png'), findsOneWidget,
+          reason: 'con el nombre del archivo, no "algo falló"');
     });
 
     testWidgets('CRITERIO 4: con un logo puesto, se ofrece borrarlo',

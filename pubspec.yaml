@@ -26,6 +26,10 @@ dependencies:
   file_picker: ^8.1.2
 
 dev_dependencies:
+  # Para el único camino que no se puede probar de otra forma: los plugins de
+  # Firebase no existen en `flutter test`, ni siquiera con --platform chrome.
+  integration_test:
+    sdk: flutter
   flutter_test:
     sdk: flutter
   flutter_lints: 5.0.0

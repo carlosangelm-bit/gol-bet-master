@@ -457,9 +457,27 @@ class _EditorDePiezaState extends State<EditorDePieza> {
       }
       return;
     }
-    final datos = archivo?.bytes;
-    if (archivo == null || datos == null) {
+    if (archivo == null) {
+      // Canceló. No es un fallo y no se dice nada.
       if (mounted) setState(() => _subiendo = false);
+      return;
+    }
+    final datos = archivo.bytes;
+    if (datos == null) {
+      // ESTO SÍ es un fallo, y hasta ahora se veía igual que cancelar.
+      //
+      // `withData: true` pide el contenido al elegir; si aun así llega vacío,
+      // el archivo se seleccionó y no se pudo leer. Callarlo deja al
+      // organizador pulsando el botón una y otra vez sin saber por qué no pasa
+      // nada — que es el mismo modo de fallo que costó dos rondas con el botón
+      // de importar.
+      if (mounted) {
+        setState(() {
+          _subiendo = false;
+          _aviso = 'El navegador no entregó el contenido de "${archivo!.name}". '
+              'Prueba con otro archivo, o vuelve a elegirlo.';
+        });
+      }
       return;
     }
     final r = await PatrocinioStorage.subir(
