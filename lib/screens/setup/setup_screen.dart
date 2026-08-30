@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/app_theme.dart';
+import '../../models/resolver_tee.dart';
 import '../../engines/bet_engine.dart';
 import '../../models/bet_recipe.dart';
 import '../../models/formaciones.dart';
@@ -425,6 +426,22 @@ class _SetupScreenState extends State<SetupScreen> {
   // Helper: calcular HCP de juego para un jugador dado su tee
   double _playingHcp(Player p) => _teeOf(p.id).playingHandicap(p.handicapBase);
 
+  /// Avisa de que la salida pedida no está en este campo.
+  ///
+  /// En la pantalla, no en el log: el log lo lee quien ya sospecha, y aquí el
+  /// problema es que nadie sospechaba.
+  void _avisarSalidaNoEncontrada() {
+    final r = _ultimaSalida;
+    if (r == null || !r.hayQueAvisar) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(r.aviso),
+        duration: const Duration(seconds: 8),
+      ));
+    });
+  }
+
   /// El CourseInfo del campo, construido con el tee que se va a jugar.
   ///
   /// ── El fallo del "(AZULES)" cuando se eligió blancas ──────────────────────
@@ -460,26 +477,63 @@ class _SetupScreenState extends State<SetupScreen> {
         slopeRating: t.slopeRating, parTotal: t.parTotal, gender: 'M');
   }
 
+  /// Cómo se resolvió la última salida pedida. Para poder decirlo.
+  SalidaResuelta? _ultimaSalida;
+
   /// Busca un tee por nombre en el campo actual (cualquier género).
-  /// Retorna null si no existe o no hay campo seleccionado.
-  TeeInfo? _teeByName(String teeName) {
+  ///
+  /// Ahora en CASCADA: nombre, nombre limpio, y CR+Slope. Ver
+  /// models/resolver_tee.dart — comparaba solo el nombre crudo, y de ahí venía
+  /// la caída silenciosa al primer tee.
+  ///
+  /// Retorna null si no existe: quien llama decide, y ahora además lo dice.
+  TeeInfo? _teeByName(String teeName, {double? cr, int? slope}) {
     final course = _selectedApiCourse;
     if (course == null) return null;
-    for (final t in course.allTees) {
-      if (t.teeName.toLowerCase() == teeName.toLowerCase()) {
-        final gender = course.femaleTees.any((f) => f.teeName == t.teeName) ? 'F' : 'M';
-        return TeeInfo(name: t.teeName, courseRating: t.courseRating,
-            slopeRating: t.slopeRating, parTotal: t.parTotal, gender: gender);
-      }
-    }
-    return null;
+    final r = resolverSalida(
+      [
+        for (final t in course.allTees)
+          SalidaCandidata(
+              nombre: t.teeName,
+              courseRating: t.courseRating,
+              slopeRating: t.slopeRating)
+      ],
+      pedida: teeName,
+      crPedido: cr,
+      slopePedido: slope,
+    );
+    _ultimaSalida = r;
+    if (r.como == ComoSeResolvio.noSeEncontro) return null;
+    final elegido = course.allTees
+        .firstWhere((t) => t.teeName == r.salida!.nombre);
+    final gender =
+        course.femaleTees.any((f) => f.teeName == elegido.teeName) ? 'F' : 'M';
+    return TeeInfo(
+        name: elegido.teeName,
+        courseRating: elegido.courseRating,
+        slopeRating: elegido.slopeRating,
+        parTotal: elegido.parTotal,
+        gender: gender);
   }
 
   /// Auto-asigna el tee a todos los jugadores que aún no tienen tee asignado.
   /// Si se pasa [preferredTeeName], intenta usarlo; si no existe en el campo,
   /// cae al primer tee masculino disponible.
-  void _autoAssignDefaultTee({String? preferredTeeName}) {
-    final preferred = preferredTeeName != null ? _teeByName(preferredTeeName) : null;
+  void _autoAssignDefaultTee({
+    String? preferredTeeName,
+    double? preferredCr,
+    int? preferredSlope,
+  }) {
+    _ultimaSalida = null;
+    final preferred = preferredTeeName != null
+        ? _teeByName(preferredTeeName, cr: preferredCr, slope: preferredSlope)
+        : null;
+    // Si se pidió una salida y no apareció, se DICE. Caer al primer tee en
+    // silencio es lo que hizo que "pedí blancas y jugué azules" no se notara
+    // hasta tres semanas después, mirando el índice.
+    if (preferredTeeName != null && preferred == null) {
+      _avisarSalidaNoEncontrada();
+    }
     final def = preferred ?? _defaultMaleTee;
     if (def == null) return;
     for (final p in _players) {
@@ -7037,7 +7091,13 @@ class _SetupScreenState extends State<SetupScreen> {
           if (isCurrentCourse) {
             setState(() {
               for (final p in _players) {
-                _playerTees[p.id] = _teeByName(name) ?? _playerTees[p.id] ?? _defaultMaleTee ?? TeeInfo.standard;
+                // Elegida a mano en esta pantalla: el nombre viene de la lista
+                // de la API, así que casa siempre. La cascada está por si el
+                // campo se recarga con otros nombres.
+                _playerTees[p.id] = _teeByName(name) ??
+                    _playerTees[p.id] ??
+                    _defaultMaleTee ??
+                    TeeInfo.standard;
               }
             });
           }
