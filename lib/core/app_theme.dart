@@ -415,3 +415,101 @@ class GolfType {
         fontFeatures: _tabular,
       );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOTION — las duraciones y las curvas, en un sitio
+//
+// Antes había 72 duraciones escritas a mano con diez valores distintos: 120,
+// 130, 150, 160, 180, 200, 220, 250, 280, 400, 600. Ninguno elegido contra
+// ningún criterio; cada uno contra el de al lado.
+//
+// ── EL CRITERIO: cuanto más se repite, más corto ────────────────────────────
+//
+// Es lo que resuelve la tensión de fondo, porque "lo frecuente" y "lo mirado"
+// piden cosas opuestas:
+//
+//   anotar un score   ·  18 a 72 veces por ronda  ·  casi nada
+//   cambiar de hoyo   ·  18 veces                 ·  corto y direccional
+//   cerrar la ronda   ·  1 vez                    ·  puede tener presencia
+//   ver el resultado  ·  1 vez, muy mirada        ·  coreografía
+//
+// 300 ms multiplicados por 72 son veinte segundos de espera acumulada en una
+// ronda. En la pantalla donde esta app compite con un lápiz y una tarjeta de
+// papel, eso no es elegancia: es lastre.
+//
+// ── Y NADA DE ESTO ES OBLIGATORIO ───────────────────────────────────────────
+//
+// Quien tenga "reducir movimiento" activado en su sistema no ve nada. No es una
+// preferencia estética: hay gente a la que el movimiento en pantalla le produce
+// mareo. Se resuelve en [de], que es por donde pasan todas.
+// ─────────────────────────────────────────────────────────────────────────────
+class GolfMotion {
+  const GolfMotion._();
+
+  /// Realimentación de un toque. Lo que se repite decenas de veces.
+  ///
+  /// Tan corto que no se percibe como espera, solo como respuesta. Es el tramo
+  /// donde una animación deja de sumar y empieza a estorbar.
+  static const instantaneo = Duration(milliseconds: 90);
+
+  /// Un control que cambia de estado: seleccionado, activo, plegado.
+  static const rapido = Duration(milliseconds: 150);
+
+  /// Algo que aparece o desaparece dentro de la pantalla.
+  static const normal = Duration(milliseconds: 220);
+
+  /// Un cambio de contexto: otro hoyo, otra sección.
+  static const pausado = Duration(milliseconds: 320);
+
+  /// Lo que pasa una vez al día y se mira. Aquí sí cabe presencia.
+  static const escena = Duration(milliseconds: 450);
+
+  // ── Curvas ────────────────────────────────────────────────────────────────
+  //
+  // Las lineales se notan mecánicas porque nada en el mundo físico arranca y
+  // para de golpe. Cada una dice algo distinto y por eso son tres, no una.
+
+  /// Algo que LLEGA: entra rápido y se posa. Es la de aparecer.
+  static const entrada = Curves.easeOutCubic;
+
+  /// Algo que SE VA: arranca suave y acelera al salir.
+  static const salida = Curves.easeInCubic;
+
+  /// Algo que SE MUEVE de un sitio a otro sin entrar ni salir.
+  static const cambio = Curves.easeInOutCubic;
+
+  /// La única propia: pasa un pelo de largo y vuelve.
+  ///
+  /// Para lo que se celebra —el balance final, una posición que sube—, y solo
+  /// ahí: el rebote llama la atención, y llamarla en cada toque es ruido.
+  static const enfasis = Cubic(0.2, 0.9, 0.25, 1.06);
+
+  /// La duración real, respetando "reducir movimiento".
+  ///
+  /// TODA animación de la app pasa por aquí. Con el ajuste activado devuelve
+  /// cero, que en Flutter significa "sin transición": el widget salta al estado
+  /// final en vez de quedarse a medias.
+  static Duration de(BuildContext context, Duration d) =>
+      (MediaQuery.maybeOf(context)?.disableAnimations ?? false)
+          ? Duration.zero
+          : d;
+
+  /// Si el sistema pide no animar.
+  static bool quieto(BuildContext context) =>
+      MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+
+  /// El retraso del elemento [i] en una entrada coreografiada.
+  ///
+  /// ── Por qué hay tope ──────────────────────────────────────────────────────
+  ///
+  /// Escalonar sin límite convierte una lista de veinte filas en una espera de
+  /// dos segundos con la última llegando cuando ya nadie mira. A partir de
+  /// [maxEscalones] todas entran juntas: la secuencia ya se leyó en las
+  /// primeras.
+  static Duration retraso(BuildContext context, int i,
+      {int maxEscalones = 6, Duration paso = const Duration(milliseconds: 55)}) {
+    if (quieto(context)) return Duration.zero;
+    final n = i < 0 ? 0 : (i > maxEscalones ? maxEscalones : i);
+    return paso * n;
+  }
+}

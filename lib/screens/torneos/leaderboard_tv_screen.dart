@@ -47,6 +47,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/app_theme.dart';
 import '../../models/leaderboard_publico.dart';
 import '../../services/firestore_service.dart';
 
@@ -401,10 +402,31 @@ class _Tabla extends StatelessWidget {
         ]),
         SizedBox(height: u * 0.12),
         Expanded(
+          // ── QUE EL CAMBIO DE POSICIÓN SE VEA ────────────────────────────
+          //
+          // Antes las filas simplemente aparecían en su sitio nuevo: si alguien
+          // adelantaba a otro entre dos actualizaciones, en la pared no pasaba
+          // nada. Y esa pantalla se mira precisamente para ver quién sube.
+          //
+          // Con la clave puesta en el JUGADOR y no en la posición, Flutter
+          // reconoce que es la misma fila y la desplaza en vez de repintarla en
+          // otro sitio. Es lo único que hace falta para que el adelantamiento
+          // se lea.
+          //
+          // Aquí la duración es larga a propósito —es de las pocas cosas de la
+          // app que se miran desde diez metros— y no pasa por GolfMotion.de:
+          // una tele proyectada no tiene "reducir movimiento", y quedarse sin
+          // el movimiento es justo perder la información.
           child: Column(
             children: [
               for (final f in filas)
-                Expanded(child: _Fila(fila: f, u: u, datos: datos)),
+                Expanded(
+                    child: AnimatedSwitcher(
+                  duration: GolfMotion.escena,
+                  switchInCurve: GolfMotion.entrada,
+                  child: _Fila(
+                      key: ValueKey(f.nombre), fila: f, u: u, datos: datos),
+                )),
               // Sin relleno las filas de la última página se estirarían al doble
               // y la tabla cambiaría de forma al rotar.
               for (var i = filas.length; i < porPagina; i++)
@@ -430,7 +452,8 @@ class _Fila extends StatelessWidget {
   final FilaProyectada fila;
   final double u;
   final LeaderboardPublico datos;
-  const _Fila({required this.fila, required this.u, required this.datos});
+  const _Fila(
+      {super.key, required this.fila, required this.u, required this.datos});
 
   @override
   Widget build(BuildContext context) {

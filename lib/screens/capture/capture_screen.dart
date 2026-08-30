@@ -152,7 +152,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     final ctx = _wolfKey.currentContext;
     if (ctx != null) {
       await Scrollable.ensureVisible(ctx,
-          duration: const Duration(milliseconds: 280), alignment: 0.5);
+          duration: GolfMotion.pausado, alignment: 0.5);
     }
   }
 
@@ -216,7 +216,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
       if (idx < 0) return;
       _holeScroll.animateTo(
         idx * 46.0,
-        duration: const Duration(milliseconds: 250),
+        duration: GolfMotion.pausado,
         curve: Curves.easeOut,
       );
     });
@@ -734,7 +734,7 @@ class _PlayerTable extends StatelessWidget {
           return GestureDetector(
             onTap: () => onSelectPlayer(player.id),
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
+              duration: GolfMotion.rapido,
               decoration: BoxDecoration(
                 color: isActive
                     ? t.primary.withValues(alpha: 0.06)
@@ -1141,7 +1141,7 @@ class _ActivePlayerZoneState extends State<_ActivePlayerZone> {
                       putts == 0 ? 2 : putts,
                     ),
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 130),
+                      duration: GolfMotion.instantaneo,
                       height: 58,
                       decoration: BoxDecoration(
                         color: isSel ? color : t.surface,
@@ -1598,7 +1598,7 @@ class _UnitRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
+      duration: GolfMotion.rapido,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: isActive ? t.accent.withValues(alpha: 0.07) : t.surface,
@@ -1613,7 +1613,7 @@ class _UnitRow extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(children: [
               AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
+                duration: GolfMotion.rapido,
                 width: 22, height: 22,
                 decoration: BoxDecoration(
                   color: isActive ? t.accent : Colors.transparent,

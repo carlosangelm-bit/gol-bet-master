@@ -163,6 +163,12 @@ void main() {
       await tester.pump(const Duration(seconds: 13));
       expect(_texto(tester), contains('2 / 13'));
       expect(find.text('Jugador 13'), findsOneWidget);
+      // Y la anterior se va, no se queda debajo.
+      //
+      // Hace falta pasar el cruce: desde que las filas animan el cambio de
+      // posición, las dos conviven durante la transición. Es lo que hace que un
+      // adelantamiento se vea, y aquí lo que se comprueba es que TERMINA.
+      await tester.pump(const Duration(seconds: 1));
       expect(find.text('Jugador 1'), findsNothing);
     });
 

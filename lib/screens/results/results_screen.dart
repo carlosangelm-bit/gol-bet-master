@@ -8,6 +8,7 @@ import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../../widgets/entrada_animada.dart';
 import '../../engines/ledger_engine.dart';
 import '../../engines/bet_engine.dart';
 import '../../models/models.dart';
@@ -1258,7 +1259,17 @@ class _DuelCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
               child: Column(
-                children: allTypes.map((betType) {
+                // ── LA SECUENCIA ────────────────────────────────────────────
+                //
+                // El desglose entra DESPUÉS del balance, y sus filas
+                // escalonadas. La secuencia dice en qué orden mirar: primero la
+                // respuesta —cuánto—, después de dónde salió.
+                //
+                // Con tope: escalonar veinte filas sin límite deja la última
+                // llegando cuando ya nadie mira. Ver GolfMotion.retraso.
+                children: allTypes.asMap().entries.map((entrada) {
+                  final i = entrada.key;
+                  final betType = entrada.value;
                   final amount   = breakdown[betType] ?? 0.0;
                   final amtColor = amount > 0 ? t.profit : amount < 0 ? t.loss : t.sub;
                   final amtText  = amount.abs() < 0.005
@@ -1311,7 +1322,10 @@ class _DuelCard extends StatelessWidget {
                     }
                   }
 
-                  return Padding(
+                  return EntradaAnimada(
+                    // +1: el balance de arriba es el escalón cero.
+                    orden: i + 1,
+                    child: Padding(
                     padding: const EdgeInsets.only(bottom: 5),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
@@ -1342,6 +1356,7 @@ class _DuelCard extends StatelessWidget {
                             style: TextStyle(color: t.sub, fontSize: 10)),
                         ),
                     ]),
+                    ),
                   );
                 }).toList(),
               ),
@@ -2212,8 +2227,16 @@ class _HeroNeto extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
         child: Column(children: [
-          Text('$signo\$${b.abs().toStringAsFixed(0)}',
-              style: GolfType.hero(color)),
+          // LA CIFRA SE CUENTA. Es la respuesta de la pantalla y se mira una
+          // vez al día: aquí cabe presencia, al revés que en la captura.
+          //
+          // El signo va fuera del contador para que no baile mientras sube: un
+          // "+" que aparece y desaparece durante el recuento distrae de la
+          // cifra, que es lo único que se está mirando.
+          CifraAnimada(
+              valor: b.abs(),
+              estilo: GolfType.hero(color),
+              formato: (v) => '$signo\$${v.round()}'),
           const SizedBox(height: 2),
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             Text(
