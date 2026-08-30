@@ -24,6 +24,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../models/perfil_resumen.dart';
+import '../../models/serie_balance.dart';
+import '../../widgets/grafico_balance.dart';
 import '../../providers/handicap_provider.dart';
 import '../../providers/perfil_provider.dart';
 import '../../providers/torneo_provider.dart';
@@ -96,7 +98,13 @@ class HistoricoInicio extends StatelessWidget {
     );
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _BloqueBalance(t: t, estado: estado, r: resumen),
+      _BloqueBalance(
+          t: t,
+          estado: estado,
+          r: resumen,
+          // El mismo id que usa el resumen: si fueran dos, la cifra y la línea
+          // podrían acabar contando a personas distintas.
+          miId: perfil?.myPlayerId ?? UserProfileService.miJugadorId),
       // ── Lo que hay EN JUEGO, en su propio bloque ──────────────────────────
       //
       // Separado del balance y NUNCA sumado a él. El dinero de las rondas está
@@ -219,8 +227,14 @@ class _BloqueBalance extends StatelessWidget {
   final EstadoTablero estado;
   final PerfilResumen r;
 
+  /// Quién soy. Hace falta para acumular MI balance, no el de la ronda.
+  final String? miId;
+
   const _BloqueBalance(
-      {required this.t, required this.estado, required this.r});
+      {required this.t,
+      required this.estado,
+      required this.r,
+      required this.miId});
 
   @override
   Widget build(BuildContext context) {
@@ -255,7 +269,7 @@ class _BloqueBalance extends StatelessWidget {
           accion: null,
           onTap: null,
         ),
-      EstadoTablero.listo => _Cifra(t: t, r: r),
+      EstadoTablero.listo => _Cifra(t: t, r: r, miId: miId),
     };
   }
 }
@@ -265,9 +279,11 @@ class _BloqueBalance extends StatelessWidget {
 /// Es el único sitio de la pantalla con rojo saturado. La fase 4 movió el score
 /// a FORMAS justamente para dejar el canal del color libre para el dinero.
 class _Cifra extends StatelessWidget {
+  /// Quién soy, para poder acumular MI balance y no el de la ronda.
+  final String? miId;
   final GolfTheme t;
   final PerfilResumen r;
-  const _Cifra({required this.t, required this.r});
+  const _Cifra({required this.t, required this.r, required this.miId});
 
   @override
   Widget build(BuildContext context) {
@@ -315,6 +331,28 @@ class _Cifra extends StatelessWidget {
               ),
           ],
         ),
+        const SizedBox(height: 12),
+        // ── LA FORMA DEL SALDO ────────────────────────────────────────────
+        //
+        // La cifra de arriba no distingue dos historias muy distintas: un +500
+        // que nunca bajó de cero, y un +500 que estuvo en −800 y se recuperó.
+        // La línea sí, y es el mismo argumento que acabó destapando los
+        // diferenciales imposibles del handicap.
+        //
+        // Acumulada: la ALTURA es el saldo de entonces y el ESCALÓN es lo que
+        // se movió esa ronda, así que se leen las dos preguntas del mismo
+        // trazo.
+        Builder(builder: (ctx) {
+          final resultados = ctx.watch<PerfilProvider>().resultados;
+          final yo = miId;
+          if (yo == null) return const SizedBox.shrink();
+          return GraficoBalance(
+            serie: serieDeBalance(resultados, yo),
+            t: t,
+            // El formato del dinero ya está decidido: no puede haber dos.
+            importe: importe,
+          );
+        }),
         const SizedBox(height: 12),
         Divider(color: t.divider, height: 1),
         const SizedBox(height: 10),

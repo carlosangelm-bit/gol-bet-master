@@ -83,8 +83,10 @@ class GraficoTendencia extends StatelessWidget {
         height: alto,
         width: double.infinity,
         child: CustomPaint(
-          painter: _PintorDeTendencia(
-            serie: serie,
+          painter: PintorDeSerie(
+            valores: serie.puntos.map((p) => p.indice).toList(),
+            // En golf, MENOS es mejor: el índice más bajo va arriba.
+            menosEsMejor: true,
             linea: color,
             reja: t.divider,
             fondo: t.card,
@@ -150,62 +152,106 @@ class _Faltan extends StatelessWidget {
   }
 }
 
-/// Dónde cae cada punto dentro del lienzo.
+/// Dónde cae cada punto dentro del lienzo. **Una sola geometría para todas las
+/// series de la app.**
 ///
-/// Fuera del pintor y público a propósito: la geometría es lo único de este
-/// archivo que se puede comprobar en un test, y es donde vive el error que no se
-/// ve. Una serie plana dividiendo por cero, o el eje sin invertir —que se vería
-/// perfectamente bien y diría lo contrario de lo que pasa— no los caza mirar la
-/// pantalla.
-List<Offset> posicionesDeTendencia(SerieDeTendencia s, Size size) {
-  final n = s.puntos.length;
+/// ── Por qué genérica, y no una por gráfico ────────────────────────────────
+///
+/// El segundo gráfico —el balance— habría traído su propio pintor con su propia
+/// geometría, y entonces habría DOS sitios donde arreglar el mismo eje
+/// invertido. Aquí no se duplica: lo que cambia entre un gráfico y otro es una
+/// bandera.
+///
+/// [menosEsMejor] es esa bandera, y es la diferencia real entre los dos:
+///
+///   · handicap → menos es mejor, así que el valor MÁS BAJO va arriba
+///   · balance  → más es mejor, así que el valor MÁS ALTO va arriba
+///
+/// Invertirlo se vería perfectamente bien y diría lo contrario de lo que pasa.
+/// Por eso está fuera del pintor: es lo único que se puede comprobar en un
+/// test.
+List<Offset> posicionesDeSerie(
+  List<double> valores,
+  Size size, {
+  required bool menosEsMejor,
+}) {
+  final n = valores.length;
   if (n == 0) return const [];
 
   // Un margen arriba y abajo para que la línea no se pegue al borde.
   const margen = 6.0;
   final alto = size.height - margen * 2;
 
-  // OJO: rango cero. Una serie perfectamente plana —que pasa: cinco rondas
-  // clavadas en 10,4— daría una división por cero y la línea saldría fuera del
-  // lienzo o no saldría. Se centra, que es lo que significa "plana".
-  final rango = s.maximo - s.minimo;
-  double y(double v) => rango < 0.0001
-      ? margen + alto / 2
-      // Invertido: en golf, MENOS es mejor, así que el índice más bajo va
-      // ARRIBA. Sin esto la línea diría lo contrario de lo que pasa.
-      : margen + alto * ((v - s.minimo) / rango);
+  final minimo = valores.reduce((a, b) => a < b ? a : b);
+  final maximo = valores.reduce((a, b) => a > b ? a : b);
+
+  // OJO: rango cero. Una serie perfectamente plana —cinco rondas clavadas en el
+  // mismo índice, o cinco sin apuestas— daría una división por cero y la línea
+  // saldría fuera del lienzo o no saldría. Se centra, que es lo que significa
+  // "plana".
+  final rango = maximo - minimo;
+  double y(double v) {
+    if (rango < 0.0001) return margen + alto / 2;
+    final fraccion = (v - minimo) / rango;
+    // Sin invertir, el 0 del lienzo es ARRIBA: una fracción alta cae abajo.
+    return margen + alto * (menosEsMejor ? fraccion : 1 - fraccion);
+  }
 
   // Con un solo punto no hay ancho que repartir: va al centro.
   double x(int i) => n == 1 ? size.width / 2 : size.width * (i / (n - 1));
 
-  return [
-    for (var i = 0; i < n; i++) Offset(x(i), y(s.puntos[i].indice)),
-  ];
+  return [for (var i = 0; i < n; i++) Offset(x(i), y(valores[i]))];
 }
 
-class _PintorDeTendencia extends CustomPainter {
-  final SerieDeTendencia serie;
+/// La geometría de la tendencia del handicap. Ver [posicionesDeSerie].
+List<Offset> posicionesDeTendencia(SerieDeTendencia s, Size size) =>
+    posicionesDeSerie(s.puntos.map((p) => p.indice).toList(), size,
+        menosEsMejor: true);
+
+/// El pintor de una línea con su relleno. **Uno solo para toda la app.**
+///
+/// Recibe VALORES, no una serie concreta: el gráfico del handicap y el del
+/// balance dibujan lo mismo con datos distintos, y tener dos pintores era tener
+/// dos sitios donde arreglar el mismo trazo.
+class PintorDeSerie extends CustomPainter {
+  final List<double> valores;
+  final bool menosEsMejor;
   final Color linea;
   final Color reja;
   final Color fondo;
 
-  const _PintorDeTendencia({
-    required this.serie,
+  /// Dónde va la línea de referencia, en valor. Null = a media altura.
+  ///
+  /// El balance la quiere en el CERO —por encima ganas, por debajo pagas— y esa
+  /// línea es la que hace que el gráfico se lea de un vistazo. El handicap no
+  /// tiene un cero que signifique nada.
+  final double? referencia;
+
+  const PintorDeSerie({
+    required this.valores,
+    required this.menosEsMejor,
     required this.linea,
     required this.reja,
     required this.fondo,
+    this.referencia,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final pts = posicionesDeTendencia(serie, size);
+    final pts = posicionesDeSerie(valores, size, menosEsMejor: menosEsMejor);
     if (pts.isEmpty) return;
 
-    // La reja: una línea a media altura. Referencia, no decoración — sin ella
-    // no se sabe si la curva se mueve mucho o poco.
+    // La reja: una línea de referencia. Sin ella no se sabe si la curva se
+    // mueve mucho o poco, y en el balance además marca dónde está el cero.
+    final yReja = referencia == null
+        ? size.height / 2
+        : posicionesDeSerie([...valores, referencia!], size,
+                menosEsMejor: menosEsMejor)
+            .last
+            .dy;
     canvas.drawLine(
-      Offset(0, size.height / 2),
-      Offset(size.width, size.height / 2),
+      Offset(0, yReja),
+      Offset(size.width, yReja),
       Paint()
         ..color = reja
         ..strokeWidth = 1,
@@ -247,8 +293,8 @@ class _PintorDeTendencia extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_PintorDeTendencia v) =>
-      v.serie.puntos.length != serie.puntos.length ||
-      v.serie.ultimo != serie.ultimo ||
+  bool shouldRepaint(PintorDeSerie v) =>
+      v.valores.length != valores.length ||
+      v.valores.lastOrNull != valores.lastOrNull ||
       v.linea != linea;
 }
