@@ -22,21 +22,88 @@ class TorneoProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
 
+  /// Si ya llegó el PRIMER snapshot.
+  ///
+  /// ── La diferencia que faltaba ─────────────────────────────────────────────
+  ///
+  /// `loading` no sirve para esto: nace en false, así que entre que una pantalla
+  /// se monta y que alguien llama a startListening() hay un hueco en el que
+  /// `loading == false` y la lista está vacía. Quien lea eso concluye "no hay
+  /// torneos" cuando lo cierto es "todavía no lo sé".
+  ///
+  /// Eso es lo que enseñaba "este torneo no está en tu cuenta" en el portal de
+  /// organizador, con un torneo que sí era suyo. Una lista vacía y una lista sin
+  /// cargar se veían igual, y esa confusión es indistinguible de un permiso
+  /// denegado.
+  bool _cargado = false;
+
   List<Torneo> get torneos => _torneos;
   bool get loading => _loading;
   String? get error => _error;
+
+  /// Si ya se sabe la respuesta. Ver [_cargado].
+  bool get cargado => _cargado;
+
+  /// Si la suscripción está viva de verdad.
+  ///
+  /// Existe porque [startListening] puede rendirse en silencio —sin uid todavía
+  /// no hay nada a lo que suscribirse— y quien lo llamó necesita saber si tiene
+  /// que volver a intentarlo. Sin esto, un intento fallido se quedaba como
+  /// intento definitivo.
+  bool get escuchando => _sub != null;
+
+  /// Si está esperando a que aparezca el uid para suscribirse.
+  bool get reintentando => _reintento != null;
 
   /// Siembra sin Firestore, para los tests de widget.
   @visibleForTesting
   void sembrar(List<Torneo> t) {
     _torneos = t;
     _loading = false;
+    _cargado = true;
     notifyListeners();
   }
 
+  Timer? _reintento;
+  int _intentos = 0;
+
+  /// Cuántas veces se vuelve a intentar cuando todavía no hay uid.
+  ///
+  /// Acotado a propósito: sin tope, una sesión cerrada dejaría un reloj girando
+  /// para siempre. Ocho segundos cubren de sobra la propagación del token, que
+  /// es lo único que se está esperando.
+  static const _maxIntentos = 20;
+
+  /// ── POR QUÉ ESTO REINTENTA, Y NO LO HACE CADA PANTALLA ────────────────────
+  ///
+  /// Esta función se rendía en silencio: sin uid, `return`. No lanzaba, no
+  /// avisaba, no se suscribía. Quien la llamaba —AppShell, el portal de
+  /// organizador, la pantalla del enlace— marcaba "ya arrancado" y no volvía a
+  /// intentarlo nunca, así que un intento medio segundo pronto se convertía en
+  /// no tener torneos en toda la sesión.
+  ///
+  /// Ha aparecido CUATRO veces con formas distintas, siempre "algo que AppShell
+  /// hacía y que las rutas propias no heredan". Ponerle el reintento a cada
+  /// pantalla habría sido esperar a la quinta. El agujero está aquí, así que se
+  /// tapa aquí y las tres lo heredan.
   void startListening() {
     if (_sub != null) return;
-    if (AuthService.uid == null) return;
+    if (AuthService.uid == null) {
+      if (_intentos >= _maxIntentos) {
+        // Se cancela AQUÍ, no en el siguiente tic: un reloj que sigue vivo
+        // esperando a apagarse solo es un reloj vivo, y en una sesión cerrada
+        // no tiene nada que hacer.
+        _reintento?.cancel();
+        _reintento = null;
+        return;
+      }
+      _intentos++;
+      _reintento ??= Timer.periodic(
+          const Duration(milliseconds: 400), (_) => startListening());
+      return;
+    }
+    _reintento?.cancel();
+    _reintento = null;
     _loading = true;
     notifyListeners();
     _subSeguidos ??= FirestoreService.torneosSeguidosStream().listen((l) {
@@ -46,16 +113,24 @@ class TorneoProvider extends ChangeNotifier {
     _sub = FirestoreService.torneosStream().listen((lista) {
       _torneos = lista;
       _loading = false;
+      _cargado = true;
       _error = null;
       notifyListeners();
     }, onError: (e) {
       _error = e.toString();
       _loading = false;
+      // También cargado: ya se sabe la respuesta, y es que falló. Dejarlo en
+      // false colgaría la pantalla en "cargando…" para siempre, que es el otro
+      // extremo del mismo error.
+      _cargado = true;
       notifyListeners();
     });
   }
 
   void stopListening() {
+    _reintento?.cancel();
+    _reintento = null;
+    _intentos = 0;
     _sub?.cancel();
     _sub = null;
     _subSeguidos?.cancel();
@@ -63,6 +138,9 @@ class TorneoProvider extends ChangeNotifier {
     _seguidos = [];
     _torneos = [];
     _loading = false;
+    // Vuelve a "todavía no lo sé": la lista vacía de después de cerrar sesión no
+    // es una respuesta sobre los torneos de nadie.
+    _cargado = false;
     notifyListeners();
   }
 
@@ -138,6 +216,7 @@ class TorneoProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _reintento?.cancel();
     _subSeguidos?.cancel();
     _sub?.cancel();
     super.dispose();

@@ -1,6 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // APP SHELL — Navegación principal con Firebase Auth
 // ─────────────────────────────────────────────────────────────────────────────
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/app_theme.dart';
@@ -57,15 +59,42 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   bool _listenersStarted = false;
+  Timer? _reintento;
+
+  @override
+  void dispose() {
+    _reintento?.cancel();
+    super.dispose();
+  }
 
   void _startListenersIfNeeded() {
     if (_listenersStarted) return;
     final auth = context.read<AuthProvider>();
     if (!auth.isAuth) return;
-    _listenersStarted = true;
-    // La lista vive en core/escuchas.dart: el portal de organizador es otra
-    // raíz y arranca las mismas, y dos copias se habrían separado.
-    iniciarEscuchas(context);
+    // OJO: el flag se pone con lo que DEVUELVE, no antes de llamar.
+    //
+    // Ponerlo antes era decir "ya está" sobre algo que todavía no había pasado.
+    // startListening() se rinde en silencio si aún no hay uid, así que un
+    // intento medio segundo pronto quedaba como definitivo y la sesión entera
+    // se quedaba sin torneos. Se vio en el portal de organizador, pero el latch
+    // era el mismo aquí.
+    //
+    // La lista vive en core/escuchas.dart: el portal es otra raíz y arranca las
+    // mismas, y dos copias se habrían separado.
+    _listenersStarted = iniciarEscuchas(context);
+    if (!_listenersStarted) {
+      _reintento ??= Timer.periodic(const Duration(milliseconds: 400), (tm) {
+        if (!mounted) {
+          tm.cancel();
+          return;
+        }
+        _startListenersIfNeeded();
+        if (_listenersStarted) {
+          tm.cancel();
+          _reintento = null;
+        }
+      });
+    }
   }
 
   @override
@@ -122,7 +151,11 @@ class _AppShellState extends State<AppShell> {
       if (_listenersStarted) {
         _listenersStarted = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) detenerEscuchas(context);
+          if (mounted) {
+            _reintento?.cancel();
+            _reintento = null;
+            detenerEscuchas(context);
+          }
         });
       }
       return const AuthScreen();

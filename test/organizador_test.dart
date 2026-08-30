@@ -22,9 +22,16 @@ import 'package:golf_bet_master/core/escuchas.dart';
 import 'package:golf_bet_master/models/inscritos.dart';
 import 'package:golf_bet_master/models/models.dart';
 import 'package:golf_bet_master/models/torneo.dart';
+import 'package:golf_bet_master/providers/auth_provider.dart';
+import 'package:golf_bet_master/providers/betting_group_provider.dart';
+import 'package:golf_bet_master/providers/handicap_provider.dart';
+import 'package:golf_bet_master/providers/perfil_provider.dart';
 import 'package:golf_bet_master/providers/player_provider.dart';
+import 'package:golf_bet_master/providers/round_provider.dart';
+import 'package:golf_bet_master/providers/user_profile_provider.dart';
 import 'package:golf_bet_master/providers/torneo_provider.dart';
 import 'package:golf_bet_master/screens/organizador/inscritos_tabla.dart';
+import 'package:golf_bet_master/screens/organizador/organizador_screen.dart';
 import 'package:golf_bet_master/services/player_service.dart';
 import 'package:provider/provider.dart';
 
@@ -314,14 +321,24 @@ void main() {
     // La lista está una sola vez, en core/escuchas.dart. Esto comprueba que
     // sigue estando una sola vez: una copia se separa el día que se añada un
     // provider, y lo que falla entonces es una pantalla vacía sin motivo.
-    String fuente(String ruta) => File(ruta).readAsStringSync();
+    /// El código, SIN comentarios.
+    ///
+    /// Sin quitarlos, esta prueba se cazaba a sí misma: la línea de un
+    /// comentario que explica por qué NO se llama a startListening() contiene
+    /// literalmente `startListening()`. Ya pasó antes en este proyecto —un
+    /// contrapeso que aprobaba leyendo un comentario— y el modo de fallo es el
+    /// peor: la prueba sigue verde y deja de mirar lo que decía mirar.
+    String codigo(String ruta) => File(ruta)
+        .readAsLinesSync()
+        .where((l) => !l.trimLeft().startsWith('//'))
+        .join('\n');
 
     test('las dos raíces llaman a la MISMA función', () {
       for (final ruta in [
         'lib/app_shell.dart',
         'lib/screens/organizador/organizador_screen.dart',
       ]) {
-        expect(fuente(ruta), contains('iniciarEscuchas(context)'), reason: ruta);
+        expect(codigo(ruta), contains('iniciarEscuchas(context)'), reason: ruta);
       }
     });
 
@@ -330,16 +347,277 @@ void main() {
         'lib/app_shell.dart',
         'lib/screens/organizador/organizador_screen.dart',
       ]) {
-        expect(fuente(ruta).contains('.startListening()'), isFalse,
+        expect(codigo(ruta).contains('.startListening()'), isFalse,
             reason: '$ruta: la composición se define en core/escuchas.dart');
       }
     });
 
     test('y la única definición arranca los siete', () {
-      final src = fuente('lib/core/escuchas.dart');
+      final src = codigo('lib/core/escuchas.dart');
       for (final p in escuchasQueArrancan) {
         expect(src.contains('<$p>()'), isTrue, reason: p);
       }
+    });
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // 6 · LA PUERTA DEL PORTAL
+  //
+  // Esta capa no se podía probar: AuthProvider se construía contra Firebase.
+  // Es exactamente donde han caído los últimos fallos de este proyecto, y el
+  // último fue este: /organizador/{id} con la sesión del dueño y un torneo
+  // suyo enseñaba "este torneo no está en tu cuenta", y no se corregía.
+  //
+  // La causa es que "todavía no lo sé" y "no es tuyo" se pintaban igual.
+  // `loading` no los separa: nace en false, así que entre montar la pantalla y
+  // que alguien se suscriba hay un hueco con la lista vacía y sin cargar. Ese
+  // hueco se leía como un permiso denegado.
+  // ═════════════════════════════════════════════════════════════════════════
+  group('6 · la puerta del portal', () {
+    Future<TorneoProvider> montarPortal(
+      WidgetTester tester, {
+      required AuthStatus sesion,
+      required TorneoProvider torneos,
+      String id = 't1',
+    }) async {
+      tester.view.physicalSize = const Size(1440, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MultiProvider(
+        // Los SIETE, como en producción. Montar con menos habría escondido el
+        // caso que importa: aquí se llama a iniciarEscuchas de verdad.
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthProvider.sembrado(sesion)),
+          ChangeNotifierProvider(create: (_) => RoundProvider()),
+          ChangeNotifierProvider(
+              create: (_) => PlayerProvider()..sembrar(_directorio)),
+          ChangeNotifierProvider(create: (_) => UserProfileProvider()),
+          ChangeNotifierProvider(create: (_) => HandicapProvider()),
+          ChangeNotifierProvider(create: (_) => PerfilProvider()),
+          ChangeNotifierProvider(create: (_) => BettingGroupProvider()),
+          ChangeNotifierProvider<TorneoProvider>.value(value: torneos),
+        ],
+        child: MaterialApp(home: OrganizadorScreen(torneoId: id)),
+      ));
+      await tester.pump();
+      return torneos;
+    }
+
+    testWidgets('REGRESIÓN: sin cargar todavía NO dice que no es tuyo',
+        (tester) async {
+      // El fallo reportado, reproducido: provider recién creado —nadie se ha
+      // suscrito— y el portal montándose. Antes de esto se pintaba el mensaje
+      // de permiso; ahora se pinta que está cargando.
+      final prov = await montarPortal(tester,
+          sesion: AuthStatus.authenticated, torneos: TorneoProvider());
+      expect(find.textContaining('no está en tu cuenta'), findsNothing,
+          reason: 'una lista sin cargar no es una respuesta');
+      expect(find.textContaining('Cargando'), findsOneWidget);
+      prov.stopListening();
+    });
+
+    testWidgets('y cuando llegan los datos, abre el torneo', (tester) async {
+      // La otra mitad: el estado de carga no puede quedarse pegado.
+      final prov = TorneoProvider();
+      await montarPortal(tester, sesion: AuthStatus.authenticated, torneos: prov);
+      prov.sembrar([_torneo()]);
+      await tester.pump();
+      expect(find.text('Copa de Primavera'), findsOneWidget);
+      expect(find.text('Luis Herrera'), findsOneWidget);
+      expect(find.textContaining('Cargando'), findsNothing);
+      prov.stopListening();
+    });
+
+    testWidgets('CRITERIO 1: con la sesión del dueño abre el torneo',
+        (tester) async {
+      final prov = await montarPortal(tester,
+          sesion: AuthStatus.authenticated,
+          torneos: TorneoProvider()..sembrar([_torneo()]));
+      expect(find.text('Copa de Primavera'), findsOneWidget);
+      expect(find.text('4 inscritos · Por posición'), findsOneWidget);
+      prov.stopListening();
+    });
+
+    testWidgets('CRITERIO 3: con un torneo ajeno sigue diciendo lo que decía',
+        (tester) async {
+      // Cargado, con torneos dentro, y el id pedido no está. AHORA sí.
+      final prov = await montarPortal(tester,
+          sesion: AuthStatus.authenticated,
+          torneos: TorneoProvider()..sembrar([_torneo()]),
+          id: 'de-otra-cuenta');
+      expect(find.textContaining('no está en tu cuenta'), findsOneWidget);
+      expect(find.textContaining('organizas tú'), findsOneWidget);
+      prov.stopListening();
+    });
+
+    testWidgets('y con cero torneos el mensaje no culpa al enlace',
+        (tester) async {
+      // Si no llegó NADA, decir "es de otra cuenta" manda a buscar el problema
+      // al sitio equivocado. Es lo que pasó esta vez.
+      final prov = await montarPortal(tester,
+          sesion: AuthStatus.authenticated,
+          torneos: TorneoProvider()..sembrar([]));
+      expect(find.textContaining('No llegó ningún torneo'), findsOneWidget);
+      expect(find.textContaining('0 torneos en esta cuenta'), findsOneWidget);
+      prov.stopListening();
+    });
+
+    testWidgets('mientras Firebase no contesta, tampoco acusa a nadie',
+        (tester) async {
+      final prov = await montarPortal(tester,
+          sesion: AuthStatus.unknown, torneos: TorneoProvider());
+      expect(find.textContaining('no está en tu cuenta'), findsNothing);
+      expect(find.textContaining('Abriendo el portal'), findsOneWidget);
+      prov.stopListening();
+    });
+  });
+
+  group('7 · el arranque dice si prendió', () {
+    test('CLAVE: un provider sin suscribir no es un arranque hecho', () {
+      // El latch decía "ya está" sobre algo que aún no había pasado:
+      // startListening() se rinde en silencio sin uid, y quien lo llamaba no
+      // volvía a intentarlo nunca.
+      expect(TorneoProvider().escuchando, isFalse);
+      expect(TorneoProvider().cargado, isFalse);
+    });
+
+    test('y una lista vacía sembrada SÍ es una respuesta', () {
+      // El contrapeso: si `cargado` no se pusiera nunca, la pantalla se
+      // quedaría en "cargando…" para siempre, que es el otro extremo.
+      final p = TorneoProvider()..sembrar([]);
+      expect(p.cargado, isTrue);
+      expect(p.torneos, isEmpty);
+    });
+
+    testWidgets('CLAVE: sin sesión de Firebase, iniciarEscuchas devuelve FALSE',
+        (tester) async {
+      // Aquí no hay uid, así que startListening() se rinde en silencio: es
+      // EXACTAMENTE la situación que dejaba la sesión sin torneos. Lo que se
+      // fija es que el arranque lo ADMITA en vez de decir que sí — sin esto,
+      // quien llama marca "ya está" y no vuelve a intentarlo nunca.
+      late bool prendio;
+      late BuildContext capturado;
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => RoundProvider()),
+          ChangeNotifierProvider(create: (_) => PlayerProvider()),
+          ChangeNotifierProvider(create: (_) => UserProfileProvider()),
+          ChangeNotifierProvider(create: (_) => HandicapProvider()),
+          ChangeNotifierProvider(create: (_) => PerfilProvider()),
+          ChangeNotifierProvider(create: (_) => TorneoProvider()),
+          ChangeNotifierProvider(create: (_) => BettingGroupProvider()),
+        ],
+        child: Builder(builder: (ctx) {
+          capturado = ctx;
+          return const SizedBox();
+        }),
+      ));
+      // FUERA del build: la propia función lo dice, porque los start* llaman a
+      // notifyListeners() de forma síncrona.
+      prendio = iniciarEscuchas(capturado);
+      expect(prendio, isFalse,
+          reason: 'no se suscribió nada: decir que sí es la mentira que costó '
+              'el fallo');
+    });
+
+    testWidgets('CLAVE: un provider que falta no se lleva por delante al resto',
+        (tester) async {
+      // El aislamiento. TorneoProvider es el SEXTO de la lista: si el
+      // `context.read` de cualquiera de los cinco anteriores escapa del try, se
+      // lo lleva sin dejar rastro y el síntoma es el mismo de siempre —una
+      // pantalla vacía sin motivo—.
+      //
+      // Falta UserProfileProvider, que es el tercero.
+      final torneos = TorneoProvider();
+      late bool prendio;
+      late BuildContext capturado;
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => RoundProvider()),
+          ChangeNotifierProvider(create: (_) => PlayerProvider()),
+          ChangeNotifierProvider(create: (_) => HandicapProvider()),
+          ChangeNotifierProvider(create: (_) => PerfilProvider()),
+          ChangeNotifierProvider<TorneoProvider>.value(value: torneos),
+          ChangeNotifierProvider(create: (_) => BettingGroupProvider()),
+        ],
+        child: Builder(builder: (ctx) {
+          capturado = ctx;
+          return const SizedBox();
+        }),
+      ));
+      // Lo que se comprueba es que NO LANZA. Antes, el `context.read` iba como
+      // argumento —o sea, fuera del try— y la excepción se escapaba.
+      prendio = iniciarEscuchas(capturado);
+      expect(prendio, isFalse);
+      expect(tester.takeException(), isNull,
+          reason: 'el fallo de uno es problema de ese uno');
+      torneos.stopListening();
+    });
+
+    testWidgets('CLAVE: sin uid no se rinde — vuelve a intentarlo', (tester) async {
+      // La cuarta vez que aparece este patrón. Sin esto, un intento medio
+      // segundo pronto quedaba como definitivo, y el reintento tenía que
+      // ponerlo cada pantalla por su cuenta — o sea, esperar a la quinta.
+      final p = TorneoProvider();
+      p.startListening();
+      expect(p.escuchando, isFalse, reason: 'sin uid no hay a qué suscribirse');
+      expect(p.reintentando, isTrue, reason: 'pero no se ha rendido');
+      p.stopListening();
+      expect(p.reintentando, isFalse, reason: 'y cerrar sesión lo apaga');
+    });
+
+    test('el reintento está acotado: una sesión cerrada no gira para siempre',
+        () {
+      final p = TorneoProvider();
+      for (var i = 0; i < 40; i++) {
+        p.startListening();
+      }
+      expect(p.reintentando, isFalse,
+          reason: 'pasado el tope deja de intentarlo');
+      p.stopListening();
+    });
+  });
+
+  // ── EL BARRIDO ─────────────────────────────────────────────────────────────
+  //
+  // Cuatro veces el mismo patrón: algo que AppShell hace y que las rutas
+  // propias no heredan. La pregunta era si queda alguna ruta más con el hueco.
+  //
+  // La respuesta es que el hueco no era de las rutas: era de
+  // TorneoProvider.startListening(), que se rendía en silencio. Se tapó ahí, así
+  // que las tres pantallas que lo llaman lo heredan. Esto comprueba que sigue
+  // habiendo un solo sitio donde arrancarlo.
+  group('8 · ninguna ruta propia se queda sin lo que AppShell hacía', () {
+    final rutasPropias = [
+      'lib/screens/organizador/organizador_screen.dart',
+      'lib/screens/torneos/torneo_enlace_screen.dart',
+      'lib/screens/torneos/leaderboard_tv_screen.dart',
+    ];
+
+    String codigoDe(String ruta) => File(ruta)
+        .readAsLinesSync()
+        .where((l) => !l.trimLeft().startsWith('//'))
+        .join('\n');
+
+    test('las que necesitan torneos los arrancan', () {
+      for (final ruta in rutasPropias) {
+        final src = codigoDe(ruta);
+        final losUsa = src.contains('TorneoProvider>');
+        if (!losUsa) continue;
+        expect(
+            src.contains('iniciarEscuchas(context)') ||
+                src.contains('startListening()'),
+            isTrue,
+            reason: '$ruta lee TorneoProvider y no lo arranca');
+      }
+    });
+
+    test('CLAVE: y el reintento vive en el provider, no copiado en cada una',
+        () {
+      // Si esto empieza a fallar es que alguien volvió a poner un reloj de
+      // reintento en una pantalla. El sitio es el provider.
+      expect(codigoDe('lib/providers/torneo_provider.dart'),
+          contains('_maxIntentos'));
     });
   });
 }

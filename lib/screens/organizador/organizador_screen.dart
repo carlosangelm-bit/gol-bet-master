@@ -59,13 +59,27 @@ class OrganizadorScreen extends StatefulWidget {
 }
 
 class _OrganizadorScreenState extends State<OrganizadorScreen> {
-  bool _arrancadas = false;
+  /// Prendieron de VERDAD. No "se intentó".
+  ///
+  /// ── El fallo que costó esto ───────────────────────────────────────────────
+  ///
+  /// Antes esto se llamaba "ya lo intenté" y se ponía en true ANTES de arrancar
+  /// nada. `TorneoProvider.startListening()` se rinde en silencio si todavía no
+  /// hay uid —no lanza, no avisa, no se suscribe—, así que un intento medio
+  /// segundo pronto se convertía en no arrancar en toda la sesión. Y lo que se
+  /// veía era el portal diciéndole al dueño de un torneo que no era suyo.
+  bool _prendidas = false;
 
+  /// Aquí NO hay reloj de reintento, y es deliberado.
+  ///
+  /// Lo tuvo un rato y era la duplicación de siempre: si cada pantalla se pone
+  /// su propio reintento, la quinta que se escriba no lo tendrá. Quien espera al
+  /// uid es TorneoProvider.startListening(), que es quien sabe si le falta, y
+  /// cuando lo consigue avisa — y ese aviso ya reconstruye esta pantalla.
   void _arrancarSiHaceFalta() {
-    if (_arrancadas) return;
+    if (_prendidas) return;
     if (!context.read<AuthProvider>().isAuth) return;
-    _arrancadas = true;
-    iniciarEscuchas(context);
+    _prendidas = iniciarEscuchas(context);
   }
 
   @override
@@ -88,15 +102,29 @@ class _OrganizadorScreenState extends State<OrganizadorScreen> {
       // El portal necesita sesión, al revés que la tele: aquí se EDITA.
       return const AuthScreen();
     }
-    if (!_arrancadas) {
+    if (!_prendidas) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(_arrancarSiHaceFalta);
       });
     }
 
     final prov = context.watch<TorneoProvider>();
-    if (prov.loading && prov.torneos.isEmpty) {
-      return _Espera(t: t, mensaje: 'Cargando el torneo…');
+
+    // TODAVÍA NO LO SÉ ≠ NO ES TUYO.
+    //
+    // Es la distinción que faltaba y la que causó el fallo. `loading` no vale
+    // para separarlas: nace en false, así que antes de que nadie se suscriba hay
+    // un hueco en el que la lista está vacía y no está cargando — y eso se leía
+    // como "no está en tu cuenta". Un mensaje de permiso denegado cuando lo que
+    // pasaba era que no había llegado el primer dato.
+    if (!prov.cargado) {
+      return _Espera(
+          t: t,
+          mensaje: 'Cargando tus torneos…',
+          // Se DICE qué está esperando. Si esto sale en pantalla, el problema es
+          // el arranque, y quien lo vea puede contarlo en vez de describir un
+          // síntoma — que es lo que costó encontrar este fallo.
+          detalle: prov.reintentando ? 'Esperando a la sesión…' : null);
     }
 
     final torneo = prov.torneos
@@ -104,7 +132,8 @@ class _OrganizadorScreenState extends State<OrganizadorScreen> {
         .cast<Torneo?>()
         .firstWhere((_) => true, orElse: () => null);
 
-    if (torneo == null) return _NoEsTuyo(t: t);
+    // Solo aquí: la lista está CARGADA y el torneo no está en ella.
+    if (torneo == null) return _NoEsTuyo(t: t, cuantos: prov.torneos.length);
 
     return LayoutBuilder(builder: (context, c) {
       // El layout sale del ancho DISPONIBLE, no de la plataforma. Ver
@@ -118,7 +147,8 @@ class _OrganizadorScreenState extends State<OrganizadorScreen> {
 class _Espera extends StatelessWidget {
   final GolfTheme t;
   final String mensaje;
-  const _Espera({required this.t, required this.mensaje});
+  final String? detalle;
+  const _Espera({required this.t, required this.mensaje, this.detalle});
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -132,6 +162,11 @@ class _Espera extends StatelessWidget {
                     color: t.primary, strokeWidth: 2.5)),
             const SizedBox(height: 16),
             Text(mensaje, style: TextStyle(color: t.sub, fontSize: 13.5)),
+            if (detalle != null) ...[
+              const SizedBox(height: 6),
+              Text(detalle!,
+                  style: TextStyle(color: t.sub, fontSize: 11.5)),
+            ],
           ]),
         ),
       );
@@ -139,7 +174,12 @@ class _Espera extends StatelessWidget {
 
 class _NoEsTuyo extends StatelessWidget {
   final GolfTheme t;
-  const _NoEsTuyo({required this.t});
+
+  /// Cuántos torneos SÍ llegaron. Si son cero, lo que pasa probablemente no es
+  /// que el torneo sea ajeno: es que no llegó nada, y decir lo contrario manda a
+  /// buscar el problema al sitio equivocado.
+  final int cuantos;
+  const _NoEsTuyo({required this.t, required this.cuantos});
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -156,10 +196,16 @@ class _NoEsTuyo extends StatelessWidget {
                       color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
               Text(
-                  'El portal solo abre los torneos que organizas tú. Si lo '
-                  'creaste con otra cuenta, entra con esa.',
+                  cuantos == 0
+                      ? 'No llegó ningún torneo de esta cuenta, así que puede '
+                          'que el problema no sea el enlace. Prueba a recargar.'
+                      : 'El portal solo abre los torneos que organizas tú. Si lo '
+                          'creaste con otra cuenta, entra con esa.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: t.sub, fontSize: 13, height: 1.45)),
+              const SizedBox(height: 10),
+              Text('$cuantos torneo${cuantos == 1 ? '' : 's'} en esta cuenta',
+                  style: TextStyle(color: t.sub, fontSize: 11)),
             ]),
           ),
         ),

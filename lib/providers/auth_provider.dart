@@ -28,6 +28,24 @@ class AuthProvider extends ChangeNotifier {
   String     get email       => _user?.email ?? '';
   String     get photoUrl    => _user?.photoURL ?? '';
 
+  /// Sin Firebase, con el estado que se le diga. **Para tests.**
+  ///
+  /// ── Por qué hacía falta ───────────────────────────────────────────────────
+  ///
+  /// El constructor normal se suscribe a FirebaseAuth, así que cualquier
+  /// pantalla que dependa del estado de sesión era imposible de montar en una
+  /// prueba. Y es exactamente donde han caído los últimos fallos de este
+  /// proyecto: la puerta de sesión de una ruta propia, el arranque de escuchas,
+  /// lo que se evalúa antes de que llegue el primer dato. Cuatro veces la misma
+  /// forma, y las cuatro invisibles para la suite porque esta capa no se podía
+  /// instanciar.
+  ///
+  /// Hermana de PlayerProvider.sembrar y TorneoProvider.sembrar.
+  @visibleForTesting
+  AuthProvider.sembrado(AuthStatus estado) {
+    _status = estado;
+  }
+
   AuthProvider() {
     // Timeout de seguridad: si Firebase no responde en 6s, mostramos el login
     _unknownTimer = Timer(const Duration(seconds: 6), () {
