@@ -1,6 +1,7 @@
 // BET MODULE EDIT SHEET — Widget reutilizable para editar la configuración
 // de un BetModuleInstance. Se usa tanto desde home_screen (ronda activa)
 // como desde setup_screen (revisión antes de lanzar).
+import '../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../core/app_theme.dart';
@@ -342,7 +343,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(children: [
-            Text(_current.type.icon, style: const TextStyle(fontSize: 20)),
+            Icon(_current.type.icono, size: GolfIcons.juntoATitulo),
             const SizedBox(width: 10),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('Editar ${_current.type.label}', style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 17)),

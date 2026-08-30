@@ -1,4 +1,5 @@
 // SETUP SCREEN — Configurar jugadores, partidas y módulos de apuesta
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
@@ -4301,7 +4302,7 @@ class _SetupScreenState extends State<SetupScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           // ── Fila header del módulo ────────────────────────────────────
           Row(children: [
-            Text(mod.type.icon, style: const TextStyle(fontSize: 18)),
+            Icon(mod.type.icono, size: GolfIcons.juntoAValor),
             const SizedBox(width: 8),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(mod.name, style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 14)),
@@ -4506,8 +4507,7 @@ class _SetupScreenState extends State<SetupScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
             child: Row(children: [
-              Text(family.first.value.type.icon,
-                  style: const TextStyle(fontSize: 18)),
+              Icon(family.first.value.type.icono, size: GolfIcons.juntoAValor),
               const SizedBox(width: 8),
               Expanded(
                 child: Text('¿Quién entra en ${family.first.value.type.label}?',
@@ -4599,7 +4599,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 color: accent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Text(template.type.icon, style: const TextStyle(fontSize: 14)),
+              child: Icon(template.type.icono, size: GolfIcons.juntoAValor),
             ),
             const SizedBox(width: 8),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -4834,7 +4834,7 @@ class _SetupScreenState extends State<SetupScreen> {
                         Expanded(child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                          Text('${cfg.type.icon} ${cfg.type.label}',
+                          Text('${cfg.type.label}',
                               style: TextStyle(
                                   color: t.text,
                                   fontSize: 20,
@@ -5174,7 +5174,7 @@ class _SetupScreenState extends State<SetupScreen> {
                     children: [
                       // ── Header ─────────────────────────────────────
                       Row(children: [
-                        Text('${cfg.type.icon} ${cfg.type.label}',
+                        Text('${cfg.type.label}',
                             style: TextStyle(
                                 color: t.text,
                                 fontSize: 20,
@@ -6486,7 +6486,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 width: isSel && !bloqueada ? 1.5 : 1),
           ),
           child: Row(children: [
-            Text(bt.icon, style: const TextStyle(fontSize: 20)),
+            Icon(bt.icono, size: GolfIcons.juntoATitulo),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(bt.label, style: TextStyle(color: bloqueada ? t.sub : t.text, fontWeight: FontWeight.w700, fontSize: 14)),

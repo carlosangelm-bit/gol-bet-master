@@ -104,7 +104,7 @@ void main() {
       // Las pantallas que muestran una ronda histórica los necesitan; sin
       // ellos, abrir la ronda reventaría en vez de mostrar la apuesta.
       expect(BetModuleType.matchAutoPress.label, isNotEmpty);
-      expect(BetModuleType.matchAutoPress.icon, isNotEmpty);
+      expect(() => BetModuleType.matchAutoPress.icono, returnsNormally);
       expect(BetModuleType.matchAutoPress.description, isNotEmpty);
     });
   });

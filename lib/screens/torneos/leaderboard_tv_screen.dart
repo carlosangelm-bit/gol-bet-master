@@ -48,6 +48,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/app_theme.dart';
+import '../../core/golf_icons.dart';
 import '../../models/leaderboard_publico.dart';
 import '../../services/firestore_service.dart';
 
@@ -285,7 +286,17 @@ class _Cabecera extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(u * 0.5, u * 0.3, u * 0.5, u * 0.15),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Text(datos.emoji, style: TextStyle(fontSize: u * 0.7)),
+          // ICONO, no emoji. Esta es la superficie que se proyecta delante de
+          // los patrocinadores, y un emoji ahí es el peor sitio para los tres
+          // problemas que tiene: no hereda el color de la pantalla oscura,
+          // cambia de dibujo según el navegador del club, y a color sobre una
+          // paleta de tres niveles es el pico visual de la pared.
+          //
+          // El emoji del torneo no lo elige nadie —es siempre el mismo por
+          // defecto—, así que sustituirlo no pierde nada de lo que el
+          // organizador puso.
+          Icon(GolfIcons.trofeo,
+              size: u * 0.72, color: const Color(0xFF6FE39A)),
           SizedBox(width: u * 0.25),
           Expanded(
             child: Text(datos.nombre,

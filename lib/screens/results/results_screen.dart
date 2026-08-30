@@ -4,6 +4,7 @@
 // Nivel 2: cara a cara          (pagos cinematográficos)
 // Nivel 3: detalle expandible   (breakdown por tipo de apuesta)
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -1330,7 +1331,7 @@ class _DuelCard extends StatelessWidget {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
                         // Icono y nombre del tipo de apuesta
-                        Text(betType.icon, style: const TextStyle(fontSize: 12)),
+                        Icon(betType.icono, size: GolfIcons.juntoAEtiqueta),
                         const SizedBox(width: 6),
                         // ETIQUETA y VALOR, con los tokens. Antes eran 11/w500
                         // y 12/w800: distintos, pero a un tamaño de diferencia,
@@ -1824,7 +1825,7 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(m.type.icon, style: const TextStyle(fontSize: 13)),
+                Icon(m.type.icono, size: GolfIcons.juntoAEtiqueta),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -2055,7 +2056,7 @@ class _LowHighTeamResultState extends State<_LowHighTeamResult> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // ── Encabezado: los dos lados ────────────────────────────────────
         Row(children: [
-          Text(mod.type.icon, style: const TextStyle(fontSize: 15)),
+          Icon(mod.type.icono, size: GolfIcons.juntoAValor),
           const SizedBox(width: 8),
           Expanded(
             child: Text(mod.type.label,

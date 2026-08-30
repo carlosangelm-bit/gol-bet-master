@@ -13,6 +13,7 @@
 // bloque de avisos es "cosas rotas" deja de leerlo cuando dice algo normal, y
 // al revés, uno que aprende que es "información" ignora los rotos.
 // ─────────────────────────────────────────────────────────────────────────────
+import '../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import '../core/app_theme.dart';
 import '../engines/settlement_notes.dart';
@@ -71,7 +72,7 @@ class _Fila extends StatelessWidget {
         child: RichText(
           text: TextSpan(children: [
             TextSpan(
-              text: '${nota.tipo.icon} ${nota.tipo.label} · ',
+              text: '${nota.tipo.label} · ',
               style: TextStyle(
                   color: t.text, fontSize: 12, fontWeight: FontWeight.w800),
             ),

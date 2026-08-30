@@ -4,6 +4,7 @@
 // Al crear una ronda, estas configuraciones se pueden cargar y solo hay que
 // asignar los jugadores.
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:provider/provider.dart';
@@ -250,7 +251,7 @@ class _GamePresetsScreenState extends State<GamePresetsScreen> {
         border: Border.all(color: t.primary.withValues(alpha: 0.2)),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text(mod.type.icon, style: const TextStyle(fontSize: 13)),
+        Icon(mod.type.icono, size: GolfIcons.juntoAEtiqueta),
         const SizedBox(width: 4),
         Text(mod.summaryLabel,
             style: TextStyle(color: t.primary, fontSize: 10, fontWeight: FontWeight.w700)),
@@ -511,7 +512,7 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
           border: Border.all(color: t.divider),
         ),
         child: Row(children: [
-          Text(mod.type.icon, style: const TextStyle(fontSize: 22)),
+          Icon(mod.type.icono, size: GolfIcons.juntoATitulo),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(mod.name, style: TextStyle(
@@ -675,7 +676,7 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
             border: Border.all(color: isSel ? accentColor : t.divider, width: isSel ? 1.5 : 1),
           ),
           child: Row(children: [
-            Text(bt.icon, style: const TextStyle(fontSize: 20)),
+            Icon(bt.icono, size: GolfIcons.juntoATitulo),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(bt.label, style: TextStyle(
@@ -709,7 +710,7 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  Text('${cfg.type.icon} ${cfg.type.label}',
+                  Text('${cfg.type.label}',
                       style: TextStyle(color: t.text, fontSize: 20, fontWeight: FontWeight.w800)),
                   const Spacer(),
                   GestureDetector(onTap: () => Navigator.pop(bCtx2),

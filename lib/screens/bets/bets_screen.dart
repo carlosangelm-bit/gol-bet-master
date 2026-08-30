@@ -13,6 +13,7 @@
 //   3. Aceptar → approveBetChange() → se aplica payload si hay quórum
 //   4. Rechazar → rejectBetChange()
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
@@ -752,7 +753,7 @@ class _RuleCard extends StatelessWidget {
         border: Border.all(color: t.divider),
       ),
       child: Row(children: [
-        Text(m.type.icon, style: const TextStyle(fontSize: 20)),
+        Icon(m.type.icono, size: GolfIcons.juntoATitulo),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1980,7 +1981,7 @@ class _BetRow extends StatelessWidget {
         border: Border.all(color: accentColor.withValues(alpha: 0.18)),
       ),
       child: Row(children: [
-        Text(mod.type.icon, style: const TextStyle(fontSize: 16)),
+        Icon(mod.type.icono, size: GolfIcons.juntoAValor),
         const SizedBox(width: 8),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -3473,7 +3474,7 @@ class _BetTypeCard extends StatelessWidget {
                 border: Border.all(color: t.divider),
               ),
               child: Center(
-                child: Text(type.icon, style: const TextStyle(fontSize: 22)),
+                child: Icon(type.icono, size: GolfIcons.juntoATitulo),
               ),
             ),
             const SizedBox(width: 14),
@@ -3528,7 +3529,7 @@ class _BetTypeCard extends StatelessWidget {
               ),
             ),
             child: Center(
-              child: Text(type.icon, style: const TextStyle(fontSize: 22)),
+              child: Icon(type.icono, size: GolfIcons.juntoATitulo),
             ),
           ),
           const SizedBox(width: 14),
@@ -3642,7 +3643,7 @@ class _TypeSummarySection extends StatelessWidget {
         border: Border.all(color: t.divider),
       ),
       child: Row(children: [
-        Text(tipo.icon, style: const TextStyle(fontSize: 18)),
+        Icon(tipo.icono, size: GolfIcons.juntoAValor),
         const SizedBox(width: 11),
         Expanded(
             child: Column(

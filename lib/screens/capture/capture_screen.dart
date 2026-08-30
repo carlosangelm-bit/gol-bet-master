@@ -10,6 +10,7 @@
 //   4. Oyeses (solo par 3)
 //   5. Navegación prev/next hoyo
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -2008,7 +2009,7 @@ class LowHighHoleBlock extends StatelessWidget {
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Text(mod.type.icon, style: const TextStyle(fontSize: 12)),
+          Icon(mod.type.icono, size: GolfIcons.juntoAEtiqueta),
           const SizedBox(width: 6),
           Expanded(
             child: Text('${mod.type.label} · hoyo $hole',

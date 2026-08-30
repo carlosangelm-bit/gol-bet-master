@@ -32,6 +32,7 @@
 // leer las apuestas del organizador— deja abierto qué se juega y por eso lleva
 // al asistente con todo lo demás puesto.
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
@@ -255,7 +256,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
                   Text('HOY NO ENTRA', style: GolfType.label(t.sub)),
                   const SizedBox(height: 6),
                   for (final a in _partidaFuera) ...[
-                    Text('${a.plantilla.type.icon} ${a.plantilla.type.label}',
+                    Text('${a.plantilla.type.label}',
                         style: TextStyle(
                             color: t.text,
                             fontSize: 13,

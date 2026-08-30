@@ -11,6 +11,7 @@
 //   · "Aplicar a múltiples duelos" (botón global en la sección)
 //   · "Copiar a otros duelos" por duelo individual
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -407,8 +408,7 @@ class _BettingGroupEditorScreenState
                               border: Border.all(color: t.divider),
                             ),
                             child: Row(children: [
-                              Text(e.value.type.icon,
-                                  style: const TextStyle(fontSize: 18)),
+                              Icon(e.value.type.icono, size: GolfIcons.juntoAValor),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Column(
@@ -627,8 +627,7 @@ class _BettingGroupEditorScreenState
                           border: Border.all(color: t.divider),
                         ),
                         child: Row(children: [
-                          Text(tipo.icon,
-                              style: const TextStyle(fontSize: 18)),
+                          Icon(tipo.icono, size: GolfIcons.juntoAValor),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
@@ -1237,8 +1236,7 @@ class _PairRuleCardState extends State<_PairRuleCard> {
                     color: t.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Center(child: Text(bt.icon,
-                      style: const TextStyle(fontSize: 18))),
+                  child: Center(child: Icon(bt.icono, size: GolfIcons.juntoAValor)),
                 ),
                 title: Text(bt.label,
                     style: TextStyle(color: t.text,
@@ -1512,8 +1510,7 @@ class _PairRuleCardState extends State<_PairRuleCard> {
                           color: t.primary.withValues(alpha: 0.3)),
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Text(tpl.type.icon,
-                          style: const TextStyle(fontSize: 13)),
+                      Icon(tpl.type.icono, size: GolfIcons.juntoAEtiqueta),
                       const SizedBox(width: 4),
                       Text(
                         '${tpl.type.label} · ${tpl.summaryLabel}',
@@ -1659,7 +1656,7 @@ class _PresetPickerSheet extends StatelessWidget {
     try {
       const dummyIds = ['__a__', '__b__'];
       final instances = p.toModules(dummyIds);
-      return instances.map((m) => '${m.type.icon} ${m.type.label}').toList();
+      return instances.map((m) => '${m.type.label}').toList();
     } catch (_) { return []; }
   }
 }
@@ -2279,7 +2276,7 @@ class _FilaTipo extends StatelessWidget {
                 width: seleccionada && !bloqueada ? 1.5 : 1),
           ),
           child: Row(children: [
-            Text(tipo.icon, style: const TextStyle(fontSize: 18)),
+            Icon(tipo.icono, size: GolfIcons.juntoAValor),
             const SizedBox(width: 10),
             Expanded(
               child: Column(

@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // TEMPLATES SCREEN — Plantillas de apuestas favoritas
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
@@ -157,7 +158,7 @@ class _TemplateCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: t.divider)),
-              child: Text('${bt.icon} ${bt.label}', style: TextStyle(color: t.sub, fontSize: 11)),
+              child: Text('${bt.label}', style: TextStyle(color: t.sub, fontSize: 11)),
             )
           ).toList()),
         const SizedBox(height: 12),

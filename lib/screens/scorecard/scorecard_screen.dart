@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // SCORECARD SCREEN — Tarjeta de la ronda con 3 vistas: Bruto, Neto, 1v1
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
@@ -4986,7 +4987,7 @@ class _FinancialBreakdown extends StatelessWidget {
           final sign    = amount > 0.005 ? '+' : '';
           final absAmt  = amount.abs();
           final label   = betType.label;
-          final icon    = betType.icon;
+          final icono   = betType.icono;
 
           // Para Skins: mostrar marcador de skins (cuántos ganó cada jugador)
           // calculado directamente desde skinsScorecard para ser consistente
@@ -5131,7 +5132,7 @@ class _FinancialBreakdown extends StatelessWidget {
                 const SizedBox(height: 6),
               ],
               Row(children: [
-                Text(icon, style: const TextStyle(fontSize: 14)),
+                Icon(icono, size: GolfIcons.juntoAValor, color: t.sub),
                 const SizedBox(width: 8),
                 Expanded(child: Text(label, style: TextStyle(color: t.text, fontSize: 13))),
                 // Indicador visual del estado
@@ -5382,7 +5383,7 @@ class LowHighTeamCard extends StatelessWidget {
           child: Column(children: [
           // ── Cabecera ──────────────────────────────────────────────────
           Row(children: [
-            Text(mod.type.icon, style: const TextStyle(fontSize: 13)),
+            Icon(mod.type.icono, size: GolfIcons.juntoAEtiqueta),
             const SizedBox(width: 6),
             Expanded(
               child: Text(mod.type.label.toUpperCase(),

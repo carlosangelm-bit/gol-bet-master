@@ -23,8 +23,10 @@ void main() {
       test('${t.name} tiene etiqueta, icono y descripción', () {
         expect(() => t.label, returnsNormally);
         expect(t.label.trim(), isNotEmpty);
-        expect(() => t.icon, returnsNormally);
-        expect(t.icon.trim(), isNotEmpty);
+        // Icono, no emoji: un emoji no hereda el color del tema, cambia de
+        // dibujo según el aparato, y a color junto a texto gris es el pico
+        // visual de la pantalla sin merecerlo.
+        expect(() => t.icono, returnsNormally);
         expect(() => t.description, returnsNormally);
         expect(t.description.trim(), isNotEmpty);
       });

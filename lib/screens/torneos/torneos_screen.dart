@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../../core/golf_icons.dart';
 import '../../models/round_result.dart';
 import '../../models/torneo.dart';
 import '../../services/firestore_service.dart';
@@ -187,7 +188,9 @@ class _TarjetaTorneo extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Row(children: [
-              Text(torneo.emoji, style: const TextStyle(fontSize: 26)),
+              // El emoji del torneo no lo elige nadie: es siempre el mismo por
+              // defecto. Así que es chrome, no contenido, y va como icono.
+              Icon(GolfIcons.trofeo, size: 26, color: t.primary),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -395,7 +398,7 @@ class _TorneoTabla extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: t.bg,
         foregroundColor: t.text,
-        title: Text('${torneo.emoji} ${torneo.nombre}'),
+        title: Text(torneo.nombre),
         elevation: 0,
         actions: [
           IconButton(

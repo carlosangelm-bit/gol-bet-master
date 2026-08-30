@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME SCREEN — Pantalla principal: iniciar ronda, estado de ronda activa
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
@@ -2788,7 +2789,7 @@ class _ActiveRoundView extends StatelessWidget {
           border: Border.all(color: accent.withValues(alpha: 0.40), width: 1.5),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(template.type.icon, style: const TextStyle(fontSize: 13)),
+          Icon(template.type.icono, size: GolfIcons.juntoAEtiqueta),
           const SizedBox(width: 5),
           // Tipo + valor compacto
           Text(
@@ -2939,7 +2940,7 @@ class _ActiveRoundView extends StatelessWidget {
                       Expanded(child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${cfg.type.icon} ${cfg.type.label}',
+                          Text('${cfg.type.label}',
                               style: TextStyle(
                                   color: t.text,
                                   fontSize: 20,
@@ -3344,7 +3345,7 @@ class _ActiveRoundView extends StatelessWidget {
                 ],
               )
             : Row(mainAxisSize: MainAxisSize.min, children: [
-                Text(m.type.icon, style: const TextStyle(fontSize: 13)),
+                Icon(m.type.icono, size: GolfIcons.juntoAEtiqueta),
                 const SizedBox(width: 5),
                 Text(m.type.label, style: TextStyle(color: t.primary, fontWeight: FontWeight.w700, fontSize: 12)),
                 const SizedBox(width: 4),
@@ -3497,7 +3498,7 @@ class _ActiveRoundView extends StatelessWidget {
             border: Border.all(color: isSel ? accentColor : t.divider),
           ),
           child: Row(children: [
-            Text(bt.icon, style: TextStyle(fontSize: 20, color: bloqueada ? t.sub : null)),
+            Icon(bt.icono, size: GolfIcons.juntoATitulo, color: bloqueada ? t.sub : null),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(bt.label, style: TextStyle(color: bloqueada ? t.sub : t.text, fontWeight: FontWeight.w700, fontSize: 13)),

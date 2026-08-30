@@ -5,6 +5,10 @@
 //            BetGroup, LedgerEntry, SlidingRelation
 // ─────────────────────────────────────────────────────────────────────────────
 
+import 'package:flutter/material.dart';
+
+import '../core/golf_icons.dart';
+
 // ── Helper: parsear fecha desde String ISO o Timestamp de Firestore ───────────
 // Firestore puede devolver Timestamp (que tiene .toDate()) o String ISO.
 // Este helper maneja ambos casos sin necesitar importar cloud_firestore.
@@ -830,20 +834,40 @@ extension BetModuleLabel on BetModuleType {
         BetModuleType.stableford => 'Stableford',
       };
 
-  String get icon => switch (this) {
-        BetModuleType.skins => '🎯',
-        BetModuleType.nassau => '🏌️', // ícono unificado
-        BetModuleType.matchAutoPress => '⚔️',
-        BetModuleType.medal => '🥇',
-        BetModuleType.putts => '⛳',
-        BetModuleType.oyeses => '🌟',
-        BetModuleType.units => '💫',
-        BetModuleType.nassauLowHigh => '⚖️',
-        BetModuleType.snake => '🐍',
-        BetModuleType.rabbit => '🐇',
-        BetModuleType.wolf => '🐺',
-        BetModuleType.sixes => '🔄',
-        BetModuleType.stableford => '📊',
+  /// El icono del formato. **Uno solo para toda la app.**
+  ///
+  /// ── Por qué IconData y no un emoji ────────────────────────────────────────
+  ///
+  /// Un emoji es un carácter del SISTEMA: no hereda el color del tema, cambia
+  /// de dibujo según el aparato, y a color junto a texto gris es el pico visual
+  /// de la pantalla sin merecerlo.
+  ///
+  /// Y este catálogo lo leen DIEZ pantallas, así que cambiarlo aquí las alcanza
+  /// todas — es la misma razón por la que las etiquetas de formato viven aquí y
+  /// no en cada sitio que las enseña.
+  ///
+  /// Los animales —🐍 🐇 🐺— no tienen equivalente lineal en Material, y
+  /// dibujar una serpiente a trazo para una app de golf sería adorno. Se
+  /// resuelven por lo que SIGNIFICAN en el juego, que es lo que el jugador
+  /// necesita reconocer: el Snake arrastra un castigo, el Rabbit se caza y se
+  /// pierde, el Wolf es uno contra el resto.
+  IconData get icono => switch (this) {
+        BetModuleType.skins => GolfIcons.diana,
+        BetModuleType.nassau => GolfIcons.golpe,
+        BetModuleType.matchAutoPress => GolfIcons.duelo,
+        BetModuleType.medal => GolfIcons.medalla,
+        BetModuleType.putts => GolfIcons.bandera,
+        BetModuleType.oyeses => GolfIcons.destello,
+        BetModuleType.units => GolfIcons.trofeo,
+        BetModuleType.nassauLowHigh => GolfIcons.equilibrio,
+        // Arrastra un castigo de hoyo en hoyo.
+        BetModuleType.snake => GolfIcons.arrastra,
+        // Se caza y se pierde: cambia de manos.
+        BetModuleType.rabbit => Icons.swap_horiz,
+        // Uno contra el resto.
+        BetModuleType.wolf => GolfIcons.duelo,
+        BetModuleType.sixes => Icons.groups_outlined,
+        BetModuleType.stableford => GolfIcons.grafico,
       };
 
   /// Qué hace este formato en una ronda de NUEVE hoyos.
@@ -2811,12 +2835,12 @@ class BetModuleInstance {
                             '${rabbit.robable ? ' · robable' : ''}'
                             '${rabbit.squirrel ? ' · squirrel' : ''}',
     BetModuleType.skins  => '\$${skins.valuePerSkin.toStringAsFixed(0)}/skin'
-                            '${skins.carryOver ? ' · carry 🔥' : ''}'
+                            '${skins.carryOver ? ' · carry' : ''}'
                             ' · ${skins.mode == GrossNetMode.net ? 'Net' : 'Gross'}',
     BetModuleType.nassau => 'F\$${nassau.frontValue.toStringAsFixed(0)}'
                             ' B\$${nassau.backValue.toStringAsFixed(0)}'
                             ' T\$${nassau.totalValue.toStringAsFixed(0)}'
-                            '${nassau.pressEnabled ? ' · Press ⚡' : ''}'
+                            '${nassau.pressEnabled ? ' · Press' : ''}'
                             '${nassau.carryEnabled ? ' · Carry' : ''}',
     BetModuleType.matchAutoPress =>
                             'Match \$${matchAutoPress.matchValue.toStringAsFixed(0)}'
@@ -2828,7 +2852,7 @@ class BetModuleInstance {
     BetModuleType.putts  => '\$${putts.value.toStringAsFixed(0)}'
                             '${putts.threePuttPenalty ? ' · 3-putt' : ''}',
     BetModuleType.oyeses => '\$${oyeses.value.toStringAsFixed(0)}/oyés'
-                            '${oyeses.zapatoEnabled ? ' · zapato 👟' : ''}',
+                            '${oyeses.zapatoEnabled ? ' · zapato' : ''}',
     BetModuleType.units  => '\$${units.representativeValue.toStringAsFixed(0)} / unidad'
                             ' · ${UnitEventType.values.length} eventos',
     BetModuleType.nassauLowHigh => () {

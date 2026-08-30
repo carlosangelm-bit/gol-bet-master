@@ -334,7 +334,7 @@ void main() {
 
     test('tiene etiqueta, icono y descripción de verdad', () {
       expect(BetModuleType.sixes.label, 'Sixes');
-      expect(BetModuleType.sixes.icon, isNotEmpty);
+      expect(() => BetModuleType.sixes.icono, returnsNormally);
       expect(BetModuleType.sixes.description, contains('rotan'));
     });
   });
