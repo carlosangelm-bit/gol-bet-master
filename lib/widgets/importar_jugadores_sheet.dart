@@ -6,6 +6,30 @@
 //
 // Importar treinta y descubrir después que dos fallaron obliga a revisar treinta
 // fichas para encontrarlas. Decirlo antes cuesta una pantalla.
+//
+// ── EL BOTÓN QUE PARECÍA ROTO Y ESTABA APAGADO ──────────────────────────────
+//
+// Se reportó dos veces con dos síntomas distintos —"se ve atenuado aunque
+// funcione" y "con 150 líneas no hace nada"— y era UN solo defecto:
+//
+//     onChanged: (_) { if (_res != null) setState(() => _res = null); }
+//
+// Ese `if` significa que al PEGAR sobre el campo vacío no se reconstruía nada.
+// El botón conservaba el `onTap: null` que le tocaba cuando el campo estaba
+// vacío: apagado de verdad, y pintado como apagado, con el texto delante.
+//
+// Y explica por qué a veces "funcionaba": cualquier reconstrucción incidental
+// —abrir el teclado, girar el aparato— refrescaba el botón. Con una línea
+// tecleada pasa siempre; pegando cinco bloques con el teclado ya abierto, no.
+//
+// O sea que nunca fue un problema de volumen. No hay límite de líneas ni el
+// parseo tarda: el botón estaba apagado.
+//
+// ── Y lo que además faltaba para 150 ────────────────────────────────────────
+//
+// Al arreglarlo aparecen dos cosas que con cuatro nombres no se notan: el
+// contenido no cabía —esta hoja no tenía scroll— y guardar 150 fichas son 150
+// escrituras seguidas, que sin contador es otra pantalla que no responde.
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -47,6 +71,23 @@ class _ImportarSheetState extends State<_ImportarSheet> {
   bool _importando = false;
   String? _error;
 
+  /// Cuántas fichas van guardadas, mientras se guarda.
+  int _guardados = 0;
+
+  /// El tope, y se DICE antes de pulsar.
+  ///
+  /// No existía y no hacía falta para que fallara —el fallo era el botón—, pero
+  /// sin tope una lista pegada por error deja la pantalla trabajando sin
+  /// explicación. 500 está muy por encima de los 150 que este producto dice
+  /// soportar, así que nunca estorba a un uso real.
+  static const maxLineas = 500;
+
+  /// Las líneas con algo escrito. Es lo que se cuenta en pantalla.
+  int get _lineas =>
+      _ctrl.text.split('\n').where((l) => l.trim().isNotEmpty).length;
+
+  bool get _pasado => _lineas > maxLineas;
+
   @override
   void dispose() {
     _ctrl.dispose();
@@ -62,16 +103,27 @@ class _ImportarSheetState extends State<_ImportarSheet> {
       existentes.putIfAbsent(
           nombreComparable(pw.displayName), () => pw.player.id);
     }
-    setState(() {
-      _error = null;
-      _res = parsearJugadores(_ctrl.text, existentes: existentes);
-    });
+    // Envuelto: si el parseo lanzara, sin esto la excepción se perdería y la
+    // pantalla se quedaría igual — que es exactamente lo que se acaba de
+    // reportar, aunque la causa fuera otra.
+    try {
+      final r = parsearJugadores(_ctrl.text, existentes: existentes);
+      setState(() {
+        _error = null;
+        _res = r;
+      });
+    } catch (e) {
+      setState(() => _error = 'No se pudo leer la lista: $e');
+    }
   }
 
   Future<void> _confirmar() async {
     final res = _res;
     if (res == null || !res.hayAlgo) return;
-    setState(() => _importando = true);
+    setState(() {
+      _importando = true;
+      _guardados = 0;
+    });
 
     final prov = context.read<PlayerProvider>();
     final ids = <String>[];
@@ -90,6 +142,10 @@ class _ImportarSheetState extends State<_ImportarSheet> {
         debugPrint('[Importar] ${j.nombre}: $e');
         fallidos.add(j.nombre);
       }
+      // Uno a uno, y se DICE. Son 150 escrituras seguidas: sin contador, la
+      // pantalla se queda en "Guardando…" medio minuto y no se distingue de una
+      // colgada.
+      if (mounted) setState(() => _guardados = ids.length);
     }
 
     if (!mounted) return;
@@ -118,126 +174,175 @@ class _ImportarSheetState extends State<_ImportarSheet> {
             right: 20,
             top: 18,
             bottom: MediaQuery.of(context).viewInsets.bottom + 20),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Row(children: [
-            Expanded(
-              child: Text('Importar jugadores',
-                  style: TextStyle(
-                      color: t.text, fontWeight: FontWeight.w800, fontSize: 17)),
-            ),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => Navigator.pop(context),
-              child: Icon(Icons.close, color: t.sub),
-            ),
-          ]),
-          const SizedBox(height: 6),
-          // La instrucción, concreta. "Importa un CSV" no le dice a nadie qué
-          // teclas tocar.
-          Text(
-              'En Excel, Numbers o Google Sheets: selecciona las celdas con los '
-              'nombres y los handicaps, cópialas, y pégalas aquí. Una persona '
-              'por línea.',
-              style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _ctrl,
-            maxLines: 6,
-            minLines: 4,
-            style: TextStyle(color: t.text, fontSize: 13),
-            onChanged: (_) {
-              if (_res != null) setState(() => _res = null);
-            },
-            decoration: InputDecoration(
-              hintText: 'Rafael Villalobos\t12\nAlan Betancourt\t18,5',
-              hintStyle: TextStyle(color: t.sub, fontSize: 12),
-              filled: true,
-              fillColor: t.surface,
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: t.divider)),
-            ),
-          ),
-          const SizedBox(height: 12),
+        // Con scroll y con techo. Sin esto, en cuanto el resumen crece —150
+        // reutilizados son una lista larga— la columna se sale de la pantalla y
+        // lo que queda fuera es justo el botón de importar. Con cuatro nombres
+        // no se nota; con ciento cincuenta, la hoja parece no responder otra
+        // vez, y por un motivo distinto.
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.82),
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(children: [
+                Expanded(
+                  child: Text('Importar jugadores',
+                      style: TextStyle(
+                          color: t.text,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 17)),
+                ),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.pop(context),
+                  child: Icon(Icons.close, color: t.sub),
+                ),
+              ]),
+              const SizedBox(height: 6),
+              // La instrucción, concreta. "Importa un CSV" no le dice a nadie qué
+              // teclas tocar.
+              Text(
+                  'En Excel, Numbers o Google Sheets: selecciona las celdas con los '
+                  'nombres y los handicaps, cópialas, y pégalas aquí. Una persona '
+                  'por línea.',
+                  style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _ctrl,
+                maxLines: 6,
+                minLines: 4,
+                style: TextStyle(color: t.text, fontSize: 13),
+                // SIEMPRE reconstruye. Aquí estaba el fallo: con `if (_res != null)`
+                // al pegar sobre el campo vacío no se reconstruía, y el botón se
+                // quedaba con el `onTap: null` de cuando no había texto. Ver la
+                // cabecera de este archivo.
+                onChanged: (_) => setState(() => _res = null),
+                decoration: InputDecoration(
+                  hintText: 'Rafael Villalobos\t12\nAlan Betancourt\t18,5',
+                  hintStyle: TextStyle(color: t.sub, fontSize: 12),
+                  filled: true,
+                  fillColor: t.surface,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: t.divider)),
+                ),
+              ),
+              const SizedBox(height: 12),
 
-          if (res == null)
-            GPrimaryButton(
-                label: 'Revisar la lista',
-                onTap: _ctrl.text.trim().isEmpty ? null : _revisar)
-          else ...[
-            // El resumen ANTES de importar. Es el criterio: nunca a medias en
-            // silencio.
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: t.card,
-                borderRadius: BorderRadius.circular(11),
-                border: Border.all(
-                    color: res.rechazadas.isEmpty
-                        ? t.divider
-                        : t.scoreOver.withValues(alpha: 0.6)),
-              ),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(res.resumen,
+              if (res == null) ...[
+                // Lo que se ve ANTES de pulsar: cuántas líneas hay y si pasan del
+                // tope. Un botón que no se puede pulsar tiene que decir por qué;
+                // que se vea apagado y ya está fue el fallo de las dos rondas
+                // anteriores.
+                Row(children: [
+                  Expanded(
+                    child: Text(
+                        _lineas == 0
+                            ? 'Pega la lista para empezar.'
+                            : _pasado
+                                ? 'Son $_lineas líneas y el máximo por importación '
+                                    'es $maxLineas. Pega el resto en una segunda '
+                                    'tanda.'
+                                : '$_lineas línea${_lineas == 1 ? '' : 's'} '
+                                    'pegada${_lineas == 1 ? '' : 's'}.',
                         style: TextStyle(
-                            color: t.text,
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w800)),
-                    if (res.existentes.isNotEmpty) ...[
-                      const SizedBox(height: 5),
-                      Text(
-                          'Se reutilizan los que ya están en tu directorio, no '
-                          'se crean otra vez: '
-                          '${res.existentes.map((j) => j.nombre).join(', ')}.',
-                          style: TextStyle(
-                              color: t.sub, fontSize: 11, height: 1.3)),
-                    ],
-                    if (res.rechazadas.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text('SIN LEER', style: GolfType.label(t.scoreOver)),
-                      const SizedBox(height: 3),
-                      // Con la línea y el motivo: "algo falló" obliga a revisar
-                      // treinta filas para encontrar dos.
-                      for (final r in res.rechazadas.take(8))
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 2),
-                          child: Text('Línea ${r.linea}: ${r.motivo}',
+                            color: _pasado ? t.scoreOver : t.sub,
+                            fontSize: 11.5,
+                            height: 1.3)),
+                  ),
+                ]),
+                const SizedBox(height: 8),
+                if (_error != null) ...[
+                  Text(_error!,
+                      style: TextStyle(
+                          color: t.scoreOver, fontSize: 11.5, height: 1.3)),
+                  const SizedBox(height: 8),
+                ],
+                GPrimaryButton(
+                    label: _lineas == 0
+                        ? 'Revisar la lista'
+                        : 'Revisar $_lineas línea${_lineas == 1 ? '' : 's'}',
+                    onTap: _lineas == 0 || _pasado ? null : _revisar),
+              ] else ...[
+                // El resumen ANTES de importar. Es el criterio: nunca a medias en
+                // silencio.
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: t.card,
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(
+                        color: res.rechazadas.isEmpty
+                            ? t.divider
+                            : t.scoreOver.withValues(alpha: 0.6)),
+                  ),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(res.resumen,
+                            style: TextStyle(
+                                color: t.text,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800)),
+                        if (res.existentes.isNotEmpty) ...[
+                          const SizedBox(height: 5),
+                          Text(
+                              'Se reutilizan los que ya están en tu directorio, no '
+                              'se crean otra vez: '
+                              '${res.existentes.map((j) => j.nombre).join(', ')}.',
                               style: TextStyle(
-                                  color: t.text, fontSize: 11, height: 1.3)),
-                        ),
-                      if (res.rechazadas.length > 8)
-                        Text('…y ${res.rechazadas.length - 8} más.',
-                            style: TextStyle(color: t.sub, fontSize: 11)),
-                    ],
-                  ]),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!,
-                  style: TextStyle(
-                      color: t.scoreOver, fontSize: 11.5, height: 1.3)),
-            ],
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(
-                child: GSecButton(
-                    label: 'Cambiar la lista',
-                    onTap: () => setState(() => _res = null)),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: GPrimaryButton(
-                    label: _importando
-                        ? 'Guardando…'
-                        : 'Importar ${res.todos.length}',
-                    onTap: !res.hayAlgo || _importando ? null : _confirmar),
-              ),
+                                  color: t.sub, fontSize: 11, height: 1.3)),
+                        ],
+                        if (res.rechazadas.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text('SIN LEER', style: GolfType.label(t.scoreOver)),
+                          const SizedBox(height: 3),
+                          // Con la línea y el motivo: "algo falló" obliga a revisar
+                          // treinta filas para encontrar dos.
+                          for (final r in res.rechazadas.take(8))
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text('Línea ${r.linea}: ${r.motivo}',
+                                  style: TextStyle(
+                                      color: t.text,
+                                      fontSize: 11,
+                                      height: 1.3)),
+                            ),
+                          if (res.rechazadas.length > 8)
+                            Text('…y ${res.rechazadas.length - 8} más.',
+                                style: TextStyle(color: t.sub, fontSize: 11)),
+                        ],
+                      ]),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(_error!,
+                      style: TextStyle(
+                          color: t.scoreOver, fontSize: 11.5, height: 1.3)),
+                ],
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(
+                    child: GSecButton(
+                        label: 'Cambiar la lista',
+                        onTap: () => setState(() => _res = null)),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: GPrimaryButton(
+                        label: _importando
+                            // Con la cifra: 150 escrituras seguidas tardan, y un
+                            // "Guardando…" quieto no se distingue de una colgada.
+                            ? 'Guardando $_guardados de ${res.todos.length}…'
+                            : 'Importar ${res.todos.length}',
+                        onTap: !res.hayAlgo || _importando ? null : _confirmar),
+                  ),
+                ]),
+              ],
             ]),
-          ],
-        ]),
+          ),
+        ),
       ),
     );
   }
