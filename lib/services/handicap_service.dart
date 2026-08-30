@@ -30,6 +30,25 @@ class ScoreDifferential {
   final int? frontNine;
   final int? backNine;
 
+  /// El tee con el que se CALCULÓ este diferencial.
+  ///
+  /// ── Por qué se guarda, y no se deduce del nombre del campo ────────────────
+  ///
+  /// El nombre del campo lleva el tee horneado —"Club de Golf México (AZULES)"—
+  /// y se construía siempre con el PRIMER tee de la lista, así que decía una
+  /// salida y la fórmula usaba otra. Se reportó como "el dato guardado está
+  /// mal", y no lo estaba: el CR y el Slope salen de RoundPlayer.tee, y
+  /// CourseInfo ni siquiera tiene esos campos.
+  ///
+  /// Pero desde fuera no había forma de saberlo. Guardando aquí el tee que
+  /// entró en la fórmula, la pregunta se contesta mirando, sin auditar el
+  /// código. Junto a [courseRating] y [slopeRating], que ya se guardaban, dice
+  /// exactamente con qué se calculó.
+  ///
+  /// Nulo en los diferenciales de antes. Entonces se enseñan el CR y el Slope,
+  /// que son el dato de verdad.
+  final String? teeName;
+
   /// El suelo de lo humanamente posible.
   ///
   /// ── Un diferencial negativo NO es el problema ─────────────────────────────
@@ -63,6 +82,7 @@ class ScoreDifferential {
     required this.courseName,
     this.frontNine,
     this.backNine,
+    this.teeName,
   });
 
   /// Si hay desglose por vueltas.
@@ -84,6 +104,7 @@ class ScoreDifferential {
     // diferencial guardado ayer se lee igual que hoy.
     if (frontNine != null) 'frontNine': frontNine,
     if (backNine != null) 'backNine': backNine,
+    if (teeName != null) 'teeName': teeName,
   };
 
   factory ScoreDifferential.fromJson(Map<String, dynamic> j) => ScoreDifferential(
@@ -100,6 +121,7 @@ class ScoreDifferential {
     courseName:          (j['courseName'] as String?) ?? '',
     frontNine:           (j['frontNine'] as num?)?.toInt(),
     backNine:            (j['backNine'] as num?)?.toInt(),
+    teeName:             j['teeName'] as String?,
   );
 }
 
@@ -348,6 +370,9 @@ class HandicapService {
       // jugador reconoce cuando mira dónde se le fue la ronda.
       frontNine: _mitad(conParNeto, (h) => h <= 9),
       backNine: _mitad(conParNeto, (h) => h > 9),
+      // El tee que acaba de entrar en la fórmula, no el que diga el nombre del
+      // campo. Son dos cosas distintas y se confundieron una vez.
+      teeName: tee.name,
     );
   }
 

@@ -425,6 +425,32 @@ class _SetupScreenState extends State<SetupScreen> {
   // Helper: calcular HCP de juego para un jugador dado su tee
   double _playingHcp(Player p) => _teeOf(p.id).playingHandicap(p.handicapBase);
 
+  /// El CourseInfo del campo, construido con el tee que se va a jugar.
+  ///
+  /// ── El fallo del "(AZULES)" cuando se eligió blancas ──────────────────────
+  ///
+  /// El nombre del tee va HORNEADO en el nombre del campo —
+  /// `Club de Golf México — México (AZULES)`— y las cuatro rutas que cargan un
+  /// campo lo construían con `allTees.first`, o sea el primer tee de la lista,
+  /// pasara lo que pasara con la salida elegida.
+  ///
+  /// Lo que NO estaba mal, y conviene saberlo antes de tocar nada: el CR y el
+  /// Slope del cálculo salen de `RoundPlayer.tee`, no de aquí. `CourseInfo` ni
+  /// siquiera tiene esos campos. Así que era una etiqueta equivocada sobre un
+  /// número correcto.
+  ///
+  /// Lo que sí arregla esto además de la etiqueta: los pares y los stroke index
+  /// venían del primer tee. Suelen coincidir entre salidas y no tienen por qué.
+  CourseInfo _campoConTee(ApiCourse api, String? preferredTeeName) {
+    final tees = api.allTees;
+    if (tees.isEmpty) return CourseInfo.standard;
+    final elegido = preferredTeeName == null
+        ? null
+        : tees.where((x) =>
+            x.teeName.toLowerCase() == preferredTeeName.toLowerCase()).firstOrNull;
+    return (elegido ?? tees.first).toCourseInfo(api.clubName, api.courseName);
+  }
+
   /// Tee masculino por defecto del campo seleccionado (primer tee masculino).
   /// Retorna null si no hay campo con tees disponibles.
   TeeInfo? get _defaultMaleTee {
@@ -7146,8 +7172,7 @@ class _SetupScreenState extends State<SetupScreen> {
           _loadingFavId = null;
           _playerTees.clear();
           _selectedApiCourse = correctedApi;
-          _selectedCourse = correctedApi.allTees.first
-              .toCourseInfo(correctedApi.clubName, correctedApi.courseName);
+          _selectedCourse = _campoConTee(correctedApi, fav.preferredTeeName);
           _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
         });
         if (mounted) {
@@ -7178,8 +7203,7 @@ class _SetupScreenState extends State<SetupScreen> {
           _loadingFavId = null;
           _playerTees.clear();
           _selectedApiCourse = cached;
-          _selectedCourse = cached.allTees.first
-              .toCourseInfo(cached.clubName, cached.courseName);
+          _selectedCourse = _campoConTee(cached, fav.preferredTeeName);
           _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
         });
         return;
@@ -7214,10 +7238,7 @@ class _SetupScreenState extends State<SetupScreen> {
         _loadingFavId = null;
         _playerTees.clear();
         _selectedApiCourse = fresh;
-        if (fresh.allTees.isNotEmpty) {
-          _selectedCourse = fresh.allTees.first
-              .toCourseInfo(fresh.clubName, fresh.courseName);
-        }
+        _selectedCourse = _campoConTee(fresh, fav.preferredTeeName);
         _autoAssignDefaultTee(preferredTeeName: fav.preferredTeeName);
       });
 

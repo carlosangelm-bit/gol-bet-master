@@ -737,6 +737,27 @@ class _StatBox extends StatelessWidget {
 }
 
 // ── Fila de diferencial en el tracker ─────────────────────────────────────────
+/// Una línea de etiqueta y valor del detalle de una ronda.
+class _DatoDeRonda extends StatelessWidget {
+  final String etiqueta;
+  final String valor;
+  final GolfTheme t;
+  const _DatoDeRonda(
+      {required this.etiqueta, required this.valor, required this.t});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Expanded(child: Text(etiqueta, style: GolfType.label(t.sub))),
+              Text(valor, style: GolfType.value(t.text, size: 15)),
+            ]),
+      );
+}
+
 class _DiffRow extends StatelessWidget {
   final ScoreDifferential diff;
   final bool isUsed;
@@ -773,9 +794,38 @@ class _DiffRow extends StatelessWidget {
           const SizedBox(height: 14),
           Text(diff.roundName, style: GolfType.title(t.text)),
           const SizedBox(height: 4),
-          Text(
-              '${diff.courseName} · ${diff.holesPlayed} hoyos anotados',
+          Text('${diff.courseName} · ${diff.holesPlayed} hoyos anotados',
+              textAlign: TextAlign.center,
               style: TextStyle(color: t.sub, fontSize: 12)),
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(children: [
+              // Con qué se calculó, explícito: el nombre del campo lleva un tee
+              // horneado que llegó a no ser el de la fórmula.
+              _DatoDeRonda(
+                  etiqueta: 'SALIDA',
+                  valor: diff.teeName ??
+                      'no guardada · CR ${diff.courseRating.toStringAsFixed(1)} '
+                          '· Slope ${diff.slopeRating}',
+                  t: t),
+              _DatoDeRonda(
+                  etiqueta: 'IDA · VUELTA',
+                  valor: diff.hayVueltas
+                      ? '${diff.frontNine} · ${diff.backNine}'
+                      // Se DICE por qué falta, en vez de no enseñar el campo.
+                      : 'no se guardó en esta ronda',
+                  t: t),
+              _DatoDeRonda(
+                  etiqueta: 'TOTAL · RBA',
+                  valor: '${diff.grossScore} · ${diff.adjustedGrossScore}',
+                  t: t),
+              _DatoDeRonda(
+                  etiqueta: 'DIFERENCIAL',
+                  valor: diff.differential.toStringAsFixed(1),
+                  t: t),
+            ]),
+          ),
           if (_porQueNoCuenta.isNotEmpty) ...[
             const SizedBox(height: 12),
             Padding(
@@ -884,7 +934,10 @@ class _DiffRow extends StatelessWidget {
               Text(
                   fuera
                       ? 'NO CUENTA · ${diff.holesPlayed} H · $formattedDate'
-                      : '${diff.courseName} · ${diff.holesPlayed} H · $formattedDate',
+                      // El TEE que usó la fórmula, si se guardó. El nombre del
+                      // campo lleva otro horneado y llegó a no coincidir.
+                      : '${diff.teeName ?? diff.courseName} · '
+                          '${diff.holesPlayed} H · $formattedDate',
                   style: TextStyle(
                       color: t.sub,
                       fontSize: 10,

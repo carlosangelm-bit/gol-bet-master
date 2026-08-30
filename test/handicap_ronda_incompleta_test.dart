@@ -327,4 +327,91 @@ void main() {
       expect(ida.backNine, d.backNine);
     });
   });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 5 · EL TEE: LA ETIQUETA MENTÍA, EL NÚMERO NO
+  //
+  // Se reportó como "el dato guardado está mal, y con él el índice". No lo
+  // estaba, y comprobarlo antes de tocar nada evitó recalcular un histórico que
+  // era correcto.
+  //
+  // Lo que pasaba: el nombre del tee va HORNEADO en el nombre del campo
+  // —"Club de Golf México (AZULES)"— y se construía con el primer tee de la
+  // lista, dijera lo que dijera la salida elegida. Pero el CR y el Slope de la
+  // fórmula salen de RoundPlayer.tee; CourseInfo ni siquiera tiene esos campos.
+  // ───────────────────────────────────────────────────────────────────────────
+  group('5 · el tee que usa la fórmula', () {
+    const blancas = TeeInfo(
+        name: 'BLANCAS', courseRating: 69.5, slopeRating: 121, parTotal: 72);
+
+    /// Una ronda cuyo CAMPO se llama "(AZULES)" y cuyo jugador salió de [tee].
+    /// Es exactamente la situación que se reportó.
+    Round _conTee(TeeInfo tee) {
+      final base = _ronda(hoyos: 18, golpes: 5);
+      return Round(
+        id: base.id,
+        name: base.name,
+        course: CourseInfo(
+            name: 'Club De Golf Mexico — Mexico (AZULES)', holes: _campo.holes),
+        isFinished: true,
+        players: base.players,
+        roundPlayers: [
+          RoundPlayer(playerId: 'p1', handicapEnRonda: 18, tee: tee),
+        ],
+        betGroups: const [],
+        scores: base.scores,
+        events: const {},
+        oyeseRankings: const {},
+        sliding: const [],
+        createdAt: base.createdAt,
+        totalHoles: 18,
+      );
+    }
+
+    test('CLAVE: el CR y el Slope salen del TEE, no del nombre del campo', () {
+      // El campo se llama "(AZULES)" y el jugador salió de blancas. Lo que
+      // manda es el tee.
+      final d = HandicapService.calculateFromRound(
+          round: _conTee(blancas), playerId: 'p1')!;
+      expect(d.courseRating, 69.5);
+      expect(d.slopeRating, 121);
+      expect(d.courseName, contains('AZULES'),
+          reason: 'el nombre sigue diciendo lo suyo: son dos cosas distintas');
+    });
+
+    test('CLAVE: y ahora se GUARDA cuál se usó', () {
+      // Es lo que hace la pregunta contestable sin auditar el código.
+      final d = HandicapService.calculateFromRound(
+          round: _conTee(blancas), playerId: 'p1')!;
+      expect(d.teeName, 'BLANCAS');
+    });
+
+    test('CONTRAPESO: con otro tee, otro diferencial', () {
+      // Sin esto, un CR fijo pasaría las dos de arriba.
+      final b = HandicapService.calculateFromRound(
+          round: _conTee(blancas), playerId: 'p1')!;
+      final a = HandicapService.calculateFromRound(
+          round: _conTee(_tee), playerId: 'p1')!;
+      expect(b.differential, isNot(a.differential));
+      expect(b.teeName, isNot(a.teeName));
+    });
+
+    test('viaja de ida y vuelta, y los de antes no se rompen', () {
+      final d = HandicapService.calculateFromRound(
+          round: _conTee(blancas), playerId: 'p1')!;
+      expect(ScoreDifferential.fromJson(d.toJson()).teeName, 'BLANCAS');
+
+      final viejo = ScoreDifferential.fromJson({
+        'roundId': 'r1',
+        'roundName': 'Vieja',
+        'playedAt': DateTime(2026, 1, 1).toIso8601String(),
+        'differential': 15.0,
+        'courseRating': 72.0,
+        'slopeRating': 113,
+      });
+      expect(viejo.teeName, isNull);
+      expect(viejo.courseRating, 72.0,
+          reason: 'y entonces el CR y el Slope son la evidencia');
+    });
+  });
 }
