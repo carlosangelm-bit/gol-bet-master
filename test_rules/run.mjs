@@ -72,6 +72,16 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   // documento raíz decía existir.
   await setDoc(doc(db, 'userLookup', 'carlos@ejemplo.com'),
       { uid: ORG, email: 'carlos@ejemplo.com' });
+  // El catálogo global de jugadores.
+  await setDoc(doc(db, 'players', 'pl_rafa'),
+      { name: 'RAFA', createdByUserId: ORG });
+  // Un torneo publicado por OTRO organizador: es el que demuestra que el
+  // listado no es "ver lo mío", es ver lo de todos los clubes.
+  await setDoc(doc(db, 'sharedTorneos', 'tok_de_otro_club'), {
+    ownerUid: OTRO,
+    nombre: 'Torneo del Club Vecino',
+    tabla: [{ nombre: 'Ana Ruiz', total: 900, puesto: 1 }],
+  });
 });
 
 const invitado = env.authenticatedContext(INV).firestore();
@@ -88,6 +98,35 @@ await prueba('y el contenido llega', async () => {
   const d = await getDoc(doc(invitado, 'sharedTorneos', TOKEN));
   if (d.data().nombre !== 'Copa CGM 2026') throw new Error('sin contenido');
 });
+
+// ── EL ENLACE TIENE QUE HACER FALTA ─────────────────────────────────────────
+//
+// `allow read` concede `get` Y `list`. Con `read`, una cuenta recién creada
+// pedía /sharedTorneos y recibía TODOS los torneos publicados del sistema
+// —nombre, bote y tabla, de todos los clubes— sin tener ningún enlace.
+// Comprobado contra el emulador con datos de dos organizadores distintos antes
+// de arreglarlo: devolvía los dos documentos enteros.
+//
+// Lo mismo pasaba en /players (el nombre de todos los jugadores) y en
+// /userLookup (el CORREO de todos los registrados).
+console.log('\n1b · GET no es LIST: el enlace tiene que hacer falta');
+await prueba('CLAVE: nadie recorre sharedTorneos, ni con cuenta', () =>
+    assertFails(getDocs(collection(invitado, 'sharedTorneos'))));
+await prueba('ni el propio organizador', () =>
+    assertFails(getDocs(collection(organizador, 'sharedTorneos'))));
+await prueba('nadie recorre el catálogo de jugadores', () =>
+    assertFails(getDocs(collection(invitado, 'players'))));
+await prueba('nadie recorre el directorio de correos', () =>
+    assertFails(getDocs(collection(invitado, 'userLookup'))));
+
+// Los contrapesos. Sin ellos, cerrar la lectura entera pasaría estas pruebas y
+// rompería la app en silencio: la app pide DOCUMENTOS, y eso tiene que seguir.
+await prueba('contrapeso: el documento suelto del torneo SÍ se lee', () =>
+    assertSucceeds(getDoc(doc(invitado, 'sharedTorneos', TOKEN))));
+await prueba('contrapeso: el jugador por id SÍ se lee', () =>
+    assertSucceeds(getDoc(doc(invitado, 'players', 'pl_rafa'))));
+await prueba('contrapeso: el correo que ya conoces SÍ resuelve a uid', () =>
+    assertSucceeds(getDoc(doc(invitado, 'userLookup', 'carlos@ejemplo.com'))));
 
 console.log('\n2 · El invitado NO alcanza nada de users/{otroUid}');
 await prueba('no lee el documento raíz del organizador', () =>

@@ -2,9 +2,29 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ── GET NO ES LIST ─────────────────────────────────────────────────────
+    //
+    // `allow read` son DOS permisos: `get` (traer un documento por id) y `list`
+    // (recorrer la colección entera). Escribir `read` donde solo hace falta
+    // `get` no da un error ni rompe nada: da la colección completa a quien pida
+    // la colección completa, y eso no se ve leyendo la app, porque la app pide
+    // documentos sueltos.
+    //
+    // Se comprobó contra el emulador, con datos de dos organizadores distintos:
+    // un usuario RECIÉN REGISTRADO, sin ningún enlace, recibía los dos torneos
+    // con sus botes y sus tablas. Lo mismo valía para el catálogo de jugadores y
+    // para el directorio de correos.
+    //
+    // La regla que se sigue en este fichero: `get` por defecto; `list` solo
+    // donde la app lista de verdad Y la condición de la regla obliga a acotar la
+    // consulta —ver torneoResultados, que es el único caso—.
+
     // CATÁLOGO GLOBAL DE JUGADORES
     match /players/{playerId} {
-      allow read: if request.auth != null;
+      // La app SIEMPRE pide por id (PlayerService._players.doc(...)). Listar
+      // esto daría el nombre de todos los jugadores de todos los usuarios.
+      allow get: if request.auth != null;
+      allow list: if false;
       allow create: if request.auth != null;
 
       // El creador puede modificar todo.
@@ -24,7 +44,11 @@ service cloud.firestore {
     // Permite buscar un UID por email para vincular cuentas entre usuarios.
     // Solo contiene uid y email, sin datos sensibles.
     match /userLookup/{emailKey} {
-      allow read: if request.auth != null;
+      // El id del documento ES el correo: se busca uno que ya conoces, nunca se
+      // recorre. Listar esto entregaría el CORREO DE TODOS los registrados, que
+      // es justo lo que se decidió no recoger ni exponer en este proyecto.
+      allow get: if request.auth != null;
+      allow list: if false;
       // Solo el propio usuario puede crear/actualizar su entrada
       allow write: if request.auth != null
                    && request.auth.uid == request.resource.data.uid;
@@ -174,6 +198,14 @@ service cloud.firestore {
     // Cualquiera de las dos cosas deja que alguien con el enlace meta una fila
     // inventada en la tabla de otro. Las dos notas se nombran a propósito.
     match /torneoResultados/{docId} {
+      // AQUÍ SÍ VA `read`, y es el único sitio del fichero. No es un descuido.
+      //
+      // La app consulta esta colección de verdad —where('torneoOwnerUid') más
+      // where('torneoId')— y la condición de abajo mira `resource.data`, así que
+      // Firestore solo acepta la consulta si va acotada de forma que la regla se
+      // cumpla para todos los documentos que devuelve. La propia condición es lo
+      // que obliga a acotar: no hay listado libre que pase por aquí.
+      //
       // Lo lee el ORGANIZADOR —que es quien arma la tabla— y el autor, para
       // poder ver y corregir lo suyo. Nadie más: aquí hay ids de jugador y
       // balances, que es más de lo que la instantánea comparte.
@@ -258,9 +290,15 @@ service cloud.firestore {
     }
 
     match /sharedTorneos/{token} {
-      // Cualquiera autenticado que tenga el enlace lee. Se pide cuenta —aunque
+      // Cualquiera autenticado QUE TENGA EL ENLACE lee. Se pide cuenta —aunque
       // sea ligera— porque aquí hay dinero y nombres de terceros a la vista.
-      allow read: if request.auth != null;
+      //
+      // Y por eso `get`, no `read`: con `read` el enlace dejaba de hacer falta.
+      // Cualquier cuenta recién creada podía pedir la colección y recibir TODOS
+      // los torneos publicados del sistema —nombre, bote y tabla, de todos los
+      // clubes—. Es el documento con dinero: es el peor sitio donde tenerlo.
+      allow get: if request.auth != null;
+      allow list: if false;
 
       // Solo el organizador publica, actualiza o revoca. El ownerUid se
       // comprueba contra lo que ya hay al actualizar y contra lo que se escribe
