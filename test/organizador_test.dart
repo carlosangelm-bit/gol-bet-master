@@ -19,6 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/core/ancho.dart';
 import 'package:golf_bet_master/core/app_theme.dart';
 import 'package:golf_bet_master/core/escuchas.dart';
+import 'package:golf_bet_master/main.dart';
 import 'package:golf_bet_master/models/inscritos.dart';
 import 'package:golf_bet_master/models/models.dart';
 import 'package:golf_bet_master/models/torneo.dart';
@@ -45,9 +46,13 @@ final _directorio = [
   _pw('p4', 'Álvaro Núñez', 21),
 ];
 
-Torneo _torneo({List<String>? participantes, List<String> siembra = const []}) =>
+Torneo _torneo({
+  List<String>? participantes,
+  List<String> siembra = const [],
+  String id = 't1',
+}) =>
     Torneo(
-      id: 't1',
+      id: id,
       nombre: 'Copa de Primavera',
       fuente: FuenteDeRondas.marcadas,
       metodo: MetodoDePuntuacion.posicion,
@@ -450,6 +455,44 @@ void main() {
       prov.stopListening();
     });
 
+    testWidgets('CRITERIO 2: y ENSEÑA lo que encontró, no solo cuánto',
+        (tester) async {
+      // Dos veces seguidas esta pantalla dijo una frase fija y costó una ronda
+      // entera de ida y vuelta averiguar qué pasaba de verdad. El id que busca,
+      // los que tiene, sus nombres y las longitudes tienen que estar EN LA
+      // PANTALLA.
+      final prov = await montarPortal(tester,
+          sesion: AuthStatus.authenticated,
+          torneos: TorneoProvider()..sembrar([_torneo()]),
+          id: 'de-otra-cuenta');
+
+      // El id que se buscaba, con su longitud.
+      expect(find.textContaining('de-otra-cuenta'), findsWidgets);
+      expect(find.textContaining('(14 car.)'), findsOneWidget);
+      // Y el que sí llegó, con nombre e id.
+      expect(find.textContaining('Copa de Primavera · t1'), findsOneWidget);
+      expect(find.textContaining('1 torneo en esta cuenta'), findsOneWidget);
+      prov.stopListening();
+    });
+
+    testWidgets('CRITERIO 2: y el id casi igual se marca como tal',
+        (tester) async {
+      // El caso que costó esta ronda: dos ids que se leen igual. La pantalla
+      // tiene que decir que se parecen, no que el torneo es de otro.
+      // Con un id de verdad: la pista del prefijo pide al menos ocho
+      // caracteres, porque dos ids cortos que empiezan igual son ruido.
+      const uuid = '190f64da-955c-4f7c-87a3-d64c5b160884';
+      final prov = await montarPortal(tester,
+          sesion: AuthStatus.authenticated,
+          torneos: TorneoProvider()..sembrar([_torneo(id: uuid)]),
+          id: '$uuid/');
+      expect(find.textContaining('no está en tu cuenta'), findsNothing,
+          reason: 'no es de otra cuenta y decirlo manda a buscar donde no es');
+      expect(find.textContaining('No pude abrir'), findsOneWidget);
+      expect(find.textContaining('barra final'), findsOneWidget);
+      prov.stopListening();
+    });
+
     testWidgets('y con cero torneos el mensaje no culpa al enlace',
         (tester) async {
       // Si no llegó NADA, decir "es de otra cuenta" manda a buscar el problema
@@ -618,6 +661,135 @@ void main() {
       // reintento en una pantalla. El sitio es el provider.
       expect(codigoDe('lib/providers/torneo_provider.dart'),
           contains('_maxIntentos'));
+    });
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // 9 · DOS FORMAS DE LEER LA MISMA URL
+  //
+  // El fallo: `home:` sacaba el id con Uri.pathSegments —limpio— y
+  // onGenerateRoute con `name.replaceFirst('/organizador/', '')`, que se queda
+  // con TODO lo que venga detrás. La misma dirección daba dos ids según por
+  // dónde entrara la app, y el segundo no coincidía con ninguno de los que
+  // llegan de Firestore.
+  // ═════════════════════════════════════════════════════════════════════════
+  group('9 · el id del enlace, leído igual por los dos caminos', () {
+    const id = '190f64da-955c-4f7c-87a3-d64c5b160884';
+
+    test('CLAVE: la barra final no se cuela en el id', () {
+      // El caso más fácil de provocar: el navegador la añade solo.
+      expect(GolfBetApp.tokenDeNombre('/organizador/$id/', 'organizador'), id);
+      expect('/organizador/$id/'.replaceFirst('/organizador/', ''), '$id/',
+          reason: 'así es como fallaba antes');
+    });
+
+    test('ni la query', () {
+      expect(GolfBetApp.tokenDeNombre('/organizador/$id?x=1', 'organizador'), id);
+    });
+
+    test('ni el porcentaje sin decodificar', () {
+      expect(GolfBetApp.tokenDeNombre('/organizador/a%20b', 'organizador'), 'a b');
+    });
+
+    test('CLAVE: los dos caminos dan LO MISMO', () {
+      // Es la propiedad que faltaba. Dos formas de leer una URL en el mismo
+      // archivo, y la pantalla se comportaba distinto según cómo hubieras
+      // llegado a ella.
+      for (final url in [
+        '/organizador/$id',
+        '/organizador/$id/',
+        '/organizador/$id?x=1',
+      ]) {
+        expect(GolfBetApp.tokenDeNombre(url, 'organizador'),
+            GolfBetApp.tokenDeRuta(Uri.parse(url).pathSegments, 'organizador'),
+            reason: url);
+      }
+    });
+
+    test('y sigue sin cruzarse con las otras cuatro rutas', () {
+      expect(GolfBetApp.tokenDeNombre('/tv/abc', 'organizador'), isNull);
+      expect(GolfBetApp.tokenDeNombre('/organizador/abc', 'tv'), isNull);
+      expect(GolfBetApp.tokenDeNombre('/app', 'organizador'), isNull);
+      expect(GolfBetApp.tokenDeNombre('/torneo/abc/', 'torneo'), 'abc',
+          reason: 'y el enlace del torneo se arregla de paso');
+    });
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // 10 · SI NO LO ENCUENTRA, QUE DIGA QUÉ ENCONTRÓ
+  //
+  // Dos veces seguidas esta pantalla dijo "no está en tu cuenta" cuando el
+  // problema era otro, y las dos costaron una ronda de ida y vuelta.
+  // ═════════════════════════════════════════════════════════════════════════
+  group('10 · el diagnóstico de la búsqueda', () {
+    const id = '190f64da-955c-4f7c-87a3-d64c5b160884';
+    Torneo conId(String x, String nombre) => Torneo(
+        id: x,
+        nombre: nombre,
+        fuente: FuenteDeRondas.marcadas,
+        metodo: MetodoDePuntuacion.posicion,
+        formato: FormatoDeTorneo.eliminacion);
+
+    test('lo encuentra cuando está', () {
+      expect(buscarTorneo(id, [conId(id, 'Match Play Anual')]).hallazgo,
+          Hallazgo.encontrado);
+    });
+
+    test('CLAVE: la barra final se diagnostica como recorte, no como ajeno', () {
+      // Justo el fallo reportado. Antes decía "es de otra cuenta" y mandaba a
+      // mirar la sesión, que era el sitio equivocado.
+      final d = buscarTorneo('$id/', [conId(id, 'Match Play Anual')]);
+      expect(d.hallazgo, Hallazgo.recortado);
+      expect(d.parecido, id);
+      expect(d.explicacion, contains('barra final'));
+      expect(d.hallazgo, isNot(Hallazgo.invisible),
+          reason: 'una barra SE VE: señalarla es más útil que decir que hay '
+              'algo invisible');
+    });
+
+    test('y un id con espacios o mayúsculas, como casi igual', () {
+      final d = buscarTorneo(' $id ', [conId(id, 'Match Play Anual')]);
+      expect(d.hallazgo, Hallazgo.casiIgual);
+    });
+
+    test('CONTRAPESO: un torneo de verdad ajeno sigue siendo ajeno', () {
+      // Sin esto, todo lo de arriba se podría satisfacer diciendo siempre que
+      // el id llegó mal, que es el otro extremo del mismo error.
+      final d = buscarTorneo('de-otra-cuenta-del-todo',
+          [conId(id, 'Match Play Anual')]);
+      expect(d.hallazgo, Hallazgo.ajeno);
+      expect(d.parecido, isNull);
+      expect(d.explicacion, contains('organizas tú'));
+    });
+
+    test('CONTRAPESO: dos ids cortos que empiezan igual NO son un recorte', () {
+      // Un prefijo de tres letras es ruido, no una pista.
+      expect(buscarTorneo('ab', [conId('abc', 'X')]).hallazgo, Hallazgo.ajeno);
+    });
+
+    test('CLAVE: el carácter que no se ve tiene su propio diagnóstico', () {
+      // El único caso que no se puede resolver mirando la pantalla: los dos
+      // ids se leen idénticos. Sin nombrarlo, el reporte diría "son iguales y
+      // no los encuentra" y no habría por dónde seguir.
+      final d = buscarTorneo('$id\u200b', [conId(id, 'Match Play Anual')]);
+      expect(d.hallazgo, Hallazgo.invisible);
+      expect(d.parecido, id);
+      expect(d.explicacion, contains('no se ve'));
+    });
+
+    test('la lista vacía se distingue de todo lo anterior', () {
+      final d = buscarTorneo(id, []);
+      expect(d.hallazgo, Hallazgo.listaVacia);
+      expect(d.explicacion, contains('no sea el enlace'));
+    });
+
+    test('siempre lleva los ids y los nombres que sí llegaron', () {
+      final d = buscarTorneo('otro', [
+        conId('a', 'Liga por Score'),
+        conId('b', 'Match Play Anual'),
+      ]);
+      expect(d.disponibles, ['a', 'b']);
+      expect(d.nombres, ['Liga por Score', 'Match Play Anual']);
     });
   });
 }

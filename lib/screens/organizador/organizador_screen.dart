@@ -127,13 +127,12 @@ class _OrganizadorScreenState extends State<OrganizadorScreen> {
           detalle: prov.reintentando ? 'Esperando a la sesión…' : null);
     }
 
-    final torneo = prov.torneos
-        .where((x) => x.id == widget.torneoId)
-        .cast<Torneo?>()
-        .firstWhere((_) => true, orElse: () => null);
-
-    // Solo aquí: la lista está CARGADA y el torneo no está en ella.
-    if (torneo == null) return _NoEsTuyo(t: t, cuantos: prov.torneos.length);
+    // Solo aquí: la lista está CARGADA. Y si no está, la pantalla dice QUÉ
+    // encontró en vez de repetir la única frase que sabía decir — que las dos
+    // veces anteriores mandó a buscar el problema al sitio equivocado.
+    final d = buscarTorneo(widget.torneoId, prov.torneos);
+    if (d.hallazgo != Hallazgo.encontrado) return _NoEsTuyo(t: t, d: d);
+    final torneo = prov.torneos.firstWhere((x) => x.id == widget.torneoId);
 
     return LayoutBuilder(builder: (context, c) {
       // El layout sale del ancho DISPONIBLE, no de la plataforma. Ver
@@ -172,43 +171,109 @@ class _Espera extends StatelessWidget {
       );
 }
 
+/// Lo que se ve cuando la búsqueda falla. **Y por qué falló.**
+///
+/// Dos veces seguidas esta pantalla dijo "no está en tu cuenta" cuando el
+/// problema era otro, y las dos veces costó una ronda entera de ida y vuelta
+/// averiguarlo. Así que enseña lo que encontró: el id que buscaba, y los que
+/// tiene con sus nombres. Un diagnóstico de un vistazo en vez de un síntoma.
 class _NoEsTuyo extends StatelessWidget {
   final GolfTheme t;
-
-  /// Cuántos torneos SÍ llegaron. Si son cero, lo que pasa probablemente no es
-  /// que el torneo sea ajeno: es que no llegó nada, y decir lo contrario manda a
-  /// buscar el problema al sitio equivocado.
-  final int cuantos;
-  const _NoEsTuyo({required this.t, required this.cuantos});
+  final DiagnosticoDeTorneo d;
+  const _NoEsTuyo({required this.t, required this.d});
 
   @override
   Widget build(BuildContext context) => Scaffold(
         backgroundColor: t.bg,
         body: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.lock_outline, size: 40, color: t.sub),
-              const SizedBox(height: 14),
-              Text('Este torneo no está en tu cuenta',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 8),
-              Text(
-                  cuantos == 0
-                      ? 'No llegó ningún torneo de esta cuenta, así que puede '
-                          'que el problema no sea el enlace. Prueba a recargar.'
-                      : 'El portal solo abre los torneos que organizas tú. Si lo '
-                          'creaste con otra cuenta, entra con esa.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: t.sub, fontSize: 13, height: 1.45)),
-              const SizedBox(height: 10),
-              Text('$cuantos torneo${cuantos == 1 ? '' : 's'} en esta cuenta',
-                  style: TextStyle(color: t.sub, fontSize: 11)),
-            ]),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(
+                    d.hallazgo == Hallazgo.ajeno
+                        ? Icons.lock_outline
+                        : Icons.help_outline,
+                    size: 40,
+                    color: t.sub),
+                const SizedBox(height: 14),
+                Text(
+                    d.hallazgo == Hallazgo.ajeno
+                        ? 'Este torneo no está en tu cuenta'
+                        : 'No pude abrir este torneo',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: t.text,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Text(d.explicacion,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: t.sub, fontSize: 13, height: 1.45)),
+                const SizedBox(height: 18),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(13),
+                  decoration: BoxDecoration(
+                      color: t.surface,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: t.divider)),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Con la LONGITUD. Es lo que resuelve el único caso
+                        // que no se ve: dos ids idénticos en pantalla, uno de
+                        // 36 caracteres y otro de 37.
+                        _linea(t, 'Id del enlace',
+                            '${d.buscado}   (${d.buscado.length} car.)'),
+                        const SizedBox(height: 10),
+                        Text(
+                            '${d.disponibles.length} torneo'
+                            '${d.disponibles.length == 1 ? '' : 's'} '
+                            'en esta cuenta',
+                            style: TextStyle(
+                                color: t.sub,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.6)),
+                        const SizedBox(height: 5),
+                        for (var i = 0; i < d.disponibles.length; i++)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 5),
+                            child: SelectableText(
+                                '${d.nombres[i]} · ${d.disponibles[i]}'
+                                '   (${d.disponibles[i].length} car.)',
+                                style: TextStyle(
+                                    color: d.disponibles[i] == d.parecido
+                                        ? t.primary
+                                        : t.text,
+                                    fontSize: 11.5,
+                                    height: 1.35)),
+                          ),
+                      ]),
+                ),
+              ]),
+            ),
           ),
         ),
+      );
+
+  static Widget _linea(GolfTheme t, String etiqueta, String valor) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(etiqueta.toUpperCase(),
+              style: TextStyle(
+                  color: t.sub,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6)),
+          const SizedBox(height: 3),
+          // Seleccionable a propósito: si esto vuelve a pasar, lo que hace
+          // falta es poder copiarlo y pegarlo en el reporte.
+          SelectableText(valor,
+              style: TextStyle(color: t.text, fontSize: 12, height: 1.35)),
+        ],
       );
 }
 

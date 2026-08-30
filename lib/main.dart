@@ -130,6 +130,29 @@ class GolfBetApp extends StatelessWidget {
     }
   }
 
+  /// El token de un NOMBRE DE RUTA, `/prefijo/valor`.
+  ///
+  /// ── Por qué no `replaceFirst`, que es lo que había ────────────────────────
+  ///
+  /// `name.replaceFirst('/organizador/', '')` parece lo mismo y no lo es. Se
+  /// queda con TODO lo que venga detrás: la barra final de
+  /// `/organizador/abc/`, la query de `/organizador/abc?x=1`, y los `%20` sin
+  /// decodificar. El resultado es un id que se parece al bueno y no es igual a
+  /// ninguno de los que llegaron de Firestore.
+  ///
+  /// Y lo peor: la MISMA ruta abierta por `home:` —que sí usa pathSegments—
+  /// daba el id limpio. Dos formas de leer una URL en el mismo archivo, y la
+  /// pantalla se comportaba distinto según por dónde hubiera entrado.
+  ///
+  /// Ahora las dos pasan por [tokenDeRuta].
+  static String? tokenDeNombre(String name, String prefijo) {
+    try {
+      return tokenDeRuta(Uri.parse(name).pathSegments, prefijo);
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ── Detectar ruta /guest/:token o /caddie/:token en la URL del navegador ────
   static String? _extractGuestToken() => _deLaUrl('guest');
 
@@ -210,31 +233,33 @@ class GolfBetApp extends StatelessWidget {
                           : const AppShell(),
       onGenerateRoute: (settings) {
         final name = settings.name ?? '';
-        if (name.startsWith('/caddie/')) {
-          final token = name.replaceFirst('/caddie/', '');
+        // Una sola forma de leer la URL, la misma que usa `home:`. Ver
+        // [tokenDeNombre]: dos formas daban dos ids para el mismo enlace.
+        final caddie = tokenDeNombre(name, 'caddie');
+        if (caddie != null) {
           return MaterialPageRoute(
-            builder: (_) => CaddieJoinScreen(token: token),
+            builder: (_) => CaddieJoinScreen(token: caddie),
           );
         }
-        if (name.startsWith('/guest/')) {
-          final token = name.replaceFirst('/guest/', '');
+        final guest = tokenDeNombre(name, 'guest');
+        if (guest != null) {
           return MaterialPageRoute(
-            builder: (_) => GuestJoinScreen(token: token),
+            builder: (_) => GuestJoinScreen(token: guest),
           );
         }
         // Estos dos van aquí ADEMÁS de en home porque una navegación dentro de
         // la app también puede llegar por nombre de ruta, y dejarlos solo en
         // home los haría funcionar al abrir y no al navegar.
-        if (name.startsWith('/tv/')) {
-          final token = name.replaceFirst('/tv/', '');
+        final tv = tokenDeNombre(name, 'tv');
+        if (tv != null) {
           return MaterialPageRoute(
-            builder: (_) => LeaderboardTvScreen(token: token),
+            builder: (_) => LeaderboardTvScreen(token: tv),
           );
         }
-        if (name.startsWith('/organizador/')) {
-          final id = name.replaceFirst('/organizador/', '');
+        final org = tokenDeNombre(name, 'organizador');
+        if (org != null) {
           return MaterialPageRoute(
-            builder: (_) => OrganizadorScreen(torneoId: id),
+            builder: (_) => OrganizadorScreen(torneoId: org),
           );
         }
         // La app de siempre, por nombre de ruta. La necesita el botón "ir a la
@@ -244,10 +269,10 @@ class GolfBetApp extends StatelessWidget {
         if (name == '/app') {
           return MaterialPageRoute(builder: (_) => const AppShell());
         }
-        if (name.startsWith('/torneo/')) {
-          final token = name.replaceFirst('/torneo/', '');
+        final torneo = tokenDeNombre(name, 'torneo');
+        if (torneo != null) {
           return MaterialPageRoute(
-            builder: (_) => TorneoEnlaceScreen(token: token),
+            builder: (_) => TorneoEnlaceScreen(token: torneo),
           );
         }
         return null;
