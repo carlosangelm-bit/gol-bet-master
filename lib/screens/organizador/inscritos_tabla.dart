@@ -227,14 +227,13 @@ class _Cabeceras extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
         child: Row(children: [
           Flexible(
+            // ETIQUETA, con el token. Antes era 11.5 w800 con tracking 0.4:
+            // casi el mismo peso visual que el "18" de debajo, así que el ojo
+            // tenía que leer para saber cuál era cuál.
             child: Text(texto,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: activa ? t.primary : t.sub,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.4)),
+                style: GolfType.label(activa ? t.primary : t.sub)),
           ),
           if (activa)
             Icon(descendente ? Icons.arrow_downward : Icons.arrow_upward,
@@ -337,12 +336,10 @@ class _Fila extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 8),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
+          // VALOR. El par label/value es lo que hace el trabajo: ninguno de los
+          // dos arregla nada por su cuenta.
           Text(fila.huerfano ? '—' : _hcp,
-              style: TextStyle(
-                  color: fila.huerfano ? t.sub : t.text,
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w700,
-                  fontFeatures: const [FontFeature.tabularFigures()])),
+              style: GolfType.value(fila.huerfano ? t.sub : t.text)),
           if (!fila.huerfano) ...[
             const SizedBox(width: 6),
             Icon(Icons.edit, size: 13, color: t.sub),
@@ -384,10 +381,7 @@ class _Fila extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Text('${fila.inscrito}',
-                  style: TextStyle(
-                      color: t.sub,
-                      fontSize: 12.5,
-                      fontFeatures: const [FontFeature.tabularFigures()])),
+                  style: GolfType.bodyNum(t.sub, size: 12.5)),
             ),
           ),
         Expanded(

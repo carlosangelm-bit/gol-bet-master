@@ -1318,8 +1318,13 @@ class _DuelCard extends StatelessWidget {
                         // Icono y nombre del tipo de apuesta
                         Text(betType.icon, style: const TextStyle(fontSize: 12)),
                         const SizedBox(width: 6),
+                        // ETIQUETA y VALOR, con los tokens. Antes eran 11/w500
+                        // y 12/w800: distintos, pero a un tamaño de diferencia,
+                        // así que el ojo tenía que leer para saber cuál era el
+                        // dato. Es el mismo defecto que la cabecera "HANDICAP"
+                        // sobre su "18".
                         Expanded(child: Text(betType.label,
-                          style: TextStyle(color: t.sub, fontSize: 11, fontWeight: FontWeight.w500))),
+                          style: GolfType.label(t.sub))),
                         // Barra de monto
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1327,11 +1332,7 @@ class _DuelCard extends StatelessWidget {
                             color: amtColor.withValues(alpha: 0.10),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Text(amtText,
-                            style: TextStyle(
-                              color: amtColor,
-                              fontWeight: FontWeight.w800, fontSize: 12,
-                            )),
+                          child: Text(amtText, style: GolfType.value(amtColor)),
                         ),
                       ]),
                       if (oyesesDetail != null)

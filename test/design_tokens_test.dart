@@ -83,6 +83,106 @@ void main() {
       expect(GolfType.label(GolfTheme.light.sub).letterSpacing,
           greaterThanOrEqualTo(0.5));
     });
+
+    // ── ETIQUETA Y VALOR ────────────────────────────────────────────────────
+    //
+    // El sistema pide que el ojo distinga al instante qué es ETIQUETA y qué es
+    // CUÁNTO. Donde fallaba —"HANDICAP" sobre su "18", el nombre de la apuesta
+    // junto a su importe— no faltaba un tamaño: es que las dos cosas se
+    // escribían casi igual.
+    test('CLAVE: value y label se separan por tamaño Y por peso', () {
+      final v = GolfType.value(GolfTheme.light.text);
+      final l = GolfType.label(GolfTheme.light.sub);
+      expect(v.fontSize!, greaterThan(l.fontSize! * 1.3),
+          reason: 'a un tamaño de diferencia el ojo tiene que leer para saber '
+              'cuál es el dato');
+      expect(v.fontWeight!.index, greaterThan(l.fontWeight!.index));
+    });
+
+    test('y value NO añade un quinto escalón', () {
+      // Subirle el tamaño para que se note habría roto los cuatro escalones que
+      // el sistema ya fijó. La diferencia la hacen el peso y el par, no una
+      // medida nueva.
+      final negro = GolfTheme.light.text;
+      expect(GolfType.value(negro).fontSize, GolfType.body(negro).fontSize);
+    });
+
+    test('el valor es tabular; la etiqueta no lo necesita', () {
+      expect(GolfType.value(GolfTheme.light.text).fontFeatures
+          ?.map((f) => f.feature), contains('tnum'));
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // EL TOKEN QUE ALCANZA LAS CUARENTA Y SEIS PANTALLAS
+  //
+  // Cuarenta y seis ficheros escriben `TextStyle(color:…, fontSize:…)` a mano
+  // y solo once usan GolfType. Poner los números tabulares en cada uno habría
+  // sido cuarenta y seis ediciones que se desincronizan a la primera.
+  //
+  // En vez de eso van en el TEMA, y llegan solas. Funciona por una propiedad de
+  // Flutter que se comprobó con una sonda antes de apoyarse en ella, y que este
+  // grupo fija: si una versión futura la cambiara, los números dejarían de
+  // alinearse en toda la app sin que nada más avisara.
+  // ═══════════════════════════════════════════════════════════════════════
+  group('números tabulares, desde un solo sitio', () {
+    test('el tema los lleva en TODOS los escalones', () {
+      for (final t in [GolfTheme.light, GolfTheme.dark, GolfTheme.classic]) {
+        final tt = t.toMaterial().textTheme;
+        final estilos = {
+          'headlineLarge': tt.headlineLarge,
+          'headlineMedium': tt.headlineMedium,
+          'titleLarge': tt.titleLarge,
+          'titleMedium': tt.titleMedium,
+          'titleSmall': tt.titleSmall,
+          'bodyLarge': tt.bodyLarge,
+          'bodyMedium': tt.bodyMedium,
+          'bodySmall': tt.bodySmall,
+        };
+        estilos.forEach((nombre, e) {
+          expect(e?.fontFeatures?.map((f) => f.feature), contains('tnum'),
+              reason: '$nombre se quedó fuera');
+        });
+      }
+    });
+
+    testWidgets('CLAVE: un Text con estilo inline los HEREDA', (tester) async {
+      // Esta es la propiedad de la que depende todo lo anterior: `Text` se
+      // pinta con DefaultTextStyle.merge(estilo), y merge solo pisa lo que el
+      // estilo declara. Las pantallas declaran color y tamaño; fontFeatures lo
+      // dejan en null.
+      await tester.pumpWidget(MaterialApp(
+        theme: GolfTheme.light.toMaterial(),
+        home: const Scaffold(
+          body: Text('123', style: TextStyle(fontSize: 22)),
+        ),
+      ));
+      final ctx = tester.element(find.text('123'));
+      final efectivo = DefaultTextStyle.of(ctx)
+          .style
+          .merge(tester.widget<Text>(find.text('123')).style);
+      expect(efectivo.fontFeatures?.map((f) => f.feature), contains('tnum'));
+      expect(efectivo.fontSize, 22, reason: 'y lo que sí declara, manda');
+    });
+
+    testWidgets('CONTRAPESO: quien declare cifras proporcionales, manda',
+        (tester) async {
+      // El token es el SUELO, no una imposición. Sin este contrapeso, un tema
+      // que forzara tnum ignorando el estilo local pasaría la prueba de arriba.
+      await tester.pumpWidget(MaterialApp(
+        theme: GolfTheme.light.toMaterial(),
+        home: const Scaffold(
+          body: Text('123',
+              style: TextStyle(
+                  fontFeatures: [FontFeature.proportionalFigures()])),
+        ),
+      ));
+      final ctx = tester.element(find.text('123'));
+      final efectivo = DefaultTextStyle.of(ctx)
+          .style
+          .merge(tester.widget<Text>(find.text('123')).style);
+      expect(efectivo.fontFeatures?.map((f) => f.feature), contains('pnum'));
+    });
   });
 
   group('vidrio', () {

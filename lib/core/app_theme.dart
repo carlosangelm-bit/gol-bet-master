@@ -223,7 +223,7 @@ class GolfTheme {
     ),
     appBarTheme: AppBarTheme(
       backgroundColor: bg, foregroundColor: text, elevation: 0, centerTitle: false,
-      titleTextStyle: TextStyle(color: text, fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+      titleTextStyle: TextStyle(color: text, fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -0.5, fontFeatures: GolfType.tabular),
       iconTheme: IconThemeData(color: text),
     ),
     cardTheme: CardThemeData(
@@ -232,15 +232,35 @@ class GolfTheme {
       margin: EdgeInsets.zero,
     ),
     dividerTheme: DividerThemeData(color: divider, thickness: 1, space: 1),
+    // ── NÚMEROS TABULARES EN TODO, DESDE UN SOLO SITIO ──────────────────────
+    //
+    // Esto es el token que alcanza las cuarenta y seis pantallas sin abrir
+    // ninguna, y funciona por una propiedad de Flutter que se comprobó antes de
+    // apoyarse en ella: un `Text` con estilo inline se pinta con
+    // `DefaultTextStyle.merge(estilo)`, y `merge` solo pisa los campos que el
+    // estilo declara. Las pantallas escriben color y tamaño; `fontFeatures` lo
+    // dejan en null, así que heredan el de aquí.
+    //
+    // Sonda, antes de escribir una línea:
+    //
+    //     DefaultTextStyle trae tnum:            (tnum)
+    //     estilo EFECTIVO de un Text inline:     (tnum) · size 22.0
+    //     y el que declara los suyos:            (pnum)
+    //
+    // O sea que quien quiera cifras proporcionales las declara y manda. Esto es
+    // el suelo, no una imposición.
+    //
+    // El beneficio no es solo estético: las columnas dejan de bailar al
+    // actualizarse, que es por lo que la pantalla de la casa club ya las usaba.
     textTheme: TextTheme(
-      headlineLarge: TextStyle(color: text, fontWeight: FontWeight.w800, fontSize: 28, letterSpacing: -0.5),
-      headlineMedium: TextStyle(color: text, fontWeight: FontWeight.w700, fontSize: 22),
-      titleLarge: TextStyle(color: text, fontWeight: FontWeight.w700, fontSize: 18),
-      titleMedium: TextStyle(color: text, fontWeight: FontWeight.w600, fontSize: 16),
-      titleSmall: TextStyle(color: text, fontWeight: FontWeight.w600, fontSize: 14),
-      bodyLarge: TextStyle(color: text, fontSize: 16),
-      bodyMedium: TextStyle(color: text, fontSize: 14),
-      bodySmall: TextStyle(color: sub, fontSize: 12),
+      headlineLarge: TextStyle(color: text, fontWeight: FontWeight.w800, fontSize: 28, letterSpacing: -0.5, fontFeatures: GolfType.tabular),
+      headlineMedium: TextStyle(color: text, fontWeight: FontWeight.w700, fontSize: 22, fontFeatures: GolfType.tabular),
+      titleLarge: TextStyle(color: text, fontWeight: FontWeight.w700, fontSize: 18, fontFeatures: GolfType.tabular),
+      titleMedium: TextStyle(color: text, fontWeight: FontWeight.w600, fontSize: 16, fontFeatures: GolfType.tabular),
+      titleSmall: TextStyle(color: text, fontWeight: FontWeight.w600, fontSize: 14, fontFeatures: GolfType.tabular),
+      bodyLarge: TextStyle(color: text, fontSize: 16, fontFeatures: GolfType.tabular),
+      bodyMedium: TextStyle(color: text, fontSize: 14, fontFeatures: GolfType.tabular),
+      bodySmall: TextStyle(color: sub, fontSize: 12, fontFeatures: GolfType.tabular),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true, fillColor: surface,
@@ -284,7 +304,12 @@ class GolfType {
 
   /// Cifras alineadas en columna. Sin esto las de ancho variable bailan al
   /// cambiar de hoyo y las columnas de montos dejan de leerse como columna.
-  static const _tabular = [FontFeature.tabularFigures()];
+  ///
+  /// Público porque el TEMA lo consume: ver [GolfTheme.toMaterial]. Es lo que
+  /// convierte "números tabulares en todos los datos" en un token en vez de en
+  /// cuarenta y seis ediciones.
+  static const tabular = [FontFeature.tabularFigures()];
+  static const _tabular = tabular;
 
   /// HÉROE — la cifra que responde la pregunta de la pantalla. Una por pantalla.
   static TextStyle hero(Color color, {double size = 48}) => TextStyle(
@@ -327,5 +352,36 @@ class GolfType {
         fontSize: size,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.5,
+      );
+
+  /// VALOR — la cifra que la etiqueta nombra.
+  ///
+  /// ── Por qué existe, y por qué NO trae un tamaño nuevo ─────────────────────
+  ///
+  /// El sistema pide que el ojo distinga al instante qué es ETIQUETA y qué es
+  /// CUÁNTO. Donde eso fallaba —la cabecera "HANDICAP" y el "18" de debajo
+  /// tenían casi el mismo peso— el problema no era que faltara un tamaño, era
+  /// que las dos cosas se escribían igual.
+  ///
+  /// Así que [value] no añade un quinto escalón: se queda en los que ya hay y
+  /// se separa de [label] por lo que sí distingue de un vistazo:
+  ///
+  ///     label  ·  11 px  ·  w500  ·  MAYÚSCULAS con tracking  ·  color sub
+  ///     value  ·  15 px  ·  w700  ·  tabular                  ·  color text
+  ///
+  /// El par es lo que hace el trabajo. Usar [value] sin [label] al lado no
+  /// arregla nada, y subirle el tamaño para que se note rompería los cuatro
+  /// escalones que el sistema ya fijó.
+  ///
+  /// [size] existe para poder subir al escalón de [title] o [hero] cuando el
+  /// valor es el protagonista de la pantalla. No para inventar medidas
+  /// intermedias.
+  static TextStyle value(Color color, {double size = 15}) => TextStyle(
+        color: color,
+        fontSize: size,
+        fontWeight: FontWeight.w700,
+        height: 1.15,
+        letterSpacing: -0.2,
+        fontFeatures: _tabular,
       );
 }
