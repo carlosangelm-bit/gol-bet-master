@@ -79,15 +79,45 @@ class _P {
   static const lUnder   = Color(0xFF37474F);  // blueGrey 800
   static const lOver    = Color(0xFF5D4037);  // brown 700
 
-  // Dark
-  static const dBg      = Color(0xFF111111);
-  static const dSurface = Color(0xFF1E1E1E);
-  static const dCard    = Color(0xFF282828);
+  // ── Dark: una ESCALERA DE ELEVACIÓN, no el invertido de Material ──────────
+  //
+  // Antes eran tres grises neutros elegidos por separado —111111, 1E1E1E,
+  // 282828— y funcionaban, pero no decían nada: no había forma de saber si dos
+  // superficies estaban al mismo nivel o si una flotaba sobre la otra.
+  //
+  // Ahora son un sistema con tres reglas, y las tres se comprueban:
+  //
+  //   1 · La BASE es #121212, no negro puro. El negro absoluto sobre una
+  //       pantalla OLED apaga el píxel entero y los bordes de las tarjetas
+  //       desaparecen; con un gris muy oscuro la geometría se sigue leyendo.
+  //       El negro se reserva para trazos, no para fondos.
+  //
+  //   2 · Cada nivel ACLARA sobre el anterior. Es lo que crea la elevación sin
+  //       sombras, que en oscuro casi no se ven.
+  //
+  //   3 · Y cada nivel se ENFRÍA un poco: el azul sube más que el rojo. Es lo
+  //       que separa "elevado" de "descolorido" — una escalera de grises puros
+  //       parece un error de calibración, y el mismo escalón con tinte frío se
+  //       lee como luz.
+  //
+  //       nivel 0  bg       #121212   R18 G18 B18   base, neutra
+  //       nivel 1  surface  #191B1F   R25 G27 B31   +7 luz, +6 de frío
+  //       nivel 2  card     #21242A   R33 G36 B42   +8 luz, +9 de frío
+  //                divider  #2E323A   la línea que separa el nivel 2
+  //
+  // Lo que NO cambia, y es a propósito: `sub` y los tonos del dinero. Están
+  // fijados en design_tokens_test desde antes —"un canal, un significado"— y
+  // teñirlos habría movido el significado además del tono.
+  static const dBg      = Color(0xFF121212);
+  static const dSurface = Color(0xFF191B1F);
+  static const dCard    = Color(0xFF21242A);
   static const dPrimary = Color(0xFF4CAF50);
+  // Negro sobre el verde primario: es un PRIMER PLANO, no un fondo. La regla
+  // del negro absoluto habla de superficies, y aquí el contraste lo pide.
   static const dOnPrim  = Color(0xFF000000);
   static const dText    = Color(0xFFEEEEEE);
   static const dSub     = Color(0xFF9E9E9E);
-  static const dDiv     = Color(0xFF333333);
+  static const dDiv     = Color(0xFF2E323A);
   static const dProfit  = Color(0xFF66BB6A);
   static const dLoss    = Color(0xFFEF5350);
   static const dAccent  = Color(0xFF81C784);

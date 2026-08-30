@@ -11,6 +11,8 @@
 // escrito y no haya que reconstruirlo.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/core/app_theme.dart';
@@ -244,7 +246,109 @@ void main() {
       });
   });
 
+  _elevacion();
   _vidrio();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LA ESCALERA DE ELEVACIÓN
+//
+// El tema oscuro eran tres grises neutros elegidos por separado. Funcionaban, y
+// no decían nada: no había forma de saber si dos superficies estaban al mismo
+// nivel o si una flotaba sobre la otra, así que cualquiera podía cambiar una
+// sin darse cuenta de que rompía la escalera.
+//
+// Estos tests la convierten en un sistema: tres reglas, y cada una con su
+// contrapeso para que cumplirlas no sea trivial.
+// ═══════════════════════════════════════════════════════════════════════════
+void _elevacion() {
+  /// Luminancia relativa, para comparar niveles.
+  double luz(Color c) => c.computeLuminance();
+
+  /// Cuánto más frío que cálido es un color: azul menos rojo, en 0-255.
+  int frio(Color c) =>
+      ((c.b - c.r) * 255).round();
+
+  group('elevación en oscuro', () {
+    test('CLAVE: la base es #121212, no negro puro', () {
+      // El negro absoluto sobre OLED apaga el píxel y los bordes de las
+      // tarjetas desaparecen. Con un gris muy oscuro la geometría se sigue
+      // leyendo.
+      expect(GolfTheme.dark.bg, const Color(0xFF121212));
+      expect(GolfTheme.dark.bg, isNot(const Color(0xFF000000)));
+    });
+
+    test('CLAVE: cada nivel aclara sobre el anterior', () {
+      final t = GolfTheme.dark;
+      expect(luz(t.surface), greaterThan(luz(t.bg)));
+      expect(luz(t.card), greaterThan(luz(t.surface)));
+      expect(luz(t.divider), greaterThan(luz(t.card)),
+          reason: 'la línea separa el nivel 2, así que va por encima de él');
+    });
+
+    test('y los escalones se NOTAN: ni iguales ni un salto de golpe', () {
+      // Sin mínimo, dos niveles casi idénticos pasarían la prueba de arriba y
+      // la elevación no se vería. Sin máximo, la escalera se convierte en un
+      // fondo claro.
+      final t = GolfTheme.dark;
+      for (final par in [
+        (t.bg, t.surface, 'bg→surface'),
+        (t.surface, t.card, 'surface→card'),
+      ]) {
+        final salto = luz(par.$2) - luz(par.$1);
+        expect(salto, greaterThan(0.004), reason: '${par.$3}: no se ve');
+        expect(salto, lessThan(0.06), reason: '${par.$3}: deja de ser oscuro');
+      }
+    });
+
+    test('CLAVE: y cada nivel se enfría — el azul sube más que el rojo', () {
+      // Es lo que separa "elevado" de "descolorido": una escalera de grises
+      // puros parece un error de calibración; el mismo escalón con tinte frío
+      // se lee como luz.
+      final t = GolfTheme.dark;
+      expect(frio(t.bg), 0, reason: 'la base es neutra a propósito');
+      expect(frio(t.surface), greaterThan(0));
+      expect(frio(t.card), greaterThan(frio(t.surface)));
+    });
+
+    test('el texto sigue legible sobre los tres niveles', () {
+      // El contrapeso de todo lo anterior: una escalera preciosa sobre la que
+      // no se lee no sirve. 4.5:1 es el mínimo de AA para texto normal.
+      final t = GolfTheme.dark;
+      double contraste(Color a, Color b) {
+        final x = luz(a), y = luz(b);
+        return (max(x, y) + 0.05) / (min(x, y) + 0.05);
+      }
+
+      for (final fondo in [t.bg, t.surface, t.card]) {
+        expect(contraste(t.text, fondo), greaterThan(4.5));
+        expect(contraste(t.sub, fondo), greaterThan(3.0),
+            reason: 'sub es secundario, pero tiene que leerse');
+      }
+    });
+  });
+
+  group('lo que la escalera NO puede tocar', () {
+    test('sub y los tonos del dinero se quedan como estaban', () {
+      // Fijados desde antes —"un canal, un significado"—. Teñirlos habría
+      // movido el significado además del tono.
+      expect(GolfTheme.dark.sub, const Color(0xFF9E9E9E));
+      expect(GolfTheme.dark.profit, const Color(0xFF66BB6A));
+      expect(GolfTheme.dark.loss, const Color(0xFFEF5350));
+    });
+
+    test('y el tema claro no se convierte en oscuro por accidente', () {
+      // La escalera del claro va al revés: la base es la MÁS clara.
+      expect(luz(GolfTheme.light.bg), greaterThan(0.8));
+    });
+
+    test('el clásico conserva su tinte verde, que es de marca', () {
+      // La regla del frío es del tema oscuro, no de todos. En el clásico el
+      // tinte lo decide la marca, y aplicarle el azul lo habría apagado.
+      final c = GolfTheme.classic;
+      expect((c.bg.g * 255).round(), greaterThan((c.bg.b * 255).round()));
+    });
+  });
 }
 
 // ── Fase 6 · vidrio sin desenfoque ──────────────────────────────────────────
