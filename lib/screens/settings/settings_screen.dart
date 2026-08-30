@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
+import '../../models/tendencia.dart';
+import '../../widgets/grafico_tendencia.dart';
 import '../templates/templates_screen.dart';
 import '../../providers/round_provider.dart';
 import '../../providers/user_profile_provider.dart';
@@ -588,6 +590,17 @@ class _HandicapTrackerSheet extends StatelessWidget {
             ),
           ),
         ],
+        // ── LA TENDENCIA ────────────────────────────────────────────────────
+        //
+        // Va ANTES de la lista de diferenciales a propósito: la pregunta que se
+        // hace el jugador al abrir esto no es "cuál fue mi diferencial del 12
+        // de marzo", es si está bajando. La lista contesta la segunda pregunta
+        // y estaba contestando primero.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+          child: GraficoTendencia(
+              serie: tendenciaDeHandicap(result.allDifferentials), t: t),
+        ),
         // Lista de diferenciales
         Expanded(
           child: diffs.isEmpty
