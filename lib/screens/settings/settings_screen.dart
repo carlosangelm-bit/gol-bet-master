@@ -1648,9 +1648,10 @@ class _FavCoursesSectionState extends State<_FavCoursesSection> {
                     // Toda la fila, no solo donde hay un hijo.
                     behavior: HitTestBehavior.opaque,
                     onTap: () => profProv.removeFavCourse(fav.courseId),
-                    child: const Padding(
-                      padding: EdgeInsets.only(left: 4),
-                      child: Icon(Icons.star_rounded, color: Colors.amber, size: 22),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Icon(GolfIcons.favoritoMarcado,
+                          color: t.accent, size: 22),
                     ),
                   ),
                 ]),
@@ -2006,7 +2007,7 @@ class _FavCoursePickerSheetState extends State<_FavCoursePickerSheet> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(Icons.golf_course,
-                    color: isFav ? Colors.amber : t.primary, size: 18),
+                    color: isFav ? t.accent : t.primary, size: 18),
               ),
               const SizedBox(width: 12),
               Expanded(child: Column(
@@ -2028,8 +2029,8 @@ class _FavCoursePickerSheetState extends State<_FavCoursePickerSheet> {
               )),
               // Ícono de estrella — indica si es favorito
               Icon(
-                isFav ? Icons.star_rounded : Icons.star_border_rounded,
-                color: isFav ? Colors.amber : t.sub,
+                isFav ? GolfIcons.favoritoMarcado : GolfIcons.favorito,
+                color: isFav ? t.accent : t.sub,
                 size: 22,
               ),
             ]),

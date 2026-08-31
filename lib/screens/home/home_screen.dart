@@ -1650,7 +1650,7 @@ class _BetInfo {
     // ── Skins ─────────────────────────────────────────────────────────────────
     _BetInfo(
       type: BetModuleType.skins,
-      icon: Icons.star_rounded,
+      icon: GolfIcons.favoritoMarcado,
       color: Color(0xFFAD1457),
       tagline: 'Cada hoyo es una apuesta independiente',
       howItWorks:

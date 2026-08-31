@@ -87,8 +87,65 @@ todavía no. En claro, comprobar que la versión gris (sin índice) se distingue
 del fondo.
 
 ### 7 · La tele — *Leaderboard TV*
-Cerró en la entrega 1 y no cambió aquí, pero es la superficie que se proyecta.
-Vale una mirada en los dos temas: el trofeo del campeón y nada más.
+
+Ya no depende del tema de la app: tiene **sus propias plantillas**, y se revisan
+aparte. Ver la sección de abajo.
+
+---
+
+# La pantalla proyectada, plantilla por plantilla
+
+Se configura en **Portal de organizador → La pantalla**. La previa de esa
+sección hace la misma cuenta que la pared, así que sirve para juzgar sin
+proyectar — pero el criterio es verlo en la tele.
+
+## Las cuatro, y qué mirar en cada una
+
+| Plantilla | Para qué | Lo que puede fallar |
+|---|---|---|
+| **Casa club** | El torneo de siempre, verde de campo | Es la de por defecto: ningún torneo ya publicado debe cambiar de cara |
+| **Retransmisión** | Neutra, gris | Que el acento sea **lo único** con color en la pared |
+| **Corporativa** | Torneo de empresa | Que un logo de marca encaje sin pelearse con el azul |
+| **Atardecer** | Pantalla con luz de frente | Que aguante el sol: es la que existe para eso |
+
+**En las cuatro, y en sus tres fondos:** que el nombre y el puesto se lean desde
+donde de verdad se va a mirar. El test fija los 40 px en 1080p para las cuatro,
+pero 40 px legibles y 40 px cómodos no son lo mismo.
+
+## Las tres cosas nuevas de la tabla
+
+**1 · El score contra el par.** Es lo que hace que se reconozca un leaderboard
+de golf. Mirar que el `-7` esté en **rojo**, que el par diga **`E`** y no `0`, y
+que el `+4` NO esté en rojo. La columna solo aparece en torneos que se puntúan
+por score neto — con dinero, por posición o Stableford no hay bajo par y la
+columna no se reserva.
+
+**2 · El progreso.** `2/3` mientras va a medias, **`F`** cuando terminó todas
+las rondas del torneo, y el que terminó marcado con el acento. **No dice por qué
+hoyo va**: eso sería un dato de hace horas presentado como actual.
+
+**3 · La separación del líder.** Una raya bajo el primero, más el relleno de
+podio, más el puesto en el acento. Tres canales a la vez, a propósito: mirar que
+se lea **desde lejos** y no solo de cerca — si solo se distingue acercándose,
+sobra un canal o falta grosor.
+
+## Y lo que hay que intentar romper
+
+**Elige un color de torneo casi igual al fondo** —un azul muy oscuro sobre la
+Corporativa, por ejemplo—. Lo que debe pasar: el color se aclara solo hasta que
+se ve, **conservando el tono**. Sigue siendo su azul, más claro.
+
+Si al elegirlo el punto de la paleta ya se ve aclarado, es correcto: la muestra
+enseña el color **ya corregido**, no el elegido. Enseñar uno y proyectar otro
+sería lo peor de las dos opciones.
+
+## Identidad y marca, en la misma cabecera
+
+Con un torneo que tenga **logo propio** y **banner de patrocinador**: van
+**apilados**, no lado a lado. Mirar que ninguno encoja al otro y que el orden se
+lea — primero de quién es el torneo, después quién lo paga. La pieza de
+patrocinio conserva su etiqueta (`PATROCINADOR OFICIAL`); la identidad no lleva
+etiqueta, porque quien organiza no se anuncia.
 
 ---
 

@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../core/golf_icons.dart';
 import '../core/app_theme.dart';
 import '../models/models.dart';
 import '../services/golf_course_service.dart';
@@ -373,7 +374,7 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Row(children: [
-                    Icon(Icons.star_rounded, color: Colors.amber, size: 16),
+                    Icon(GolfIcons.favoritoMarcado, color: t.accent, size: 16),
                     const SizedBox(width: 6),
                     Text('MIS CAMPOS FAVORITOS',
                         style: TextStyle(color: t.sub, fontSize: 10,
@@ -416,7 +417,7 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
                       border: Border.all(color: t.primary.withValues(alpha: 0.25)),
                     ),
                     child: Row(children: [
-                      Icon(Icons.star_rounded, color: Colors.amber, size: 18),
+                      Icon(GolfIcons.favoritoMarcado, color: t.accent, size: 18),
                       const SizedBox(width: 10),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(fav.fullName,
@@ -554,7 +555,7 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                     child: Icon(
-                      isFav ? Icons.star_rounded : Icons.star_border_rounded,
+                      isFav ? GolfIcons.favoritoMarcado : GolfIcons.favorito,
                       color: isFav ? Colors.amber : t.sub,
                       size: 26,
                     ),
@@ -650,7 +651,7 @@ class _CourseResultTile extends StatelessWidget {
               ])),
               // Indicador de favorito (solo visual — se gestiona desde la pantalla de tees)
               if (isFav) ...[
-                Icon(Icons.star_rounded, color: Colors.amber, size: 18),
+                Icon(GolfIcons.favoritoMarcado, color: t.accent, size: 18),
                 const SizedBox(width: 4),
               ],
               Icon(Icons.chevron_right, color: t.sub, size: 20),

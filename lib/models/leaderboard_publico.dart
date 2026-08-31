@@ -65,11 +65,31 @@ class FilaProyectada {
   /// primero, no cuánto lleva.
   final double? medida;
 
+  /// El score CONTRA EL PAR, cuando el torneo se puntúa por score.
+  ///
+  /// ── Es la columna que hace que se reconozca un leaderboard de golf ────────
+  ///
+  /// `-7` en rojo y el par en blanco es lo primero que identifica la pantalla,
+  /// antes de leer un solo nombre. Sin esto la columna dice `284` y podría ser
+  /// cualquier tabla ordenada.
+  ///
+  /// Null en tres casos distintos, y los tres son honestos:
+  ///
+  ///   · el torneo NO se puntúa por score —por dinero, por posición o por
+  ///     Stableford—, y entonces "bajo par" no significa nada
+  ///   · alguna de las rondas que cuentan es anterior a que se guardara el par
+  ///   · el jugador no ha jugado ninguna
+  ///
+  /// En los tres la pantalla enseña la medida a secas. Inventar un par de 72
+  /// sería un número plausible sustituyendo a uno que falta.
+  final int? bajoPar;
+
   const FilaProyectada({
     required this.puesto,
     required this.nombre,
     required this.jugadas,
     this.medida,
+    this.bajoPar,
   });
 
   Map<String, dynamic> toJson() => {
@@ -77,6 +97,7 @@ class FilaProyectada {
         'nombre': nombre,
         'jugadas': jugadas,
         if (medida != null) 'medida': medida,
+        if (bajoPar != null) 'bajoPar': bajoPar,
       };
 
   factory FilaProyectada.fromJson(Map<String, dynamic> j) => FilaProyectada(
@@ -84,6 +105,7 @@ class FilaProyectada {
         nombre: (j['nombre'] as String?) ?? '—',
         jugadas: (j['jugadas'] as num?)?.toInt() ?? 0,
         medida: (j['medida'] as num?)?.toDouble(),
+        bajoPar: (j['bajoPar'] as num?)?.toInt(),
       );
 }
 
@@ -123,6 +145,13 @@ class LeaderboardPublico {
   final List<FilaProyectada> tabla;
   final InventarioProyectado inventario;
 
+  /// Cómo quiere verse este torneo en la pared.
+  ///
+  /// Viaja con la instantánea y no se lee del torneo, por el mismo motivo que
+  /// todo lo demás de aquí: la tele no tiene sesión y no puede leer el
+  /// documento del torneo. Lo que se proyecta es lo que se publicó.
+  final IdentidadDeTorneo identidad;
+
   const LeaderboardPublico({
     required this.token,
     required this.ownerUid,
@@ -136,6 +165,7 @@ class LeaderboardPublico {
     this.activo = true,
     this.tabla = const [],
     this.inventario = const InventarioProyectado(),
+    this.identidad = const IdentidadDeTorneo(),
   });
 
   /// Construye la copia proyectable desde la tabla YA CALCULADA.
@@ -157,11 +187,19 @@ class LeaderboardPublico {
     // La medida solo viaja si NO es dinero. Ver FilaProyectada.medida.
     final esDinero = metodo == MetodoDePuntuacion.dinero;
 
+    // El score contra el par solo tiene sentido cuando la medida ES el score.
+    // Con Stableford más es mejor y el par no entra; con dinero o por posición
+    // la medida ni siquiera son golpes.
+    final porScore = metodo == MetodoDePuntuacion.scoreNeto;
+
     FilaProyectada fila(FilaDelTorneo f) => FilaProyectada(
           puesto: f.puesto,
           nombre: f.nombre,
           jugadas: f.jugadas,
           medida: esDinero ? null : f.total,
+          bajoPar: porScore && f.parDeLasQueCuentan != null && f.jugadas > 0
+              ? f.total.round() - f.parDeLasQueCuentan!
+              : null,
         );
 
     return LeaderboardPublico(
@@ -179,6 +217,7 @@ class LeaderboardPublico {
         ...tabla.bajoMinimo.map(fila),
       ],
       inventario: inventario,
+      identidad: torneo.identidad,
     );
   }
 
@@ -195,6 +234,7 @@ class LeaderboardPublico {
         if (!activo) 'activo': false,
         'tabla': tabla.map((f) => f.toJson()).toList(),
         if (!inventario.vacio) 'inventario': inventario.toJson(),
+        if (!identidad.vacia) 'identidad': identidad.toJson(),
       };
 
   factory LeaderboardPublico.fromJson(String token, Map<String, dynamic> j) =>
@@ -220,5 +260,9 @@ class LeaderboardPublico {
             ? InventarioProyectado.fromJson(
                 Map<String, dynamic>.from(j['inventario'] as Map))
             : const InventarioProyectado(),
+        identidad: j['identidad'] is Map
+            ? IdentidadDeTorneo.fromJson(
+                Map<String, dynamic>.from(j['identidad'] as Map))
+            : const IdentidadDeTorneo(),
       );
 }

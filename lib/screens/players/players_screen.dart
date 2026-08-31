@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../../core/golf_icons.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
@@ -505,8 +506,10 @@ class _PlayerTile extends StatelessWidget {
               GestureDetector(
                 onTap: onFav,
                 child: Icon(
-                  pw.isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
-                  color: pw.isFavorite ? Colors.amber : t.sub,
+                  pw.isFavorite
+                      ? GolfIcons.favoritoMarcado
+                      : GolfIcons.favorito,
+                  color: pw.isFavorite ? t.accent : t.sub,
                   size: 22,
                 ),
               ),
@@ -821,8 +824,8 @@ class _PlayerFormSheetState extends State<_PlayerFormSheet> {
             onTap: () => setState(() => _isFav = !_isFav),
             child: Row(children: [
               Icon(
-                _isFav ? Icons.star_rounded : Icons.star_border_rounded,
-                color: _isFav ? Colors.amber : t.sub, size: 22,
+                _isFav ? GolfIcons.favoritoMarcado : GolfIcons.favorito,
+                color: _isFav ? t.accent : t.sub, size: 22,
               ),
               const SizedBox(width: 8),
               Text('Marcar como favorito',

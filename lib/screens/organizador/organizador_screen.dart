@@ -50,6 +50,7 @@ import '../../providers/torneo_provider.dart';
 import '../../widgets/importar_jugadores_sheet.dart';
 import '../auth/auth_screen.dart';
 import 'inscritos_tabla.dart';
+import 'pantalla_seccion.dart';
 import 'patrocinio_seccion.dart';
 
 class OrganizadorScreen extends StatefulWidget {
@@ -293,12 +294,13 @@ class _Portal extends StatefulWidget {
 /// Las secciones del portal. Solo la primera está construida; las otras se
 /// nombran para que se vea que el armazón las espera —y para no inventar un
 /// menú distinto cuando lleguen—.
-enum SeccionDelPortal { inscritos, patrocinio, scores, salidas }
+enum SeccionDelPortal { inscritos, patrocinio, pantalla, scores, salidas }
 
 extension SeccionTexto on SeccionDelPortal {
   String get label => switch (this) {
         SeccionDelPortal.inscritos => 'Inscritos',
         SeccionDelPortal.patrocinio => 'Patrocinio',
+        SeccionDelPortal.pantalla => 'La pantalla',
         SeccionDelPortal.scores => 'Scores en vivo',
         SeccionDelPortal.salidas => 'Grupos y salidas',
       };
@@ -306,6 +308,7 @@ extension SeccionTexto on SeccionDelPortal {
   IconData get icono => switch (this) {
         SeccionDelPortal.inscritos => Icons.groups_outlined,
         SeccionDelPortal.patrocinio => Icons.workspace_premium_outlined,
+        SeccionDelPortal.pantalla => Icons.tv_outlined,
         SeccionDelPortal.scores => Icons.table_chart_outlined,
         SeccionDelPortal.salidas => Icons.flag_outlined,
       };
@@ -314,6 +317,7 @@ extension SeccionTexto on SeccionDelPortal {
   String? get pendiente => switch (this) {
         SeccionDelPortal.inscritos => null,
         SeccionDelPortal.patrocinio => null,
+        SeccionDelPortal.pantalla => null,
         SeccionDelPortal.scores =>
           'El torneo entero en una tabla, y corregir con constancia.',
         SeccionDelPortal.salidas =>
@@ -335,6 +339,8 @@ class _PortalState extends State<_Portal> {
         InscritosTabla(torneo: torneo, ancho: ancho, t: t),
       SeccionDelPortal.patrocinio =>
         PatrocinioSeccion(torneo: torneo, ancho: ancho, t: t),
+      SeccionDelPortal.pantalla =>
+        PantallaSeccion(torneo: torneo, ancho: ancho, t: t),
       final s => _Pendiente(t: t, seccion: s),
     };
 

@@ -33,8 +33,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import 'models.dart';
 import 'patrocinio.dart';
+import 'plantilla_de_tele.dart';
 import '../engines/bet_engine.dart';
 import 'round_result.dart';
+
+export 'plantilla_de_tele.dart';
 
 /// De dónde salen las rondas que cuentan.
 enum FuenteDeRondas {
@@ -304,6 +307,13 @@ class Torneo {
   final String nombre;
   final String emoji;
 
+  /// Cómo se ve este torneo en la pantalla proyectada.
+  ///
+  /// Vive en el torneo y no en el enlace de la tele porque es una decisión del
+  /// EVENTO, no de una publicación: si el enlace se apaga y se vuelve a
+  /// encender, el torneo sigue teniendo la misma cara.
+  final IdentidadDeTorneo identidad;
+
   final FuenteDeRondas fuente;
 
   /// Rondas elegidas a mano. Solo con [FuenteDeRondas.manual].
@@ -467,6 +477,7 @@ class Torneo {
     required this.id,
     required this.nombre,
     this.emoji = 'trofeo',
+    this.identidad = const IdentidadDeTorneo(),
     this.fuente = FuenteDeRondas.marcadas,
     this.roundIds = const [],
     this.desde,
@@ -497,6 +508,7 @@ class Torneo {
   Torneo copyWith({
     String? nombre,
     String? emoji,
+    IdentidadDeTorneo? identidad,
     FuenteDeRondas? fuente,
     List<String>? roundIds,
     DateTime? desde,
@@ -537,6 +549,7 @@ class Torneo {
         id: id,
         nombre: nombre ?? this.nombre,
         emoji: emoji ?? this.emoji,
+        identidad: identidad ?? this.identidad,
         fuente: fuente ?? this.fuente,
         roundIds: roundIds ?? this.roundIds,
         desde: limpiarDesde ? null : (desde ?? this.desde),
@@ -573,6 +586,7 @@ class Torneo {
         'id': id,
         'nombre': nombre,
         'emoji': emoji,
+        if (!identidad.vacia) 'identidad': identidad.toJson(),
         'fuente': fuente.name,
         if (roundIds.isNotEmpty) 'roundIds': roundIds,
         if (desde != null) 'desde': desde!.toIso8601String(),
@@ -606,6 +620,10 @@ class Torneo {
         id: (j['id'] as String?) ?? '',
         nombre: (j['nombre'] as String?) ?? 'Torneo',
         emoji: (j['emoji'] as String?) ?? 'trofeo',
+        identidad: j['identidad'] is Map
+            ? IdentidadDeTorneo.fromJson(
+                Map<String, dynamic>.from(j['identidad'] as Map))
+            : const IdentidadDeTorneo(),
         fuente: FuenteDeRondas.values.firstWhere((f) => f.name == j['fuente'],
             orElse: () => FuenteDeRondas.marcadas),
         roundIds:
@@ -687,6 +705,10 @@ class RondaDelTorneo {
   /// True si esta ronda entra en el total. Con "mejores N" las peores no.
   final bool cuenta;
 
+  /// El par de los hoyos que esta ronda jugó. Null si la ronda es anterior a
+  /// que se guardara — ver [RoundResult.parDeLaRonda].
+  final int? par;
+
   const RondaDelTorneo({
     required this.roundId,
     required this.nombreRonda,
@@ -695,6 +717,7 @@ class RondaDelTorneo {
     required this.puntos,
     required this.puesto,
     required this.cuenta,
+    this.par,
   });
 }
 
@@ -708,6 +731,14 @@ class FilaDelTorneo {
 
   /// La suma de las que cuentan.
   final double total;
+
+  /// El par acumulado de las rondas que CUENTAN, para restarlo del total.
+  ///
+  /// Null si alguna de las que cuentan no lo trae: un par a medias daría un
+  /// "bajo par" que no es el de nadie, y un número plausible que sustituye a
+  /// uno que falta es el fallo más caro que tiene este proyecto. O están todas
+  /// o no hay columna.
+  final int? parDeLasQueCuentan;
 
   /// Cuántas jugó, y cuántas suman.
   int get jugadas => rondas.length;
@@ -723,6 +754,7 @@ class FilaDelTorneo {
     required this.playerId,
     required this.nombre,
     required this.rondas,
+    this.parDeLasQueCuentan,
     required this.total,
     required this.puesto,
     required this.bajoMinimo,
@@ -893,6 +925,7 @@ TablaDelTorneo tablaDe(
         puntos: puntos,
         puesto: puesto,
         cuenta: true, // se decide abajo, con todas las rondas del jugador
+        par: r.parDeLaRonda,
       ));
     }
   }
@@ -905,11 +938,17 @@ TablaDelTorneo tablaDe(
     final total = marcadas
         .where((x) => x.cuenta)
         .fold(0.0, (s, x) => s + x.puntos);
+    // El par de las que cuentan: entero o nada. Ver parDeLasQueCuentan.
+    final cuentan = marcadas.where((x) => x.cuenta).toList();
+    final par = cuentan.isEmpty || cuentan.any((x) => x.par == null)
+        ? null
+        : cuentan.fold<int>(0, (acc, x) => acc + x.par!);
     filas.add(FilaDelTorneo(
       playerId: entrada.key,
       nombre: nombreDe[entrada.key] ?? sinNombre,
       rondas: marcadas,
       total: _redondea(total),
+      parDeLasQueCuentan: par,
       puesto: 0, // se asigna al ordenar
       bajoMinimo: marcadas.length < t.minimoRondas,
     ));
@@ -1043,6 +1082,9 @@ List<RondaDelTorneo> _marcarLasQueCuentan(
         puntos: r.puntos,
         puesto: r.puesto,
         cuenta: cuentan.contains(r.roundId),
+        // Sin esto el par se pierde justo aquí, al reconstruir la ronda para
+        // ponerle la marca: la columna quedaría vacía solo con "mejores N".
+        par: r.par,
       ),
   ];
 }
@@ -1062,6 +1104,11 @@ List<FilaDelTorneo> _conPuestos(List<FilaDelTorneo> filas) {
         nombre: filas[k].nombre,
         rondas: filas[k].rondas,
         total: filas[k].total,
+        // Segunda reconstrucción que se comía el par —la otra estaba en
+        // _marcarLasQueCuentan—. Reconstruir un objeto campo a campo pierde
+        // en silencio todo lo que se añada después, y aquí el síntoma habría
+        // sido una columna que nunca aparece.
+        parDeLasQueCuentan: filas[k].parDeLasQueCuentan,
         puesto: i + 1,
         bajoMinimo: filas[k].bajoMinimo,
       ));

@@ -1534,7 +1534,7 @@ class _UnitsSheetContentState extends State<_UnitsSheetContent> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Row(children: [
-                Icon(Icons.star_rounded, color: t.accent, size: 18),
+                Icon(GolfIcons.favoritoMarcado, color: t.accent, size: 18),
                 const SizedBox(width: 8),
                 Text(
                   'Units — ${widget.playerName.split(' ').first}  •  Hoyo ${widget.hole}',

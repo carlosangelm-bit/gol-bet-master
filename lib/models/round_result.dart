@@ -35,6 +35,27 @@ class RoundResult {
   /// de dieciocho al enseñar el score.
   final int holesPlayed;
 
+  /// El PAR de los hoyos que esta ronda jugó de verdad.
+  ///
+  /// ── Por qué aparece esto ahora, y por qué no estaba ───────────────────────
+  ///
+  /// Un leaderboard de golf enseña el score CONTRA EL PAR: `-7` es lo que hace
+  /// que alguien reconozca la pantalla sin leer nada. Y para restar el par hay
+  /// que tenerlo.
+  ///
+  /// Aquí se guardaba `courseName` —el NOMBRE del campo— y nada más. El objeto
+  /// `CourseInfo` con los pares por hoyo está delante en el momento exacto de
+  /// construir esto, y se tiraba. Es la sexta vez en el proyecto que un dato
+  /// horneado en un nombre acaba faltando: un nombre es para leerlo, y el par
+  /// no se puede deducir de "Club de Golf Bosques".
+  ///
+  /// Es el par de los hoyos EN JUEGO, no el del campo entero: una vuelta de
+  /// nueve contra un par 72 daría −36 y eso no es un score, es un error.
+  ///
+  /// Null en las rondas cerradas antes de esto. Una ronda sin par no produce
+  /// score contra par —no lo inventa— y la columna se queda vacía para ella.
+  final int? parDeLaRonda;
+
   /// Quiénes jugaron, por id. Son PERSONAS: los jugadores virtuales de un
   /// scramble no están, que no tienen ficha ni balance propio.
   final List<String> playerIds;
@@ -100,6 +121,7 @@ class RoundResult {
     required this.courseName,
     required this.playedAt,
     required this.holesPlayed,
+    this.parDeLaRonda,
     required this.playerIds,
     required this.playerNames,
     required this.balances,
@@ -176,10 +198,21 @@ class RoundResult {
       }
     }
 
+    // El par de lo que se jugó. `hoyosEnJuego` ya resuelve la vuelta de nueve
+    // y por qué mitad empieza, así que no hay una segunda aritmética que pueda
+    // discrepar de la que usó la tarjeta.
+    final enJuego = BetEngine.segmentsOf(round).hoyosEnJuego.toSet();
+    final delCampo =
+        round.course.holes.where((h) => enJuego.contains(h.hole)).toList();
+    final par = delCampo.isEmpty
+        ? null
+        : delCampo.fold<int>(0, (acc, h) => acc + h.par);
+
     return RoundResult(
       roundId: round.id,
       roundName: round.name,
       courseName: round.course.name,
+      parDeLaRonda: par,
       playedAt: playedAt ?? DateTime.now(),
       holesPlayed: hoyos,
       playerIds: ids,
@@ -207,6 +240,7 @@ class RoundResult {
         'courseName': courseName,
         'playedAt': playedAt.toIso8601String(),
         'holesPlayed': holesPlayed,
+        if (parDeLaRonda != null) 'parDeLaRonda': parDeLaRonda,
         'playerIds': playerIds,
         'playerNames': playerNames,
         'balances': balances,
@@ -227,6 +261,7 @@ class RoundResult {
         playedAt:
             DateTime.tryParse((j['playedAt'] as String?) ?? '') ?? DateTime(2000),
         holesPlayed: (j['holesPlayed'] as num?)?.toInt() ?? 0,
+        parDeLaRonda: (j['parDeLaRonda'] as num?)?.toInt(),
         playerIds:
             ((j['playerIds'] as List?) ?? const []).map((e) => '$e').toList(),
         playerNames: ((j['playerNames'] as Map?) ?? const {})

@@ -73,6 +73,26 @@ class GolfIcons {
   static const hoyoDirecto = Icons.adjust;                 // 🕳️ entró de fuera
   static const meta = Icons.flag_outlined;                 // 🏁 terminó
 
+  /// El jugador favorito del directorio.
+  ///
+  /// Era `Icons.star_rounded` en `Colors.amber`: RELLENA y con color propio,
+  /// que son los dos problemas del emoji con otra ropa. Al lado de un icono de
+  /// línea la diferencia canta, y el ámbar no es de ninguna de las dos paletas
+  /// —se ve igual en claro y en oscuro, que es exactamente lo que un icono no
+  /// debe hacer—.
+  static const favorito = Icons.star_outline;              // ⭐
+
+  /// El favorito ya marcado, en un interruptor de dos estados.
+  ///
+  /// Es la ÚNICA rellena del catálogo, y va con su motivo: aquí el relleno no
+  /// es estilo, es ESTADO. Una estrella hueca junto a una llena dice "marcada
+  /// y sin marcar" sin leer nada, y quitarle el relleno obligaría a que lo
+  /// dijera el color — que ya está diciendo otras cosas.
+  ///
+  /// Lo que sí se le quita es el color propio: era `Colors.amber`, un ámbar
+  /// que se ve idéntico en claro y en oscuro. El color sale del tema.
+  static const favoritoMarcado = Icons.star;
+
   // ── Orden ─────────────────────────────────────────────────────────────────
   //
   // Eran 1️⃣ y 2️⃣: un dígito, un selector de variación y un keycap envolvente,

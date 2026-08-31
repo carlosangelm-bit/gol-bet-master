@@ -1354,7 +1354,8 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
                 if (pw.isFavorite) ...[
                   const SizedBox(width: 4),
-                  Icon(Icons.star_rounded, color: Colors.amber, size: 14),
+                  Icon(GolfIcons.favorito,
+                      color: t.accent, size: GolfIcons.juntoAEtiqueta),
                 ],
               ]),
               Row(children: [

@@ -50,6 +50,7 @@ import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
 import '../../core/golf_icons.dart';
 import '../../models/leaderboard_publico.dart';
+import '../../models/plantilla_de_tele.dart';
 import '../../services/firestore_service.dart';
 
 class LeaderboardTvScreen extends StatefulWidget {
@@ -73,6 +74,18 @@ class LeaderboardTvScreen extends StatefulWidget {
 
   /// Cuántas filas caben en una pantalla.
   static const int filasPorPagina = 12;
+
+  /// Cómo se escribe un score contra par: `E` en el par, con signo si no.
+  ///
+  /// La `E` de "even" es la convención del golf, y un `0` ahí se lee como "no
+  /// hay dato" justo en la columna donde el dato es la noticia. Vive aquí y no
+  /// dentro de la fila para que una prueba pueda fijarla: una convención que
+  /// ningún test alcanza no está fijada, está escrita.
+  static String contraPar(int v) => v == 0 ? 'E' : (v > 0 ? '+$v' : '$v');
+
+  /// La columna de progreso: `F` cuando terminó todas las rondas del torneo.
+  static String rondasLlevadas(int jugadas, int total) =>
+      total > 0 && jugadas >= total ? 'F' : '$jugadas/$total';
 
   /// La unidad de la que sale TODO el tamaño de esta pantalla.
   ///
@@ -187,10 +200,12 @@ class _LeaderboardTvScreenState extends State<LeaderboardTvScreen> {
     // sustituye mientras esta pantalla vive; el latido lo limpia.
     _builderPrevio ??= ErrorWidget.builder;
     ErrorWidget.builder = (_) => _PantallaDeEspera(
-        titulo: _datos?.nombre ?? 'Torneo', mensaje: 'Actualizando…');
+        titulo: _datos?.nombre ?? 'Torneo',
+        mensaje: 'Actualizando…',
+        piel: _datos?.identidad.piel);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF07130C),
+      backgroundColor: (_datos?.identidad ?? const IdentidadDeTorneo()).piel.fondo,
       body: KeyedSubtree(
         // La clave del remontaje. Ver la cabecera, punto 2.
         key: ValueKey(_generacion),
@@ -208,6 +223,7 @@ class _LeaderboardTvScreenState extends State<LeaderboardTvScreen> {
     if (d == null || !d.activo) {
       return _PantallaDeEspera(
           titulo: d?.nombre ?? 'Leaderboard',
+          piel: d?.identidad.piel,
           mensaje: d == null
               ? 'Este enlace todavía no tiene tabla publicada.'
               : 'El organizador apagó esta pantalla.');
@@ -219,21 +235,28 @@ class _LeaderboardTvScreenState extends State<LeaderboardTvScreen> {
     final u = LeaderboardTvScreen.unidadDe(alto);
     final conLateral = ancho >= 1280 && d.inventario.lateral != null;
 
+    // La plantilla que eligió el organizador, ya resuelta: con su acento
+    // corregido si hacía falta y con el contraste garantizado. Se calcula UNA
+    // vez y baja; que cada fila la recalculara sería la misma cuenta doce veces
+    // por fotograma en la pantalla que menos puede permitírselo.
+    final piel = d.identidad.piel;
+
     return SafeArea(
       child: Row(children: [
         Expanded(
           child: Column(children: [
-            _Cabecera(datos: d, u: u),
+            _Cabecera(datos: d, u: u, piel: piel),
             Expanded(child: _Tabla(datos: d, u: u, pagina: _pagina,
-                porPagina: LeaderboardTvScreen.filasPorPagina)),
-            _Pie(datos: d, u: u, indice: _logo),
+                porPagina: LeaderboardTvScreen.filasPorPagina, piel: piel)),
+            _Pie(datos: d, u: u, indice: _logo, piel: piel),
           ]),
         ),
         // §5.3 y §7 del manual: la columna desaparece antes de comprimir nada.
         if (conLateral)
           Padding(
             padding: EdgeInsets.all(u * 0.25),
-            child: _Lateral(pieza: d.inventario.lateral!, alto: alto),
+            child: _Lateral(
+                pieza: d.inventario.lateral!, alto: alto, piel: piel),
           ),
       ]),
     );
@@ -248,19 +271,25 @@ class _LeaderboardTvScreenState extends State<LeaderboardTvScreen> {
 class _PantallaDeEspera extends StatelessWidget {
   final String titulo;
   final String mensaje;
-  const _PantallaDeEspera({required this.titulo, required this.mensaje});
+
+  /// La piel del torneo, si ya se sabe cuál es. Sin datos todavía cae en la
+  /// plantilla de siempre: una espera no puede depender de lo que aún no llegó.
+  final PielDeTele? piel;
+  const _PantallaDeEspera(
+      {required this.titulo, required this.mensaje, this.piel});
 
   @override
   Widget build(BuildContext context) {
     final u = LeaderboardTvScreen.unidadDe(MediaQuery.of(context).size.height);
+    final p = piel ?? PlantillasDeTele.club.resolver();
     return Container(
-      color: const Color(0xFF07130C),
+      color: p.fondo,
       alignment: Alignment.center,
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Text(titulo,
             textAlign: TextAlign.center,
             style: TextStyle(
-                color: const Color(0xFFE8F5E9),
+                color: p.texto,
                 fontSize: u * 0.9,
                 fontWeight: FontWeight.w900,
                 letterSpacing: -0.5)),
@@ -268,7 +297,7 @@ class _PantallaDeEspera extends StatelessWidget {
         Text(mensaje,
             textAlign: TextAlign.center,
             style: TextStyle(
-                color: const Color(0xFF7E9E88), fontSize: u * 0.42)),
+                color: p.textoSuave, fontSize: u * 0.42)),
       ]),
     );
   }
@@ -277,33 +306,50 @@ class _PantallaDeEspera extends StatelessWidget {
 class _Cabecera extends StatelessWidget {
   final LeaderboardPublico datos;
   final double u;
-  const _Cabecera({required this.datos, required this.u});
+  final PielDeTele piel;
+  const _Cabecera({required this.datos, required this.u, required this.piel});
 
   @override
   Widget build(BuildContext context) {
     final banner = datos.inventario.cabecera;
+    final logo = datos.identidad.logoUrl;
     return Padding(
       padding: EdgeInsets.fromLTRB(u * 0.5, u * 0.3, u * 0.5, u * 0.15),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
+          // ── LA IDENTIDAD: quién ORGANIZA ────────────────────────────────
+          //
+          // El logo del evento si lo hay; si no, el icono con el acento del
+          // torneo. La mayoría de los torneos no tienen logo, y entonces el
+          // nombre ya los identifica: un hueco reservado "por si acaso" sería
+          // espacio muerto en la pantalla que menos tiene.
+          //
           // ICONO, no emoji. Esta es la superficie que se proyecta delante de
           // los patrocinadores, y un emoji ahí es el peor sitio para los tres
-          // problemas que tiene: no hereda el color de la pantalla oscura,
-          // cambia de dibujo según el navegador del club, y a color sobre una
-          // paleta de tres niveles es el pico visual de la pared.
-          //
-          // El emoji del torneo no lo elige nadie —es siempre el mismo por
-          // defecto—, así que sustituirlo no pierde nada de lo que el
-          // organizador puso.
-          Icon(GolfIcons.trofeo,
-              size: u * 0.72, color: const Color(0xFF6FE39A)),
-          SizedBox(width: u * 0.25),
+          // problemas que tiene: no hereda el color de la pantalla, cambia de
+          // dibujo según el navegador del club, y a color sobre una paleta de
+          // tres niveles es el pico visual de la pared.
+          if (logo.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.only(right: u * 0.25),
+              child: Image.network(logo,
+                  height: u * 0.85,
+                  fit: BoxFit.contain,
+                  // Una imagen que no carga no puede dejar la cabecera rota
+                  // ocho horas: cae al icono, que es lo que habría sin logo.
+                  errorBuilder: (_, __, ___) =>
+                      Icon(GolfIcons.trofeo, size: u * 0.72, color: piel.acento)),
+            )
+          else ...[
+            Icon(GolfIcons.trofeo, size: u * 0.72, color: piel.acento),
+            SizedBox(width: u * 0.25),
+          ],
           Expanded(
             child: Text(datos.nombre,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    color: Colors.white,
+                    color: piel.texto,
                     fontSize: u * 0.78,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -1)),
@@ -312,14 +358,27 @@ class _Cabecera extends StatelessWidget {
               '${datos.rondas} ronda${datos.rondas == 1 ? '' : 's'}'
               '${datos.cerrado ? ' · cerrado' : ''}',
               style: TextStyle(
-                  color: const Color(0xFF7E9E88),
+                  color: piel.textoSuave,
                   fontSize: u * 0.34,
                   fontWeight: FontWeight.w600)),
         ]),
-        // §14.3: el titular del torneo, persistente.
+        // ── LA MARCA: quién PAGA ─────────────────────────────────────────
+        //
+        // §14.3: el titular del torneo, persistente. Va DEBAJO de la identidad
+        // y no al lado, y esa es la decisión que hace que convivan: en la misma
+        // franja compitiendo por el ancho, el logo más grande gana y el otro se
+        // comprime — y cuál es el más grande lo decide quién subió el archivo,
+        // que es exactamente la forma de que un patrocinador tape al organizador
+        // sin que nadie lo haya decidido.
+        //
+        // Apiladas, cada una tiene todo el ancho y ninguna encoge a la otra. Y
+        // el orden dice la jerarquía: primero de quién es el torneo, después
+        // quién lo paga. El §6 se sigue cumpliendo donde se cumplía —en la
+        // etiqueta de la pieza, que dice "PATROCINADOR OFICIAL"—, y la
+        // identidad no lleva etiqueta porque quien organiza no se anuncia.
         if (banner != null && banner.pintable) ...[
           SizedBox(height: u * 0.22),
-          _Banner(pieza: banner, u: u),
+          _Banner(pieza: banner, u: u, piel: piel),
         ],
       ]),
     );
@@ -329,18 +388,21 @@ class _Cabecera extends StatelessWidget {
 class _Banner extends StatelessWidget {
   final PiezaDePatrocinio pieza;
   final double u;
-  const _Banner({required this.pieza, required this.u});
+  final PielDeTele piel;
+  const _Banner({required this.pieza, required this.u, required this.piel});
 
   @override
   Widget build(BuildContext context) => Container(
         width: double.infinity,
         padding: EdgeInsets.symmetric(horizontal: u * 0.4, vertical: u * 0.2),
         decoration: BoxDecoration(
-          // §6.3: no imitar el verde funcional del score. Este bloque es
-          // deliberadamente neutro para que se distinga de la tabla.
-          color: const Color(0xFF15211A),
+          // §6.3: no imitar el color funcional del score. El bloque toma el
+          // relleno de PODIO de la plantilla, que es deliberadamente distinto
+          // del acento: si el patrocinio llevara el color del torneo, la marca
+          // se leería como parte de la clasificación.
+          color: piel.filaPodio,
           borderRadius: BorderRadius.circular(u * 0.16),
-          border: Border.all(color: const Color(0xFF2A3B31)),
+          border: Border.all(color: piel.separador),
         ),
         child: Row(children: [
           Expanded(
@@ -348,7 +410,7 @@ class _Banner extends StatelessWidget {
               // §6: la naturaleza comercial tiene que ser clara.
               Text(pieza.etiqueta.toUpperCase(),
                   style: TextStyle(
-                      color: const Color(0xFF7E9E88),
+                      color: piel.textoSuave,
                       fontSize: u * 0.2,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 1.4)),
@@ -358,7 +420,7 @@ class _Banner extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        color: Colors.white,
+                        color: piel.texto,
                         fontSize: u * 0.4,
                         fontWeight: FontWeight.w700)),
               ],
@@ -368,7 +430,7 @@ class _Banner extends StatelessWidget {
             SizedBox(width: u * 0.3),
             Text(pieza.cta!,
                 style: TextStyle(
-                    color: const Color(0xFFB9D4C2),
+                    color: piel.textoSuave,
                     fontSize: u * 0.28,
                     fontWeight: FontWeight.w700)),
           ],
@@ -381,11 +443,13 @@ class _Tabla extends StatelessWidget {
   final double u;
   final int pagina;
   final int porPagina;
+  final PielDeTele piel;
   const _Tabla({
     required this.datos,
     required this.u,
     required this.pagina,
     required this.porPagina,
+    required this.piel,
   });
 
   @override
@@ -393,6 +457,9 @@ class _Tabla extends StatelessWidget {
     final desde = pagina * porPagina;
     final filas = datos.tabla.skip(desde).take(porPagina).toList();
     final paginas = (datos.tabla.length / porPagina).ceil();
+    // ¿Alguien tiene score contra par? Si nadie, la columna no se reserva: un
+    // hueco de ancho fijo vacío en las doce filas es peor que no tenerla.
+    final conPar = datos.tabla.any((f) => f.bajoPar != null);
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: u * 0.5),
@@ -400,14 +467,14 @@ class _Tabla extends StatelessWidget {
         Row(children: [
           Text(datos.comoSePuntua,
               style: TextStyle(
-                  color: const Color(0xFF7E9E88),
+                  color: piel.textoSuave,
                   fontSize: u * 0.26,
                   fontWeight: FontWeight.w600)),
           const Spacer(),
           if (paginas > 1)
             Text('${pagina + 1} / $paginas',
                 style: TextStyle(
-                    color: const Color(0xFF7E9E88),
+                    color: piel.textoSuave,
                     fontSize: u * 0.26,
                     fontWeight: FontWeight.w700)),
         ]),
@@ -436,7 +503,12 @@ class _Tabla extends StatelessWidget {
                   duration: GolfMotion.escena,
                   switchInCurve: GolfMotion.entrada,
                   child: _Fila(
-                      key: ValueKey(f.nombre), fila: f, u: u, datos: datos),
+                      key: ValueKey(f.nombre),
+                      fila: f,
+                      u: u,
+                      datos: datos,
+                      piel: piel,
+                      conPar: conPar),
                 )),
               // Sin relleno las filas de la última página se estirarían al doble
               // y la tabla cambiaría de forma al rotar.
@@ -452,7 +524,7 @@ class _Tabla extends StatelessWidget {
             padding: EdgeInsets.only(bottom: u * 0.1),
             child: Text('La clasificación no muestra importes en pantalla.',
                 style: TextStyle(
-                    color: const Color(0xFF5C7A66), fontSize: u * 0.22)),
+                    color: piel.textoSuave, fontSize: u * 0.22)),
           ),
       ]),
     );
@@ -463,27 +535,47 @@ class _Fila extends StatelessWidget {
   final FilaProyectada fila;
   final double u;
   final LeaderboardPublico datos;
-  const _Fila(
-      {super.key, required this.fila, required this.u, required this.datos});
+  final PielDeTele piel;
+  final bool conPar;
+  const _Fila({
+    super.key,
+    required this.fila,
+    required this.u,
+    required this.datos,
+    required this.piel,
+    required this.conPar,
+  });
 
   @override
   Widget build(BuildContext context) {
     final podio = fila.puesto <= 3;
+    // ── LA SEPARACIÓN DEL LÍDER ───────────────────────────────────────────
+    //
+    // «Hoy es una fila más.» En un leaderboard el primero no es el de arriba:
+    // es OTRA COSA. Se separa con tres cosas a la vez —una raya debajo, el
+    // relleno del podio y el puesto en el acento— porque desde diez metros un
+    // solo canal no basta: la raya se pierde en una tele con brillo alto y el
+    // color se pierde en una mal calibrada.
+    //
+    // Y solo el primero: si empatan dos en el puesto 1, la raya va debajo del
+    // último de ellos, que es donde de verdad empieza el resto.
+    final esLider = fila.puesto == 1;
     return Container(
       margin: EdgeInsets.only(bottom: u * 0.06),
       padding: EdgeInsets.symmetric(horizontal: u * 0.3),
       decoration: BoxDecoration(
-        color: podio ? const Color(0xFF12241A) : const Color(0xFF0C1A12),
+        color: podio ? piel.filaPodio : piel.fila,
         borderRadius: BorderRadius.circular(u * 0.12),
+        border: esLider
+            ? Border(bottom: BorderSide(color: piel.separador, width: u * 0.05))
+            : null,
       ),
       child: Row(children: [
         SizedBox(
           width: u * 1.1,
           child: Text('${fila.puesto}',
               style: TextStyle(
-                  color: podio
-                      ? const Color(0xFF6FE39A)
-                      : const Color(0xFF7E9E88),
+                  color: podio ? piel.acento : piel.textoSuave,
                   fontSize: u * 0.52,
                   fontWeight: FontWeight.w900,
                   fontFeatures: const [FontFeature.tabularFigures()])),
@@ -493,33 +585,69 @@ class _Fila extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                  color: Colors.white,
+                  color: piel.texto,
                   fontSize: u * 0.46,
                   fontWeight: FontWeight.w700)),
         ),
-        Text('${fila.jugadas}',
-            style: TextStyle(
-                color: const Color(0xFF5C7A66),
-                fontSize: u * 0.3,
-                fontWeight: FontWeight.w600,
-                fontFeatures: const [FontFeature.tabularFigures()])),
-        SizedBox(width: u * 0.4),
+        // ── EL "THRU", CON LO QUE LA INSTANTÁNEA SÍ SABE ──────────────────
+        //
+        // En la PGA el "Thru" dice por qué HOYO va cada uno. Aquí no puede: la
+        // instantánea se republica cuando una ronda CIERRA, así que un "va por
+        // el 7" saldría de una copia de hace horas y sería un dato viejo
+        // presentado como actual — que es peor que no tenerlo.
+        //
+        // Lo que sí es cierto en esta copia es cuántas rondas del torneo lleva
+        // cada uno, y esa es la pregunta equivalente a nivel de torneo: quién
+        // ha terminado y quién va a medias. Con todas jugadas dice F, que es la
+        // misma convención.
+        _Thru(fila: fila, total: datos.rondas, u: u, piel: piel),
+        SizedBox(width: u * 0.35),
+        // ── EL SCORE CONTRA EL PAR ────────────────────────────────────────
+        //
+        // Es lo que hace que alguien reconozca un leaderboard de golf sin leer
+        // nada. El rojo del bajo par es una convención del deporte, no una
+        // decisión de diseño, y por eso no lo puede cambiar el organizador.
+        if (conPar) ...[
+          SizedBox(
+            width: u * 1.35,
+            child: Text(
+                fila.bajoPar == null
+                    ? ''
+                    : LeaderboardTvScreen.contraPar(fila.bajoPar!),
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                    color: fila.bajoPar == null
+                        ? piel.textoSuave
+                        : fila.bajoPar! < 0
+                            ? piel.bajoPar
+                            : piel.texto,
+                    fontSize: u * 0.56,
+                    fontWeight: FontWeight.w900,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
+          ),
+          SizedBox(width: u * 0.3),
+        ],
         SizedBox(
           width: u * 1.6,
           child: Text(
               fila.medida == null ? '—' : _cifra(fila.medida!),
               textAlign: TextAlign.right,
               style: TextStyle(
+                  // La medida pasa a segundo plano cuando hay bajo par: el
+                  // número grande de un leaderboard es el -7, no el 281.
                   color: fila.medida == null
-                      ? const Color(0xFF3E5647)
-                      : Colors.white,
-                  fontSize: u * 0.52,
-                  fontWeight: FontWeight.w900,
+                      ? piel.textoSuave
+                      : conPar
+                          ? piel.textoSuave
+                          : piel.texto,
+                  fontSize: conPar ? u * 0.42 : u * 0.52,
+                  fontWeight: conPar ? FontWeight.w700 : FontWeight.w900,
                   fontFeatures: const [FontFeature.tabularFigures()])),
         ),
       ]),
     );
   }
+
 
   /// Sin decimales cuando no los necesita: en una pantalla que se lee de lejos,
   /// un ",0" es ruido que ocupa el sitio de un dígito que sí importa.
@@ -527,11 +655,48 @@ class _Fila extends StatelessWidget {
       v == v.roundToDouble() ? '${v.round()}' : v.toStringAsFixed(1);
 }
 
+/// Cuántas rondas del torneo lleva. Ver el comentario en [_Fila].
+class _Thru extends StatelessWidget {
+  final FilaProyectada fila;
+  final int total;
+  final double u;
+  final PielDeTele piel;
+  const _Thru({
+    required this.fila,
+    required this.total,
+    required this.u,
+    required this.piel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final termino = total > 0 && fila.jugadas >= total;
+    return SizedBox(
+      width: u * 1.0,
+      child: Text(LeaderboardTvScreen.rondasLlevadas(fila.jugadas, total),
+          textAlign: TextAlign.right,
+          style: TextStyle(
+              // El que terminó se marca con el acento: en una tabla en curso,
+              // "ya no se mueve" es información.
+              color: termino ? piel.acento : piel.textoSuave,
+              fontSize: u * 0.3,
+              fontWeight: FontWeight.w700,
+              fontFeatures: const [FontFeature.tabularFigures()])),
+    );
+  }
+}
+
 class _Pie extends StatelessWidget {
   final LeaderboardPublico datos;
   final double u;
   final int indice;
-  const _Pie({required this.datos, required this.u, required this.indice});
+  final PielDeTele piel;
+  const _Pie({
+    required this.datos,
+    required this.u,
+    required this.indice,
+    required this.piel,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -556,7 +721,7 @@ class _Pie extends StatelessWidget {
           children: [
             Text(pieza.etiqueta.toUpperCase(),
                 style: TextStyle(
-                    color: const Color(0xFF5C7A66),
+                    color: piel.textoSuave,
                     fontSize: u * 0.2,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.4)),
@@ -567,7 +732,7 @@ class _Pie extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      color: const Color(0xFFB9D4C2),
+                      color: piel.texto,
                       fontSize: u * 0.34,
                       fontWeight: FontWeight.w700)),
             ),
@@ -581,7 +746,9 @@ class _Pie extends StatelessWidget {
 class _Lateral extends StatelessWidget {
   final PiezaDePatrocinio pieza;
   final double alto;
-  const _Lateral({required this.pieza, required this.alto});
+  final PielDeTele piel;
+  const _Lateral(
+      {required this.pieza, required this.alto, required this.piel});
 
   @override
   Widget build(BuildContext context) {
@@ -591,30 +758,30 @@ class _Lateral extends StatelessWidget {
       height: 600,
       padding: EdgeInsets.all(u * 0.3),
       decoration: BoxDecoration(
-        color: const Color(0xFF15211A),
+        color: piel.filaPodio,
         borderRadius: BorderRadius.circular(u * 0.16),
-        border: Border.all(color: const Color(0xFF2A3B31)),
+        border: Border.all(color: piel.separador),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(pieza.etiqueta.toUpperCase(),
-            style: const TextStyle(
-                color: Color(0xFF7E9E88),
+            style: TextStyle(
+                color: piel.textoSuave,
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 1.4)),
         const SizedBox(height: 12),
         if (pieza.titular.isNotEmpty)
           Text(pieza.titular,
-              style: const TextStyle(
-                  color: Colors.white,
+              style: TextStyle(
+                  color: piel.texto,
                   fontSize: 26,
                   height: 1.2,
                   fontWeight: FontWeight.w800)),
         const Spacer(),
         if (pieza.cta != null)
           Text(pieza.cta!,
-              style: const TextStyle(
-                  color: Color(0xFFB9D4C2),
+              style: TextStyle(
+                  color: piel.textoSuave,
                   fontSize: 18,
                   fontWeight: FontWeight.w700)),
       ]),
