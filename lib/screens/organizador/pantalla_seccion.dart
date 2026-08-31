@@ -28,7 +28,11 @@ import '../../core/ancho.dart';
 import '../../core/app_theme.dart';
 import '../../core/golf_icons.dart';
 import '../../models/torneo.dart';
+import '../../providers/perfil_provider.dart';
 import '../../providers/torneo_provider.dart';
+import '../torneos/tele_sheet.dart';
+import '../../services/tele_service.dart';
+import '../torneos/republicar_pantalla.dart';
 
 class PantallaSeccion extends StatelessWidget {
   final Torneo torneo;
@@ -43,9 +47,20 @@ class PantallaSeccion extends StatelessWidget {
 
   Future<void> _guardar(BuildContext context, IdentidadDeTorneo id) async {
     final prov = context.read<TorneoProvider>();
+    final messenger = ScaffoldMessenger.of(context);
     final vivo = prov.torneos
         .firstWhere((x) => x.id == torneo.id, orElse: () => torneo);
-    await prov.guardar(vivo.copyWith(identidad: id));
+    final guardado = vivo.copyWith(identidad: id);
+    await prov.guardar(guardado);
+
+    // Y que llegue a la pared. Sin esto el organizador cambia el color, mira
+    // la pantalla, y no pasa nada — que es exactamente lo que se reportó.
+    if (!context.mounted) return;
+    if (Tele.debeRefrescar(guardado) &&
+        !await republicarPantalla(context, guardado)) {
+      messenger.showSnackBar(
+          const SnackBar(content: Text(avisoDeRepublicacionFallida)));
+    }
   }
 
   @override
@@ -54,23 +69,42 @@ class PantallaSeccion extends StatelessWidget {
     final plantilla = PlantillasDeTele.deClave(id.plantilla);
     final ancha = ancho.esTabla;
 
+    // La tabla, de los resultados que ya están en memoria. La necesita el
+    // gobierno de la pantalla para publicar, y sale del mismo sitio que en la
+    // app: dos cálculos distintos darían dos tablas distintas.
+    final tabla = tablaDe(torneo, context.watch<PerfilProvider>().resultados);
+
     return ListView(
       padding: EdgeInsets.fromLTRB(ancha ? 24 : 14, 16, ancha ? 24 : 14, 32),
       children: [
+        // ── 1 · EL ESTADO: encender, el enlace, apagar ─────────────────────
+        //
+        // Es el mismo widget que usa la app, no una copia. Ver BloqueTele.
+        // Antes esto vivía SOLO en la app y el diseño SOLO aquí, y el
+        // organizador tenía que saltar entre dos superficies para gobernar una
+        // sola cosa.
+        BloqueTele(torneo: torneo, tabla: tabla, enElPortal: true),
+        Divider(color: t.divider, height: 30),
+
+        // ── 2 · CÓMO SE VE ────────────────────────────────────────────────
         Text(
             'Cómo se ve tu torneo en la pantalla del club. El tamaño del texto '
             'y el orden de las columnas no cambian: eso es lo que hace que se '
             'lea desde el otro lado del salón.',
             style: TextStyle(color: t.sub, fontSize: 12.5, height: 1.4)),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
 
-        // ── La vista previa, arriba ────────────────────────────────────────
-        //
-        // Antes de los controles y no después: quien viene a cambiar el color
-        // quiere ver el resultado, y un selector encima de una previa que hay
-        // que ir a buscar es lo que produce el "lo dejo como estaba".
+        // La vista previa antes de los controles y no después: quien viene a
+        // cambiar el color quiere ver el resultado, y un selector encima de
+        // una previa que hay que ir a buscar produce el "lo dejo como estaba".
         _Previa(identidad: id, t: t),
-        const SizedBox(height: 22),
+        const SizedBox(height: 6),
+        // Y que se sepa que el cambio SÍ llega: el reporte fue exactamente
+        // "cambio el color, miro la pantalla, y no pasa nada".
+        if (torneo.teleEncendida)
+          Text('Los cambios llegan a la pantalla proyectada al guardarlos.',
+              style: TextStyle(color: t.sub, fontSize: 11)),
+        const SizedBox(height: 18),
 
         _Etiqueta('DISEÑO', t: t),
         const SizedBox(height: 8),

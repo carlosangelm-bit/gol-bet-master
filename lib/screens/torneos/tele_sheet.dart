@@ -38,7 +38,28 @@ Future<void> apagarTele(Torneo torneo) => Tele.apagar(torneo);
 class BloqueTele extends StatefulWidget {
   final Torneo torneo;
   final TablaDelTorneo tabla;
-  const BloqueTele({super.key, required this.torneo, required this.tabla});
+
+  /// True cuando vive en el portal de organizador.
+  ///
+  /// ── Un widget, dos superficies ──────────────────────────────────────────
+  ///
+  /// «Lo que no puede seguir es que cada superficie tenga la mitad.» El
+  /// gobierno de la pantalla —encender, el enlace, apagar— es EL MISMO en la
+  /// app y en el portal: el mismo widget, el mismo provider, el mismo
+  /// servicio. Copiarlo habría dado dos sitios donde arreglar el mismo fallo,
+  /// que es cómo se llegó aquí.
+  ///
+  /// Lo único que cambia es el marco: en el portal no va dentro de una hoja de
+  /// compartir, así que sobra el separador de arriba; y el atajo al inventario
+  /// sobra porque el patrocinio tiene su propia sección al lado.
+  final bool enElPortal;
+
+  const BloqueTele({
+    super.key,
+    required this.torneo,
+    required this.tabla,
+    this.enElPortal = false,
+  });
 
   @override
   State<BloqueTele> createState() => _BloqueTeleState();
@@ -116,7 +137,7 @@ class _BloqueTeleState extends State<BloqueTele> {
     final piezas = torneo.inventario;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Divider(color: t.divider, height: 26),
+      if (!widget.enElPortal) Divider(color: t.divider, height: 26),
       Row(children: [
         Icon(Icons.tv, size: 17, color: t.sub),
         const SizedBox(width: 7),
@@ -195,8 +216,11 @@ class _BloqueTeleState extends State<BloqueTele> {
         ),
       const SizedBox(height: 8),
       // El inventario se puede preparar ANTES de encender: el patrocinio se
-      // pacta antes de que se juegue nada.
-      InkWell(
+      // pacta antes de que se juegue nada. En el portal no: ahí el patrocinio
+      // es una sección entera a un clic, y un atajo duplicado a lo de al lado
+      // es ruido.
+      if (!widget.enElPortal)
+        InkWell(
         onTap: () => abrirInventario(context, torneo),
         borderRadius: BorderRadius.circular(8),
         child: Padding(
@@ -214,7 +238,7 @@ class _BloqueTeleState extends State<BloqueTele> {
             Icon(Icons.chevron_right, size: 17, color: t.sub),
           ]),
         ),
-      ),
+        ),
       if (encendida) ...[
         const SizedBox(height: 2),
         SizedBox(

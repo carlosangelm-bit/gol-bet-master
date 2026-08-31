@@ -34,6 +34,8 @@ import '../../core/app_theme.dart';
 import '../../models/patrocinio.dart';
 import '../../models/torneo.dart';
 import '../../providers/torneo_provider.dart';
+import '../../services/tele_service.dart';
+import '../torneos/republicar_pantalla.dart';
 import '../../services/patrocinio_storage.dart';
 
 class PatrocinioSeccion extends StatelessWidget {
@@ -49,9 +51,22 @@ class PatrocinioSeccion extends StatelessWidget {
 
   Future<void> _guardar(BuildContext context, InventarioProyectado inv) async {
     final prov = context.read<TorneoProvider>();
+    final messenger = ScaffoldMessenger.of(context);
     final vivo = prov.torneos
         .firstWhere((x) => x.id == torneo.id, orElse: () => torneo);
-    await prov.guardar(vivo.copyWith(inventario: inv));
+    final guardado = vivo.copyWith(inventario: inv);
+    await prov.guardar(guardado);
+
+    // El inventario también viaja en la instantánea, así que tenía el MISMO
+    // fallo que el diseño y desde antes: cambiar el patrocinador de cabecera
+    // dejaba la pared con el de la semana pasada. Nadie lo había reportado
+    // porque hay que mirar las dos pantallas a la vez para verlo.
+    if (!context.mounted) return;
+    if (Tele.debeRefrescar(guardado) &&
+        !await republicarPantalla(context, guardado)) {
+      messenger.showSnackBar(
+          const SnackBar(content: Text(avisoDeRepublicacionFallida)));
+    }
   }
 
   @override

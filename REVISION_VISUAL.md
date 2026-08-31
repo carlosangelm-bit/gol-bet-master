@@ -139,6 +139,27 @@ Si al elegirlo el punto de la paleta ya se ve aclarado, es correcto: la muestra
 enseña el color **ya corregido**, no el elegido. Enseñar uno y proyectar otro
 sería lo peor de las dos opciones.
 
+## El gobierno, ahora en un solo sitio
+
+**Portal → La pantalla** lo hace todo: encender, el enlace copiable, apagar y el
+diseño. Es el **mismo bloque** que la app, no una copia — la app lo conserva
+porque el organizador puede necesitar apagar la pared desde el campo.
+
+**Lo que hay que comprobar de una pasada:**
+
+1. Enciende la pantalla **desde el portal** y abre el enlace en otra ventana.
+2. Cambia la plantilla o el color **sin tocar nada más**.
+3. La pared debe cambiar sola. *Antes había que apagar y encender desde la app.*
+4. Lo mismo con un **banner de patrocinador**: cambiarlo en Patrocinio ahora
+   llega a la pared. Estaba igual de roto desde antes y nadie lo había visto.
+
+Si algo no llega, sale un aviso diciéndolo. Un cambio guardado que no llega y no
+avisa es el fallo que esto viene a cerrar.
+
+**Y la puerta:** en la pantalla del torneo, junto al botón de compartir, hay uno
+nuevo al portal. Antes había que escribir `/organizador/{id}` con un id que solo
+se sacaba de Firestore.
+
 ## Identidad y marca, en la misma cabecera
 
 Con un torneo que tenga **logo propio** y **banner de patrocinador**: van

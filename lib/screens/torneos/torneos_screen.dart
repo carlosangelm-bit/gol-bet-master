@@ -26,6 +26,7 @@ import '../../providers/torneo_provider.dart';
 import 'torneo_editor_screen.dart';
 import 'torneo_enlace_screen.dart';
 import 'llave_screen.dart';
+import '../organizador/organizador_screen.dart';
 import 'tele_sheet.dart';
 
 /// La cifra con signo la define el modelo: la usan la tabla, el cuadro y la
@@ -400,6 +401,25 @@ class _TorneoTabla extends StatelessWidget {
         title: Text(torneo.nombre),
         elevation: 0,
         actions: [
+          // ── CÓMO SE LLEGA AL PORTAL ─────────────────────────────────
+          //
+          // No había forma. El portal vivía en `/organizador/{id}` y ese id
+          // solo se podía sacar de Firestore: un organizador no podía llegar a
+          // su propio portal.
+          //
+          // Se empuja la ruta en vez de cambiar la URL a propósito. Empujarla
+          // funciona igual en el teléfono y en el navegador, y no saca al
+          // organizador de donde estaba —volver es el botón de atrás de
+          // siempre—. La dirección escrita a mano sigue existiendo para
+          // abrirlo en el ordenador del club, que es su caso.
+          IconButton(
+            icon: Icon(Icons.dashboard_outlined, color: t.sub),
+            tooltip: 'Portal de organizador',
+            onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => OrganizadorScreen(torneoId: torneo.id))),
+          ),
           IconButton(
             icon: Icon(Icons.ios_share, color: t.sub),
             tooltip: 'Compartir',
