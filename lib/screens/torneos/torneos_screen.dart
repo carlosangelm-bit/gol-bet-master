@@ -1296,14 +1296,7 @@ class _GruposDelTorneo extends StatefulWidget {
 }
 
 class _GruposDelTorneoState extends State<_GruposDelTorneo> {
-  List<({
-    String roundId,
-    String nombre,
-    List<String> jugadores,
-    int hoyosCapturados,
-    int totalHoles,
-    bool cerrada,
-  })>? _grupos;
+  List<GrupoDelTorneo>? _grupos;
   String? _cerrando;
 
   @override

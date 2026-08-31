@@ -53,16 +53,6 @@ import '../../models/torneo.dart';
 import '../../services/auth_service.dart';
 import '../../services/live_round_service.dart';
 
-/// Un grupo del torneo, tal como lo devuelve el servicio.
-typedef GrupoDelTorneo = ({
-  String roundId,
-  String nombre,
-  List<String> jugadores,
-  int hoyosCapturados,
-  int totalHoles,
-  bool cerrada,
-});
-
 class ScoresSeccion extends StatefulWidget {
   final Torneo torneo;
   final Ancho ancho;

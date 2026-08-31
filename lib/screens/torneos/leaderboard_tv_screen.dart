@@ -600,7 +600,7 @@ class _Fila extends StatelessWidget {
         // cada uno, y esa es la pregunta equivalente a nivel de torneo: quién
         // ha terminado y quién va a medias. Con todas jugadas dice F, que es la
         // misma convención.
-        _Thru(fila: fila, total: datos.rondas, u: u, piel: piel),
+        _Thru(fila: fila, datos: datos, u: u, piel: piel),
         SizedBox(width: u * 0.35),
         // ── EL SCORE CONTRA EL PAR ────────────────────────────────────────
         //
@@ -655,21 +655,49 @@ class _Fila extends StatelessWidget {
       v == v.roundToDouble() ? '${v.round()}' : v.toStringAsFixed(1);
 }
 
-/// Cuántas rondas del torneo lleva. Ver el comentario en [_Fila].
+/// El «Thru». Por dónde va, si se sabe; cuántas rondas lleva, si no.
+///
+/// ── Las dos formas, y cuándo cada una ──────────────────────────────────────
+///
+/// En un torneo POR EQUIPOS el portal publica el hoyo de cada uno cada minuto,
+/// así que aquí se puede decir por dónde van — que es lo que un jugador mirando
+/// el leaderboard desde el campo quiere saber.
+///
+/// En un torneo INDIVIDUAL no hay quien lo publique, y entonces se dice lo que
+/// sí es cierto: cuántas rondas del torneo lleva. Es lo que había, y sigue
+/// estando para no prometer un directo que no existe.
+///
+/// Y el dato en vivo CADUCA. Media hora sin anotar y se deja de enseñar el
+/// hoyo: un «va por el 12» de hace dos horas es peor que no decir nada, que era
+/// justo el motivo por el que esto se había descartado.
 class _Thru extends StatelessWidget {
   final FilaProyectada fila;
-  final int total;
+  final LeaderboardPublico datos;
   final double u;
   final PielDeTele piel;
   const _Thru({
     required this.fila,
-    required this.total,
+    required this.datos,
     required this.u,
     required this.piel,
   });
 
   @override
   Widget build(BuildContext context) {
+    final vivo = datos.thruDe(fila.nombre, DateTime.now());
+    if (vivo != null) {
+      return SizedBox(
+        width: u * 1.0,
+        child: Text(vivo.etiqueta,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+                color: vivo.termino ? piel.acento : piel.texto,
+                fontSize: u * 0.34,
+                fontWeight: FontWeight.w800,
+                fontFeatures: const [FontFeature.tabularFigures()])),
+      );
+    }
+    final total = datos.rondas;
     final termino = total > 0 && fila.jugadas >= total;
     return SizedBox(
       width: u * 1.0,

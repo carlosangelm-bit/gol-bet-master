@@ -16,6 +16,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/models.dart';
+import '../models/equipo_de_torneo.dart';
 import '../providers/round_provider.dart' show roundToJson, roundFromJson;
 import 'auth_service.dart';
 import 'firestore_service.dart';
@@ -214,28 +215,14 @@ class LiveRoundService {
   ///
   /// Lo mínimo para decidir: quién juega, si ya acabaron de anotar y si está
   /// cerrada. La ronda completa se carga solo al cerrarla.
-  static Future<List<({
-    String roundId,
-    String nombre,
-    List<String> jugadores,
-    int hoyosCapturados,
-    int totalHoles,
-    bool cerrada,
-  })>> gruposDelTorneo(String torneoId) async {
+  static Future<List<GrupoDelTorneo>> gruposDelTorneo(String torneoId) async {
     final uid = AuthService.uid;
     if (uid == null) return [];
 
     // Las refs de las rondas que YO organizo. Sin límite: veinticinco grupos son
     // veinticinco refs, y quedarse en cinco era el fallo.
     final refs = await _myRefs().where('role', isEqualTo: 'owner').get();
-    final out = <({
-      String roundId,
-      String nombre,
-      List<String> jugadores,
-      int hoyosCapturados,
-      int totalHoles,
-      bool cerrada,
-    })>[];
+    final out = <GrupoDelTorneo>[];
 
     for (final ref in refs.docs) {
       final roundId = ref.data()['roundId'] as String? ?? ref.id;
@@ -257,14 +244,22 @@ class LiveRoundService {
       // Cuántos hoyos tienen ya score de alguien: es lo que dice si el grupo va
       // por el 7 o ya acabó, que es la pregunta del organizador.
       var capturados = 0;
+      var ultimo = 0;
       for (var h = 1; h <= r.totalHoles; h++) {
-        if (r.players.any((p) => r!.getScore(p.id, h).hasScore)) capturados++;
+        if (r.players.any((p) => r!.getScore(p.id, h).hasScore)) {
+          capturados++;
+          // El ÚLTIMO con score, no el número de hoyos. Con salida en el 7, el
+          // catorceavo hoyo jugado es el 3: el contador dice cuánto llevan y
+          // esto dice DÓNDE están, que es lo que se busca en el leaderboard.
+          ultimo = h;
+        }
       }
-      out.add((
+      out.add(GrupoDelTorneo(
         roundId: roundId,
         nombre: r.name,
         jugadores: r.realPlayers.map((p) => p.name).toList(),
         hoyosCapturados: capturados,
+        ultimoHoyo: ultimo,
         totalHoles: r.totalHoles,
         cerrada: r.isFinished,
       ));

@@ -145,6 +145,23 @@ class LeaderboardPublico {
   final List<FilaProyectada> tabla;
   final InventarioProyectado inventario;
 
+  /// Por dónde va cada equipo, en vivo. Clave: el id del equipo.
+  ///
+  /// ── UN MAPA, y no una columna más de la tabla ─────────────────────────────
+  ///
+  /// La tabla es una LISTA, y una lista no se puede escribir por partes: para
+  /// tocar una fila hay que reescribir el array entero, y eso significa que
+  /// quien publique tiene que traer la tabla completa. Con veintidós equipos
+  /// anotando, dos publicaciones a la vez se pisan y la que llega segunda borra
+  /// el avance de la primera.
+  ///
+  /// Un MAPA sí: `thru.e07` es una ruta de campo, y Firestore la actualiza sin
+  /// tocar `thru.e12` ni la tabla ni el inventario. Es lo que hace que esto se
+  /// pueda escribir cada pocos minutos sin arriesgar lo demás.
+  ///
+  /// Vacío en los torneos individuales, y por eso no ocupa nada en ellos.
+  final Map<String, ThruDeEquipo> thru;
+
   /// Cómo quiere verse este torneo en la pared.
   ///
   /// Viaja con la instantánea y no se lee del torneo, por el mismo motivo que
@@ -166,6 +183,7 @@ class LeaderboardPublico {
     this.tabla = const [],
     this.inventario = const InventarioProyectado(),
     this.identidad = const IdentidadDeTorneo(),
+    this.thru = const {},
   });
 
   /// Construye la copia proyectable desde la tabla YA CALCULADA.
@@ -221,6 +239,33 @@ class LeaderboardPublico {
     );
   }
 
+  /// El Thru de la fila cuyo nombre es [nombreDeFila], si está vigente.
+  ///
+  /// Se busca por NOMBRE porque es lo único que la fila proyectada lleva —no
+  /// hay ids de persona en este documento, y no los va a haber—. El nombre de
+  /// una fila de equipo es su etiqueta, «Equipo 07 · Sierra», y el equipo
+  /// guarda la misma. Es un emparejamiento por texto y conviene saberlo: si el
+  /// equipo se renombra a mitad de ronda, su Thru se queda sin fila hasta la
+  /// siguiente publicación de la tabla.
+  ///
+  /// Null cuando no hay dato, cuando el torneo es individual, o cuando el dato
+  /// ha caducado. Los tres se pintan igual: con lo que sí es cierto.
+  ThruDeEquipo? thruDe(String nombreDeFila, DateTime ahora) {
+    if (thru.isEmpty) return null;
+    for (final e in thru.entries) {
+      final suyo = e.value;
+      if (!suyo.vigente(ahora)) continue;
+      // La clave es el id del equipo —«e07»— y la fila lleva su etiqueta. El
+      // número es lo que las une, y es lo que no cambia al renombrar.
+      final numero = e.key.replaceAll(RegExp(r'[^0-9]'), '');
+      if (numero.isNotEmpty &&
+          nombreDeFila.contains(numero.padLeft(2, '0'))) {
+        return suyo;
+      }
+    }
+    return null;
+  }
+
   Map<String, dynamic> toJson() => {
         'ownerUid': ownerUid,
         'nombre': nombre,
@@ -235,6 +280,8 @@ class LeaderboardPublico {
         'tabla': tabla.map((f) => f.toJson()).toList(),
         if (!inventario.vacio) 'inventario': inventario.toJson(),
         if (!identidad.vacia) 'identidad': identidad.toJson(),
+        if (thru.isNotEmpty)
+          'thru': {for (final e in thru.entries) e.key: e.value.toJson()},
       };
 
   factory LeaderboardPublico.fromJson(String token, Map<String, dynamic> j) =>
@@ -264,5 +311,11 @@ class LeaderboardPublico {
             ? IdentidadDeTorneo.fromJson(
                 Map<String, dynamic>.from(j['identidad'] as Map))
             : const IdentidadDeTorneo(),
+        thru: {
+          for (final e in ((j['thru'] as Map?) ?? const {}).entries)
+            if (e.value is Map)
+              '${e.key}':
+                  ThruDeEquipo.fromJson(Map<String, dynamic>.from(e.value as Map))
+        },
       );
 }

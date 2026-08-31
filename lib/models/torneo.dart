@@ -33,10 +33,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import 'models.dart';
 import 'patrocinio.dart';
+import 'equipo_de_torneo.dart';
 import 'plantilla_de_tele.dart';
 import '../engines/bet_engine.dart';
 import 'round_result.dart';
 
+export 'equipo_de_torneo.dart';
 export 'plantilla_de_tele.dart';
 
 /// De dónde salen las rondas que cuentan.
@@ -458,6 +460,26 @@ class Torneo {
   /// La ventaja de las rondas del torneo. Null = sin decidir, se pregunta.
   final VentajaDeTorneo? ventaja;
 
+  /// Si el torneo se juega POR EQUIPOS.
+  ///
+  /// ── Por qué es una bandera del torneo y no un formato de ronda ───────────
+  ///
+  /// «La gran mayoría son en equipo, pero habrá algunos individuales.» Los dos
+  /// casos existen y no se mezclan dentro de un mismo torneo: o clasifican
+  /// equipos o clasifican personas. Meterlo en la ronda dejaría un torneo con
+  /// tres jornadas por equipos y una individual, que no es un torneo, son dos.
+  ///
+  /// Por defecto FALSE, y eso protege lo que ya funciona: los torneos que
+  /// existen —Copa de Primavera, Liga por Score, Match Play Anual— siguen
+  /// siendo individuales sin tocarlos.
+  final bool porEquipos;
+
+  /// Los equipos, cuando [porEquipos]. Salen del reparto de Grupos y salidas.
+  ///
+  /// Vacío con `porEquipos` en true significa "todavía no se han formado", que
+  /// es un estado normal: el torneo se crea antes de saber quién viene.
+  final List<EquipoDeTorneo> equipos;
+
   /// El campo, si el torneo lo fija. Null = se pregunta cada jornada.
   ///
   /// Opcional a propósito, y con eso caben los dos modelos sin bandera de modo:
@@ -502,6 +524,8 @@ class Torneo {
     this.desempates = const {},
     this.plantillaId,
     this.ventaja,
+    this.porEquipos = false,
+    this.equipos = const [],
     this.campo,
   });
 
@@ -540,6 +564,8 @@ class Torneo {
     Map<String, String>? desempates,
     String? plantillaId,
     VentajaDeTorneo? ventaja,
+    bool? porEquipos,
+    List<EquipoDeTorneo>? equipos,
     CourseInfo? campo,
     bool limpiarPlantilla = false,
     bool limpiarVentaja = false,
@@ -579,6 +605,8 @@ class Torneo {
         plantillaId:
             limpiarPlantilla ? null : (plantillaId ?? this.plantillaId),
         ventaja: limpiarVentaja ? null : (ventaja ?? this.ventaja),
+        porEquipos: porEquipos ?? this.porEquipos,
+        equipos: equipos ?? this.equipos,
         campo: limpiarCampo ? null : (campo ?? this.campo),
       );
 
@@ -613,6 +641,9 @@ class Torneo {
         if (desempates.isNotEmpty) 'desempates': desempates,
         if (plantillaId != null) 'plantillaId': plantillaId,
         if (ventaja != null) 'ventaja': ventaja!.name,
+        if (porEquipos) 'porEquipos': true,
+        if (equipos.isNotEmpty)
+          'equipos': equipos.map((e) => e.toJson()).toList(),
         if (campo != null) 'campo': campo!.toJson(),
       };
 
@@ -658,6 +689,11 @@ class Torneo {
         // `is Map` y no `!= null`: es la misma familia del "holes: 3" que tiró
         // el buscador de campos. Un campo malformado deja el torneo sin campo,
         // no ilegible.
+        porEquipos: j['porEquipos'] == true,
+        equipos: [
+          for (final e in (j['equipos'] as List?) ?? const [])
+            if (e is Map) EquipoDeTorneo.fromJson(Map<String, dynamic>.from(e))
+        ],
         campo: j['campo'] is Map
             ? CourseInfo.fromJson(Map<String, dynamic>.from(j['campo'] as Map))
             : null,

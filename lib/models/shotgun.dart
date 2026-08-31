@@ -27,6 +27,7 @@
 // salidas sobran dos; con 24 no caben dos. Las dos frases llevan la cifra,
 // porque "no cuadra" no dice qué hacer y "faltan 2 salidas" sí.
 // ─────────────────────────────────────────────────────────────────────────────
+import 'equipo_de_torneo.dart';
 import 'models.dart';
 
 /// Un punto de salida: el hoyo y, si comparte tee, la letra.
@@ -277,6 +278,38 @@ List<GrupoDeSalida> moviendo(
   ];
 }
 
+/// Los equipos de [plan], numerados desde 1 y con la salida de su grupo.
+///
+/// ── El equipo ES el grupo. Esto solo le pone número ─────────────────────────
+///
+/// «En juego de equipos es posible que en los par 3 salgan Hoyo 5A, Hoyo 5B, y
+/// cada hoyo con dos equipos de 4.» Así que no hay nada que formar: el reparto
+/// ya está hecho y esto lo mira desde el otro lado.
+///
+/// [nombresPuestos] conserva los nombres que los equipos ya se pusieron, por
+/// NÚMERO. Volver a repartir con otro tamaño de grupo cambia quién está en cada
+/// equipo, y el nombre se queda con el número — que es lo que el equipo 7
+/// reconoce cuando le dicen «Sierra».
+List<EquipoDeTorneo> equiposDelPlan(
+  PlanDeShotgun plan, {
+  Map<int, String> nombresPuestos = const {},
+}) {
+  final out = <EquipoDeTorneo>[];
+  var n = 0;
+  for (final g in plan.grupos) {
+    if (g.jugadores.isEmpty || g.salida == null) continue;
+    n++;
+    out.add(EquipoDeTorneo(
+      numero: n,
+      nombre: nombresPuestos[n] ?? '',
+      miembros: g.jugadores,
+      hoyoDeSalida: g.salida!.hoyo,
+      letraDeSalida: g.salida!.letra,
+    ));
+  }
+  return out;
+}
+
 /// Las rondas que hay que crear para [plan]. Una por grupo.
 ///
 /// ── Qué lleva cada ronda, y por qué tan poco ────────────────────────────────
@@ -303,7 +336,16 @@ List<Round> rondasDelPlan({
   required DateTime cuando,
   /// El handicap con el que entra cada jugador. Vacío = todos a cero.
   Map<String, double> handicaps = const {},
+  /// Los equipos, cuando el torneo es por equipos. Vacío = individual.
+  ///
+  /// Cuando hay equipos, la ronda se llama «Equipo 07 · Hoyo 7B»: las dos
+  /// cosas, porque el organizador canta salidas y el jugador busca su equipo.
+  /// Y es lo que permite emparejar el Thru con su fila sin ids de persona.
+  List<EquipoDeTorneo> equipos = const [],
 }) {
+  final porSalida = {
+    for (final e in equipos) '${e.hoyoDeSalida}${e.letraDeSalida ?? ''}': e,
+  };
   final rondas = <Round>[];
   for (var i = 0; i < plan.grupos.length; i++) {
     final g = plan.grupos[i];
@@ -317,12 +359,16 @@ List<Round> rondasDelPlan({
       for (final pid in g.jugadores)
         porId[pid] ?? Player(id: pid, name: 'Jugador'),
     ];
+    final equipo =
+        porSalida['${g.salida!.hoyo}${g.salida!.letra ?? ''}'];
     rondas.add(Round(
       // Determinista: el mismo plan crea las mismas rondas. Volver a darle al
       // botón ACTUALIZA en vez de duplicar veintidós grupos, que es el error
       // que un botón lento produce solo.
       id: '${torneoId}_s${g.salida!.hoyo}${g.salida!.letra ?? ''}',
-      name: g.salida!.etiqueta,
+      name: equipo == null
+          ? g.salida!.etiqueta
+          : '${equipo.etiqueta} · ${g.salida!.etiqueta}',
       course: campo,
       players: jugadores,
       roundPlayers: [

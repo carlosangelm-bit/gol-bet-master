@@ -55,6 +55,7 @@ import '../auth/auth_screen.dart';
 import 'inscritos_tabla.dart';
 import 'pantalla_seccion.dart';
 import 'patrocinio_seccion.dart';
+import 'publicador_de_thru.dart';
 import 'salidas_seccion.dart';
 import 'scores_seccion.dart';
 
@@ -146,7 +147,13 @@ class _OrganizadorScreenState extends State<OrganizadorScreen> {
       // El layout sale del ancho DISPONIBLE, no de la plataforma. Ver
       // core/ancho.dart: es la misma decisión que la unidad de la tele.
       final ancho = anchoDe(c.maxWidth);
-      return _Portal(torneo: torneo, ancho: ancho, t: t);
+      // El Thru se mantiene al día mientras el portal esté abierto. Envuelve
+      // en vez de vivir dentro de una sección: el organizador cambia de
+      // sección constantemente y el temporizador no puede morir con eso.
+      return PublicadorDeThru(
+        torneo: torneo,
+        child: _Portal(torneo: torneo, ancho: ancho, t: t),
+      );
     });
   }
 }

@@ -334,3 +334,59 @@ tarjeta y **probar la corrección**, que era lo que faltaba por verificar.
 
 **Vuelve a darle al botón.** No debe duplicar nada: los ids son deterministas, la
 segunda pulsación actualiza. Un botón lento produce dobles pulsaciones solo.
+
+---
+
+# Equipos y «Thru» en vivo
+
+## Antes que nada: que lo individual siga igual
+
+**Abre Copa de Primavera, Liga por Score y Match Play Anual.** El interruptor
+*«Por equipos»* de Grupos y salidas debe estar **apagado** en los tres, la tabla
+igual que siempre, y las rondas del reparto llamadas por su salida a secas
+—`Hoyo 3B`, no `Equipo 04 · Hoyo 3B`—.
+
+Si algo de esto cambió, para aquí: es peor que no haberlo hecho.
+
+## Los equipos
+
+En **Grupos y salidas**, enciende *«Por equipos»*. Cada grupo de salida pasa a
+titularse **`Equipo 07 · Hoyo 7B`** — las dos cosas, porque el jugador busca su
+equipo y el organizador canta la salida.
+
+- **Toca «Poner nombre»** en uno. Debe quedar `Equipo 07 · Sierra`.
+- **Cambia el tamaño de grupo.** El equipo 7 tendrá otra gente, **y seguirá
+  llamándose Sierra**: el nombre va con el número, que es lo que el equipo
+  reconoce.
+- El **número va a dos cifras** a propósito: en una lista de 22, `Equipo 7` y
+  `Equipo 17` no se alinean.
+
+**Y un detalle que conviene ver una vez:** el equipo 7 sale del **hoyo 6**. Las
+salidas van 1, 2, 3A, 3B, 4, 5, 6… así que el número del equipo y el del hoyo
+dejan de coincidir en cuanto aparece el primer par 3. Es correcto.
+
+## El «Thru»
+
+Enciende la pantalla, crea las rondas, y **deja el portal abierto**. Cada minuto
+publica por dónde va cada equipo, y en la pared la columna del progreso pasa a
+decir el **hoyo** en vez de las rondas.
+
+**Lo que hay que comprobar:**
+
+1. Anota un hoyo en una tarjeta desde Scores en vivo. Al minuto, la pared debe
+   decir ese hoyo para ese equipo.
+2. Un equipo que acabe los 18 debe decir **`F`**.
+3. Uno que no haya empezado, **`—`** y no `0`.
+
+> **El Thru es tan vivo como el portal esté abierto.** Lo escribe el portal del
+> organizador, no los teléfonos de los equipos — la regla de `leaderboards` solo
+> deja escribir al dueño, y el token se proyecta en una pared ocho horas: no es
+> sitio para aflojar la escritura. Si cierras el portal, el Thru se queda quieto
+> y a la media hora **deja de enseñarse** en vez de mentir.
+
+## Lo que NO está
+
+**La clasificación por equipos.** La tabla del torneo sigue contando por
+persona. Con equipos encendidos verás los grupos, sus nombres y su Thru, pero la
+tabla y la pared clasifican jugadores. Es el punto que quedó por decidir antes
+de tocarlo.

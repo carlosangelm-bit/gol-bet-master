@@ -178,6 +178,25 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
           const SizedBox(height: 14),
         ],
 
+        // ── POR EQUIPOS O INDIVIDUAL ────────────────────────────────────
+        //
+        // «La gran mayoría son en equipo, pero habrá algunos individuales.» Va
+        // arriba porque cambia lo que significa todo lo de abajo: con equipos,
+        // cada grupo de salida ES un equipo y comparte una tarjeta.
+        //
+        // Por defecto APAGADO, y eso protege lo que ya funciona: los torneos
+        // que existen siguen siendo individuales sin tocarlos.
+        _Interruptor(
+          t: t,
+          valor: _t.porEquipos,
+          titulo: 'Por equipos',
+          detalle: _t.porEquipos
+              ? 'Cada salida es un equipo. Los cuatro comparten una tarjeta.'
+              : 'Individual: cada jugador lleva su propio score.',
+          onCambio: _cambiarModo,
+        ),
+        const SizedBox(height: 22),
+
         _Etiqueta('TAMAÑO DE GRUPO', t: t),
         const SizedBox(height: 8),
         Row(children: [
@@ -258,7 +277,12 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
               grupo: plan.grupos[i],
               nombres: nombres,
               t: t,
+              // El número del equipo sale del ORDEN de los grupos con salida,
+              // igual que en equiposDelPlan: una segunda numeración aquí daría
+              // dos equipos 7 distintos.
+              equipo: _t.porEquipos ? _equipoDe(plan, i) : null,
               onMover: (pid) => _mover(plan, pid),
+              onNombrar: _t.porEquipos ? () => _nombrar(plan, i) : null,
             ),
 
         const SizedBox(height: 22),
@@ -286,6 +310,91 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
             style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
       ],
     );
+  }
+
+  /// Los nombres que los equipos ya se pusieron, por número.
+  ///
+  /// Viven en el torneo y no en el estado de la pantalla: un nombre que se
+  /// pierde al cambiar de sección es un nombre que el equipo va a volver a
+  /// escribir enfadado.
+  Map<int, String> get _nombresPuestos => {
+        for (final e in _t.equipos)
+          if (e.nombre.isNotEmpty) e.numero: e.nombre,
+      };
+
+  /// El equipo que le toca al grupo [indice], con la MISMA numeración que
+  /// `equiposDelPlan`. Null si ese grupo no llega a ser equipo.
+  EquipoDeTorneo? _equipoDe(PlanDeShotgun plan, int indice) {
+    final todos = equiposDelPlan(plan, nombresPuestos: _nombresPuestos);
+    var n = 0;
+    for (var i = 0; i < plan.grupos.length; i++) {
+      final g = plan.grupos[i];
+      if (g.jugadores.isEmpty || g.salida == null) continue;
+      if (i == indice) return n < todos.length ? todos[n] : null;
+      n++;
+    }
+    return null;
+  }
+
+  Future<void> _cambiarModo(bool porEquipos) async {
+    final prov = context.read<TorneoProvider>();
+    final vivo = _t;
+    // Al apagar los equipos se BORRAN: dejarlos guardados haría que un torneo
+    // individual llevara dentro veintidós equipos que nadie ve, y el día que
+    // alguien vuelva a encender el interruptor aparecerían con la gente de
+    // otro reparto.
+    await prov.guardar(vivo.copyWith(
+        porEquipos: porEquipos, equipos: porEquipos ? vivo.equipos : const []));
+  }
+
+  Future<void> _nombrar(PlanDeShotgun plan, int indice) async {
+    final equipo = _equipoDe(plan, indice);
+    if (equipo == null) return;
+    final t = widget.t;
+    final ctrl = TextEditingController(text: equipo.nombre);
+    final nuevo = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: t.card,
+        title: Text('Equipo ${equipo.numero.toString().padLeft(2, '0')}',
+            style: GolfType.title(t.text)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 18,
+          style: TextStyle(color: t.text),
+          decoration: InputDecoration(
+            labelText: 'Nombre del equipo',
+            labelStyle: TextStyle(color: t.sub),
+            // El número no se puede quitar: es la identidad. El nombre es un
+            // añadido, y decirlo aquí evita que alguien lo borre esperando que
+            // el equipo desaparezca.
+            helperText: 'Opcional. Sin nombre se queda con su número.',
+            helperStyle: TextStyle(color: t.sub),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancelar', style: TextStyle(color: t.sub)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: Text('Guardar', style: TextStyle(color: t.primary)),
+          ),
+        ],
+      ),
+    );
+    if (nuevo == null || !mounted) return;
+
+    final prov = context.read<TorneoProvider>();
+    final vivo = _t;
+    // Se guardan TODOS los equipos del plan, no solo el renombrado: si el
+    // torneo todavía no los tenía guardados, guardar uno solo dejaría un
+    // torneo con el equipo 7 y sin los otros veintiuno.
+    final actualizados = equiposDelPlan(plan,
+        nombresPuestos: {..._nombresPuestos, equipo.numero: nuevo});
+    await prov.guardar(vivo.copyWith(equipos: actualizados));
   }
 
   Future<void> _elegirCampo() async {
@@ -378,12 +487,26 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
       for (final pw in directorio) pw.player.id: pw.player.handicapBase,
     };
 
+    // Los equipos se guardan ANTES de crear las rondas: la ronda lleva la
+    // etiqueta del equipo en el nombre, y el Thru los empareja por ahí. Al
+    // revés quedarían veintidós rondas llamadas por su salida y un Thru que no
+    // encuentra a nadie.
+    final equipos = torneo.porEquipos
+        ? equiposDelPlan(plan, nombresPuestos: _nombresPuestos)
+        : const <EquipoDeTorneo>[];
+    if (torneo.porEquipos) {
+      await context.read<TorneoProvider>().guardar(
+          torneo.copyWith(equipos: equipos));
+      if (!mounted) return;
+    }
+
     final rondas = rondasDelPlan(
       plan: plan,
       torneoId: torneo.id,
       campo: campo,
       porId: porId,
       cuando: DateTime.now(),
+      equipos: equipos,
       // La ventaja del torneo decide si el handicap entra: con "sin ventaja"
       // meterlo aquí daría golpes que el torneo dijo que no se dan.
       handicaps: torneo.ventaja == VentajaDeTorneo.handicap
@@ -416,12 +539,22 @@ class _Grupo extends StatelessWidget {
   final Map<String, String> nombres;
   final GolfTheme t;
   final void Function(String) onMover;
+
+  /// El equipo de este grupo, cuando el torneo es por equipos. Null =
+  /// individual, y entonces el título es la salida a secas.
+  final EquipoDeTorneo? equipo;
+
+  /// Ponerle nombre. Null en individual: no hay equipo que nombrar.
+  final VoidCallback? onNombrar;
+
   const _Grupo({
     required this.indice,
     required this.grupo,
     required this.nombres,
     required this.t,
     required this.onMover,
+    this.equipo,
+    this.onNombrar,
   });
 
   @override
@@ -440,11 +573,33 @@ class _Grupo extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               // La SALIDA como título, no "Grupo 14": es lo que se canta por
-              // megafonía y lo que el jugador busca.
-              Text(grupo.salida?.etiqueta ?? 'Sin salida',
-                  style: GolfType.value(
-                      grupo.salida == null ? t.loss : t.primary)),
-              const Spacer(),
+              // megafonía y lo que el jugador busca. Con equipos van las dos
+              // cosas —«Equipo 07 · Hoyo 7B»— porque el jugador busca su
+              // equipo y el organizador canta la salida.
+              Expanded(
+                child: Text(
+                    equipo == null
+                        ? (grupo.salida?.etiqueta ?? 'Sin salida')
+                        : '${equipo!.etiqueta} · '
+                            '${grupo.salida?.etiqueta ?? 'sin salida'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GolfType.value(
+                        grupo.salida == null ? t.loss : t.primary)),
+              ),
+              if (onNombrar != null)
+                InkWell(
+                  onTap: onNombrar,
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    child: Text(
+                        equipo!.nombre.isEmpty ? 'Poner nombre' : 'Renombrar',
+                        style: GolfType.label(t.primary)),
+                  ),
+                ),
+              const SizedBox(width: 6),
               Text('${grupo.jugadores.length}', style: GolfType.label(t.sub)),
             ]),
             const SizedBox(height: 6),

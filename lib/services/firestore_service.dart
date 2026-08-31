@@ -627,6 +627,37 @@ class FirestoreService {
     }
   }
 
+  /// Escribe el `Thru` de los equipos SIN tocar nada más del documento.
+  ///
+  /// ── Por qué RUTAS DE CAMPO y no una publicación entera ────────────────────
+  ///
+  /// El Thru cambia cada pocos minutos, y la tabla no. Republicar el documento
+  /// completo para mover un número obliga a traer la tabla, el inventario y la
+  /// identidad — y a acertar con los tres. Es exactamente la operación que ya
+  /// borró la pared una vez: se republicó con media receta y salieron 153 filas
+  /// de guiones.
+  ///
+  /// `update` con la ruta `thru.e07` no toca `thru.e12`, ni la tabla, ni el
+  /// patrocinio. Si esta escritura sale mal, lo que había sigue estando.
+  ///
+  /// Devuelve si se pudo. No lanza: esto corre en un temporizador cada minuto y
+  /// una excepción ahí, ocho horas seguidas, es ruido en el log y nada más.
+  static Future<bool> publicarThru(
+    String token,
+    Map<String, ThruDeEquipo> thru,
+  ) async {
+    if (AuthService.uid == null || thru.isEmpty) return false;
+    try {
+      await _leaderboards().doc(token).update({
+        for (final e in thru.entries) 'thru.${e.key}': e.value.toJson(),
+      });
+      return true;
+    } catch (e) {
+      debugPrint('[Thru] $token: $e');
+      return false;
+    }
+  }
+
   /// Apaga la pantalla SIN romper el enlace. Mismo trato que apagarEnlace.
   static Future<void> apagarLeaderboard(String token) async {
     final uid = AuthService.uid;
