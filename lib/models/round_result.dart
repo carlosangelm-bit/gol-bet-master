@@ -151,9 +151,35 @@ class RoundResult {
 
   /// Deriva el resultado de una ronda cerrada.
   ///
-  /// Solo personas: [Round.realPlayers] deja fuera a los jugadores virtuales
-  /// de un scramble, que existen para llevar el score de un equipo y no tienen
-  /// balance que enseñar en un perfil.
+  /// ── DOS LISTAS, y por qué esto estaba roto ────────────────────────────────
+  ///
+  /// El dinero es de PERSONAS y el score es de quien LLEVA LA TARJETA, y no
+  /// siempre son los mismos. `models.dart` documenta la distinción desde hace
+  /// tiempo, con una tabla de qué superficie usa qué predicado — y esta era la
+  /// única superficie que faltaba en la tabla.
+  ///
+  /// Aquí se usaba `realPlayers` para TODO. En una ronda normal y en best ball
+  /// da lo mismo: quien lleva tarjeta es cada persona. En SCRAMBLE no: la
+  /// tarjeta la lleva el jugador virtual del equipo y los reales no tienen
+  /// score propio, así que el resultado salía SIN SCORE PARA NADIE.
+  ///
+  /// No se veía porque nunca se cerró una ronda de scramble marcada para un
+  /// torneo. Es la misma familia que los diferenciales imposibles: llevaba ahí
+  /// desde el principio y solo aparece cuando alguien mira.
+  ///
+  /// ── A QUIÉN se le atribuye el score de un scramble ────────────────────────
+  ///
+  /// Al EQUIPO, no a los cuatro. Y no es una preferencia:
+  ///
+  /// Un scramble sale seis u ocho golpes por debajo de lo que cualquiera de los
+  /// cuatro firmaría solo. Atribuir ese 65 a cada uno diría que los cuatro
+  /// jugaron 65 con su propia bola — y ese número entra en el HISTÓRICO DE
+  /// HANDICAP, donde produce diferenciales que no existen. Es exactamente el
+  /// fallo que ya costó una entrega entera: un número plausible en el sitio
+  /// donde nadie lo comprueba.
+  ///
+  /// El equipo es lo que jugó la bola. Ya tiene identidad —el jugador virtual—,
+  /// ya tiene handicap combinado, y ya lleva la tarjeta.
   factory RoundResult.fromRound(Round round, {DateTime? playedAt}) {
     final reales = round.realPlayers;
     final ids = reales.map((p) => p.id).toList();
@@ -177,7 +203,10 @@ class RoundResult {
     final neto = <String, int>{};
     final stbl = <String, int>{};
     var hoyos = 0;
-    for (final p in reales) {
+    // Quien LLEVA TARJETA. En una ronda normal y en best ball son los reales,
+    // así que esto no cambia nada; en scramble es el virtual del equipo, y ahí
+    // está la diferencia entre tener score y no tenerlo.
+    for (final p in round.scoringPlayers) {
       final suyos = round.scores[p.id];
       if (suyos == null) continue;
       var total = 0, n = 0;
@@ -216,7 +245,13 @@ class RoundResult {
       playedAt: playedAt ?? DateTime.now(),
       holesPlayed: hoyos,
       playerIds: ids,
-      playerNames: {for (final p in reales) p.id: p.name},
+      // Los nombres llevan a los reales Y a quien lleva tarjeta: sin el
+      // segundo, la tabla del torneo tendría el score del equipo y ningún
+      // nombre que ponerle, y saldría como «—».
+      playerNames: {
+        for (final p in reales) p.id: p.name,
+        for (final p in round.scoringPlayers) p.id: p.name,
+      },
       balances: {
         for (final id in ids)
           if (balances[id] != null) id: balances[id]!,

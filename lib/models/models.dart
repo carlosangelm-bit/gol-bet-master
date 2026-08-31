@@ -4170,6 +4170,23 @@ class Round {
   /// Solo se persisten en rondas en vivo (liveRounds Firestore).
   final List<BetChangeProposal> pendingProposals;
 
+  /// El equipo que lleva la tarjeta de esta ronda, si es una ronda de equipo.
+  ///
+  /// ── Por qué un campo y no derivarlo de las apuestas ──────────────────────
+  ///
+  /// `scoringPlayers` deduce quién anota de los LADOS de las apuestas, y
+  /// funciona: en scramble el portador es el virtual del equipo. Pero una ronda
+  /// de shotgun por equipos NO TIENE APUESTAS —el organizador no pacta por
+  /// ochenta y ocho personas— así que no hay lado del que deducir nada, y los
+  /// cuatro acabarían con su tarjeta propia.
+  ///
+  /// Inventar un módulo de apuestas vacío para que la deducción funcione sería
+  /// meter una apuesta que nadie pidió con el único fin de que un cálculo
+  /// interno saliera. La ronda lo DICE, que es más corto y más cierto.
+  ///
+  /// Null en todo lo demás, y ahí nada cambia.
+  final String? equipoId;
+
   /// Los scores que el organizador corrigió, con quién y cuándo.
   ///
   /// Va EN LA RONDA y no en una colección aparte porque es de la ronda: quien
@@ -4196,6 +4213,7 @@ class Round {
     this.slidingRecalcula = true,
     List<BetChangeProposal>? pendingProposals,
     this.correcciones = const [],
+    this.equipoId,
   }) : pairSliding = pairSliding ?? const {},
        pendingProposals = pendingProposals ?? const [];
 
@@ -4231,6 +4249,16 @@ class Round {
   /// esa lista daría cero jugadores, y `every` sobre lista vacía es true: el
   /// contador diría 18/18 desde el hoyo 1, que es peor que el bug.
   List<Player> get scoringPlayers {
+    // ── Lo DECLARADO manda sobre lo deducido ────────────────────────────────
+    //
+    // Una ronda de shotgun por equipos no tiene apuestas de las que deducir
+    // nada, así que lo dice: ver [equipoId]. Va primero porque si la deducción
+    // corriera igual devolvería los cuatro reales, que es justo lo contrario.
+    if (equipoId != null) {
+      final equipo = players.where((p) => p.id == equipoId).firstOrNull;
+      if (equipo != null) return [equipo];
+    }
+
     // Se DERIVA de los lados de las apuestas. Ni declarada ni observada.
     //
     // Los tres intentos anteriores preguntaban mal:
@@ -4478,6 +4506,7 @@ class Round {
     Map<String, double>? pairSliding,
     List<BetChangeProposal>? pendingProposals,
     List<CorreccionDeScore>? correcciones,
+    String? equipoId,
   }) => Round(
     id: id, name: name, course: course,
     players: players ?? this.players,
@@ -4501,6 +4530,7 @@ class Round {
     slidingRecalcula: slidingRecalcula ?? this.slidingRecalcula,
     pendingProposals: pendingProposals ?? this.pendingProposals,
     correcciones: correcciones ?? this.correcciones,
+    equipoId: equipoId ?? this.equipoId,
   );
 }
 

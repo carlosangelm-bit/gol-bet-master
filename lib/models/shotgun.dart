@@ -355,12 +355,33 @@ List<Round> rondasDelPlan({
     // crearla.
     if (g.salida == null) continue;
 
-    final jugadores = [
+    final equipo = porSalida['${g.salida!.hoyo}${g.salida!.letra ?? ''}'];
+    final personas = [
       for (final pid in g.jugadores)
         porId[pid] ?? Player(id: pid, name: 'Jugador'),
     ];
-    final equipo =
-        porSalida['${g.salida!.hoyo}${g.salida!.letra ?? ''}'];
+    // ── LA TARJETA DEL EQUIPO ─────────────────────────────────────────────
+    //
+    // «Van a ver su jugador como Equipo. Si los 4 entran, pueden editar, pero
+    // van a editar solo al equipo 1, no sus scores independientes.»
+    //
+    // Así que el equipo entra en la ronda como un jugador más —virtual, con el
+    // nombre del equipo— y la ronda declara que la tarjeta es suya. Los cuatro
+    // siguen en `players`: son quienes juegan, quienes pueden entrar a editar y
+    // quienes aparecen en la lista del grupo.
+    //
+    // Su id es el del EQUIPO, no uno inventado: es lo que hace que el Thru
+    // encuentre su fila y que la tabla le ponga nombre sin un segundo
+    // emparejamiento.
+    final virtual = equipo == null
+        ? null
+        : Player(
+            id: equipo.id,
+            name: equipo.etiqueta,
+            isVirtual: true,
+            teamMemberIds: g.jugadores,
+          );
+    final jugadores = [...personas, if (virtual != null) virtual];
     rondas.add(Round(
       // Determinista: el mismo plan crea las mismas rondas. Volver a darle al
       // botón ACTUALIZA en vez de duplicar veintidós grupos, que es el error
@@ -372,10 +393,24 @@ List<Round> rondasDelPlan({
       course: campo,
       players: jugadores,
       roundPlayers: [
-        for (final p in jugadores)
+        for (final p in personas)
           RoundPlayer(
               playerId: p.id, handicapEnRonda: handicaps[p.id] ?? 0),
+        // El handicap del equipo: la media de sus miembros, redondeada. No es
+        // la fórmula de la USGA para scramble —esa depende del formato exacto—
+        // pero es la que no favorece a nadie, y el torneo puede jugarse en
+        // bruto poniendo la ventaja en «ninguna».
+        if (virtual != null)
+          RoundPlayer(
+              playerId: virtual.id,
+              handicapEnRonda: g.jugadores.isEmpty
+                  ? 0
+                  : g.jugadores
+                          .map((pid) => handicaps[pid] ?? 0)
+                          .reduce((a, b) => a + b) /
+                      g.jugadores.length),
       ],
+      equipoId: equipo?.id,
       betGroups: const [],
       scores: const {},
       events: const {},

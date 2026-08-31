@@ -903,7 +903,24 @@ TablaDelTorneo tablaDe(
   List<RoundResult> resultados, {
   Map<String, String> nombres = const {},
 }) {
-  final inscritos = t.participantes.toSet();
+  // ── LA UNIDAD DE CLASIFICACIÓN ────────────────────────────────────────────
+  //
+  // Es el ÚNICO cambio que los equipos hacen en la agregación, y es este: quién
+  // está inscrito. Todo lo demás —el orden, los puestos, los empates, las
+  // mejores N, el par acumulado— funciona igual, porque la agregación nunca
+  // supo qué era un "jugador": suma medidas por clave.
+  //
+  // Con equipos, la clave es el equipo. Y eso no es un parche: es que en un
+  // torneo por equipos el que compite ES el equipo. Los cuatro miembros no
+  // tienen score propio —jugaron una bola— así que una tabla de personas
+  // tendría 88 filas vacías.
+  //
+  // Los INSCRITOS del torneo siguen siendo las personas: se usan para el
+  // reparto en grupos y para el padrón. Lo que cambia es contra qué se filtra
+  // esta tabla.
+  final inscritos = t.porEquipos && t.equipos.isNotEmpty
+      ? t.equipos.map((e) => e.id).toSet()
+      : t.participantes.toSet();
 
   final rondas = rondasDelTorneo(t, resultados)
     ..sort((a, b) => b.playedAt.compareTo(a.playedAt));
@@ -948,7 +965,16 @@ TablaDelTorneo tablaDe(
       // Solo los INSCRITOS. Con la lista vacía entra todo el que jugó, que es el
       // estado heredado y se marca para poder decirlo.
       if (inscritos.isNotEmpty && !inscritos.contains(pid)) continue;
-      nombreDe[pid] = nombres[pid] ?? r.playerNames[pid] ?? sinNombre;
+      // El nombre del equipo llega en `playerNames` de la ronda —lo puso
+      // RoundResult con quien lleva tarjeta— pero si esa ronda es vieja o el
+      // equipo se renombró, la lista del torneo manda.
+      nombreDe[pid] = nombres[pid] ??
+          t.equipos
+              .where((e) => e.id == pid)
+              .map((e) => e.etiqueta)
+              .firstOrNull ??
+          r.playerNames[pid] ??
+          sinNombre;
       final puesto = puestoDe[pid]!;
       final puntos = t.metodo == MetodoDePuntuacion.posicion
           ? _puntosDelPuesto(t, puesto, empatadosCon[pid]!.length)
@@ -992,8 +1018,12 @@ TablaDelTorneo tablaDe(
 
   // Los inscritos que no han jugado ninguna: estar inscrito es un hecho aunque
   // no hayas ido, y no verte en la lista después de poner el bote sería raro.
+  //
+  // Con equipos son los EQUIPOS los que salen sin jugar, por lo mismo que
+  // arriba: la tabla clasifica equipos, así que un equipo formado y que aún no
+  // ha salido tiene que verse. Un miembro suelto no, porque no compite solo.
   final sinJugar = <String>[];
-  for (final pid in t.participantes) {
+  for (final pid in inscritos) {
     if (porJugador.containsKey(pid)) continue;
     sinJugar.add(pid);
     filas.add(FilaDelTorneo(
@@ -1002,7 +1032,15 @@ TablaDelTorneo tablaDe(
       // RoundResult, así que sale del directorio o no sale. Antes caía al id y
       // la tarjeta enseñaba "Va 6uX3jmCVlYNxCJxWBJQe": un id de Firestore en la
       // primera pantalla dice "esto está a medias" más alto que nada.
-      nombre: nombres[pid] ?? sinNombre,
+      // Con equipos el nombre no está en el directorio —un equipo no es una
+      // persona— así que sale de la lista de equipos del torneo. Sin esto, un
+      // equipo sin salir enseñaría «—» y parecería un fallo de carga.
+      nombre: nombres[pid] ??
+          t.equipos
+              .where((e) => e.id == pid)
+              .map((e) => e.etiqueta)
+              .firstOrNull ??
+          sinNombre,
       rondas: const [],
       total: 0,
       puesto: 0,

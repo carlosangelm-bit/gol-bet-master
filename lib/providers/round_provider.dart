@@ -67,6 +67,9 @@ Map<String, dynamic> roundToJson(Round r) {
   // tenerlo: diría que nadie tocó nada.
   if (r.correcciones.isNotEmpty)
     'correcciones': r.correcciones.map((c) => c.toJson()).toList(),
+  // Quién lleva la tarjeta cuando no hay apuestas de las que deducirlo. Sin
+  // esto, la ronda se recarga y los cuatro vuelven a tener tarjeta propia.
+  if (r.equipoId != null) 'equipoId': r.equipoId,
   };
 }
 
@@ -203,6 +206,7 @@ Round roundFromJson(Map<String, dynamic> j) {
         })
         .whereType<CorreccionDeScore>()
         .toList(),
+    equipoId: j['equipoId'] as String?,
   );
 }
 

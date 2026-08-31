@@ -384,9 +384,28 @@ decir el **hoyo** en vez de las rondas.
 > sitio para aflojar la escritura. Si cierras el portal, el Thru se queda quieto
 > y a la media hora **deja de enseñarse** en vez de mentir.
 
-## Lo que NO está
+## La tabla por equipos, y el scramble
 
-**La clasificación por equipos.** La tabla del torneo sigue contando por
-persona. Con equipos encendidos verás los grupos, sus nombres y su Thru, pero la
-tabla y la pared clasifican jugadores. Es el punto que quedó por decidir antes
-de tocarlo.
+**Ya clasifica equipos.** Con *«Por equipos»* encendido, la tabla del torneo
+tiene **una fila por equipo** — `Equipo 01 · Sierra` — y las personas no salen:
+jugaron una bola, no tienen score propio.
+
+**La pasada que cierra el módulo, y que nunca se ha hecho:**
+
+1. Crea las rondas por lotes desde Grupos y salidas, con equipos.
+2. Abre una tarjeta en Scores en vivo. Debe haber **una sola fila de score**,
+   la del equipo, no cuatro.
+3. Anota los 18 hoyos y **cierra la ronda**.
+4. Vuelve a la tabla del torneo: el equipo debe aparecer **con su score**.
+
+> El paso 4 es el criterio: hasta ahora una ronda de equipo cerrada producía un
+> resultado **sin score para nadie**, y nadie lo había visto porque nunca se
+> cerró una.
+
+**Y lo que hay que comprobar que NO pasa:** ve a Ajustes → tu historial de
+handicap. El score del scramble **no debe aparecer** como ronda tuya. Un
+scramble sale seis u ocho golpes por debajo de lo que firmarías solo; meterlo
+como score personal produciría diferenciales que no existen.
+
+**Un torneo por equipos se puntúa por score o por Stableford**, no por dinero: el
+dinero es de personas, y en estas rondas no hay apuestas.
