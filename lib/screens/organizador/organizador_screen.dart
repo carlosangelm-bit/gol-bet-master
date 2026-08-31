@@ -42,10 +42,13 @@ import '../../core/ancho.dart';
 import '../../core/app_theme.dart';
 import '../../core/escuchas.dart';
 import '../../models/inscritos.dart';
+import '../../models/resultados_del_torneo.dart';
 import '../../models/torneo.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/player_provider.dart';
+import '../../services/firestore_service.dart';
 import '../../providers/round_provider.dart';
+import '../../providers/perfil_provider.dart';
 import '../../providers/torneo_provider.dart';
 import '../../widgets/importar_jugadores_sheet.dart';
 import '../auth/auth_screen.dart';
@@ -328,19 +331,59 @@ extension SeccionTexto on SeccionDelPortal {
 class _PortalState extends State<_Portal> {
   SeccionDelPortal _seccion = SeccionDelPortal.inscritos;
 
+  /// Lo que publicaron los DEMÁS jugadores del torneo.
+  ///
+  /// ── Por qué se carga aquí, en el portal, y no en cada sección ────────────
+  ///
+  /// Es la mitad de la tabla que no está en el perfil de quien mira. En un
+  /// torneo de ciento cincuenta inscritos, casi todas las rondas son de otros:
+  /// sin esto la tabla sale a cero y con guiones, que es exactamente lo que
+  /// apareció proyectado en la pared.
+  ///
+  /// Se carga UNA vez para las dos secciones que publican —diseño y
+  /// patrocinio— porque las dos publican la MISMA tabla, y dos cargas darían
+  /// dos tablas que podrían no coincidir.
+  List<ResultadoPublicado> _publicados = const [];
+  bool _cargando = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarPublicados();
+  }
+
+  Future<void> _cargarPublicados() async {
+    final leido =
+        await FirestoreService.resultadosPublicados(widget.torneo.id);
+    if (!mounted) return;
+    setState(() {
+      _publicados = leido.lista;
+      _cargando = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = widget.t;
     final ancho = widget.ancho;
     final torneo = widget.torneo;
 
+    // La tabla COMPLETA, con la receta de los cuatro pasos. Es la que se
+    // publica y la que se enseña: una sola.
+    final tabla = tablaCompletaDe(
+      torneo: torneo,
+      propios: context.watch<PerfilProvider>().resultados,
+      publicados: _publicados,
+      nombres: context.watch<PlayerProvider>().nombres,
+    );
+
     final contenido = switch (_seccion) {
       SeccionDelPortal.inscritos =>
         InscritosTabla(torneo: torneo, ancho: ancho, t: t),
-      SeccionDelPortal.patrocinio =>
-        PatrocinioSeccion(torneo: torneo, ancho: ancho, t: t),
-      SeccionDelPortal.pantalla =>
-        PantallaSeccion(torneo: torneo, ancho: ancho, t: t),
+      SeccionDelPortal.patrocinio => PatrocinioSeccion(
+          torneo: torneo, ancho: ancho, t: t, tabla: tabla, lista: !_cargando),
+      SeccionDelPortal.pantalla => PantallaSeccion(
+          torneo: torneo, ancho: ancho, t: t, tabla: tabla, lista: !_cargando),
       final s => _Pendiente(t: t, seccion: s),
     };
 

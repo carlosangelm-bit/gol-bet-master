@@ -28,7 +28,6 @@ import '../../core/ancho.dart';
 import '../../core/app_theme.dart';
 import '../../core/golf_icons.dart';
 import '../../models/torneo.dart';
-import '../../providers/perfil_provider.dart';
 import '../../providers/torneo_provider.dart';
 import '../torneos/tele_sheet.dart';
 import '../../services/tele_service.dart';
@@ -38,11 +37,25 @@ class PantallaSeccion extends StatelessWidget {
   final Torneo torneo;
   final Ancho ancho;
   final GolfTheme t;
+
+  /// La tabla COMPLETA del torneo, cargada una vez por el portal.
+  ///
+  /// Llega de fuera y no se calcula aquí: es la misma que se publica desde las
+  /// dos secciones, y dos cálculos darían dos tablas que podrían no coincidir.
+  final TablaDelTorneo tabla;
+
+  /// Si la carga de lo que publicaron otros ya terminó.
+  ///
+  /// Guardar antes de que llegue publicaría una tabla a medias sobre una
+  /// completa. Es el fallo que se vio en la pared, con otro disfraz.
+  final bool lista;
   const PantallaSeccion({
     super.key,
     required this.torneo,
     required this.ancho,
     required this.t,
+    required this.tabla,
+    required this.lista,
   });
 
   Future<void> _guardar(BuildContext context, IdentidadDeTorneo id) async {
@@ -56,8 +69,13 @@ class PantallaSeccion extends StatelessWidget {
     // Y que llegue a la pared. Sin esto el organizador cambia el color, mira
     // la pantalla, y no pasa nada — que es exactamente lo que se reportó.
     if (!context.mounted) return;
+    if (!lista) {
+      messenger.showSnackBar(
+          const SnackBar(content: Text(avisoDeTablaSinCargar)));
+      return;
+    }
     if (Tele.debeRefrescar(guardado) &&
-        !await republicarPantalla(context, guardado)) {
+        !await republicarPantalla(context, guardado, tabla)) {
       messenger.showSnackBar(
           const SnackBar(content: Text(avisoDeRepublicacionFallida)));
     }
@@ -68,11 +86,6 @@ class PantallaSeccion extends StatelessWidget {
     final id = torneo.identidad;
     final plantilla = PlantillasDeTele.deClave(id.plantilla);
     final ancha = ancho.esTabla;
-
-    // La tabla, de los resultados que ya están en memoria. La necesita el
-    // gobierno de la pantalla para publicar, y sale del mismo sitio que en la
-    // app: dos cálculos distintos darían dos tablas distintas.
-    final tabla = tablaDe(torneo, context.watch<PerfilProvider>().resultados);
 
     return ListView(
       padding: EdgeInsets.fromLTRB(ancha ? 24 : 14, 16, ancha ? 24 : 14, 32),

@@ -42,11 +42,25 @@ class PatrocinioSeccion extends StatelessWidget {
   final Torneo torneo;
   final Ancho ancho;
   final GolfTheme t;
+
+  /// La tabla COMPLETA del torneo, cargada una vez por el portal.
+  ///
+  /// Llega de fuera y no se calcula aquí: es la misma que se publica desde las
+  /// dos secciones, y dos cálculos darían dos tablas que podrían no coincidir.
+  final TablaDelTorneo tabla;
+
+  /// Si la carga de lo que publicaron otros ya terminó.
+  ///
+  /// Guardar antes de que llegue publicaría una tabla a medias sobre una
+  /// completa. Es el fallo que se vio en la pared, con otro disfraz.
+  final bool lista;
   const PatrocinioSeccion({
     super.key,
     required this.torneo,
     required this.ancho,
     required this.t,
+    required this.tabla,
+    required this.lista,
   });
 
   Future<void> _guardar(BuildContext context, InventarioProyectado inv) async {
@@ -62,8 +76,13 @@ class PatrocinioSeccion extends StatelessWidget {
     // dejaba la pared con el de la semana pasada. Nadie lo había reportado
     // porque hay que mirar las dos pantallas a la vez para verlo.
     if (!context.mounted) return;
+    if (!lista) {
+      messenger.showSnackBar(
+          const SnackBar(content: Text(avisoDeTablaSinCargar)));
+      return;
+    }
     if (Tele.debeRefrescar(guardado) &&
-        !await republicarPantalla(context, guardado)) {
+        !await republicarPantalla(context, guardado, tabla)) {
       messenger.showSnackBar(
           const SnackBar(content: Text(avisoDeRepublicacionFallida)));
     }

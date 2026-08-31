@@ -37,28 +37,39 @@
 // línea que ya sostiene `Tele.debeRefrescar`.
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-
 import '../../models/torneo.dart';
-import '../../providers/perfil_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/tele_service.dart';
 
 /// Republica la instantánea de [torneo] si su pantalla está encendida.
 ///
+/// ── Recibe la TABLA. No la calcula ──────────────────────────────────────────
+///
+/// La primera versión la calculaba aquí, y salió mal: llamó a `tablaDe` con los
+/// resultados propios y sin el directorio de nombres, cuando la receta buena
+/// tiene cuatro pasos —ver `resultadosDelTorneo`—. En la pared aparecieron 153
+/// filas de guiones con la clasificación entera a cero.
+///
+/// Es la cuarta vez que un dato se cae al reconstruir algo paso a paso. Así que
+/// esto ya no reconstruye nada: quien llama tiene la tabla buena —la misma que
+/// está enseñando— y la pasa. Un cálculo que no existe no puede divergir.
+///
 /// Devuelve true si llegó a publicar. Quien llama decide si lo cuenta: en el
 /// portal no se dice nada cuando sale bien —el cambio ya se ve en la previa—
 /// y sí cuando falla, que es lo que el organizador no puede adivinar.
-Future<bool> republicarPantalla(BuildContext context, Torneo torneo) async {
+Future<bool> republicarPantalla(
+  BuildContext context,
+  Torneo torneo,
+  TablaDelTorneo tabla,
+) async {
   if (!Tele.debeRefrescar(torneo)) return false;
   final uid = AuthService.uid;
   if (uid == null) return false;
 
-  // La tabla se calcula igual que en todas partes, de los resultados que ya
-  // están en memoria. Un segundo cálculo propio aquí podría discrepar del que
-  // se ve en la app, que es el error que este archivo existe para no repetir.
-  final resultados = context.read<PerfilProvider>().resultados;
-  final tabla = tablaDe(torneo, resultados);
+  // Y no se publica una tabla vacía sobre una que tenía gente. Es el otro lado
+  // del mismo fallo: si por lo que sea la tabla no llegó, más vale dejar la
+  // pared con lo de antes que borrarla.
+  if (tabla.sinListaDeParticipantes) return false;
 
   final (resultado, _) = await Tele.publicar(
     ownerUid: uid,
@@ -73,3 +84,12 @@ Future<bool> republicarPantalla(BuildContext context, Torneo torneo) async {
 const avisoDeRepublicacionFallida =
     'El cambio se guardó, pero no llegó a la pantalla proyectada. '
     'Apágala y enciéndela para forzarlo.';
+
+/// La frase para cuando la tabla todavía no ha terminado de cargar.
+///
+/// Es distinto de "falló": aquí el cambio SÍ se guardó y la pared sigue con lo
+/// de antes, que es lo correcto. Publicar una tabla a medias sobre una completa
+/// es lo que llenó la pared de guiones.
+const avisoDeTablaSinCargar =
+    'El cambio se guardó. Todavía se están cargando los resultados del '
+    'torneo: vuelve a guardar en unos segundos para que llegue a la pantalla.';

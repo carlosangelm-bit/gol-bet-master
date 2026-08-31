@@ -198,7 +198,11 @@ void main() {
           home: Scaffold(
             body: LayoutBuilder(
               builder: (_, c) => PatrocinioSeccion(
-                  torneo: t, ancho: anchoDe(c.maxWidth), t: GolfTheme.classic),
+                  torneo: t,
+                  ancho: anchoDe(c.maxWidth),
+                  t: GolfTheme.classic,
+                  tabla: tablaDe(t, const []),
+                  lista: true),
             ),
           ),
         ),

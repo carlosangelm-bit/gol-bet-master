@@ -156,6 +156,18 @@ porque el organizador puede necesitar apagar la pared desde el campo.
 Si algo no llega, sale un aviso diciéndolo. Un cambio guardado que no llega y no
 avisa es el fallo que esto viene a cerrar.
 
+**Y mira los NOMBRES de la tabla proyectada después de guardar.** La primera
+versión de esto republicaba con media receta y la pared se llenó de guiones: 153
+filas con `—`, `0/2` y `0`. Los guiones eran el síntoma; lo que pasaba de verdad
+es que la clasificación entera se reconstruía desde los resultados de una sola
+persona. Si vuelves a ver un `—`, es eso.
+
+**Nada más abrir el portal**, la tabla del torneo tarda un momento en cargar
+—hay que traer lo que publicaron los demás—. Guardar antes de que termine NO
+publica: sale un aviso pidiendo volver a guardar en unos segundos. Es
+deliberado: publicar una tabla a medias sobre una completa es lo que borró la
+pared.
+
 **Y la puerta:** en la pantalla del torneo, junto al botón de compartir, hay uno
 nuevo al portal. Antes había que escribir `/organizador/{id}` con un id que solo
 se sacaba de Firestore.

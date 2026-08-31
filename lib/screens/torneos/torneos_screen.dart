@@ -385,9 +385,15 @@ class _TorneoTabla extends StatelessWidget {
     final t = context.gt;
     final torneo = _vivo(context);
     // Lo propio MÁS lo que otros publicaron, sin contar una ronda dos veces.
+    final nombres = context.watch<PlayerProvider>().nombres;
+    // La MISMA receta que usa el portal para publicar. Estaba escrita aquí
+    // suelta, y al copiarla al portal se copiaron dos de sus cuatro pasos: en
+    // la pared salieron 153 filas de guiones. Ahora hay una función y no una
+    // costumbre. Los publicados llegan YA filtrados por inscritos —la pantalla
+    // necesita el descarte para su diagnóstico—, así que el filtro de la
+    // receta se salta con la lista vacía y la unión hace el resto.
     final resultados = resultadosUnidos(
         context.watch<PerfilProvider>().resultados, publicados);
-    final nombres = context.watch<PlayerProvider>().nombres;
     final tabla = tablaDe(torneo, resultados, nombres: nombres);
     // El cuadro se deriva una vez y se usa para todo: el bloque de arriba, y el
     // bote —que en eliminación es del campeón, no del líder de la tabla—.
