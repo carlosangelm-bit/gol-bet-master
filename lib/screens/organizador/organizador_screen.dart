@@ -55,6 +55,7 @@ import '../auth/auth_screen.dart';
 import 'inscritos_tabla.dart';
 import 'pantalla_seccion.dart';
 import 'patrocinio_seccion.dart';
+import 'salidas_seccion.dart';
 import 'scores_seccion.dart';
 
 class OrganizadorScreen extends StatefulWidget {
@@ -296,8 +297,10 @@ class _Portal extends StatefulWidget {
 }
 
 /// Las secciones del portal. Solo la primera está construida; las otras se
-/// nombran para que se vea que el armazón las espera —y para no inventar un
-/// menú distinto cuando lleguen—.
+/// Las cinco existen. El enum llevaba dos nombradas sin pantalla —para que se
+/// viera que el armazón las esperaba— y ya no hace falta: el caso por defecto
+/// del switch se quitó, así que añadir una sexta sección no compila hasta que
+/// tenga su pantalla. Es mejor sitio para enterarse que el portal en marcha.
 enum SeccionDelPortal { inscritos, patrocinio, pantalla, scores, salidas }
 
 extension SeccionTexto on SeccionDelPortal {
@@ -315,16 +318,6 @@ extension SeccionTexto on SeccionDelPortal {
         SeccionDelPortal.pantalla => Icons.tv_outlined,
         SeccionDelPortal.scores => Icons.table_chart_outlined,
         SeccionDelPortal.salidas => Icons.flag_outlined,
-      };
-
-  /// Lo que falta para que exista. Se dice en vez de enseñar un botón muerto.
-  String? get pendiente => switch (this) {
-        SeccionDelPortal.inscritos => null,
-        SeccionDelPortal.patrocinio => null,
-        SeccionDelPortal.pantalla => null,
-        SeccionDelPortal.scores => null,
-        SeccionDelPortal.salidas =>
-          'Arrastrar grupos a salidas de shotgun. Necesita modelo nuevo.',
       };
 }
 
@@ -386,7 +379,8 @@ class _PortalState extends State<_Portal> {
           torneo: torneo, ancho: ancho, t: t, tabla: tabla, lista: !_cargando),
       SeccionDelPortal.scores => ScoresSeccion(
           torneo: torneo, ancho: ancho, t: t, publicados: _publicados),
-      final s => _Pendiente(t: t, seccion: s),
+      SeccionDelPortal.salidas =>
+        SalidasSeccion(torneo: torneo, ancho: ancho, t: t),
     };
 
     return Scaffold(
@@ -505,33 +499,6 @@ class _Cabecera extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Pendiente extends StatelessWidget {
-  final GolfTheme t;
-  final SeccionDelPortal seccion;
-  const _Pendiente({required this.t, required this.seccion});
-
-  @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(seccion.icono, size: 34, color: t.sub),
-            const SizedBox(height: 14),
-            Text(seccion.label,
-                style: TextStyle(
-                    color: t.text, fontSize: 17, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 7),
-            Text(seccion.pendiente ?? '',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: t.sub, fontSize: 13, height: 1.45)),
-            const SizedBox(height: 6),
-            Text('Todavía no está en el portal.',
-                style: TextStyle(color: t.sub, fontSize: 11.5)),
-          ]),
-        ),
-      );
 }
 
 /// Abre el selector del directorio y la importación por pegado, y devuelve el

@@ -254,3 +254,52 @@ desaparece en el siguiente golpe que anote alguien.
 **Meter una tarjeta a mano para el grupo que no captura.** El camino existe —
 creas la ronda desde el torneo, con esos jugadores, y como es tuya sale en vivo
 y corregible — pero no hay un atajo desde esta sección. Va en la siguiente.
+
+---
+
+# Grupos y salidas · Portal → Grupos y salidas
+
+**La última sección.** Con el padrón de Copa de Primavera y un campo con sus
+hoyos cargados:
+
+## Los cuatro números que hay que ver cuadrar
+
+**1 · Las salidas.** El interruptor de *«Dos salidas en los par 3»* debe decir
+**22 salidas** en un campo de 18 con cuatro par 3. Apágalo: debe decir **18**.
+Si dice otra cosa, el campo no trae bien los pares.
+
+**2 · Los grupos.** Con 88 inscritos y grupos de 4, **22 grupos** — y ningún
+grupo de dos. Mira el número pequeño a la derecha de cada uno: todos 3 o 4.
+
+**3 · Los títulos.** Cada grupo se titula por su **salida**, no «Grupo 14»:
+`Hoyo 1`, `Hoyo 3A`, `Hoyo 3B`… Es lo que se canta por megafonía.
+
+**4 · El botón.** Debe decir **Crear 22 rondas**, con el número.
+
+## Lo que hay que intentar romper
+
+**Sube el padrón por encima de lo que cabe** (93 inscritos en grupos de 4 dan 24
+grupos). Debe salir el aviso rojo con la cifra — *«24 grupos y 22 salidas: no
+caben 2»* — y **el botón se apaga**. Que no reparta como se pueda es el punto.
+
+**Baja el padrón** (78 → 20 grupos). Debe avisar de que **sobran 2** salidas,
+pero **sin apagar el botón**: sobrar no es un error.
+
+**Elige un campo sin hoyos cargados.** Debe decirlo con el nombre del campo, no
+suponer 18.
+
+## Mover a alguien
+
+Toca un jugador: sale la lista de destinos, cada uno por su salida. Muévelo y
+comprueba que **desaparece del grupo de origen** — que aparezca en los dos es el
+fallo de mover mal. Cambiar el tamaño de grupo **descarta las mudanzas** a
+propósito: un reparto a mano sobre otro tamaño no significa nada.
+
+## Y el cierre del círculo
+
+Dale a **Crear 22 rondas**. Después ve a **Scores en vivo**: las 22 deben estar
+en *TUS GRUPOS · EN VIVO*, con su salida como nombre. Ahí ya puedes abrir una
+tarjeta y **probar la corrección**, que era lo que faltaba por verificar.
+
+**Vuelve a darle al botón.** No debe duplicar nada: los ids son deterministas, la
+segunda pulsación actualiza. Un botón lento produce dobles pulsaciones solo.

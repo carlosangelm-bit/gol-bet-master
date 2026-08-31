@@ -564,6 +564,69 @@ class LiveRoundService {
   // ESCRITURA — Actualizar score en ronda en vivo
   // ══════════════════════════════════════════════════════════════════════════
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // CREACIÓN POR LOTES — las veintidós rondas de un shotgun, en una acción
+  // ══════════════════════════════════════════════════════════════════════════
+  //
+  // «Crear veintidós rondas de una vez es lo que hace posible un torneo de 88
+  // personas con esta app.» Es el criterio que decide si el módulo sirve: todo
+  // lo demás es organización.
+  //
+  // ── UN BATCH, y por qué no un bucle de publishRound ───────────────────────
+  //
+  // `publishRound` hace tres escrituras por ronda y las hace de una en una.
+  // Veintidós llamadas son sesenta y seis viajes, y sobre todo: si la número
+  // catorce falla, el organizador se queda con trece grupos creados, ocho sin
+  // crear y ninguna forma de saber cuáles. En el tee, con la gente esperando.
+  //
+  // Un batch de Firestore es todo-o-nada. Veintidós rondas caben de sobra: cada
+  // una son dos escrituras más una invitación por jugador vinculado, así que un
+  // shotgun de 88 personas queda muy por debajo del tope de 500.
+  //
+  // Lo que NO hace: invitaciones. `publishRound` invita a los jugadores con
+  // cuenta vinculada, y eso son 88 notificaciones de golpe para gente que está
+  // en el campo. En un shotgun el organizador reparte los grupos en papel y
+  // captura él o su acompañante — que es justo el caso que la sección de scores
+  // en vivo cubre. Si alguien quiere entrar con su cuenta, el código de la
+  // ronda sigue existiendo.
+
+  /// Crea todas las [rondas] de golpe. Devuelve cuántas quedaron, o null si
+  /// falló el lote entero.
+  ///
+  /// Null y 0 son distintos a propósito: null es "no se escribió nada" —el
+  /// batch es todo-o-nada— y 0 sería "no había nada que crear".
+  static Future<int?> publicarPorLotes(List<Round> rondas) async {
+    final uid = AuthService.uid;
+    if (uid == null) return null;
+    if (rondas.isEmpty) return 0;
+
+    final batch = _db.batch();
+    for (final r in rondas) {
+      final code = _generateCode();
+      final viva = r.copyWith(isLive: true, ownerUid: uid, liveCode: code);
+      final data = roundToJson(viva);
+      data['publishedAt'] = FieldValue.serverTimestamp();
+      data['updatedAt'] = FieldValue.serverTimestamp();
+      batch.set(_liveRounds.doc(r.id), data);
+      // La referencia en el directorio del organizador. Es lo que hace que
+      // `gruposDelTorneo` las encuentre: sin ella la ronda existe y el portal
+      // no la ve, que es la forma que más veces se ha repetido aquí.
+      batch.set(_myRefs().doc(r.id), {
+        'roundId': r.id,
+        'liveCode': code,
+        'role': 'owner',
+        'joinedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    try {
+      await batch.commit();
+      return rondas.length;
+    } catch (e) {
+      debugPrint('[Shotgun] el lote de ${rondas.length} falló: $e');
+      return null;
+    }
+  }
+
   /// Trae la ronda en vivo [roundId] entera, para verla o corregirla.
   ///
   /// Solo funciona con las rondas que el organizador POSEE: la regla de
