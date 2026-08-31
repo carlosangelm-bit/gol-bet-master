@@ -202,3 +202,55 @@ etiqueta, porque quien organiza no se anuncia.
 
 Lo que ninguna prueba puede decir es si el resultado se **ve bien**. Eso es lo
 que queda arriba.
+
+---
+
+# Scores en vivo · Portal → Scores en vivo
+
+## Lo primero: la frontera es real, no una elección de diseño
+
+**Los grupos que tú montaste** se ven en vivo, hoyo a hoyo, y son los que puedes
+corregir. **Las rondas que lleva otra cuenta** se ven cuando las cierran, con su
+fecha al lado. La pantalla lo dice en la primera frase.
+
+No es una limitación provisional: las reglas de Firestore dejan leer una ronda
+en vivo a quien está en ella o la organizó, y el organizador de un torneo no es
+ninguna de las dos cosas en la ronda que montó otro. Ampliarlo daría permiso de
+escritura sobre rondas ajenas — la regla concede lectura y escritura juntas.
+
+## Qué mirar
+
+**1 · Las dos listas, separadas.** Que no se confundan. Lo de fuera lleva
+candado y fecha; lo tuyo lleva `Van 7/18`.
+
+**2 · La tarjeta.** Toca un grupo tuyo: sale la rejilla de jugadores por hoyos.
+Los scores bajo par en verde, sobre par en rojo, el par en el color del texto, y
+el hoyo vacío con un punto — **no un cero**: «todavía no» y «cero golpes» no son
+lo mismo.
+
+**3 · Corregir.** Toca un score, cambia el número. Después mira abajo: debe
+aparecer la línea de **CORRECCIONES** con `Ana Robles · hoyo 7: 5 → 4`, tu
+nombre y la hora.
+
+**4 · Los tres casos, que se dicen distinto:**
+
+| Qué haces | Qué debe decir |
+|---|---|
+| Cambias un 5 por un 4 | `hoyo 7: 5 → 4` |
+| Rellenas un hoyo vacío | `hoyo 3: se anotó 6` |
+| Borras un score | `hoyo 7: se borró el 5` |
+
+**5 · Y lo que NO debe pasar:** escribir el mismo número que ya había **no** debe
+añadir una línea. Un registro con correcciones que no cambiaron nada hace dudar
+de las que sí.
+
+**6 · La prueba dura.** Corrige un hoyo, cierra la hoja, vuelve a abrirla. Las
+correcciones deben seguir ahí. Es donde este proyecto ha perdido cuatro campos:
+el guardado sobrescribe el documento entero y todo lo que no se serialice
+desaparece en el siguiente golpe que anote alguien.
+
+## Lo que NO está
+
+**Meter una tarjeta a mano para el grupo que no captura.** El camino existe —
+creas la ronda desde el torneo, con esos jugadores, y como es tuya sale en vivo
+y corregible — pero no hay un atajo desde esta sección. Va en la siguiente.

@@ -55,6 +55,7 @@ import '../auth/auth_screen.dart';
 import 'inscritos_tabla.dart';
 import 'pantalla_seccion.dart';
 import 'patrocinio_seccion.dart';
+import 'scores_seccion.dart';
 
 class OrganizadorScreen extends StatefulWidget {
   final String torneoId;
@@ -321,8 +322,7 @@ extension SeccionTexto on SeccionDelPortal {
         SeccionDelPortal.inscritos => null,
         SeccionDelPortal.patrocinio => null,
         SeccionDelPortal.pantalla => null,
-        SeccionDelPortal.scores =>
-          'El torneo entero en una tabla, y corregir con constancia.',
+        SeccionDelPortal.scores => null,
         SeccionDelPortal.salidas =>
           'Arrastrar grupos a salidas de shotgun. Necesita modelo nuevo.',
       };
@@ -384,6 +384,8 @@ class _PortalState extends State<_Portal> {
           torneo: torneo, ancho: ancho, t: t, tabla: tabla, lista: !_cargando),
       SeccionDelPortal.pantalla => PantallaSeccion(
           torneo: torneo, ancho: ancho, t: t, tabla: tabla, lista: !_cargando),
+      SeccionDelPortal.scores => ScoresSeccion(
+          torneo: torneo, ancho: ancho, t: t, publicados: _publicados),
       final s => _Pendiente(t: t, seccion: s),
     };
 

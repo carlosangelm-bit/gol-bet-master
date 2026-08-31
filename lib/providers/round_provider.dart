@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/app_theme.dart';
 import '../engines/ledger_engine.dart';
+import '../models/correccion_de_score.dart';
 import '../models/models.dart';
 import '../services/firestore_service.dart';
 import '../services/live_round_service.dart';
@@ -59,6 +60,13 @@ Map<String, dynamic> roundToJson(Round r) {
   // pendingProposals: propuestas colaborativas de cambio de apuestas
   if (r.pendingProposals.isNotEmpty)
     'pendingProposals': r.pendingProposals.map((p) => p.toJson()).toList(),
+  // Las correcciones del organizador. Tienen que estar AQUÍ: `saveRound`
+  // escribe con `merge: false`, así que todo lo que no salga de esta función
+  // se BORRA del documento en el siguiente guardado. Un registro de quién
+  // cambió qué que desaparece al anotar el hoyo siguiente sería peor que no
+  // tenerlo: diría que nadie tocó nada.
+  if (r.correcciones.isNotEmpty)
+    'correcciones': r.correcciones.map((c) => c.toJson()).toList(),
   };
 }
 
@@ -175,6 +183,25 @@ Round roundFromJson(Map<String, dynamic> j) {
           catch (_) { return null; }
         })
         .whereType<BetChangeProposal>()
+        .toList(),
+    // Una corrección ilegible se salta sola: un registro a medias no puede
+    // impedir que la ronda se abra el día del torneo.
+    //
+    // Y se EXIGE que sea un mapa con hoyo: sin esta guarda, un valor basura
+    // caía en los valores por defecto y aparecía en la lista como «— · hoyo 0»
+    // firmado por «—». Una corrección inventada en el registro de quién cambió
+    // qué es peor que una que falta.
+    correcciones: asList(j['correcciones'])
+        .map((c) {
+          if (c is! Map) return null;
+          try {
+            final hecha = CorreccionDeScore.fromJson(asMap(c));
+            return hecha.hoyo <= 0 || hecha.jugadorId.isEmpty ? null : hecha;
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<CorreccionDeScore>()
         .toList(),
   );
 }

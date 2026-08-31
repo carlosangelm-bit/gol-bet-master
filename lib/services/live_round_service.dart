@@ -564,6 +564,45 @@ class LiveRoundService {
   // ESCRITURA — Actualizar score en ronda en vivo
   // ══════════════════════════════════════════════════════════════════════════
 
+  /// Trae la ronda en vivo [roundId] entera, para verla o corregirla.
+  ///
+  /// Solo funciona con las rondas que el organizador POSEE: la regla de
+  /// liveRounds deja leer a quien está en `participantUids` o es `ownerUid`, y
+  /// el organizador de un torneo no es ninguna de las dos cosas en la ronda que
+  /// montó otra cuenta. Ver la cabecera de la sección de scores del portal.
+  ///
+  /// Devuelve null si no está o si no se puede leer, sin lanzar: el día del
+  /// torneo una excepción aquí deja al organizador sin la pantalla entera.
+  static Future<Round?> cargarRondaEnVivo(String roundId) async {
+    try {
+      final snap = await _liveRounds.doc(roundId).get();
+      final data = snap.data();
+      if (data == null) return null;
+      return roundFromJson(data);
+    } catch (e) {
+      debugPrint('[Torneo] no se pudo leer $roundId: $e');
+      return null;
+    }
+  }
+
+  /// Guarda una ronda corregida. Devuelve si se pudo.
+  ///
+  /// No usa [saveRound] a ciegas: esa se rinde en silencio si la ronda no es
+  /// `isLive`, y aquí "no pasó nada" y "se guardó" tienen que distinguirse —el
+  /// organizador acaba de cambiar un score de otra persona—.
+  static Future<bool> guardarCorregida(Round round) async {
+    if (!round.isLive) return false;
+    try {
+      final data = roundToJson(round);
+      data['updatedAt'] = FieldValue.serverTimestamp();
+      await _liveRounds.doc(round.id).set(data, SetOptions(merge: false));
+      return true;
+    } catch (e) {
+      debugPrint('[Torneo] no se pudo corregir ${round.id}: $e');
+      return false;
+    }
+  }
+
   /// Persiste la ronda completa en liveRounds (merge para no pisar otros campos)
   static Future<void> saveRound(Round round) async {
     if (!round.isLive) return;

@@ -7,6 +7,8 @@
 
 import 'package:flutter/material.dart';
 
+import 'correccion_de_score.dart';
+
 import '../core/golf_icons.dart';
 
 // ── Helper: parsear fecha desde String ISO o Timestamp de Firestore ───────────
@@ -4168,6 +4170,13 @@ class Round {
   /// Solo se persisten en rondas en vivo (liveRounds Firestore).
   final List<BetChangeProposal> pendingProposals;
 
+  /// Los scores que el organizador corrigió, con quién y cuándo.
+  ///
+  /// Va EN LA RONDA y no en una colección aparte porque es de la ronda: quien
+  /// pueda leerla ve sus correcciones, y quien no, no. Un registro en otro
+  /// sitio necesitaría sus propias reglas para decir exactamente eso.
+  final List<CorreccionDeScore> correcciones;
+
   Round({
     required this.id, required this.name, required this.course,
     required this.players, required this.roundPlayers,
@@ -4186,6 +4195,7 @@ class Round {
     Map<String, double>? pairSliding,
     this.slidingRecalcula = true,
     List<BetChangeProposal>? pendingProposals,
+    this.correcciones = const [],
   }) : pairSliding = pairSliding ?? const {},
        pendingProposals = pendingProposals ?? const [];
 
@@ -4467,6 +4477,7 @@ class Round {
     String? scoringMode,
     Map<String, double>? pairSliding,
     List<BetChangeProposal>? pendingProposals,
+    List<CorreccionDeScore>? correcciones,
   }) => Round(
     id: id, name: name, course: course,
     players: players ?? this.players,
@@ -4489,6 +4500,7 @@ class Round {
     pairSliding: pairSliding ?? this.pairSliding,
     slidingRecalcula: slidingRecalcula ?? this.slidingRecalcula,
     pendingProposals: pendingProposals ?? this.pendingProposals,
+    correcciones: correcciones ?? this.correcciones,
   );
 }
 
