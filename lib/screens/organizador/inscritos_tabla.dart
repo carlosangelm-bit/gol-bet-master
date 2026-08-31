@@ -9,6 +9,28 @@
 // models/inscritos.dart, donde se puede probar sin montar pantalla ni sesión.
 // Aquí solo se pinta.
 //
+// ── QUITAR EN BLOQUE, y por qué de uno en uno no era una molestia ──────────
+//
+// «153 inscritos y 22 salidas: hay que bajar a 88. Sesenta y cinco fuera, y solo
+// se puede de una en una.»
+//
+// Y no era solo lento. Cada quitado guardaba el torneo, la lista se recomponía,
+// y seis clics seguidos en la misma posición contaban UNO: los otros cinco
+// caían mientras la fila se recolocaba. Encima el aviso de «Deshacer» aparecía
+// justo encima del botón de quitar de la fila siguiente, así que el clic
+// siguiente iba al aviso.
+//
+// Tres síntomas de la misma causa: se estaba repitiendo una acción sobre una
+// lista que se movía debajo. La selección múltiple no los arregla uno a uno —
+// los quita de raíz:
+//
+//   · nada se mueve hasta confirmar, así que marcar veinte es marcar veinte
+//   · un solo aviso al final, cuando ya no se está repitiendo nada
+//   · una escritura en vez de sesenta y cinco
+//
+// Y con el buscador, «marcar los que se ven» convierte «quitar a los que no
+// juegan» en dos gestos: buscar y marcar.
+//
 // ── El handicap que se edita es el GLOBAL ───────────────────────────────────
 //
 // El torneo no guarda handicaps: guarda una ventaja, y cuando toca handicap usa
@@ -50,6 +72,13 @@ class _InscritosTablaState extends State<InscritosTabla> {
   OrdenDeInscritos _orden = OrdenDeInscritos.inscripcion;
   bool _descendente = false;
 
+  /// Los marcados para quitar. Vacío = no hay modo selección.
+  ///
+  /// No hay una bandera de "modo": el modo ES tener algo marcado. Una bandera
+  /// aparte daría dos estados que hay que mantener de acuerdo, y el que se
+  /// quedara atrás sería una pantalla en modo selección sin nada seleccionado.
+  Set<String> _marcados = {};
+
   @override
   void dispose() {
     _busca.dispose();
@@ -73,23 +102,64 @@ class _InscritosTablaState extends State<InscritosTabla> {
     await context.read<TorneoProvider>().guardar(nuevo);
   }
 
-  Future<void> _quitar(FilaDeInscrito f) async {
+  /// Quita todos los marcados, de una vez.
+  ///
+  /// Una escritura, un aviso, y ninguna recomposición por el camino: la lista
+  /// se recompone UNA vez, al final, cuando ya no se está repitiendo nada.
+  Future<void> _quitarMarcados() async {
     final prov = context.read<TorneoProvider>();
-    final nuevo = sinInscrito(widget.torneo, f.playerId);
+    final ids = {..._marcados};
+    final nuevo = sinInscritos(widget.torneo, ids);
     if (identical(nuevo, widget.torneo)) return;
-    await prov.guardar(nuevo);
+    final cuantos = widget.torneo.participantes.length -
+        nuevo.participantes.length;
+    final messenger = ScaffoldMessenger.of(context);
+
+    // ── Si el guardado falla, las MARCAS se quedan ──────────────────────────
+    //
+    // Marcar veinte cuesta veinte toques. Perderlos porque la red falló, y sin
+    // decir nada, obligaría a repetirlos — que es exactamente el trabajo que
+    // esto viene a quitar. Se limpian solo cuando el guardado salió bien.
+    try {
+      await prov.guardar(nuevo);
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+          content: Text('No se pudo quitar a $cuantos. Siguen marcados: '
+              'vuelve a intentarlo.')));
+      return;
+    }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('${f.nombre} ya no está inscrito'),
+    setState(() => _marcados = {});
+    messenger.showSnackBar(SnackBar(
+      content: Text('$cuantos ya no está${cuantos == 1 ? '' : 'n'} inscrito'
+          '${cuantos == 1 ? '' : 's'}'),
       action: SnackBarAction(
         label: 'Deshacer',
-        // Deshacer devuelve el id, pero al FINAL de la lista: el orden de
+        // Deshacer devuelve los ids, pero al FINAL de la lista: el orden de
         // inscripción es un hecho de cuándo entró cada uno, y fingir que nunca
-        // salió sería inventarse ese hecho.
-        onPressed: () => prov.guardar(conInscritos(nuevo, [f.playerId])),
+        // salieron sería inventarse ese hecho.
+        onPressed: () => prov.guardar(conInscritos(nuevo, ids.toList())),
       ),
     ));
   }
+
+  /// Marca o desmarca uno. Es lo único que hace un toque en la casilla: nada
+  /// se guarda y nada se mueve.
+  void _alternar(String playerId) => setState(() {
+        final nuevos = {..._marcados};
+        if (!nuevos.remove(playerId)) nuevos.add(playerId);
+        _marcados = nuevos;
+      });
+
+  /// Marca los que se ven AHORA, con el filtro puesto.
+  ///
+  /// Es lo que convierte «quitar a los que no juegan» en dos gestos. Y marca
+  /// los VISIBLES, no todos: con un buscador puesto, marcar los 153 sería lo
+  /// contrario de lo que pide quien acaba de filtrar.
+  void _marcarVisibles(List<FilaDeInscrito> filas) => setState(() {
+        _marcados = {..._marcados, ...filas.map((f) => f.playerId)};
+      });
 
   Future<void> _editarHandicap(FilaDeInscrito f) async {
     final prov = context.read<PlayerProvider>();
@@ -154,6 +224,27 @@ class _InscritosTablaState extends State<InscritosTabla> {
             ),
           ),
           const SizedBox(width: 10),
+          // «Marcar los que se ven». Solo cuando hay algo que marcar y no está
+          // ya todo marcado: un botón que no puede hacer nada es peor que no
+          // tenerlo.
+          if (filas.isNotEmpty &&
+              !filas.every((f) => _marcados.contains(f.playerId)))
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: OutlinedButton(
+                onPressed: () => _marcarVisibles(filas),
+                style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: t.divider),
+                    foregroundColor: t.text,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 15)),
+                child: Text(
+                    _busca.text.isEmpty
+                        ? 'Marcar ${filas.length}'
+                        : 'Marcar los ${filas.length}',
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
           if (ancho.esTabla)
             ElevatedButton.icon(
               onPressed: _anadir,
@@ -175,6 +266,18 @@ class _InscritosTablaState extends State<InscritosTabla> {
             ),
         ]),
       ),
+      // ── LA BARRA DE SELECCIÓN ──────────────────────────────────────────
+      //
+      // Aparece solo con algo marcado, y va ARRIBA: el aviso de deshacer sale
+      // abajo, y ponerla ahí repetiría el problema que esto viene a arreglar.
+      if (_marcados.isNotEmpty)
+        _BarraDeSeleccion(
+          t: t,
+          ancho: ancho,
+          marcados: _marcados.length,
+          onQuitar: _quitarMarcados,
+          onLimpiar: () => setState(() => _marcados = {}),
+        ),
       if (ancho.esTabla)
         _Cabeceras(
           ancho: ancho,
@@ -196,8 +299,12 @@ class _InscritosTablaState extends State<InscritosTabla> {
                   fila: filas[i],
                   ancho: ancho,
                   t: t,
+                  marcado: _marcados.contains(filas[i].playerId),
                   onHandicap: () => _editarHandicap(filas[i]),
-                  onQuitar: () => _quitar(filas[i]),
+                  // La X de la fila MARCA en vez de quitar. Quitar de una en
+                  // una era la acción que no escalaba; marcar sí, porque la
+                  // lista no se mueve.
+                  onQuitar: () => _alternar(filas[i].playerId),
                 ),
               ),
       ),
@@ -260,6 +367,62 @@ class _Cabeceras extends StatelessWidget {
       );
 }
 
+/// La barra que aparece con algo marcado.
+///
+/// ── Va ARRIBA, y no es indiferente ─────────────────────────────────────────
+///
+/// El aviso de «Deshacer» sale abajo, y ahí es donde tapaba el botón de quitar
+/// de la fila siguiente. Poner la acción en bloque también abajo repetiría el
+/// problema que esto viene a arreglar: dos cosas peleándose por el mismo sitio.
+class _BarraDeSeleccion extends StatelessWidget {
+  final GolfTheme t;
+  final Ancho ancho;
+  final int marcados;
+  final VoidCallback onQuitar;
+  final VoidCallback onLimpiar;
+  const _BarraDeSeleccion({
+    required this.t,
+    required this.ancho,
+    required this.marcados,
+    required this.onQuitar,
+    required this.onLimpiar,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: EdgeInsets.fromLTRB(
+            ancho.esTabla ? 24 : 14, 0, ancho.esTabla ? 24 : 14, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: t.primary.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: t.primary.withValues(alpha: 0.45)),
+        ),
+        child: Row(children: [
+          Expanded(
+            child: Text(
+                '$marcados marcado${marcados == 1 ? '' : 's'} para quitar',
+                style: GolfType.value(t.text)),
+          ),
+          TextButton(
+            onPressed: onLimpiar,
+            style: TextButton.styleFrom(foregroundColor: t.sub),
+            child: const Text('Cancelar'),
+          ),
+          const SizedBox(width: 4),
+          FilledButton(
+            onPressed: onQuitar,
+            style: FilledButton.styleFrom(
+                backgroundColor: t.loss,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
+            child: Text('Quitar $marcados',
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+          ),
+        ]),
+      );
+}
+
 /// En estrecho no hay cabeceras que pulsar, así que el orden va en chips.
 class _OrdenCompacto extends StatelessWidget {
   final GolfTheme t;
@@ -295,13 +458,20 @@ class _Fila extends StatelessWidget {
   final Ancho ancho;
   final GolfTheme t;
   final VoidCallback onHandicap;
+
+  /// Marca o desmarca. Ya no quita: quitar es una acción de la barra de arriba,
+  /// y por eso encadenar veinte funciona.
   final VoidCallback onQuitar;
+
+  final bool marcado;
+
   const _Fila({
     required this.fila,
     required this.ancho,
     required this.t,
     required this.onHandicap,
     required this.onQuitar,
+    this.marcado = false,
   });
 
   String get _hcp => fila.handicap == fila.handicap.roundToDouble()
@@ -351,7 +521,9 @@ class _Fila extends StatelessWidget {
     if (!ancho.esTabla) {
       return Card(
         margin: const EdgeInsets.only(bottom: 7),
-        color: t.surface,
+        // La fila marcada se ve DE UN VISTAZO: con veinte marcadas, un icono de
+        // 19 px no dice cuántas van.
+        color: marcado ? t.primary.withValues(alpha: 0.10) : t.surface,
         elevation: 0,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(11),
@@ -363,8 +535,13 @@ class _Fila extends StatelessWidget {
             handicap,
             IconButton(
               onPressed: onQuitar,
-              icon: Icon(Icons.person_remove_outlined, size: 17, color: t.sub),
-              tooltip: 'Quitar del torneo',
+              icon: Icon(
+                  marcado
+                      ? Icons.check_box_outlined
+                      : Icons.check_box_outline_blank,
+                  size: 19,
+                  color: marcado ? t.primary : t.sub),
+              tooltip: marcado ? 'No quitarlo' : 'Marcar para quitar',
             ),
           ]),
         ),
@@ -372,8 +549,10 @@ class _Fila extends StatelessWidget {
     }
 
     return Container(
-      decoration:
-          BoxDecoration(border: Border(bottom: BorderSide(color: t.divider))),
+      decoration: BoxDecoration(
+        color: marcado ? t.primary.withValues(alpha: 0.10) : null,
+        border: Border(bottom: BorderSide(color: t.divider)),
+      ),
       child: Row(children: [
         if (ancho.columnasCompletas)
           SizedBox(
@@ -396,8 +575,13 @@ class _Fila extends StatelessWidget {
             width: 48,
             child: IconButton(
               onPressed: onQuitar,
-              icon: Icon(Icons.person_remove_outlined, size: 17, color: t.sub),
-              tooltip: 'Quitar del torneo',
+              icon: Icon(
+                  marcado
+                      ? Icons.check_box_outlined
+                      : Icons.check_box_outline_blank,
+                  size: 19,
+                  color: marcado ? t.primary : t.sub),
+              tooltip: marcado ? 'No quitarlo' : 'Marcar para quitar',
             ),
           ),
       ]),

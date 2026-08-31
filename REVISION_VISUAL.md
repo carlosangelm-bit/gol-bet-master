@@ -409,3 +409,42 @@ como score personal produciría diferenciales que no existen.
 
 **Un torneo por equipos se puntúa por score o por Stableford**, no por dinero: el
 dinero es de personas, y en estas rondas no hay apuestas.
+
+---
+
+# Quitar inscritos en bloque · Portal → Inscritos
+
+**El caso real: Copa de Primavera con 153 inscritos y 22 salidas.** Hay que bajar
+a 88, y eso son 65 fuera.
+
+## Cómo se hace ahora
+
+1. **Toca la casilla** de una fila. Nada se guarda y **nada se mueve**: aparece
+   una barra arriba con `1 marcado para quitar`.
+2. **Sigue tocando.** Puedes dar veinte toques seguidos en la misma posición y
+   contarán veinte — la lista no se recompone hasta confirmar.
+3. **`Quitar 20`** en la barra. Una escritura, un aviso.
+
+**Con el buscador:** escribe un apellido y toca **`Marcar los N`**. Marca los que
+se ven, no los 153 — filtrar y luego marcar todo sería lo contrario de lo que
+pide quien acaba de filtrar.
+
+## Los tres síntomas que esto cierra
+
+| Antes | Ahora |
+|---|---|
+| Seis clics seguidos contaban uno | Nada se mueve hasta confirmar |
+| El aviso tapaba el botón de la fila siguiente | La barra va **arriba**; el aviso, abajo |
+| Sin forma de decir «estos veinte» | Una acción para N |
+
+## Y una cosa que hay que intentar romper
+
+**Marca veinte y quita el wifi antes de tocar `Quitar 20`.** Debe decir *«No se
+pudo quitar a 20. Siguen marcados: vuelve a intentarlo»* — **y las veinte marcas
+deben seguir ahí.** Perder veinte toques porque falló la red, y sin decirlo, es
+el trabajo que esto viene a quitar.
+
+## Y con eso, la creación por lotes
+
+Baja Copa de Primavera a 88 y ve a **Grupos y salidas**: 22 grupos, 22 salidas, y
+el botón `Crear 22 rondas` encendido. **No hace falta montar otro torneo.**

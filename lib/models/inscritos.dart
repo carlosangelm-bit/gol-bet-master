@@ -139,6 +139,34 @@ Torneo sinInscrito(Torneo t, String playerId) {
   );
 }
 
+/// Quita VARIOS de una vez.
+///
+/// ── Por qué en bloque y no en bucle ────────────────────────────────────────
+///
+/// «Copa de Primavera tiene 153 inscritos y las salidas son 22. Para probar hay
+/// que bajar a 88: 65 personas fuera, y solo se puede de una en una.»
+///
+/// Quitar uno a uno no era solo lento: cada quitado guardaba el torneo, la lista
+/// se recomponía, y seis clics seguidos en la misma posición contaban UNO —los
+/// otros cinco caían mientras la fila se recolocaba—. Encadenar la misma acción
+/// sesenta y cinco veces sobre una lista que se mueve no es una molestia, es
+/// imposible.
+///
+/// Esto lo convierte en una escritura y en un solo cambio de lista. Es la misma
+/// decisión que ya se tomó en la importación: pegar 150 nombres es UNA acción,
+/// así que quitar 65 también.
+Torneo sinInscritos(Torneo t, Set<String> playerIds) {
+  if (playerIds.isEmpty) return t;
+  final fuera = t.participantes.where(playerIds.contains).toSet();
+  if (fuera.isEmpty) return t;
+  return t.copyWith(
+    participantes: t.participantes.where((p) => !fuera.contains(p)).toList(),
+    // Y de la siembra del cuadro, por lo mismo que en singular: dejarlos ahí
+    // cruzaría a gente que ya no juega.
+    siembra: t.siembra.where((p) => !fuera.contains(p)).toList(),
+  );
+}
+
 /// Añade ids al final, sin duplicar y conservando el orden de inscripción.
 Torneo conInscritos(Torneo t, List<String> ids) {
   final ya = t.participantes.toSet();
