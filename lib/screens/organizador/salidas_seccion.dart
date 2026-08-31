@@ -101,10 +101,28 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
   /// porque un reparto a mano sobre otro tamaño no significa nada.
   List<GrupoDeSalida>? _aMano;
 
+  /// El torneo VIVO, no la copia del argumento.
+  ///
+  /// ── Por qué se lee del provider y no de `widget.torneo` ──────────────────
+  ///
+  /// Al elegir un campo, la sección seguía diciendo «Sin campo todavía» hasta
+  /// recargar la página. Es la familia de siempre —el dato llega y la
+  /// superficie no se entera— y aquí la causa era de dos partes: un pop de más
+  /// que rompía el flujo, y que el campo venía en `widget.torneo`, o sea de una
+  /// copia que solo se renueva si el PADRE reconstruye.
+  ///
+  /// Leerlo aquí hace que la sección no dependa de que nadie más se entere: es
+  /// lo mismo que ya hacía BloqueTele con el suyo, y por el mismo motivo.
+  Torneo get _t =>
+      context.watch<TorneoProvider>().torneos.firstWhere(
+            (x) => x.id == widget.torneo.id,
+            orElse: () => widget.torneo,
+          );
+
   PlanDeShotgun _plan() {
     final base = planDeShotgun(
-      padron: widget.torneo.participantes,
-      campo: widget.torneo.campo,
+      padron: _t.participantes,
+      campo: _t.campo,
       tamano: _tamano,
       dosEnPar3: _dosEnPar3,
       par3AMano: _par3AMano,
@@ -145,7 +163,7 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
         _Etiqueta('EL CAMPO', t: t),
         const SizedBox(height: 8),
         _Campo(
-          campo: widget.torneo.campo,
+          campo: _t.campo,
           t: t,
           onElegir: _elegirCampo,
         ),
@@ -199,12 +217,10 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
         //
         // Solo aparece si hace falta: con los pares bien cargados esto sería
         // una fila más que nadie necesita tocar.
-        if (_dosEnPar3 &&
-            widget.torneo.campo != null &&
-            widget.torneo.campo!.holes.isNotEmpty) ...[
+        if (_dosEnPar3 && _t.campo != null && _t.campo!.holes.isNotEmpty) ...[
           const SizedBox(height: 10),
           _Par3AMano(
-            campo: widget.torneo.campo!,
+            campo: _t.campo!,
             marcados: _par3AMano,
             t: t,
             onCambio: (h) => setState(() {
@@ -212,7 +228,7 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
               // partir de ahí la lista manda entera, así que quitar uno del
               // campo funciona igual que añadir uno que no trae.
               final base = _par3AMano.isEmpty
-                  ? widget.torneo.campo!.holes
+                  ? _t.campo!.holes
                       .where((x) => x.isPar3)
                       .map((x) => x.hole)
                       .toSet()
@@ -287,10 +303,13 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
       // El MISMO selector del editor, del asistente y del arranque rápido. Uno
       // propio aquí habría dado dos formas de elegir campo y dos resultados
       // para el mismo club.
-      builder: (hoja) => CoursePickerSheet(
+      builder: (_) => CoursePickerSheet(
         t: t,
+        // OJO: el selector se cierra SOLO —`_pickTee` hace su propio
+        // `Navigator.pop` antes de llamar aquí—. Popear otra vez desde este
+        // callback se lleva la ruta de DEBAJO, que es el portal entero. Era la
+        // otra mitad de por qué elegir un campo no parecía funcionar.
         onSelected: (info, _) async {
-          Navigator.pop(hoja);
           // El torneo VIVO, no la copia del argumento: la sección puede llevar
           // rato abierta y guardar sobre una copia vieja borraría lo que se
           // haya tocado en otra sección desde entonces.
@@ -349,7 +368,8 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
   }
 
   Future<void> _crear(PlanDeShotgun plan) async {
-    final campo = widget.torneo.campo;
+    final torneo = _t;
+    final campo = torneo.campo;
     if (campo == null) return;
     final messenger = ScaffoldMessenger.of(context);
     final directorio = context.read<PlayerProvider>().directory;
@@ -360,13 +380,13 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
 
     final rondas = rondasDelPlan(
       plan: plan,
-      torneoId: widget.torneo.id,
+      torneoId: torneo.id,
       campo: campo,
       porId: porId,
       cuando: DateTime.now(),
       // La ventaja del torneo decide si el handicap entra: con "sin ventaja"
       // meterlo aquí daría golpes que el torneo dijo que no se dan.
-      handicaps: widget.torneo.ventaja == VentajaDeTorneo.handicap
+      handicaps: torneo.ventaja == VentajaDeTorneo.handicap
           ? handicaps
           : const {},
     );

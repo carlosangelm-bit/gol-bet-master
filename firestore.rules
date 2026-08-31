@@ -19,6 +19,37 @@ service cloud.firestore {
     // donde la app lista de verdad Y la condición de la regla obliga a acotar la
     // consulta —ver torneoResultados, que es el único caso—.
 
+    // ══════════════════════════════════════════════════════════════════════
+    // CORRECCIONES DE CAMPO — la colección que NO tenía regla
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Al elegir un campo desde el portal salía permission-denied. No era una
+    // regla estricta: era que NO HABÍA NINGUNA. Sin regla, el deny por defecto
+    // manda, y el servicio llevaba desde su primer día pidiendo un documento
+    // que nadie le podía dar.
+    //
+    // Lo que hay aquí son datos del CAMPO —pares y stroke index corregidos a
+    // mano cuando la API los trae mal—, no de ninguna persona. El punto entero
+    // de una corrección compartida es que la lean todos: si solo la leyera
+    // quien la escribió, dejaría de ser una corrección y sería una preferencia.
+    //
+    // GET, no READ. El servicio hace exactamente una cosa —`.doc(id).get()`— y
+    // nunca lista. Es la cuarta vez que esta distinción aparece en el fichero,
+    // y las tres anteriores costaron una sonda contra producción cada una:
+    // `read` habría concedido de paso un listado de todos los campos corregidos
+    // que ningún código pide.
+    //
+    // Y NADIE ESCRIBE. Ni una línea de la app escribe aquí: las correcciones
+    // se curan a mano desde la consola después de comprobarlas contra el
+    // campo. Dejar el write abierto permitiría que cualquiera con cuenta
+    // cambiara los pares de un campo para todos los usuarios del sistema, y
+    // eso mueve handicaps y clasificaciones ajenas.
+    match /courseCorrections/{courseId} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow write: if false;
+    }
+
     // CATÁLOGO GLOBAL DE JUGADORES
     match /players/{playerId} {
       // La app SIEMPRE pide por id (PlayerService._players.doc(...)). Listar

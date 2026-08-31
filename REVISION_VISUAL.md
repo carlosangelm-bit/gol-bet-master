@@ -274,7 +274,13 @@ editor del torneo, en la app.
   a uno bueno hasta llegar al reparto.
 
 Tócalo: abre el **mismo selector** del asistente, del arranque rápido y del
-editor. Elige uno y el resto de la sección se rellena solo.
+editor. Elige uno y **el resto de la sección se rellena en el sitio, sin
+recargar** — el nombre del campo, las salidas y el número del botón.
+
+> Si hay que recargar para verlo, es el fallo de antes: la sección leía una copia
+> del torneo en vez del vivo. Y en la consola no debe salir ningún
+> `permission-denied` de `courseCorrections`: esa colección no tenía regla
+> ninguna, así que el deny por defecto la denegaba desde el primer día.
 
 ## Si el campo no trae los par 3
 

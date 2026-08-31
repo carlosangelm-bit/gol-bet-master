@@ -1,4 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
+import 'dart:io';
 // SHOTGUN — el reparto, las salidas, y lo que se dice cuando no cuadra
 //
 // «Crear veintidós rondas de una vez es lo que hace posible un torneo de 88
@@ -368,40 +369,6 @@ void main() {
   // impedimento que no existe.
   // ───────────────────────────────────────────────────────────────────────────
   group('6 · la pantalla dice lo que el plan calcula', () {
-    Future<void> montar(WidgetTester tester, Torneo t) async {
-      // Una ventana muy alta a propósito: un ListView no construye lo que no
-      // se ve, y el botón vive debajo de veinticuatro grupos. Con una pantalla
-      // normal el test comprobaría solo la cabecera.
-      tester.view.physicalSize = const Size(1440, 6000);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
-      await tester.pumpWidget(MultiProvider(
-        providers: [
-          ChangeNotifierProvider(
-              create: (_) => PlayerProvider()
-                ..sembrar([
-                  for (var i = 1; i <= 150; i++)
-                    PlayerWithLink(
-                        player: Player(id: 'j$i', name: 'Jugador $i')),
-                ])),
-        ],
-        child: MaterialApp(
-          home: Scaffold(
-            body: LayoutBuilder(
-              builder: (_, c) => SalidasSeccion(
-                  torneo: t, ancho: anchoDe(c.maxWidth), t: GolfTheme.classic),
-            ),
-          ),
-        ),
-      ));
-      await tester.pump(const Duration(milliseconds: 200));
-    }
-
-    String texto(WidgetTester tester) => tester
-        .widgetList<Text>(find.byType(Text))
-        .map((w) => w.data ?? '')
-        .join(' · ');
-
     Torneo torneo({int inscritos = 88, CourseInfo? campo}) => Torneo(
           id: 't1',
           nombre: 'Copa',
@@ -413,8 +380,8 @@ void main() {
         (tester) async {
       // El criterio que decide si el módulo sirve: UNA acción, y que diga qué
       // va a hacer antes de hacerlo.
-      await montar(tester, torneo());
-      final txt = texto(tester);
+      await montarSeccion(tester, torneo());
+      final txt = textoDe(tester);
       expect(txt, contains('Crear 22 rondas'));
       expect(txt, contains('22 salidas'));
       // Y las salidas como título de cada grupo, no "Grupo 14".
@@ -424,8 +391,8 @@ void main() {
 
     testWidgets('CLAVE: cuando no caben, la pantalla lo dice con el número',
         (tester) async {
-      await montar(tester, torneo(inscritos: 93));
-      final txt = texto(tester);
+      await montarSeccion(tester, torneo(inscritos: 93));
+      final txt = textoDe(tester);
       expect(txt, contains('24 grupos'));
       expect(txt, contains('no caben 2'));
       // Y el botón NO se puede pulsar: repartir como se pueda es lo que no se
@@ -436,9 +403,9 @@ void main() {
 
     testWidgets('CLAVE: un campo sin hoyos se dice, y con su nombre',
         (tester) async {
-      await montar(tester,
+      await montarSeccion(tester,
           torneo(campo: const CourseInfo(name: 'Bosques', holes: [])));
-      final txt = texto(tester);
+      final txt = textoDe(tester);
       expect(txt, contains('Bosques'));
       expect(txt, contains('par 3'));
       final boton = tester.widget<FilledButton>(find.byType(FilledButton));
@@ -448,10 +415,10 @@ void main() {
     testWidgets('CONTRAPESO: y con todo en orden el botón SÍ se puede pulsar',
         (tester) async {
       // Sin esto, un botón siempre apagado pasaría los dos tests de arriba.
-      await montar(tester, torneo(inscritos: 78));
+      await montarSeccion(tester, torneo(inscritos: 78));
       final boton = tester.widget<FilledButton>(find.byType(FilledButton));
       expect(boton.onPressed, isNotNull);
-      expect(texto(tester), contains('sobran 2'),
+      expect(textoDe(tester), contains('sobran 2'),
           reason: 'sobrar salidas se avisa pero no impide');
     });
   });
@@ -574,6 +541,141 @@ void main() {
           Torneo(id: 't1', nombre: 'Copa',
               participantes: _padron(60), campo: _campo()));
       expect(textoDe(tester), contains('Par 3 según el campo: 3, 7, 12, 16'));
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 9 · QUE LA SECCIÓN SE ENTERE SIN RECARGAR
+  //
+  // «Si recargo la página, sí se muestra actualizado. Pero la sección sigue
+  // diciendo "Sin campo todavía" hasta que se recarga. El organizador elige el
+  // campo, ve el mismo aviso rojo, y concluye que falló.»
+  //
+  // Dos causas, y las dos son la familia de siempre —el dato llega y la
+  // superficie no se entera—:
+  //
+  //   1 · `CoursePickerSheet._pickTee` hace su PROPIO Navigator.pop antes de
+  //       llamar al callback. Popear otra vez desde el callback se lleva la
+  //       ruta de debajo, que es el portal entero.
+  //   2 · el campo venía en `widget.torneo`: una copia que solo se renueva si
+  //       el PADRE reconstruye.
+  //
+  // Este test cubre la segunda, que es la estructural: guarda por el provider y
+  // exige que la sección lo enseñe SIN volver a montarla.
+  // ───────────────────────────────────────────────────────────────────────────
+  group('9 · el campo elegido se ve sin recargar', () {
+    testWidgets('CLAVE: guardar el campo actualiza la sección en el sitio',
+        (tester) async {
+      final t = Torneo(
+          id: 't1', nombre: 'Copa', participantes: _padron(88));
+      final prov = TorneoProvider()..sembrar([t]);
+
+      tester.view.physicalSize = const Size(1440, 6000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+              create: (_) => PlayerProvider()
+                ..sembrar([
+                  for (var i = 1; i <= 150; i++)
+                    PlayerWithLink(
+                        player: Player(id: 'j$i', name: 'Jugador $i')),
+                ])),
+          ChangeNotifierProvider<TorneoProvider>.value(value: prov),
+          ChangeNotifierProvider(create: (_) => UserProfileProvider()),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: LayoutBuilder(
+              // El torneo del ARGUMENTO se queda sin campo a propósito: es la
+              // copia vieja. Si la sección lo leyera de aquí, este test
+              // fallaría — y era exactamente el fallo.
+              builder: (_, c) => SalidasSeccion(
+                  torneo: t,
+                  ancho: anchoDe(c.maxWidth),
+                  t: GolfTheme.classic),
+            ),
+          ),
+        ),
+      ));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(textoDe(tester), contains('Sin campo todavía'));
+
+      // Lo que hace elegir un campo, sin pasar por la hoja.
+      prov.sembrar([t.copyWith(campo: _campo())]);
+      await tester.pump();
+
+      final txt = textoDe(tester);
+      expect(txt, contains('Los Encinos'), reason: 'sin recargar nada');
+      expect(txt, isNot(contains('Sin campo todavía')));
+      // Y todo lo de abajo se rellena: las salidas salen de sus hoyos.
+      expect(txt, contains('22 salidas'));
+      expect(txt, contains('Crear 22 rondas'));
+    });
+
+    testWidgets('CONTRAPESO: y sin campo sigue diciéndolo', (tester) async {
+      // Sin esto, una sección que enseñara siempre un campo pasaría el test de
+      // arriba.
+      await montarSeccion(tester,
+          Torneo(id: 't1', nombre: 'Copa', participantes: _padron(88)));
+      expect(textoDe(tester), contains('Sin campo todavía'));
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  group('10 · la regla que faltaba: courseCorrections', () {
+    String reglaDe(String coleccion) {
+      final texto = File('firestore.rules').readAsStringSync();
+      final i = texto.indexOf('match /$coleccion/');
+      expect(i, greaterThan(-1), reason: 'no existe la regla de $coleccion');
+      final resto = texto.substring(i + 10);
+      final j = resto.indexOf('\n    match /');
+      final bloque = j == -1 ? resto : resto.substring(0, j);
+      return bloque
+          .split('\n')
+          .map((l) {
+            final c = l.indexOf('//');
+            return c == -1 ? l : l.substring(0, c);
+          })
+          .join('\n');
+    }
+
+    test('CLAVE: existe — no tenerla era el permission-denied', () {
+      // No era una regla estricta: era que NO HABÍA NINGUNA, así que el deny
+      // por defecto mandaba y el servicio llevaba desde el primer día pidiendo
+      // un documento que nadie le podía dar.
+      final r = reglaDe('courseCorrections');
+      expect(r, contains('allow get:'));
+    });
+
+    test('CLAVE: GET y no READ — el servicio nunca lista', () {
+      // Cuarta vez que esta distinción aparece en el fichero. `read` habría
+      // concedido de paso el listado de todos los campos corregidos, que
+      // ningún código pide.
+      final r = reglaDe('courseCorrections');
+      expect(r.contains('allow read'), isFalse);
+      expect(r, contains('allow list: if false'));
+    });
+
+    test('CLAVE: y nadie escribe — las correcciones se curan a mano', () {
+      // Un write abierto dejaría que cualquiera con cuenta cambiara los pares
+      // de un campo para TODOS: eso mueve handicaps y clasificaciones ajenas.
+      final r = reglaDe('courseCorrections');
+      expect(r, contains('allow write: if false'));
+    });
+
+    test('CONTRAPESO: y el servicio de verdad no lista ni escribe', () {
+      // La regla dice "solo get". Esto comprueba que el código no pide más —
+      // si mañana alguien añade un `.where(...)`, la regla lo rechazará en
+      // producción y no en la revisión, que es demasiado tarde.
+      final codigo =
+          File('lib/services/course_corrections_service.dart').readAsStringSync();
+      for (final prohibido in ['.where(', '.set(', '.update(', '.add(']) {
+        expect(codigo.contains('_corrections$prohibido'), isFalse,
+            reason: prohibido);
+      }
+      expect(codigo, contains('_corrections.doc('));
     });
   });
 }
