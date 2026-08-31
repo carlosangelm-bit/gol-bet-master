@@ -708,7 +708,7 @@ class _BloqueEnJuego extends StatelessWidget {
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Text('🏆 EN JUEGO',
+            Text('EN JUEGO',
                 style: TextStyle(
                     color: t.accent,
                     fontSize: 10,

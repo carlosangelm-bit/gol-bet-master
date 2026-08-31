@@ -13,6 +13,7 @@
 // Y cuando el enlace no vale se dice sin rodeos. Un "algo ha ido mal" en la
 // primera pantalla que ve un usuario nuevo es la peor primera impresión posible;
 // "el organizador revocó este enlace" es información.
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
@@ -73,7 +74,7 @@ class _TorneoEnlaceScreenState extends State<TorneoEnlaceScreen> {
             Padding(
               padding: const EdgeInsets.all(20),
               child: Column(children: [
-                const Text('🏆', style: TextStyle(fontSize: 40)),
+                const Icon(GolfIcons.trofeo, size: GolfIcons.juntoAlHeroe),
                 const SizedBox(height: 10),
                 Text('Te han compartido un torneo',
                     textAlign: TextAlign.center,

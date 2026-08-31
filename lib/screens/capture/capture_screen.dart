@@ -629,7 +629,7 @@ class _HoleInfoBar extends StatelessWidget {
                   ch.hole <= 9 ? t.primary : t.accent, t),
               if (ch.isPar3) ...[
                 const SizedBox(width: 6),
-                _chip('⛳ Oyes', t.accent, t, accent: true),
+                _chip('Oyes', t.accent, t, accent: true),
               ],
             ]),
           ),
@@ -1707,14 +1707,14 @@ class _HoleNavButtons extends StatelessWidget {
         Row(children: [
           Expanded(child: _NavBtn(label: prevLabel, enabled: onPrev != null, t: t, onTap: onPrev)),
           const SizedBox(width: 8),
-          Expanded(child: _NavBtn(label: '✓ Terminar', enabled: true, t: t, primary: true,
+          Expanded(child: _NavBtn(label: 'Terminar', enabled: true, t: t, primary: true,
               onTap: () => _finishRound(context))),
         ]),
         const SizedBox(height: 6),
         SizedBox(
           width: double.infinity,
           child: _NavBtn(
-            label: '⛳ Continuar ${startingNine == StartingNine.back ? "Front 9" : "Back 9"} →',
+            label: 'Continuar ${startingNine == StartingNine.back ? "Front 9" : "Back 9"} →',
             enabled: true, t: t, primary: false, onTap: onContinueTo18,
           ),
         ),
@@ -1723,9 +1723,9 @@ class _HoleNavButtons extends StatelessWidget {
 
     final String nextLabel;
     if (isVeryLast) {
-      nextLabel = '✓ Terminar';
+      nextLabel = 'Terminar';
     } else if (isLastOfFirstSegment) {
-      nextLabel = '⛳ ${startingNine == StartingNine.back ? "Front 9 →" : "Back 9 →"}';
+      nextLabel = '\${startingNine == StartingNine.back ? "Front 9 →" : "Back 9 →"}';
     } else {
       nextLabel = nextHole != null ? 'Hoyo $nextHole →' : '→';
     }
@@ -1792,7 +1792,7 @@ class _HoleNavButtons extends StatelessWidget {
     prov.setTab(0);
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('⚠️ Sin conexión. La ronda se guardó localmente y se sincronizará cuando haya conexión.'),
+        content: const Text('Sin conexión. La ronda se guardó localmente y se sincronizará cuando haya conexión.'),
         backgroundColor: Colors.orange.shade700,
         duration: const Duration(seconds: 5),
       ));
@@ -2163,7 +2163,7 @@ class _ParejaBaseSection extends StatelessWidget {
             color: t.text.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Text('🎲 PAREJA BASE: ${par(p.base)}',
+          child: Text('PAREJA BASE: ${par(p.base)}',
               style: TextStyle(
                   color: t.text,
                   fontSize: 11,
@@ -2294,7 +2294,7 @@ class _SixesBloqueSection extends StatelessWidget {
               color: t.text.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text('🔄 BLOQUE $bloque · HOYOS $desde-$hasta',
+            child: Text('BLOQUE $bloque · HOYOS $desde-$hasta',
                 style: TextStyle(
                     color: t.text,
                     fontSize: 11,
@@ -2371,7 +2371,7 @@ class _WolfCallSection extends StatelessWidget {
               color: t.text.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text('🐺 WOLF: ${nombre(wolf).toUpperCase()}',
+            child: Text('WOLF: ${nombre(wolf).toUpperCase()}',
                 style: TextStyle(
                     color: t.text,
                     fontSize: 11,

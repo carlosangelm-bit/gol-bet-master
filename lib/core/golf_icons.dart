@@ -61,6 +61,18 @@ class GolfIcons {
   static const equilibrio = Icons.balance_outlined;       // ⚖️
   static const acuerdo = Icons.handshake_outlined;        // 🤝
 
+  // ── Lo que pasa en un hoyo ────────────────────────────────────────────────
+  //
+  // Los seis eventos que pagan unidades venían de emoji de ANIMALES y de
+  // PLAYA: 🐦 🦅 🏖️. Ninguno dice lo que mide. Se resuelven por significado,
+  // igual que se hizo con la serpiente y el lobo:
+  static const bajoPar = Icons.trending_down;              // 🐦 un golpe bajo
+  static const dobleBajoPar = Icons.keyboard_double_arrow_down; // 🦅 dos
+  static const bunker = Icons.beach_access_outlined;       // 🏖️ salvado de arena
+  static const unico = Icons.star_outline;                 // ⭐ el único que
+  static const hoyoDirecto = Icons.adjust;                 // 🕳️ entró de fuera
+  static const meta = Icons.flag_outlined;                 // 🏁 terminó
+
   // ── Dinero y datos ────────────────────────────────────────────────────────
   static const dinero = Icons.payments_outlined;          // 💰
   static const grafico = Icons.bar_chart;                 // 📊
@@ -95,4 +107,42 @@ class GolfIcons {
 
   /// Junto al HÉROE. Uno por pantalla, si acaso.
   static const double juntoAlHeroe = 34;
+
+  // ── La paleta que el usuario ELIGE ────────────────────────────────────────
+  //
+  // Un grupo de apuestas guardado lleva una marca que su dueño escoge. Era un
+  // emoji de una lista —⛳ 🌮 🍻 🔥…— y por eso tenía los tres problemas de
+  // siempre, con uno más encima: la marca que alguien eligió para su grupo se
+  // veía distinta en el teléfono de cada uno de sus amigos.
+  //
+  // Sigue eligiéndose. Lo que cambia es que se guarda una CLAVE y no un
+  // carácter, así que la marca se dibuja con el trazo y el color del tema como
+  // cualquier otra cosa.
+  ///
+  /// Son DOCE porque las listas que sustituye tenían diez y doce: una paleta
+  /// más corta habría dejado a gente sin la marca que ya había elegido.
+  static const paleta = <String, IconData>{
+    'bandera': bandera,     // ⛳
+    'golpe': golpe,         // 🏌️
+    'trofeo': trofeo,       // 🏆
+    'medalla': medalla,     // 🎖️ 🥇
+    'diana': diana,         // 🎯
+    'dinero': dinero,       // 💰 🤑
+    'cartas': cartas,       // 🃏
+    'azar': azar,           // 🎲
+    'racha': racha,         // 🔥
+    'rapido': rapido,       // ⚡
+    'destello': destello,   // 💎 🌟
+    'acuerdo': acuerdo,     // 🤝
+  };
+
+  /// El icono de una clave guardada.
+  ///
+  /// Cualquier valor que no esté en la paleta —incluidos los emoji de los
+  /// grupos guardados antes de esto— cae en la bandera. Sin migración y sin
+  /// romperse: un grupo viejo enseña la marca por defecto en vez de un hueco.
+  static IconData deClave(String? clave) => paleta[clave] ?? bandera;
+
+  /// La clave por defecto de un grupo nuevo.
+  static const claveInicial = 'bandera';
 }

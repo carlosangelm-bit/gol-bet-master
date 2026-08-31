@@ -4885,7 +4885,11 @@ class BettingGroup {
     required this.id,
     required this.name,
     this.description,
-    this.emoji        = '⛳',
+    // La MARCA del grupo, como clave de GolfIcons.paleta y no como emoji.
+    // Se guarda una clave para que el dibujo lo ponga el tema: la marca que
+    // alguien eligió se veía distinta en el teléfono de cada uno de sus
+    // amigos. Un valor viejo cae en la bandera, sin migración.
+    this.emoji        = GolfIcons.claveInicial,
     this.playerIds    = const [],
     this.pairRules    = const [],
     this.modulosDePartida = const [],
@@ -5102,7 +5106,7 @@ class BettingGroup {
     id:          (j['id']   as String?) ?? '',
     name:        (j['name'] as String?) ?? 'Grupo',
     description: j['description'] as String?,
-    emoji:       (j['emoji'] as String?) ?? '⛳',
+    emoji:       (j['emoji'] as String?) ?? GolfIcons.claveInicial,
     playerIds:   (j['playerIds'] as List? ?? [])
         .map((e) => e as String)
         .toList(),

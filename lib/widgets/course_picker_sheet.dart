@@ -547,7 +547,7 @@ class _CoursePickerSheetState extends State<CoursePickerSheet> {
                       backgroundColor: isFav ? t.sub : t.profit,
                       content: Text(isFav
                           ? '${course.clubName} eliminado de favoritos'
-                          : '⭐ ${course.clubName} guardado como favorito'),
+                          : '\${course.clubName} guardado como favorito'),
                       duration: const Duration(seconds: 2),
                     ));
                   },

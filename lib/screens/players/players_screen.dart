@@ -174,7 +174,7 @@ class _PlayersScreenState extends State<PlayersScreen> {
             Text(
               isBlocked
                   ? 'Una extensión del navegador (AdBlock, uBlock, etc.) está bloqueando Firebase.\n\n'
-                    '✅ Solución: abre esta app en modo incógnito (sin extensiones) o desactiva el bloqueador para esta página.'
+'Solución: abre esta app en modo incógnito (sin extensiones) o desactiva el bloqueador para esta página.'
                   : 'Verifica tu conexión a internet e intenta de nuevo.',
               textAlign: TextAlign.center,
               style: TextStyle(color: t.sub, fontSize: 13, height: 1.5),

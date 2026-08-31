@@ -44,10 +44,10 @@ class _DuelPermission {
 
   String get bannerLabel {
     switch (level) {
-      case _Permission.owner:               return '✏️ Puedes editar este duelo';
-      case _Permission.participantEditable: return '💬 Puedes proponer cambios';
-      case _Permission.participantReadOnly: return '👁 Solo lectura (modo admin)';
-      case _Permission.outsider:            return '🔒 No participas en este duelo';
+      case _Permission.owner:               return 'Puedes editar este duelo';
+      case _Permission.participantEditable: return 'Puedes proponer cambios';
+      case _Permission.participantReadOnly: return 'Solo lectura (modo admin)';
+      case _Permission.outsider:            return 'No participas en este duelo';
     }
   }
 
@@ -1309,7 +1309,7 @@ class _BetsHeader extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('💰 Apuestas',
+        Text('Apuestas',
             style: TextStyle(color: t.text, fontSize: 22, fontWeight: FontWeight.w800)),
         const SizedBox(height: 2),
         Text(round.name, style: TextStyle(color: t.sub, fontSize: 13)),
@@ -1998,7 +1998,7 @@ class _BetRow extends StatelessWidget {
                 _StatusChip(label: _statusLabel()!, status: mod.status, t: t),
               // Chip "Solo lectura" si está en modo read-only
               if (perm.isReadOnly)
-                _MiniChip(label: '🔒 Solo lectura', color: t.sub, t: t),
+                _MiniChip(label: 'Solo lectura', color: t.sub, t: t),
             ]),
           ]),
         ),

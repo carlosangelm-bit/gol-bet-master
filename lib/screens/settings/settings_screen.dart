@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // SETTINGS SCREEN — Ajustes de la app: Perfil, Tema, Campos favoritos
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:provider/provider.dart';
@@ -420,9 +421,10 @@ class _HandicapIndexCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Center(
-              child: Text(
-                hi != null ? '⛳' : '📋',
-                style: const TextStyle(fontSize: 20),
+              child: Icon(
+                hi != null ? GolfIcons.bandera : GolfIcons.grafico,
+                size: GolfIcons.juntoATitulo,
+                color: hi != null ? t.primary : t.sub,
               ),
             ),
           ),
@@ -616,7 +618,7 @@ class _HandicapTrackerSheet extends StatelessWidget {
         Expanded(
           child: diffs.isEmpty
               ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  const Text('🏌️', style: TextStyle(fontSize: 48)),
+                  const Icon(GolfIcons.golpe, size: GolfIcons.juntoAlHeroe),
                   const SizedBox(height: 12),
                   Text('Sin rondas registradas',
                       style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w700)),

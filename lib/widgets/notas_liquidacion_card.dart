@@ -13,7 +13,6 @@
 // bloque de avisos es "cosas rotas" deja de leerlo cuando dice algo normal, y
 // al revés, uno que aprende que es "información" ignora los rotos.
 // ─────────────────────────────────────────────────────────────────────────────
-import '../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import '../core/app_theme.dart';
 import '../engines/settlement_notes.dart';

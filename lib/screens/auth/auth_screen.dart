@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../core/golf_icons.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../providers/auth_provider.dart';
@@ -119,11 +120,11 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            _HeroBadge(icon: '⛳', label: 'Golf'),
+                            _HeroBadge(icon: GolfIcons.bandera, label: 'Golf'),
                             const SizedBox(width: 6),
-                            _HeroBadge(icon: '💰', label: 'Apuestas'),
+                            _HeroBadge(icon: GolfIcons.dinero, label: 'Apuestas'),
                             const SizedBox(width: 6),
-                            _HeroBadge(icon: '🏆', label: 'Resultados'),
+                            _HeroBadge(icon: GolfIcons.trofeo, label: 'Resultados'),
                           ],
                         ),
                       ],
@@ -388,7 +389,7 @@ class _GolfBgPainter extends CustomPainter {
 
 // ── Badge hero pequeño ────────────────────────────────────────────────────────
 class _HeroBadge extends StatelessWidget {
-  final String icon;
+  final IconData icon;
   final String label;
   const _HeroBadge({required this.icon, required this.label});
 
@@ -404,7 +405,7 @@ class _HeroBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(icon, style: const TextStyle(fontSize: 12)),
+          Icon(icon, size: GolfIcons.juntoAEtiqueta),
           const SizedBox(width: 4),
           Text(
             label,
@@ -733,7 +734,7 @@ class _ResetPasswordCard extends StatelessWidget {
           if (ok && context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                    content: Text('✅ Correo enviado. Revisa tu bandeja.')));
+                    content: Text('Correo enviado. Revisa tu bandeja.')));
             onBack();
           }
         },

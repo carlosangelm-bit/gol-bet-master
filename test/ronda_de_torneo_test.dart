@@ -455,8 +455,8 @@ void main() {
           PuntoDeTorneo.seguido(_publicar(
               _liga(ventaja: VentajaDeTorneo.ninguna, campo: _campoPrueba))));
       expect(errores, isEmpty);
-      expect(find.text('⛳ Elegir qué se juega y empezar'), findsOneWidget);
-      expect(find.text('⛳ Empezar ronda'), findsNothing);
+      expect(find.text('Elegir qué se juega y empezar'), findsOneWidget);
+      expect(find.text('Empezar ronda'), findsNothing);
       // Con dos dentro ya se puede arrancar, y ahí es donde se dice que la ronda
       // queda marcada: antes de eso lo que toca decir es qué falta.
       await tester.tap(find.text('+ Luis Herrera'));
@@ -495,7 +495,7 @@ void main() {
               playerIds: const [ana, beto],
               updatedAt: DateTime(2026, 1, 1)));
       expect(errores, isEmpty);
-      expect(find.text('⛳ Empezar ronda'), findsOneWidget);
+      expect(find.text('Empezar ronda'), findsOneWidget);
       expect(find.text('Revisar todo antes de empezar'), findsOneWidget);
     });
   });
@@ -649,7 +649,7 @@ void _pantallaDelTorneo() {
     testWidgets('ofrece crear una ronda del torneo', (tester) async {
       final errores = await _montarTabla(tester, _liga());
       expect(errores, isEmpty);
-      expect(find.text('⛳ Jugar una ronda de Copa de Primavera'),
+      expect(find.text('Jugar una ronda de Copa de Primavera'),
           findsOneWidget);
     });
 
@@ -1041,8 +1041,8 @@ void _elUltimoSalto() {
           )), yoSoy: 'Luis Herrera'),
           miFicha: 'mi_ficha');
       expect(errores, isEmpty);
-      expect(find.text('⛳ Empezar ronda'), findsOneWidget);
-      expect(find.text('⛳ Elegir qué se juega y empezar'), findsNothing);
+      expect(find.text('Empezar ronda'), findsOneWidget);
+      expect(find.text('Elegir qué se juega y empezar'), findsNothing);
       // Con dos dentro ya no falta nada, y ahí se dice por qué se puede lanzar.
       await tester.tap(find.text('+ Ana Ruiz'));
       await tester.pump(const Duration(milliseconds: 300));

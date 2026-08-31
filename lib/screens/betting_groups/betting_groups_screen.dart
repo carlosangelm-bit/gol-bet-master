@@ -2,6 +2,7 @@
 // BETTING GROUPS SCREEN — Lista de grupos habituales de apuestas
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:flutter/material.dart';
+import '../../core/golf_icons.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../models/models.dart';
@@ -150,8 +151,7 @@ class BettingGroupsScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Center(
-                child: Text(g.emoji,
-                    style: const TextStyle(fontSize: 22)),
+                child: Icon(GolfIcons.deClave(g.emoji), size: GolfIcons.juntoATitulo),
               ),
             ),
             const SizedBox(width: 12),

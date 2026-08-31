@@ -185,7 +185,7 @@ class _GamePresetsScreenState extends State<GamePresetsScreen> {
                 color: t.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Center(child: Text(preset.emoji, style: const TextStyle(fontSize: 22))),
+              child: Center(child: Icon(GolfIcons.deClave(preset.emoji), size: GolfIcons.juntoATitulo)),
             ),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -341,8 +341,8 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
   late List<BetModuleInstance> _modules;
   bool _saving = false;
 
-  // Emojis para elegir
-  static const _emojis = ['⛳️', '🏌️', '🎯', '💰', '🏆', '🎲', '🃏', '🤑', '🔥', '⚡'];
+  // La marca del preset: una CLAVE de GolfIcons.paleta, no un carácter.
+  static List<String> get _marcas => GolfIcons.paleta.keys.toList();
 
   @override
   void initState() {
@@ -350,7 +350,7 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
     final e = widget.existing;
     _nameCtrl = TextEditingController(text: e?.name ?? '');
     _descCtrl = TextEditingController(text: e?.description ?? '');
-    _emoji = e?.emoji ?? '⛳️';
+    _emoji = e?.emoji ?? GolfIcons.claveInicial;
     _modules = e != null
         ? e.toModules([]) // Sin jugadores por ahora (se asignan al crear ronda)
         : [];
@@ -392,7 +392,9 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: t.divider),
                   ),
-                  child: Center(child: Text(_emoji, style: const TextStyle(fontSize: 26))),
+                  child: Center(
+                      child: Icon(GolfIcons.deClave(_emoji),
+                          size: GolfIcons.juntoAlHeroe, color: t.primary)),
                 ),
               ),
               const SizedBox(width: 12),
@@ -493,7 +495,7 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
 
           // Botón guardar
           GPrimaryButton(
-            label: _saving ? 'Guardando...' : '💾  Guardar Configuración',
+            label: _saving ? 'Guardando...' : 'Guardar Configuración',
             onTap: _saving ? null : () => _save(context, t),
           ),
         ]),
@@ -562,7 +564,7 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
           const SizedBox(height: 20),
           Wrap(
             spacing: 12, runSpacing: 12,
-            children: _emojis.map((e) => GestureDetector(
+            children: _marcas.map((e) => GestureDetector(
               onTap: () { setState(() => _emoji = e); Navigator.pop(ctx); },
               child: Container(
                 width: 52, height: 52,
@@ -574,7 +576,10 @@ class _PresetEditorScreenState extends State<_PresetEditorScreen> {
                     width: e == _emoji ? 2 : 1,
                   ),
                 ),
-                child: Center(child: Text(e, style: const TextStyle(fontSize: 26))),
+                child: Center(
+                    child: Icon(GolfIcons.deClave(e),
+                        size: GolfIcons.juntoAlHeroe,
+                        color: e == _emoji ? t.primary : t.sub)),
               ),
             )).toList(),
           ),
@@ -827,7 +832,7 @@ class _PresetConfigWidgets {
       Row(children: [
         Expanded(child: _FormatCard(
           isSelected: cfg.formatMode == BetFormatMode.onePot,
-          icon: '🏆', title: BetFormatMode.onePot.label,
+          icon: GolfIcons.trofeo, title: BetFormatMode.onePot.label,
           description: 'Un solo pozo grupal.\nEl ganador cobra a todos.',
           t: t,
           onTap: () => setSt(() => update(cfg.copyWith(formatMode: BetFormatMode.onePot))),
@@ -835,7 +840,7 @@ class _PresetConfigWidgets {
         const SizedBox(width: 10),
         Expanded(child: _FormatCard(
           isSelected: cfg.formatMode == BetFormatMode.allVsAll,
-          icon: '⚔️', title: BetFormatMode.allVsAll.label,
+          icon: GolfIcons.duelo, title: BetFormatMode.allVsAll.label,
           description: 'Cada pareja tiene su\nduelo independiente.',
           t: t,
           onTap: () => setSt(() => update(cfg.copyWith(formatMode: BetFormatMode.allVsAll))),
@@ -967,13 +972,14 @@ class _PresetConfigWidgets {
             ),
           ),
           child: Row(children: [
-            Text(s.carryOver ? '🔥' : '❌', style: const TextStyle(fontSize: 20)),
+            Icon(s.carryOver ? GolfIcons.racha : GolfIcons.mal,
+                size: GolfIcons.juntoATitulo),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('Acumular empates (Carry)',
                   style: TextStyle(color: s.carryOver ? t.accent : t.text,
                       fontWeight: FontWeight.w700, fontSize: 14)),
-              Text(s.carryOver ? 'Los empates acumulan al siguiente hoyo 🔥'
+              Text(s.carryOver ? 'Los empates acumulan al siguiente hoyo '
                   : 'Los empates no se acumulan',
                   style: TextStyle(color: t.sub, fontSize: 11)),
             ])),
@@ -1216,7 +1222,7 @@ class _PresetConfigWidgets {
       const SizedBox(height: 20),
 
       // ── Zapato ─────────────────────────────────────────────────────────────
-      _label('👟 ZAPATO', t),
+      _label('ZAPATO', t),
       const SizedBox(height: 6),
       Text(
         isAllVsAll
@@ -1226,7 +1232,7 @@ class _PresetConfigWidgets {
       ),
       const SizedBox(height: 10),
       _toggleRow(
-        title: 'Activar zapato 👟',
+        title: 'Activar zapato ',
         subtitle: o.zapatoEnabled
             ? (isAllVsAll
                 ? 'Zapato por pareja: quien gane todos los oyeses vs otro cobra extra'
@@ -1381,7 +1387,7 @@ class _PresetConfigWidgets {
 // ── Tarjeta de selección de modo de formato (en presets) ─────────────────────
 class _FormatCard extends StatelessWidget {
   final bool isSelected;
-  final String icon;
+  final IconData icon;
   final String title;
   final String description;
   final GolfTheme t;
@@ -1420,7 +1426,8 @@ class _FormatCard extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(icon, style: const TextStyle(fontSize: 26)),
+            Icon(icon, size: GolfIcons.juntoAlHeroe,
+                color: isSelected ? t.primary : t.sub),
             const SizedBox(height: 6),
             Text(
               title,

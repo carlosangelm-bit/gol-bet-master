@@ -23,7 +23,7 @@ void main() {
     test('cada formación tiene etiqueta, icono y descripción', () {
       for (final f in Formacion.values) {
         expect(f.reglas.label, isNotEmpty, reason: f.name);
-        expect(f.reglas.icon, isNotEmpty, reason: f.name);
+        expect(() => f.reglas.icon, returnsNormally, reason: f.name);
         expect(f.reglas.descripcion, isNotEmpty, reason: f.name);
       }
     });

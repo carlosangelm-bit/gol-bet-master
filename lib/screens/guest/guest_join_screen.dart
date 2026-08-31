@@ -3,6 +3,7 @@
 // Pantalla de bienvenida para invitados sin cuenta.
 // Se accede mediante un enlace temporal generado por el admin.
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -522,7 +523,7 @@ class _GuestJoinScreenState extends State<GuestJoinScreen>
           boxShadow: [BoxShadow(color: _gold.withValues(alpha: 0.4), blurRadius: 20, offset: const Offset(0, 6))],
         ),
         child: const Center(
-          child: Text('⛳', style: TextStyle(fontSize: 32)),
+          child: Icon(GolfIcons.bandera, size: GolfIcons.juntoAlHeroe),
         ),
       ),
       const SizedBox(height: 10),

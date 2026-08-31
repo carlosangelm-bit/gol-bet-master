@@ -1190,7 +1190,7 @@ class _EmptyView extends StatelessWidget {
                         context.read<RoundProvider>().startRound(round);
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: const Text('✅ Ronda de prueba Best Ball cargada — ver consola para verificación'),
+                            content: const Text('Ronda de prueba Best Ball cargada — ver consola para verificación'),
                             backgroundColor: Colors.green.shade700,
                             duration: const Duration(seconds: 4),
                           ),
@@ -1380,9 +1380,9 @@ class _HeroSection extends StatelessWidget {
                   spacing: 10,
                   runSpacing: 8,
                   children: [
-                    _badge('⛳', 'Golf'),
-                    _badge('💰', 'Apuestas'),
-                    _badge('🏆', 'Resultados'),
+                    _badge(GolfIcons.bandera, 'Golf'),
+                    _badge(GolfIcons.dinero, 'Apuestas'),
+                    _badge(GolfIcons.trofeo, 'Resultados'),
                   ],
                 ),
               ],
@@ -1393,7 +1393,7 @@ class _HeroSection extends StatelessWidget {
     );
   }
 
-  Widget _badge(String icon, String label) => Container(
+  Widget _badge(IconData icon, String label) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
     decoration: BoxDecoration(
       color: Colors.white.withValues(alpha: 0.10),
@@ -1401,7 +1401,7 @@ class _HeroSection extends StatelessWidget {
       border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
     ),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Text(icon, style: const TextStyle(fontSize: 14)),
+      Icon(icon, size: GolfIcons.juntoAEtiqueta, color: Colors.white),
       const SizedBox(width: 5),
       Text(
         label,
@@ -2484,26 +2484,26 @@ class _ActiveRoundView extends StatelessWidget {
         Row(children: [
           Expanded(
             child: GSecButton(
-              label: '🕐  Historial',
+              label: 'Historial',
               onTap: () => openHistory(context),
             ),
           ),
           const SizedBox(width: 8),
           Expanded(
             child: GSecButton(
-              label: '⚙  Ajustes',
+              label: 'Ajustes',
               onTap: () => openSettings(context),
             ),
           ),
         ]),
         const SizedBox(height: 6),
         GSecButton(
-          label: '📋  Guardar como plantilla',
+          label: 'Guardar como plantilla',
           onTap: () => _saveAsTemplate(context, prov, t),
         ),
         const SizedBox(height: 6),
         GSecButton(
-          label: '🗑  Abandonar Ronda',
+          label: 'Abandonar Ronda',
           onTap: () => _confirmAbandon(context, prov, t),
         ),
       ]),
@@ -3580,7 +3580,7 @@ class _ActiveRoundView extends StatelessWidget {
           if (!ok && context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: const Text(
-                '⚠️ Sin conexión a Firestore. La ronda se guardó localmente y se sincronizará automáticamente cuando haya conexión.'),
+'Sin conexión a Firestore. La ronda se guardó localmente y se sincronizará automáticamente cuando haya conexión.'),
               backgroundColor: Colors.orange.shade700,
               duration: const Duration(seconds: 5),
             ));

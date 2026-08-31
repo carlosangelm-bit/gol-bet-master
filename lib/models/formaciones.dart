@@ -14,6 +14,9 @@
 // GENERA del conjunto. Ocho veces en esta app una lista literal se quedó vieja
 // cuando el enum creció.
 // ─────────────────────────────────────────────────────────────────────────────
+import 'package:flutter/material.dart';
+
+import '../core/golf_icons.dart';
 import 'models.dart';
 
 /// Cómo se arman los dos lados de una ronda por equipos.
@@ -37,7 +40,9 @@ enum Formacion {
 }
 
 class ReglasDeFormacion {
-  final String icon;
+  /// El icono de la formación. IconData y no emoji: un emoji no hereda el
+  /// color del tema y cambia de dibujo según el aparato.
+  final IconData icon;
   final String label;
   final String descripcion;
 
@@ -70,12 +75,12 @@ class ReglasDeFormacion {
 extension FormacionInfo on Formacion {
   ReglasDeFormacion get reglas => switch (this) {
         Formacion.manual => const ReglasDeFormacion(
-            icon: '👥',
+            icon: Icons.groups_outlined,
             label: 'Por equipos',
             descripcion: '2 lados · 1 enfrentamiento. Los armas tú.',
           ),
         Formacion.highAndLow => const ReglasDeFormacion(
-            icon: '⚖️',
+            icon: GolfIcons.equilibrio,
             label: 'High and Low',
             // El matiz del manual, dicho aquí: sin él la primera reacción a un
             // 2 contra 3 es que está desequilibrado, y no lo está tanto.
@@ -99,7 +104,7 @@ extension FormacionInfo on Formacion {
                 'frontera pasa el que va antes en la lista de jugadores.',
           ),
         Formacion.parejaBaseVsCampo => const ReglasDeFormacion(
-            icon: '🎲',
+            icon: GolfIcons.azar,
             label: 'Pareja base contra el campo',
             // La asimetría se explica AQUÍ y se llama formato, no defecto.
             descripcion:
@@ -125,7 +130,7 @@ extension FormacionInfo on Formacion {
                 'que si la queréis a suertes, sorteadla vosotros y ponedla aquí.',
           ),
         Formacion.parejaVsResto => const ReglasDeFormacion(
-            icon: '🎯',
+            icon: GolfIcons.diana,
             label: 'Pair vs Field',
             descripcion:
                 'Una pareja fija contra todos los demás, sin rotación en toda '

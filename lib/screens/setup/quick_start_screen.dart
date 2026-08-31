@@ -175,7 +175,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
         elevation: 0,
         iconTheme: IconThemeData(color: t.text),
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(tor == null ? bg!.name : '${tor.emoji} ${tor.nombre}',
+          Text(tor == null ? bg!.name : '${tor.nombre}',
               style: TextStyle(
                   color: t.text, fontWeight: FontWeight.w800, fontSize: 18)),
           Text(faltaPorDecidir(_pendientes),
@@ -302,7 +302,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
         // lo que queda por responder es lo único que de verdad es suyo.
         if (!_pideApuestas) ...[
           GPrimaryButton(
-            label: '⛳ Empezar ronda',
+            label: 'Empezar ronda',
             onTap: _listo ? () => _empezar(directo: true) : null,
           ),
           const SizedBox(height: 8),
@@ -314,7 +314,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
           ),
         ] else
           GPrimaryButton(
-            label: '⛳ Elegir qué se juega y empezar',
+            label: 'Elegir qué se juega y empezar',
             onTap: _listo ? () => _empezar(directo: false) : null,
           ),
         const SizedBox(height: 10),
@@ -829,7 +829,7 @@ class _QuickStartScreenState extends State<QuickStartScreen> {
                 width: _campo != null ? 1.5 : 1),
           ),
           child: Row(children: [
-            const Text('📍', style: TextStyle(fontSize: 18)),
+            const Icon(Icons.place_outlined, size: GolfIcons.juntoAValor),
             const SizedBox(width: 11),
             Expanded(
                 child: Column(

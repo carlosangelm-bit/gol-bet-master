@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // HISTORY SCREEN — Historial de rondas finalizadas
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -48,7 +49,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(synced == 0
             ? 'No hay rondas pendientes de sincronizar'
-            : '$synced ronda${synced > 1 ? 's sincronizadas' : ' sincronizada'} ✅'),
+            : '$synced ronda${synced > 1 ? 's sincronizadas' : ' sincronizada'}'),
         backgroundColor: synced > 0 ? t.profit : t.sub,
         duration: const Duration(seconds: 3),
       ));
@@ -88,7 +89,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       if (toMigrate.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Todo el historial está calculado ✅'),
+          content: const Text('Todo el historial está calculado'),
           backgroundColor: t.profit,
         ));
         return;
@@ -112,7 +113,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         content: Text(
           migrated == 0
               ? 'No se pudieron migrar rondas (scores incompletos)'
-              : '$migrated diferencial${migrated > 1 ? 'es' : ''} calculado${migrated > 1 ? 's' : ''} ⛳'),
+              : '$migrated diferencial${migrated > 1 ? 'es' : ''} calculado${migrated > 1 ? 's' : ''}'),
         backgroundColor: migrated > 0 ? t.profit : t.sub,
         duration: const Duration(seconds: 4),
       ));
@@ -135,7 +136,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(recovered == 0
             ? 'No se encontraron rondas para recuperar'
-            : '$recovered ronda${recovered > 1 ? 's recuperadas' : ' recuperada'} ✅'),
+            : '$recovered ronda${recovered > 1 ? 's recuperadas' : ' recuperada'}'),
         backgroundColor: recovered > 0 ? t.profit : t.sub,
         duration: const Duration(seconds: 3),
       ));
@@ -300,7 +301,7 @@ class _EmptyHistory extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      const Text('📊', style: TextStyle(fontSize: 60)),
+      const Icon(GolfIcons.grafico, size: GolfIcons.juntoAlHeroe),
       const SizedBox(height: 16),
       Text('Sin rondas finalizadas', style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w700)),
       const SizedBox(height: 8),
@@ -350,7 +351,7 @@ class _HistoryCard extends StatelessWidget {
               Container(
                 width: 48, height: 48,
                 decoration: BoxDecoration(color: t.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-                child: const Center(child: Text('⛳️', style: TextStyle(fontSize: 22))),
+                child: const Center(child: Icon(GolfIcons.bandera, size: GolfIcons.juntoATitulo)),
               ),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -388,7 +389,11 @@ class _HistoryCard extends StatelessWidget {
         border: Border.all(color: t.primary.withValues(alpha: 0.3)),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text('⛳ ', style: TextStyle(fontSize: 9, color: t.primary)),
+        // La insignia más pequeña de la app: el icono acompaña a un número de
+        // 10 px, así que va al escalón de etiqueta y no a un número suelto.
+        Icon(GolfIcons.bandera,
+            size: GolfIcons.juntoAEtiqueta, color: t.primary),
+        const SizedBox(width: 3),
         Text(
           diff.differential.toStringAsFixed(1),
           style: TextStyle(color: t.primary, fontSize: 10, fontWeight: FontWeight.w800),
@@ -449,13 +454,13 @@ class _HistoryRoundDetailState extends State<_HistoryRoundDetail> {
 
       final String mensaje;
       if (okDiff && okDinero) {
-        mensaje = '⛳ Handicap y balance actualizados';
+        mensaje = 'Handicap y balance actualizados';
       } else if (okDinero) {
         // Pasa de verdad: el ledger liquida lo que puede aunque falten scores,
         // así que el dinero sale y el diferencial no.
         mensaje = 'Balance actualizado · sin diferencial (scores incompletos)';
       } else if (okDiff) {
-        mensaje = '⛳ Diferencial guardado';
+        mensaje = 'Diferencial guardado';
       } else {
         mensaje = 'No se pudo calcular esta ronda';
       }
@@ -538,7 +543,7 @@ class _DifferentialBanner extends StatelessWidget {
         border: Border.all(color: t.primary.withValues(alpha: 0.3)),
       ),
       child: Row(children: [
-        const Text('⛳', style: TextStyle(fontSize: 20)),
+        const Icon(GolfIcons.bandera, size: GolfIcons.juntoATitulo),
         const SizedBox(width: 10),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Score Differential',

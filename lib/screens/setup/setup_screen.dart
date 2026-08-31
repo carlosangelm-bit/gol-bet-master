@@ -841,7 +841,7 @@ class _SetupScreenState extends State<SetupScreen> {
           const SizedBox(width: 12),
         ],
         Expanded(flex: 2, child: GPrimaryButton(
-          label: isLast ? '⛳ Iniciar Ronda' : 'Siguiente →',
+          label: isLast ? 'Iniciar Ronda' : 'Siguiente →',
           onTap: () {
             // Validaciones por paso
             if (_current == SetupStep.cuenta ||
@@ -2663,7 +2663,7 @@ class _SetupScreenState extends State<SetupScreen> {
       const SizedBox(height: 16),
 
       _opcionCompiten(t,
-          icon: '📊',
+          icon: GolfIcons.grafico,
           titulo: 'Handicap',
           detalle: 'Cada quien recibe golpes según su handicap registrado.',
           activa: _ventaja == SistemaDeVentaja.handicap,
@@ -2671,7 +2671,7 @@ class _SetupScreenState extends State<SetupScreen> {
       if (_ventaja == SistemaDeVentaja.handicap) _panelHandicap(t),
 
       _opcionCompiten(t,
-          icon: '📈',
+          icon: Icons.trending_up,
           titulo: 'Sliding',
           detalle: 'La ventaja se ajusta sola según cómo terminó la anterior.',
           activa: _ventaja == SistemaDeVentaja.sliding,
@@ -2679,7 +2679,7 @@ class _SetupScreenState extends State<SetupScreen> {
       if (_ventaja == SistemaDeVentaja.sliding) _panelSliding(t),
 
       _opcionCompiten(t,
-          icon: '⚖️',
+          icon: GolfIcons.equilibrio,
           titulo: 'Sin ventaja',
           detalle: 'Todos juegan bruto, nadie recibe golpes.',
           activa: _ventaja == SistemaDeVentaja.ninguna,
@@ -3305,7 +3305,7 @@ class _SetupScreenState extends State<SetupScreen> {
           style: GolfType.body(t.sub)),
       const SizedBox(height: 16),
       _opcionCompiten(t,
-          icon: '👤',
+          icon: Icons.person_outline,
           titulo: 'Cada quien por su cuenta',
           detalle: '$n lados · $cruces enfrentamiento${cruces == 1 ? '' : 's'}.',
           activa: !_porEquipos,
@@ -3470,7 +3470,7 @@ class _SetupScreenState extends State<SetupScreen> {
   void _repartirEquipos() => _armarLados(Formacion.manual);
 
   Widget _opcionCompiten(GolfTheme t,
-      {required String icon,
+      {required IconData icon,
       required String titulo,
       required String detalle,
       required bool activa,
@@ -3502,7 +3502,7 @@ class _SetupScreenState extends State<SetupScreen> {
               width: activa && !bloqueada ? 1.5 : 1),
         ),
         child: Row(children: [
-          Text(icon, style: const TextStyle(fontSize: 20)),
+          Icon(icon, size: GolfIcons.juntoATitulo, color: activa ? t.primary : t.sub),
           const SizedBox(width: 11),
           Expanded(
               child: Column(
@@ -3570,11 +3570,11 @@ class _SetupScreenState extends State<SetupScreen> {
   // conteo: con uno es Match —el marcador se lee "2 UP"—, con dos son Puntos.
   Widget _stepBola(GolfTheme t) {
     final opciones = [
-      (TeamBall.mejor, '🏌️', 'La mejor bola',
+      (TeamBall.mejor, GolfIcons.golpe, 'La mejor bola',
           'Cuenta el mejor score del equipo en el hoyo.'),
-      (TeamBall.mejorYPeor, '⚖️', 'La mejor y la peor',
+      (TeamBall.mejorYPeor, GolfIcons.equilibrio, 'La mejor y la peor',
           'Dos puntos por hoyo: uno por la mejor bola y otro por la peor.'),
-      (TeamBall.unaSola, '🎯', 'Una sola bola',
+      (TeamBall.unaSola, GolfIcons.diana, 'Una sola bola',
           'El equipo juega un balón y registra un score por hoyo.'),
     ];
     return ListView(padding: const EdgeInsets.all(20), children: [
@@ -3714,7 +3714,7 @@ class _SetupScreenState extends State<SetupScreen> {
                             : t.surface,
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Center(child: Text(preset.emoji, style: const TextStyle(fontSize: 20))),
+                      child: Center(child: Icon(GolfIcons.deClave(preset.emoji), size: GolfIcons.juntoATitulo)),
                     ),
                     const SizedBox(width: 12),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -3888,8 +3888,10 @@ class _SetupScreenState extends State<SetupScreen> {
     }
 
     final nameCtrl = TextEditingController(text: g.name);
-    var emoji = '⛳️';
-    const emojis = ['⛳️', '🌮', '🍻', '🔥', '🏆', '💰', '🌅', '🎯'];
+    // La marca del grupo: CLAVES de la paleta, no emojis. Se sigue eligiendo;
+    // lo que cambia es que el dibujo lo pone el tema. Ver GolfIcons.paleta.
+    var emoji = GolfIcons.claveInicial;
+    final emojis = GolfIcons.paleta.keys.toList();
 
     showModalBottomSheet(
       context: context,
@@ -3966,7 +3968,9 @@ class _SetupScreenState extends State<SetupScreen> {
                             color: sel ? t.primary : t.divider,
                             width: sel ? 1.5 : 1),
                       ),
-                      child: Text(e, style: const TextStyle(fontSize: 18)),
+                      child: Icon(GolfIcons.deClave(e),
+                          size: GolfIcons.juntoATitulo,
+                          color: sel ? t.primary : t.sub),
                     ),
                   );
                 }).toList(),
@@ -4334,11 +4338,11 @@ class _SetupScreenState extends State<SetupScreen> {
           Wrap(spacing: 6, runSpacing: 4, children: [
             _infoChip('$pCount jugadores', t.sub, t),
             if (mod.type == BetModuleType.skins && mod.skins.carryOver)
-              _infoChip('🔥 Carry ON', t.accent, t),
+              _infoChip('Carry ON', t.accent, t),
             if (mod.type == BetModuleType.nassau && mod.nassau.pressEnabled)
               _infoChip('Press ON', t.accent, t),
             if (mod.type == BetModuleType.matchAutoPress)
-              _infoChip('⚡ Auto Press', t.accent, t),
+              _infoChip('Auto Press', t.accent, t),
 
             _infoChip(mod.useHandicap ? 'Net' : 'Gross', t.primary, t),
           ]),
@@ -4670,7 +4674,7 @@ class _SetupScreenState extends State<SetupScreen> {
             _infoChip(_structureLabelShort(template.structure), accent, t),
             _infoChip(template.useHandicap ? 'Net' : 'Gross', t.primary, t),
             if (template.type == BetModuleType.skins && template.skins.carryOver)
-              _infoChip('🔥 Carry ON', t.accent, t),
+              _infoChip('Carry ON', t.accent, t),
             if (template.type == BetModuleType.nassau && template.nassau.pressEnabled)
               _infoChip('Press ON', t.accent, t),
           ]),
@@ -5311,7 +5315,7 @@ class _SetupScreenState extends State<SetupScreen> {
       Row(children: [
         Expanded(child: _FormatModeCard(
           isSelected: cfg.formatMode == BetFormatMode.onePot,
-          icon: '🏆',
+          icon: GolfIcons.trofeo,
           title: BetFormatMode.onePot.label,
           description: BetFormatMode.onePot.resumen,
           t: t,
@@ -5323,7 +5327,7 @@ class _SetupScreenState extends State<SetupScreen> {
         const SizedBox(width: 10),
         Expanded(child: _FormatModeCard(
           isSelected: cfg.formatMode == BetFormatMode.allVsAll,
-          icon: '⚔️',
+          icon: GolfIcons.duelo,
           title: BetFormatMode.allVsAll.label,
           description: BetFormatMode.allVsAll.resumen,
           t: t,
@@ -5439,7 +5443,8 @@ class _SetupScreenState extends State<SetupScreen> {
               ),
               child: Row(children: [
                 // Icono + texto
-                Text(s.carryOver ? '🔥' : '❌', style: const TextStyle(fontSize: 20)),
+                Icon(s.carryOver ? GolfIcons.racha : GolfIcons.mal,
+                    size: GolfIcons.juntoATitulo),
                 const SizedBox(width: 12),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(
@@ -5452,7 +5457,7 @@ class _SetupScreenState extends State<SetupScreen> {
                   const SizedBox(height: 3),
                   Text(
                     s.carryOver
-                        ? 'Los empates acumulan el skin al siguiente hoyo 🔥'
+                        ? 'Los empates acumulan el skin al siguiente hoyo'
                         : 'Los empates no se acumulan — el skin se pierde',
                     style: TextStyle(color: t.sub, fontSize: 11),
                   ),
@@ -5711,7 +5716,7 @@ class _SetupScreenState extends State<SetupScreen> {
           }).toList()),
           const SizedBox(height: 20),
           // ── ZAPATO ──────────────────────────────────────────────────────
-          _sectionLabel('👟 ZAPATO', t),
+          _sectionLabel('ZAPATO', t),
           const SizedBox(height: 6),
           Text(
             cfg.isAllVsAll
@@ -5925,15 +5930,15 @@ class _SetupScreenState extends State<SetupScreen> {
           border: Border.all(color: t.accent.withValues(alpha: 0.3)),
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('⚙️  CÓMO FUNCIONA ESTE JUEGO', style: TextStyle(color: t.accent, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.6)),
+          Text('CÓMO FUNCIONA ESTE JUEGO', style: TextStyle(color: t.accent, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.6)),
           const SizedBox(height: 8),
-          _previewRow('⛳', 'Match principal (Press #1)', '\$${m.matchValue.toStringAsFixed(0)}', t),
+          _previewRow(GolfIcons.bandera, 'Match principal (Press #1)', '\$${m.matchValue.toStringAsFixed(0)}', t),
           const SizedBox(height: 4),
-          _previewRow('⚡', 'Cada presión adicional vale', '\$${m.pressValue.toStringAsFixed(0)}', t),
+          _previewRow(GolfIcons.rapido, 'Cada presión adicional vale', '\$${m.pressValue.toStringAsFixed(0)}', t),
           const SizedBox(height: 4),
-          _previewRow('🎯', 'Se abre cuando alguien llega a', '${m.pressTriggerValue} up', t),
+          _previewRow(GolfIcons.diana, 'Se abre cuando alguien llega a', '${m.pressTriggerValue} up', t),
           const SizedBox(height: 4),
-          _previewRow('📊', 'Todas las presiones duran', 'hasta hoyo 18', t),
+          _previewRow(GolfIcons.grafico, 'Todas las presiones duran', 'hasta hoyo 18', t),
         ]),
       ),
     ];
@@ -5941,9 +5946,9 @@ class _SetupScreenState extends State<SetupScreen> {
 
 
 
-  Widget _previewRow(String icon, String label, String value, GolfTheme t) {
+  Widget _previewRow(IconData icon, String label, String value, GolfTheme t) {
     return Row(children: [
-      Text(icon, style: const TextStyle(fontSize: 13)),
+      Icon(icon, size: GolfIcons.juntoAEtiqueta, color: t.sub),
       const SizedBox(width: 8),
       Expanded(child: Text(label, style: TextStyle(color: t.sub, fontSize: 12))),
       Text(value, style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 12)),
@@ -6272,7 +6277,9 @@ class _SetupScreenState extends State<SetupScreen> {
                       border: Border.all(color: isSel ? t.primary : t.divider, width: isSel ? 1.5 : 1),
                     ),
                     child: Row(children: [
-                      Text(icon, style: const TextStyle(fontSize: 18)),
+                      Icon(icon,
+                          size: GolfIcons.juntoAValor,
+                          color: isSel ? t.primary : t.sub),
                       const SizedBox(width: 12),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(label, style: TextStyle(color: isSel ? t.primary : t.text, fontWeight: FontWeight.w700, fontSize: 13)),
@@ -6418,14 +6425,14 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   /// Opciones de estructura disponibles según el número de jugadores del grupo.
-  List<(BetStructure, String, String, String)> _structureOptions(int playerCount) => [
-    (BetStructure.group,       '👥', 'Grupo único',         'Un pot para todos los jugadores'),
+  List<(BetStructure, IconData, String, String)> _structureOptions(int playerCount) => [
+    (BetStructure.group, Icons.groups_outlined, 'Grupo único','Un pot para todos los jugadores'),
     if (playerCount == 2)
-      (BetStructure.headToHead, '⚔️', 'Head to head',        '1 vs 1, exactamente 2 jugadores'),
-    (BetStructure.anchorVsMany,'🎯', 'Jugador vs varios',   'Un ancla enfrenta a cada rival por separado'),
+      (BetStructure.headToHead, GolfIcons.duelo, 'Head to head','1 vs 1, exactamente 2 jugadores'),
+    (BetStructure.anchorVsMany, GolfIcons.diana, 'Jugador vs varios','Un ancla enfrenta a cada rival por separado'),
     // "Una apuesta por pareja" y no "todos contra todos": eso último es el
     // FORMATO de un módulo, no cuántos módulos se crean. Ver _structureLabelShort.
-    (BetStructure.roundRobin,  '🔄', 'Una apuesta por pareja', 'Un módulo aparte por cada combinación, con su importe'),
+    (BetStructure.roundRobin, GolfIcons.arrastra, 'Una apuesta por pareja', 'Un módulo aparte por cada combinación, con su importe'),
   ];
 
   /// ── Dos conceptos que se llamaban igual ──────────────────────────────────
@@ -6572,7 +6579,7 @@ class _SetupScreenState extends State<SetupScreen> {
                       width: _torneosMarcados.contains(seg.torneoId) ? 1.5 : 1),
                 ),
                 child: Row(children: [
-                  Text(seg.emoji, style: const TextStyle(fontSize: 18)),
+                  Icon(GolfIcons.deClave(seg.emoji), size: GolfIcons.juntoATitulo),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -6626,7 +6633,7 @@ class _SetupScreenState extends State<SetupScreen> {
                       width: _torneosMarcados.contains(tor.id) ? 1.5 : 1),
                 ),
                 child: Row(children: [
-                  Text(tor.emoji, style: const TextStyle(fontSize: 18)),
+                  Icon(GolfIcons.deClave(tor.emoji), size: GolfIcons.juntoATitulo),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -7064,7 +7071,7 @@ class _SetupScreenState extends State<SetupScreen> {
       await FirestoreService.saveTemplate(template);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('✅ Plantilla "$name" guardada'),
+          content: Text('Plantilla "$name" guardada'),
           backgroundColor: Colors.green,
         ));
       }
@@ -7350,7 +7357,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('✅ Datos del campo actualizados correctamente'),
+        content: const Text('Datos del campo actualizados correctamente'),
         backgroundColor: Colors.green.shade700,
         duration: const Duration(seconds: 3),
       ));
@@ -7900,12 +7907,12 @@ class _HandicapMatrix extends StatelessWidget {
         final Color rowColor;
         if (current > 0) {
           // pA recibe strokes de pB
-          giverLabel    = '${pB.name.split(' ').first} da $current 🏌️ a ${pA.name.split(' ').first}';
+          giverLabel    = '${pB.name.split(' ').first} da $current golpes a ${pA.name.split(' ').first}';
           receiverLabel = '';
           rowColor      = t.profit;
         } else if (current < 0) {
           // pB recibe strokes de pA
-          giverLabel    = '${pA.name.split(' ').first} da ${current.abs()} 🏌️ a ${pB.name.split(' ').first}';
+          giverLabel    = '${pA.name.split(' ').first} da ${current.abs()} golpes a ${pB.name.split(' ').first}';
           receiverLabel = '';
           rowColor      = t.loss;
         } else {
@@ -8152,7 +8159,7 @@ class _LaunchSheetState extends State<_LaunchSheet> {
   String _scoringMode = 'open'; // 'admin' | 'open'
   StartingNine? _selectedStartingNine;
   final _nameCtrl  = TextEditingController();
-  final _emojiCtrl = TextEditingController(text: '⛳️');
+  final _emojiCtrl = TextEditingController(text: GolfIcons.claveInicial);
   final _descCtrl  = TextEditingController();
 
   @override
@@ -8312,10 +8319,10 @@ class _LaunchSheetState extends State<_LaunchSheet> {
                   letterSpacing: 0.8)),
           const SizedBox(height: 10),
           Row(children: [
-            Expanded(child: _startBtn(t, '1️⃣', 'Front 9 primero',
+            Expanded(child: _startBtn(t, '1⃣', 'Front 9 primero',
                 'Hoyos 1–9 con stroke extra', StartingNine.front)),
             const SizedBox(width: 10),
-            Expanded(child: _startBtn(t, '2️⃣', 'Back 9 primero',
+            Expanded(child: _startBtn(t, '2⃣', 'Back 9 primero',
                 'Hoyos 10–18 con stroke extra', StartingNine.back)),
           ]),
           const SizedBox(height: 12),
@@ -8450,7 +8457,7 @@ class _LaunchSheetState extends State<_LaunchSheet> {
 // ── _FormatModeCard ───────────────────────────────────────────────────────────
 class _FormatModeCard extends StatelessWidget {
   final bool isSelected;
-  final String icon;
+  final IconData icon;
   final String title;
   final String description;
   final GolfTheme t;
@@ -8478,7 +8485,9 @@ class _FormatModeCard extends StatelessWidget {
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Text(icon, style: const TextStyle(fontSize: 16)),
+            Icon(icon,
+                size: GolfIcons.juntoAValor,
+                color: isSelected ? t.primary : t.sub),
             const SizedBox(width: 6),
             Expanded(child: Text(title, style: TextStyle(
               color: isSelected ? t.primary : t.text,
@@ -8674,7 +8683,7 @@ class _BettingGroupsBanner extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
               child: Row(children: [
-                Text(bg.emoji, style: const TextStyle(fontSize: 24)),
+                Icon(GolfIcons.deClave(bg.emoji), size: GolfIcons.juntoATitulo),
                 const SizedBox(width: 10),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(bg.name,
@@ -8819,7 +8828,7 @@ class _BettingGroupCard extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // ── Encabezado ──────────────────────────────────────────────────────
         Row(children: [
-          Text(bg.emoji, style: const TextStyle(fontSize: 22)),
+          Icon(GolfIcons.deClave(bg.emoji), size: GolfIcons.juntoATitulo),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
               children: [

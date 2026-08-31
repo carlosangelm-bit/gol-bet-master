@@ -223,7 +223,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
               for (final g in grupos)
                 _opcion(
                   t: t,
-                  titulo: '${g.emoji} ${g.name}',
+                  titulo: '${g.name}',
                   detalle: '${g.playerIds.length} habituales',
                   activa: _t.bettingGroupId == g.id,
                   onTap: () =>
@@ -919,7 +919,7 @@ class _TorneoEditorScreenState extends State<TorneoEditorScreen> {
             for (final g in grupos)
               _opcion(
                 t: t,
-                titulo: '${g.emoji} ${g.name}',
+                titulo: '${g.name}',
                 detalle: '${g.totalModules} apuesta'
                     '${g.totalModules == 1 ? '' : 's'} con sus montos',
                 activa: _t.plantillaId == g.id,

@@ -100,8 +100,7 @@ class TorneosScreen extends StatelessWidget {
                           child: Padding(
                             padding: const EdgeInsets.all(14),
                             child: Row(children: [
-                              Text(seg.emoji,
-                                  style: const TextStyle(fontSize: 26)),
+                              Icon(GolfIcons.deClave(seg.emoji), size: GolfIcons.juntoAlHeroe),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
@@ -142,7 +141,7 @@ class TorneosScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('🏆', style: TextStyle(fontSize: 44)),
+              const Icon(GolfIcons.trofeo, size: GolfIcons.juntoAlHeroe),
               const SizedBox(height: 12),
               Text('Ningún torneo todavía',
                   style: TextStyle(
@@ -1469,7 +1468,7 @@ class _BotonJugarDelTorneo extends StatelessWidget {
               backgroundColor: t.primary,
               foregroundColor: t.onPrimary,
               padding: const EdgeInsets.symmetric(vertical: 13)),
-          child: Text('⛳ Jugar una ronda de ${torneo.nombre}',
+          child: Text('Jugar una ronda de ${torneo.nombre}',
               textAlign: TextAlign.center,
               style: const TextStyle(fontWeight: FontWeight.w800)),
         ),

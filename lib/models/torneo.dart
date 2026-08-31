@@ -466,7 +466,7 @@ class Torneo {
   const Torneo({
     required this.id,
     required this.nombre,
-    this.emoji = '🏆',
+    this.emoji = 'trofeo',
     this.fuente = FuenteDeRondas.marcadas,
     this.roundIds = const [],
     this.desde,
@@ -605,7 +605,7 @@ class Torneo {
   factory Torneo.fromJson(Map<String, dynamic> j) => Torneo(
         id: (j['id'] as String?) ?? '',
         nombre: (j['nombre'] as String?) ?? 'Torneo',
-        emoji: (j['emoji'] as String?) ?? '🏆',
+        emoji: (j['emoji'] as String?) ?? 'trofeo',
         fuente: FuenteDeRondas.values.firstWhere((f) => f.name == j['fuente'],
             orElse: () => FuenteDeRondas.marcadas),
         roundIds:

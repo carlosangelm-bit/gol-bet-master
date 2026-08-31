@@ -12,6 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:flutter/material.dart';
+import '../core/golf_icons.dart';
 import 'package:flutter/foundation.dart';
 import '../core/app_theme.dart';
 import '../engines/sliding_adjustment_engine.dart';
@@ -501,7 +502,9 @@ class _SlidingPlayerCard extends StatelessWidget {
 
     final resultColor = isTie ? p.tie : (iWon ? p.win : p.lose);
     final resultBg    = isTie ? p.tieBg : (iWon ? p.winBg : p.loseBg);
-    final resultIcon  = isTie ? '🤝' : (iWon ? '🏆' : '📉');
+    final resultIcon = isTie
+        ? GolfIcons.acuerdo
+        : (iWon ? GolfIcons.trofeo : GolfIcons.grafico);
     final resultLabel = isTie
         ? 'Empate'
         : iWon
@@ -534,7 +537,7 @@ class _SlidingPlayerCard extends StatelessWidget {
               borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
             ),
             child: Row(children: [
-              Text(resultIcon, style: const TextStyle(fontSize: 18)),
+              Icon(resultIcon, size: GolfIcons.juntoAValor),
               const SizedBox(width: 8),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(resultLabel,

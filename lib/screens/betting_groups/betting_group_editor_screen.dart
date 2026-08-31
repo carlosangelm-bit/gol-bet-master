@@ -64,7 +64,7 @@ class _BettingGroupEditorScreenState
     final g    = widget.existing;
     _nameCtrl  = TextEditingController(text: g?.name  ?? '');
     _descCtrl  = TextEditingController(text: g?.description ?? '');
-    _emoji     = g?.emoji ?? '⛳';
+    _emoji     = g?.emoji ?? GolfIcons.claveInicial;
     _playerIds = List<String>.from(g?.playerIds ?? []);
     _rules     = List<PairBetRule>.from(g?.pairRules ?? []);
     _dePartida = List<BetModuleTemplate>.from(g?.modulosDePartida ?? []);
@@ -871,10 +871,10 @@ class _BettingGroupEditorScreenState
 
   // ── Emoji picker ──────────────────────────────────────────────────────────
   void _pickEmoji(BuildContext context, GolfTheme t) {
-    const emojis = [
-      '⛳', '🏌️', '⛳️', '🥇', '💰', '🏆', '🎯', '🔥', '⚡', '🌟',
-      '💎', '🃏', '🤝', '👊', '🎲', '🏅', '💪', '🦅', '🦁', '🐯',
-    ];
+    // La marca del grupo: CLAVES del catálogo, no caracteres del sistema. Eran
+    // veinte emoji; son doce iconos, y ninguno se ve distinto en el teléfono
+    // de cada amigo del grupo.
+    final marcas = GolfIcons.paleta.keys.toList();
     showModalBottomSheet(
       context: context,
       backgroundColor: t.card,
@@ -883,13 +883,13 @@ class _BettingGroupEditorScreenState
       builder: (ctx) => Padding(
         padding: const EdgeInsets.all(20),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('Selecciona un emoji',
+          Text('Elige una marca',
               style: TextStyle(color: t.text,
                   fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 16),
           Wrap(
             spacing: 12, runSpacing: 12,
-            children: emojis.map((e) => GestureDetector(
+            children: marcas.map((e) => GestureDetector(
               onTap: () {
                 setState(() { _emoji = e; });
                 Navigator.pop(ctx);
@@ -903,8 +903,10 @@ class _BettingGroupEditorScreenState
                   border: Border.all(
                       color: _emoji == e ? t.primary : t.divider),
                 ),
-                child: Center(child: Text(e,
-                    style: const TextStyle(fontSize: 24))),
+                child: Center(
+                    child: Icon(GolfIcons.deClave(e),
+                        size: GolfIcons.juntoATitulo,
+                        color: _emoji == e ? t.primary : t.sub)),
               ),
             )).toList(),
           ),
@@ -997,8 +999,9 @@ class _EmojiButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: t.divider),
       ),
-      child: Center(child: Text(emoji,
-          style: const TextStyle(fontSize: 26))),
+      child: Center(
+          child: Icon(GolfIcons.deClave(emoji),
+              size: GolfIcons.juntoAlHeroe, color: t.primary)),
     ),
   );
 }
@@ -1631,8 +1634,7 @@ class _PresetPickerSheet extends StatelessWidget {
                     color: t.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Center(child: Text(p.emoji,
-                      style: const TextStyle(fontSize: 22))),
+                  child: Center(child: Icon(GolfIcons.deClave(p.emoji), size: GolfIcons.juntoATitulo)),
                 ),
                 title: Text(p.name,
                     style: TextStyle(color: t.text,
@@ -1922,8 +1924,7 @@ class _ApplyToManySheetState extends State<_ApplyToManySheet> {
                         ),
                       ),
                       child: Row(children: [
-                        Text(p.emoji,
-                            style: const TextStyle(fontSize: 20)),
+                        Icon(GolfIcons.deClave(p.emoji), size: GolfIcons.juntoATitulo),
                         const SizedBox(width: 10),
                         Expanded(child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,

@@ -91,7 +91,7 @@ class _EmptyTemplates extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text('📋', style: const TextStyle(fontSize: 60)),
+      Icon(Icons.assignment_outlined, size: GolfIcons.juntoAlHeroe),
       const SizedBox(height: 16),
       Text('Sin plantillas aún', style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w700)),
       const SizedBox(height: 8),
@@ -123,7 +123,8 @@ class _TemplateCard extends StatelessWidget {
       child: GCard(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Text(template.emoji, style: const TextStyle(fontSize: 28)),
+          Icon(GolfIcons.deClave(template.emoji),
+              size: GolfIcons.juntoAlHeroe, color: t.primary),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(template.name, style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w700)),
@@ -253,9 +254,9 @@ class _EditTemplateSheet extends StatefulWidget {
 class _EditTemplateSheetState extends State<_EditTemplateSheet> {
   late TextEditingController _nameCtrl;
   late TextEditingController _descCtrl;
-  String _emoji = '⛳️';
+  String _emoji = GolfIcons.claveInicial;
   bool _saving = false;
-  static const _emojis = ['⛳️','🏌️','🏆','💰','🎯','🃏','⚡️','🔥','💎','🎖️','🥇','🤝'];
+  static List<String> get _marcas => GolfIcons.paleta.keys.toList();
 
   @override
   void initState() {
@@ -278,7 +279,7 @@ class _EditTemplateSheetState extends State<_EditTemplateSheet> {
         // Emoji selector
         Text('Ícono', style: TextStyle(color: t.sub, fontSize: 12, fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
-        Wrap(spacing: 8, children: _emojis.map((e) => GestureDetector(
+        Wrap(spacing: 8, children: _marcas.map((e) => GestureDetector(
           onTap: () => setState(() => _emoji = e),
           child: Container(
             width: 40, height: 40,
@@ -287,7 +288,10 @@ class _EditTemplateSheetState extends State<_EditTemplateSheet> {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: _emoji == e ? t.primary : t.divider),
             ),
-            child: Center(child: Text(e, style: const TextStyle(fontSize: 20))),
+            child: Center(
+                child: Icon(GolfIcons.deClave(e),
+                    size: GolfIcons.juntoATitulo,
+                    color: _emoji == e ? t.primary : t.sub)),
           ),
         )).toList()),
         const SizedBox(height: 16),
@@ -356,7 +360,7 @@ class SaveTemplateDialog extends StatefulWidget {
 class _SaveTemplateDialogState extends State<SaveTemplateDialog> {
   final _nameCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
-  String _emoji = '⛳️';
+  String _emoji = GolfIcons.claveInicial;
   bool _saving = false;
 
   /// Incluir el campo. Apagado por defecto.
@@ -368,7 +372,7 @@ class _SaveTemplateDialogState extends State<SaveTemplateDialog> {
   /// Apagado por defecto porque incluirlo es lo mas restrictivo: una
   /// plantilla con campo sirve para menos rondas que una sin el.
   bool _conCampo = false;
-  static const _emojis = ['⛳️','🏌️','🏆','💰','🎯','🃏','⚡️','🔥','💎','🎖️','🥇','🤝'];
+  static List<String> get _marcas => GolfIcons.paleta.keys.toList();
 
   @override
   Widget build(BuildContext context) {
@@ -407,7 +411,7 @@ class _SaveTemplateDialogState extends State<SaveTemplateDialog> {
         ],
         const SizedBox(height: 16),
         // Emoji
-        Wrap(spacing: 8, children: _emojis.map((e) => GestureDetector(
+        Wrap(spacing: 8, children: _marcas.map((e) => GestureDetector(
           onTap: () => setState(() => _emoji = e),
           child: Container(
             width: 36, height: 36,
@@ -416,7 +420,10 @@ class _SaveTemplateDialogState extends State<SaveTemplateDialog> {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: _emoji == e ? t.primary : t.divider),
             ),
-            child: Center(child: Text(e, style: const TextStyle(fontSize: 18))),
+            child: Center(
+                child: Icon(GolfIcons.deClave(e),
+                    size: GolfIcons.juntoAValor,
+                    color: _emoji == e ? t.primary : t.sub)),
           ),
         )).toList()),
         const SizedBox(height: 12),
@@ -475,7 +482,7 @@ class _SaveTemplateDialogState extends State<SaveTemplateDialog> {
     if (mounted) {
       Navigator.pop(context, true);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('✅ Plantilla "${template.name}" guardada'), backgroundColor: Colors.green));
+        SnackBar(content: Text('Plantilla "${template.name}"guardada'), backgroundColor: Colors.green));
     }
   }
 }
@@ -533,7 +540,8 @@ class _GrupoCard extends StatelessWidget {
           border: Border.all(color: t.divider),
         ),
         child: Row(children: [
-          Text(grupo.emoji, style: const TextStyle(fontSize: 24)),
+          Icon(GolfIcons.deClave(grupo.emoji),
+              size: GolfIcons.juntoATitulo, color: t.primary),
           const SizedBox(width: 12),
           Expanded(
               child: Column(

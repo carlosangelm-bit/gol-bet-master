@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:golf_bet_master/core/golf_icons.dart';
 import 'package:golf_bet_master/core/app_theme.dart';
 import 'package:golf_bet_master/widgets/bracket_tree.dart';
 
@@ -294,12 +295,13 @@ void main() {
           await _montar(tester, _arbol(4, campeon: 'Jugador1'));
       expect(errores, isEmpty);
       expect(_pantalla(tester), contains('Jugador1'));
-      expect(find.text('🏆'), findsOneWidget);
+      // El trofeo ya es un icono del catálogo, no un carácter del sistema.
+      expect(find.byIcon(GolfIcons.trofeo), findsOneWidget);
     });
 
     testWidgets('sin campeón no hay trofeo', (tester) async {
       await _montar(tester, _arbol(4));
-      expect(find.text('🏆'), findsNothing);
+      expect(find.byIcon(GolfIcons.trofeo), findsNothing);
     });
   });
 

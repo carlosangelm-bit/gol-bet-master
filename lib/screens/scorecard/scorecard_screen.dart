@@ -2239,12 +2239,12 @@ class _MatchStatusCard extends StatelessWidget {
       accentColor = const Color(0xFF35C759);
       gradColors  = const [Color(0xFF1F8F3A), Color(0xFF0E3D1B)];
       stateWord   = 'GANANDO';
-      diffLabel   = '$n1 +$lead oyés${zapatoFired ? '  👟' : ''}';
+      diffLabel   = '$n1 +$lead oyés${zapatoFired ? ' · zapato' : ''}';
     } else {
       accentColor = const Color(0xFFFF453A);
       gradColors  = const [Color(0xFF7A1E1E), Color(0xFF2A0E0E)];
       stateWord   = 'PERDIENDO';
-      diffLabel   = '$n2 +${lead.abs()} oyés${zapatoFired ? '  👟' : ''}';
+      diffLabel   = '$n2 +${lead.abs()} oyés${zapatoFired ? ' · zapato' : ''}';
     }
 
     // Sub-label: progreso + zapato pendiente
@@ -2253,13 +2253,13 @@ class _MatchStatusCard extends StatelessWidget {
     if (o.zapatoEnabled && !zapatoFired && holesPlayed > 0) {
       final ahead = lead > 0 ? n1 : (lead < 0 ? n2 : null);
       if (ahead != null && remaining > 0) {
-        subLabel = '👟 Zapato: $ahead lidera · $remaining par-3${remaining > 1 ? 's' : ''} restante${remaining > 1 ? 's' : ''}';
+        subLabel = 'Zapato: $ahead lidera · $remaining par-3${remaining > 1 ? 's' : ''} restante${remaining > 1 ? 's' : ''}';
       }
     }
     if (zapatoFired) {
       final winner = lead > 0 ? n1 : n2;
       final zapatoAmt = o.zapatoValue > 0 ? o.zapatoValue : (totalEligible * o.value);
-      subLabel = '👟 Zapato: $winner ganó todos los oyeses (+\$${zapatoAmt.toStringAsFixed(0)})';
+      subLabel = 'Zapato: $winner ganó todos los oyeses (+\$${zapatoAmt.toStringAsFixed(0)})';
     }
 
     final lastPar3 = eligible.lastWhere(
@@ -2433,7 +2433,7 @@ class _SkinsGlanceCard extends StatelessWidget {
         accentColor = const Color(0xFFFFCC00);
         gradColors  = const [Color(0xFF5C4500), Color(0xFF2A1E00)];
         stateWord   = 'EMPATADO';
-        diffLabel   = '🔥 ×$skinsInPot en juego';
+        diffLabel   = '×$skinsInPot en juego';
       } else {
         accentColor = const Color(0xFF1565C0);
         gradColors  = const [Color(0xFF1A3A6B), Color(0xFF0D1F3C)];
@@ -2445,7 +2445,7 @@ class _SkinsGlanceCard extends StatelessWidget {
         accentColor = const Color(0xFFFFCC00);
         gradColors  = const [Color(0xFF4A3800), Color(0xFF1F1600)];
         stateWord   = 'GANANDO';
-        diffLabel   = '$sn1 +$lead UP  🔥×$skinsInPot';
+        diffLabel   = '$sn1 +$lead UP ×$skinsInPot';
       } else {
         accentColor = const Color(0xFF35C759);
         gradColors  = const [Color(0xFF1F8F3A), Color(0xFF0E3D1B)];
@@ -2457,7 +2457,7 @@ class _SkinsGlanceCard extends StatelessWidget {
         accentColor = const Color(0xFFFFCC00);
         gradColors  = const [Color(0xFF4A3800), Color(0xFF1F1600)];
         stateWord   = 'PERDIENDO';
-        diffLabel   = '$sn2 +${lead.abs()} UP  🔥×$skinsInPot';
+        diffLabel   = '$sn2 +${lead.abs()} UP ×$skinsInPot';
       } else {
         accentColor = const Color(0xFFFF453A);
         gradColors  = const [Color(0xFF7A1E1E), Color(0xFF2A0E0E)];
@@ -2658,7 +2658,7 @@ class _PremiumResultBadge extends StatelessWidget {
                 // Carry/empates skins
                 if ((tieCount ?? 0) > 0 && (skinsInPot ?? 0) > 1) ...[
                   _pill(
-                    label: '🔥×${skinsInPot!}',
+                    label: '×${skinsInPot!}',
                     icon: null,
                     textColor: const Color(0xFFFF9500),
                     bgColor: const Color(0xFFFF9500).withValues(alpha: 0.12),
@@ -2971,7 +2971,7 @@ class _SkinsMiniSummary extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: t.accent.withValues(alpha: 0.30)),
             ),
-            child: Text('×$skinsInPot 🔥',
+            child: Text('×$skinsInPot',
                 style: TextStyle(color: t.accent, fontSize: 10,
                     fontWeight: FontWeight.w700)),
           ),
@@ -3274,7 +3274,7 @@ class _NassauLivePanel extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    openCount > 0 ? '$openCount press\u2009🔥' : 'Press ON',
+                    openCount > 0 ? '$openCount press' : 'Press ON',
                     style: TextStyle(
                         color: openCount > 0 ? t.accent : t.primary,
                         fontSize: 9, fontWeight: FontWeight.w700),
@@ -3581,7 +3581,7 @@ class _MatchPressLivePanel extends StatelessWidget {
     return GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       // ── Cabecera ────────────────────────────────────────────────────────
       Row(children: [
-        Text('⚔️', style: const TextStyle(fontSize: 16)),
+        Icon(GolfIcons.duelo, size: GolfIcons.juntoAValor, color: t.sub),
         const SizedBox(width: 8),
         Expanded(child: Text('MATCH + PRESS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8))),
         // Balance solo Match+Press
@@ -3977,7 +3977,7 @@ class _CarryPanelState extends State<_CarryPanel> {
       builder: (ctx) => AlertDialog(
         backgroundColor: t.card,
         title: Row(children: [
-          Text('⚡', style: const TextStyle(fontSize: 20)),
+          Icon(GolfIcons.rapido, size: GolfIcons.juntoATitulo, color: t.accent),
           const SizedBox(width: 8),
           Text('Carry', style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 17)),
         ]),
@@ -4608,7 +4608,7 @@ class _SkinsCellWidget extends StatelessWidget {
               borderRadius: BorderRadius.circular(4),
               border: Border.all(color: t.accent.withValues(alpha: 0.3)),
             ),
-            child: Text('×$skins 🔥', style: TextStyle(color: t.accent, fontSize: 8, fontWeight: FontWeight.w800)),
+            child: Text('×$skins', style: TextStyle(color: t.accent, fontSize: 8, fontWeight: FontWeight.w800)),
           ),
       ]));
     }
@@ -5025,7 +5025,7 @@ class _FinancialBreakdown extends StatelessWidget {
                         border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
                       ),
                       child: Text(
-                        '🔥×$skinsInPot en pot',
+                        '×$skinsInPot en pot',
                         style: const TextStyle(color: Colors.orange, fontSize: 9, fontWeight: FontWeight.w700),
                       ),
                     ),
@@ -5070,18 +5070,18 @@ class _FinancialBreakdown extends StatelessWidget {
                       : (totalEligible * o.value);
                   if (holesPlayed == totalEligible) {
                     if (winsP1vsP2 == holesPlayed) {
-                      zapatoText = '👟 Zapato: $n1 +\$${zapatoAmt.toStringAsFixed(0)}';
+                      zapatoText = 'Zapato: $n1 +\$${zapatoAmt.toStringAsFixed(0)}';
                     } else if (winsP2vsP1 == holesPlayed) {
-                      zapatoText = '👟 Zapato: $n2 +\$${zapatoAmt.toStringAsFixed(0)}';
+                      zapatoText = 'Zapato: $n2 +\$${zapatoAmt.toStringAsFixed(0)}';
                     } else {
-                      zapatoText = '👟 Zapato: no aplica';
+                      zapatoText = 'Zapato: no aplica';
                     }
                   } else {
                     final remaining = totalEligible - holesPlayed;
                     if (winsP1vsP2 > 0 && winsP2vsP1 == 0) {
-                      zapatoText = '👟 Zapato en juego: $n1 lidera ($remaining par-3 restantes)';
+                      zapatoText = 'Zapato en juego: $n1 lidera ($remaining par-3 restantes)';
                     } else if (winsP2vsP1 > 0 && winsP1vsP2 == 0) {
-                      zapatoText = '👟 Zapato en juego: $n2 lidera ($remaining par-3 restantes)';
+                      zapatoText = 'Zapato en juego: $n2 lidera ($remaining par-3 restantes)';
                     }
                   }
                 }

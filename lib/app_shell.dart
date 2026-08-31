@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // APP SHELL — Navegación principal con Firebase Auth
 // ─────────────────────────────────────────────────────────────────────────────
+import 'core/golf_icons.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -126,7 +127,7 @@ class _AppShellState extends State<AppShell> {
                   color: t.primary.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: const Center(child: Text('⛳️', style: TextStyle(fontSize: 40))),
+                child: const Center(child: Icon(GolfIcons.bandera, size: GolfIcons.juntoAlHeroe)),
               ),
               const SizedBox(height: 20),
               Text('Golf Bet Master',
@@ -288,7 +289,7 @@ class _BlockerWarningBannerState extends State<_BlockerWarningBanner> {
           border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
         ),
         child: Row(children: [
-          const Text('⚠️', style: TextStyle(fontSize: 18)),
+          const Icon(GolfIcons.aviso, size: GolfIcons.juntoAValor),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(

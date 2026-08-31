@@ -4,6 +4,7 @@
 // Solo visualización — el caddie NO se agrega como jugador.
 // El enlace es reutilizable (multi-uso): varios caddies pueden usarlo.
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -410,7 +411,7 @@ class _CaddieJoinScreenState extends State<CaddieJoinScreen>
           ],
         ),
         child: const Center(
-          child: Text('👁️', style: TextStyle(fontSize: 30)),
+          child: Icon(GolfIcons.copia, size: GolfIcons.juntoAlHeroe),
         ),
       ),
       const SizedBox(height: 10),

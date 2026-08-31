@@ -468,7 +468,7 @@ class TorneoPublicado {
         torneoId: (j['torneoId'] as String?) ?? '',
         ownerUid: (j['ownerUid'] as String?) ?? '',
         nombre: (j['nombre'] as String?) ?? 'Torneo',
-        emoji: (j['emoji'] as String?) ?? '🏆',
+        emoji: (j['emoji'] as String?) ?? 'trofeo',
         publicadoEn:
             DateTime.tryParse((j['publicadoEn'] as String?) ?? '') ??
                 DateTime(2000),

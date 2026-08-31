@@ -160,9 +160,9 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
 
     // ── Inicializar estado de lados ─────────────────────────────────────────
     if (kDebugMode) {
-      debugPrint('🔧 [BetModuleEditSheet] Tipo: ${m.type}');
-      debugPrint('🔧 [BetModuleEditSheet] Soporta equipos: ${_teamSupportedTypes.contains(m.type)}');
-      debugPrint('🔧 [BetModuleEditSheet] hasTeamSides: ${m.hasTeamSides}');
+      debugPrint(' [BetModuleEditSheet] Tipo: ${m.type}');
+      debugPrint(' [BetModuleEditSheet] Soporta equipos: ${_teamSupportedTypes.contains(m.type)}');
+      debugPrint(' [BetModuleEditSheet] hasTeamSides: ${m.hasTeamSides}');
     }
     if (m.hasTeamSides) {
       _sidesEnabled = true;
@@ -1489,7 +1489,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         _update(_current.copyWith(skinsConfig: s.copyWith(mode: i == 1 ? GrossNetMode.net : GrossNetMode.gross)));
       }),
       const SizedBox(height: 16),
-      _toggle('Carry-over', s.carryOver ? 'Empates acumulan al siguiente hoyo 🔥' : 'Sin acumulación', s.carryOver, t, (v) {
+      _toggle('Carry-over', s.carryOver ? 'Empates acumulan al siguiente hoyo ' : 'Sin acumulación', s.carryOver, t, (v) {
         _update(_current.copyWith(skinsConfig: s.copyWith(carryOver: v)));
       }),
     ];
@@ -1728,7 +1728,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       const SizedBox(height: 20),
 
       // ── ZAPATO ──────────────────────────────────────────────────────────────
-      _label('👟 ZAPATO', t),
+      _label('ZAPATO', t),
       Text(
         isAllVsAll
             ? 'Todos vs Todos: si A le gana TODOS los oyeses a B, A hace zapato vs B (puede haber varios zapatos).'
@@ -1797,12 +1797,12 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   // ── UNITS ───────────────────────────────────────────────────────────────────
   List<Widget> _unitsFields(GolfTheme t) {
     final icons = {
-      UnitEventType.birdie:      '🐦',
-      UnitEventType.eagle:       '🦅',
-      UnitEventType.sandyPar:    '🏖️',
-      UnitEventType.parUnico:    '⭐',
-      UnitEventType.birdieUnico: '💫',
-      UnitEventType.holeOut:     '🕳️',
+      UnitEventType.birdie:      GolfIcons.bajoPar,
+      UnitEventType.eagle:       GolfIcons.dobleBajoPar,
+      UnitEventType.sandyPar:    GolfIcons.bunker,
+      UnitEventType.parUnico:    GolfIcons.unico,
+      UnitEventType.birdieUnico: GolfIcons.destello,
+      UnitEventType.holeOut:     GolfIcons.hoyoDirecto,
     };
 
     return [
@@ -1884,7 +1884,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       ...UnitEventType.values.map((e) => Padding(
         padding: const EdgeInsets.only(bottom: 10),
         child: Row(children: [
-          Text(icons[e]!, style: const TextStyle(fontSize: 16)),
+          Icon(icons[e]!, size: GolfIcons.juntoAValor),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(e.label, style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 13)),

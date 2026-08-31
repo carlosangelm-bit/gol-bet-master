@@ -14,6 +14,7 @@
 // iguales el partido se queda a la vista, en ámbar, y alguien lo resuelve con un
 // toque. La app no puede jugar un hoyo 19.
 // ─────────────────────────────────────────────────────────────────────────────
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -172,7 +173,7 @@ class LlaveDelTorneoVista extends StatelessWidget {
           spacing: 10,
           runSpacing: 4,
           children: [
-            const Text('🏆', style: TextStyle(fontSize: 26)),
+            const Icon(GolfIcons.trofeo, size: GolfIcons.juntoAlHeroe),
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('CAMPEÓN', style: GolfType.label(t.sub)),
               Text(nombreDeJugador(context, llave.campeon!),

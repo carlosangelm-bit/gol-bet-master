@@ -361,7 +361,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
               misTorneos: _misTorneos, seguidos: _seguidos, miFicha: _miFicha);
           if (!ok && context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: const Text('⚠️ Sin conexión. La ronda se guardó localmente y se sincronizará pronto.'),
+              content: const Text('Sin conexión. La ronda se guardó localmente y se sincronizará pronto.'),
               backgroundColor: Colors.orange.shade700,
               duration: const Duration(seconds: 5),
             ));
@@ -465,7 +465,7 @@ class _AdminFinishedBanner extends StatelessWidget {
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(children: [
-        const Text('🏁', style: TextStyle(fontSize: 18)),
+        const Icon(GolfIcons.meta, size: GolfIcons.juntoAValor),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
@@ -1313,9 +1313,9 @@ class _DuelCard extends StatelessWidget {
                         if (enoughHoles) {
                           final zapatoAmt = o.zapatoValue > 0 ? o.zapatoValue : (totalEligible * o.value);
                           if (winsP1vsP2 == holesPlayed) {
-                            scoreLine += '  ·  👟 +\$${zapatoAmt.toStringAsFixed(0)}';
+                            scoreLine += '· +\$${zapatoAmt.toStringAsFixed(0)}';
                           } else if (winsP2vsP1 == holesPlayed) {
-                            scoreLine += '  ·  👟 -\$${zapatoAmt.toStringAsFixed(0)}';
+                            scoreLine += '· -\$${zapatoAmt.toStringAsFixed(0)}';
                           }
                         }
                       }
@@ -1381,13 +1381,13 @@ class _UnitsDetailSection extends StatelessWidget {
     required this.unitsByType, required this.t, required this.g,
   });
 
-  String _icon(UnitEventType type) => const {
-    UnitEventType.birdie:       '🐦',
-    UnitEventType.eagle:        '🦅',
-    UnitEventType.sandyPar:     '🏖️',
-    UnitEventType.parUnico:     '⭐',
-    UnitEventType.birdieUnico:  '💫',
-    UnitEventType.holeOut:      '🕳️',
+  IconData _icon(UnitEventType type) => const {
+    UnitEventType.birdie:       GolfIcons.bajoPar,
+    UnitEventType.eagle:        GolfIcons.dobleBajoPar,
+    UnitEventType.sandyPar:     GolfIcons.bunker,
+    UnitEventType.parUnico:     GolfIcons.unico,
+    UnitEventType.birdieUnico:  GolfIcons.destello,
+    UnitEventType.holeOut:      GolfIcons.hoyoDirecto,
   }[type]!;
 
   double _earnedFor(UnitEventType type) {
@@ -1421,7 +1421,7 @@ class _UnitsDetailSection extends StatelessWidget {
           border: Border.all(color: g.unitChipBorder),
         ),
         child: Row(children: [
-          const Text('💫', style: TextStyle(fontSize: 16)),
+          const Icon(GolfIcons.destello, size: GolfIcons.juntoAValor),
           const SizedBox(width: 8),
           Expanded(child: Text('UNIDADES GANADAS',
             style: TextStyle(color: g.unitAccent, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8))),
@@ -1457,7 +1457,7 @@ class _UnitsDetailSection extends StatelessWidget {
             ),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                Text(_icon(type), style: const TextStyle(fontSize: 14)),
+                Icon(_icon(type), size: GolfIcons.juntoAEtiqueta, color: t.sub),
                 const SizedBox(width: 8),
                 Expanded(child: Text(type.label,
                   style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 13))),

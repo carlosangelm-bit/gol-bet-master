@@ -80,7 +80,7 @@ class RoundDebug {
     }
 
     if (errorMsg != null) {
-      buf.writeln('  ⚠️  ERROR al calcular recv: $errorMsg');
+      buf.writeln('ERROR al calcular recv: $errorMsg');
     } else {
       // Normalizar -0.0 → 0.0 para evitar el string "+-0.00"
       final normAB = recvAB! == 0.0 ? 0.0 : recvAB;
@@ -92,7 +92,7 @@ class RoundDebug {
 
       // Override explícito 0
       if (stored != null && stored == 0.0) {
-        buf.writeln('  ℹ️  Override explícito: pairSliding=0 (sin ventaja ni intercambio)');
+        buf.writeln('ℹ  Override explícito: pairSliding=0 (sin ventaja ni intercambio)');
       }
     }
 
@@ -115,13 +115,13 @@ class RoundDebug {
         buf.writeln('  legacy manual[$bId][$aId]=${mBA >= 0 ? '+' : ''}${mBA.toStringAsFixed(2)}');
       }
       if (source == SlidingSource.inconsistency) {
-        buf.writeln('  ❌ INCONSISTENCIA: manual[$aId][$bId]=$mAB ≠ -manual[$bId][$aId]=$mBA');
+        buf.writeln('INCONSISTENCIA: manual[$aId][$bId]=$mAB ≠ -manual[$bId][$aId]=$mBA');
         buf.writeln('     Esto lanzaría StateError en el engine.');
       }
     }
 
     if (source == SlidingSource.hcpFallback) {
-      buf.writeln('  ℹ️  Fallback HCP: hcp($aId)-hcp($bId)=${(hcpA-hcpB).toStringAsFixed(1)}');
+      buf.writeln('ℹ  Fallback HCP: hcp($aId)-hcp($bId)=${(hcpA-hcpB).toStringAsFixed(1)}');
     }
 
     buf.write('────────────────────────────────────────────────────');
@@ -187,7 +187,7 @@ class RoundDebug {
           .where((e) => e.betType == mod.type)
           .toList();
     } catch (e) {
-      buf.writeln('  ❌ ERROR al computar: $e');
+      buf.writeln('ERROR al computar: $e');
       buf.write('────────────────────────────────────────────────────');
       return buf.toString();
     }
@@ -268,12 +268,12 @@ class RoundDebug {
     // Validación pairSliding
     final errors = BetEngine.validatePairSliding(round);
     if (errors.isNotEmpty) {
-      buf.writeln('  ── ❌ Errores detectados en pairSliding ────────');
+      buf.writeln('──  Errores detectados en pairSliding ────────');
       for (final err in errors) {
         buf.writeln('  • $err');
       }
     } else {
-      buf.writeln('  ✅ pairSliding: sin errores de validación');
+      buf.writeln('pairSliding: sin errores de validación');
     }
 
     // oyeseRankings
@@ -337,7 +337,7 @@ class RoundDebug {
     SlidingSource.legacyBilateral  => 'legacy manualHandicaps (bilateral consistente)',
     SlidingSource.legacyUnilateral => 'legacy manualHandicaps (unilateral)',
     SlidingSource.hcpFallback      => 'hcp fallback',
-    SlidingSource.inconsistency    => '❌ INCONSISTENCIA (legacy bilateral incoherente)',
+    SlidingSource.inconsistency    => 'INCONSISTENCIA (legacy bilateral incoherente)',
   };
 
   static void _explainNassauPairs(
@@ -366,7 +366,7 @@ class RoundDebug {
         try {
           recv = BetEngine.strokesP1ReceivesFromP2(round, a, b);
         } catch (_) {
-          buf.writeln('    ❌ Error calculando recv — no se puede mostrar deltas');
+          buf.writeln('Error calculando recv — no se puede mostrar deltas');
           continue;
         }
 
@@ -478,7 +478,7 @@ class RoundDebug {
       final sign   = recvAB >= 0 ? '+' : '';
       buf.writeln('    recv($a,$b)=$sign${recvAB.toStringAsFixed(2)}  src=${_sourceLabel(src)}');
     } catch (e) {
-      buf.writeln('    recv($a,$b)=❌ ERROR: $e');
+      buf.writeln('recv($a,$b)= ERROR: $e');
     }
   }
 

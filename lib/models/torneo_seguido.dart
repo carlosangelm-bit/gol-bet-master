@@ -66,7 +66,7 @@ class TorneoSeguido {
     required this.token,
     required this.ownerUid,
     required this.nombre,
-    this.emoji = '🏆',
+    this.emoji = 'trofeo',
     required this.desde,
     this.jugadorNombre = '',
   });
@@ -86,7 +86,7 @@ class TorneoSeguido {
         token: (j['token'] as String?) ?? '',
         ownerUid: (j['ownerUid'] as String?) ?? '',
         nombre: (j['nombre'] as String?) ?? 'Torneo',
-        emoji: (j['emoji'] as String?) ?? '🏆',
+        emoji: (j['emoji'] as String?) ?? 'trofeo',
         desde: DateTime.tryParse((j['desde'] as String?) ?? '') ??
             DateTime(2000),
         jugadorNombre: (j['jugadorNombre'] as String?) ?? '',

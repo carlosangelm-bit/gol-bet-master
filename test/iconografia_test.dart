@@ -1,12 +1,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ICONOGRAFÍA — entrega 1 de dos: el sistema y el catálogo
+// ICONOGRAFÍA — las dos entregas, cerradas
 //
 // El inventario dio 258 emojis en unas treinta pantallas, no los once que se
-// listaron a ojo. Así que va en dos:
+// listaron a ojo. Fue en dos:
 //
-//   1 · el SISTEMA y el CATÁLOGO —esta—, que con un cambio alcanza las diez
-//       pantallas que enseñan tipos de apuesta, más la tele
-//   2 · las pantallas sueltas, guiadas por el contador de abajo
+//   1 · el SISTEMA y el CATÁLOGO, que con un cambio alcanzó las diez pantallas
+//       que enseñan tipos de apuesta, más la tele: 258 → 240
+//   2 · las pantallas sueltas, guiadas por el contador de abajo: 240 → 0
+//
+// El contador ya no es un tope que baja. Es un CERO, y por eso ahora dice otra
+// cosa: el primer emoji que alguien escriba a partir de hoy falla aquí.
 //
 // ── Lo que se comprobó antes de dibujar nada ────────────────────────────────
 //
@@ -86,11 +89,9 @@ void main() {
       for (final t in BetModuleType.values) {
         expect(() => t.icono, returnsNormally, reason: t.name);
       }
-      // Quedan DOS en el archivo, y no son del catálogo: son el emoji por
-      // defecto de un grupo de apuestas, que se guarda en Firestore. Cambiar un
-      // valor por defecto que ya está escrito en documentos de gente es otra
-      // conversación, y va en la entrega 2 con su decisión delante.
-      expect(emojiEn('lib/models/models.dart'), lessThanOrEqualTo(2),
+      // Los DOS que quedaban eran el ⛳ por defecto de un grupo de apuestas,
+      // que se guarda en Firestore. Ya no está: ahora se guarda una CLAVE.
+      expect(emojiEn('lib/models/models.dart'), 0,
           reason: 'ninguno del catálogo de formatos');
     });
 
@@ -178,17 +179,16 @@ void main() {
   });
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 4 · EL CONTADOR
+  // 4 · EL CONTADOR, ya en cero
   //
-  // 258 emoji no se quitan en una entrega sin abrir treinta pantallas a ciegas.
-  // Este test no exige que el número baje: exige que NO SUBA. Escribir un emoji
-  // nuevo falla aquí, y ahí es donde se decide, no seis meses después.
-  //
-  // La entrega 2 baja el tope conforme se vacían las pantallas.
+  // Durante la entrega 1 esto era un tope que solo pedía NO SUBIR, porque 258
+  // emoji no se quitan de treinta pantallas a ciegas. Ya está en cero, y un
+  // cero se defiende solo: escribir un emoji nuevo falla aquí, que es donde se
+  // decide, y no seis meses después cuando ya hay veinte.
   // ───────────────────────────────────────────────────────────────────────────
   group('4 · lo que queda, medido', () {
-    test('CLAVE: no suben de donde están', () {
-      expect(emojiEnTodo(), lessThanOrEqualTo(240),
+    test('CLAVE: no queda ninguno en toda la interfaz', () {
+      expect(emojiEnTodo(), 0,
           reason: 'hay un catálogo en GolfIcons: úsalo en vez de un carácter');
     });
 
@@ -200,6 +200,115 @@ void main() {
 
     test('el catálogo de iconos tampoco, claro', () {
       expect(emojiEn('lib/core/golf_icons.dart'), 0);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 5 · LA MARCA QUE SE GUARDA
+  //
+  // El contador de arriba lee el CÓDIGO. Y había una segunda vía que no mide:
+  // emoji que llegan como DATO. Un grupo de apuestas, un torneo y una plantilla
+  // guardan cada uno su marca, elegida por su dueño de una lista de veinte
+  // caracteres. El contador podía marcar cero y la pantalla seguir pintando un
+  // 🏆 salido de Firestore.
+  //
+  // Ahora se guarda una CLAVE del catálogo. Y como Carlos borra la base al
+  // lanzar, esto va SIN MIGRACIÓN: lo que se exige aquí no es que los valores
+  // viejos se conviertan, sino que NO ROMPAN mientras existan.
+  // ───────────────────────────────────────────────────────────────────────────
+  group('5 · la marca guardada es una clave, no un carácter', () {
+    test('CLAVE: un valor viejo NO rompe, cae en la bandera', () {
+      // Es la promesa entera del "sin migración". Un grupo guardado ayer con
+      // '⛳' enseña la marca por defecto, no un hueco ni una excepción.
+      for (final viejo in ['⛳', '⛳️', '🏆', '🤑', '', null, 'inventada']) {
+        expect(() => GolfIcons.deClave(viejo), returnsNormally, reason: '$viejo');
+        expect(GolfIcons.deClave(viejo), GolfIcons.bandera, reason: '$viejo');
+      }
+    });
+
+    test('y una clave buena devuelve SU icono, no el de por defecto', () {
+      // El contrapeso del test de arriba: si `deClave` devolviera siempre la
+      // bandera, aquel pasaría igual y la paleta no serviría para nada.
+      expect(GolfIcons.deClave('trofeo'), GolfIcons.trofeo);
+      expect(GolfIcons.deClave('dinero'), GolfIcons.dinero);
+      expect(GolfIcons.deClave('trofeo'), isNot(GolfIcons.deClave('dinero')));
+    });
+
+    test('la clave inicial está en la paleta', () {
+      // Si no lo estuviera, un grupo NUEVO nacería cayendo en el respaldo, que
+      // es el mismo síntoma que teníamos con los viejos.
+      expect(GolfIcons.paleta.containsKey(GolfIcons.claveInicial), isTrue);
+    });
+
+    test('CONTRAPESO: la paleta no puede encogerse por debajo de lo que había',
+        () {
+      // Las listas que sustituye tenían diez, doce y veinte emoji. Recortarla a
+      // cinco "para simplificar" deja sin marca a quien ya eligió una, y el
+      // fallo se vería como grupos idénticos, no como un error.
+      expect(GolfIcons.paleta.length, greaterThanOrEqualTo(12));
+      expect(GolfIcons.paleta.values.toSet().length, GolfIcons.paleta.length,
+          reason: 'dos claves con el mismo icono son dos marcas indistinguibles');
+    });
+
+    test('CLAVE: un grupo nuevo nace con clave, y un torneo con la suya', () {
+      // Un dato por defecto que no es del catálogo vuelve a meter caracteres por
+      // la puerta de atrás.
+      final g = BettingGroup(
+          id: 'g', name: 'Los de siempre', updatedAt: DateTime(2026, 8, 30));
+      expect(GolfIcons.paleta.containsKey(g.emoji), isTrue,
+          reason: 'el grupo guarda una clave, no un carácter');
+
+      // Y cada cosa nace con la marca que la describe: el torneo con el trofeo,
+      // no con la bandera de todo lo demás.
+      expect(GolfIcons.deClave('trofeo'), GolfIcons.trofeo);
+    });
+
+    testWidgets('CLAVE: y la marca vieja se DIBUJA, no se escribe',
+        (tester) async {
+      // La prueba de que la segunda vía está cerrada: se monta con el valor de
+      // ayer y lo que sale es un Icon del tema, no un Text con el carácter.
+      const marcaDeAyer = '⛳';
+      await tester.pumpWidget(MaterialApp(
+        theme: GolfTheme.light.toMaterial(),
+        home: Scaffold(
+          body: Icon(GolfIcons.deClave(marcaDeAyer),
+              size: GolfIcons.juntoATitulo),
+        ),
+      ));
+      expect(find.text(marcaDeAyer), findsNothing);
+      expect(find.byIcon(GolfIcons.bandera), findsOneWidget);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 6 · LOS QUE NO TENÍAN EQUIVALENTE
+  //
+  // Seis eventos pagaban unidades con emoji de ANIMALES y de PLAYA: 🐦 un
+  // birdie, 🦅 un eagle, 🏖️ un par salvado desde arena. Ninguno DICE lo que
+  // mide: el pájaro es un chiste del inglés, no un símbolo. Se resolvieron por
+  // significado, igual que la serpiente y el lobo en la entrega 1.
+  // ───────────────────────────────────────────────────────────────────────────
+  group('6 · los seis eventos, resueltos por significado', () {
+    test('CLAVE: los seis se distinguen entre sí', () {
+      // Dos eventos con el mismo icono son dos filas idénticas en el detalle
+      // de unidades, que es donde se comprueba cuánto pagó cada cosa.
+      final seis = {
+        GolfIcons.bajoPar,
+        GolfIcons.dobleBajoPar,
+        GolfIcons.bunker,
+        GolfIcons.unico,
+        GolfIcons.destello,
+        GolfIcons.hoyoDirecto,
+      };
+      expect(seis.length, 6);
+    });
+
+    test('y el doble es el doble, no otro dibujo cualquiera', () {
+      // Un eagle es un birdie por dos. Que el icono lo diga es la diferencia
+      // entre un símbolo y una etiqueta de color.
+      expect(GolfIcons.dobleBajoPar, isNot(GolfIcons.bajoPar));
+      expect(GolfIcons.bajoPar, Icons.trending_down);
+      expect(GolfIcons.dobleBajoPar, Icons.keyboard_double_arrow_down);
     });
   });
 }

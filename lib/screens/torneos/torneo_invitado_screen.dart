@@ -13,6 +13,7 @@
 //
 // Y la cintilla de descarga, permanente, sin tapar el contenido: va fija abajo
 // con el ListView dejándole sitio, no flotando encima.
+import '../../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
@@ -123,7 +124,7 @@ class _TorneoInvitadoScreenState extends State<TorneoInvitadoScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('⛳', style: TextStyle(fontSize: 34)),
+            const Icon(GolfIcons.bandera, size: GolfIcons.juntoAlHeroe),
             const SizedBox(height: 10),
             Text('Para $queIba hace falta cuenta',
                 textAlign: TextAlign.center,
@@ -172,7 +173,7 @@ class _TorneoInvitadoScreenState extends State<TorneoInvitadoScreen> {
         backgroundColor: t.bg,
         foregroundColor: t.text,
         elevation: 0,
-        title: Text('${copia.emoji} ${copia.nombre}'),
+        title: Text('${copia.nombre}'),
         // Sin acciones: no hay nada que hacer aquí.
       ),
       body: Column(children: [
@@ -274,7 +275,7 @@ class _TorneoInvitadoScreenState extends State<TorneoInvitadoScreen> {
                       spacing: 10,
                       runSpacing: 4,
                       children: [
-                        const Text('🏆', style: TextStyle(fontSize: 24)),
+                        const Icon(GolfIcons.trofeo, size: GolfIcons.juntoATitulo),
                         Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -444,7 +445,7 @@ class _TorneoInvitadoScreenState extends State<TorneoInvitadoScreen> {
         const SizedBox(height: 4),
         Text(
             copia.campeon == mio
-                ? '🏆 Campeón del torneo.'
+                ? 'Campeón del torneo.'
                 : fuera
                     ? 'Fuera del cuadro: perdiste en '
                         '${ArbolDeLlave.nombreDeFase(arbol.rondas[ultimo.ronda].length)}.'
@@ -754,8 +755,8 @@ class _CintillaDescarga extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
             child: Row(children: [
-              Text(conSesion ? '🏠' : '⛳',
-                  style: const TextStyle(fontSize: 20)),
+              Icon(conSesion ? Icons.home_outlined : GolfIcons.bandera,
+                  size: GolfIcons.juntoATitulo),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

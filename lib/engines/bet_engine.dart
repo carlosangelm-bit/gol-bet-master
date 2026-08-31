@@ -1354,7 +1354,7 @@ class BetEngine {
                 entries.add(LedgerEntry(
                   fromPlayerId: other, toPlayerId: pid,
                   amount: zapatoAmt, betType: BetModuleType.oyeses,
-                  reason: '👟 Zapato 1Pot ($holesWithRanking oyeses)',
+                  reason: 'Zapato 1Pot ($holesWithRanking oyeses)',
                 ));
               }
               break; // un solo zapato posible en onePot
@@ -1375,14 +1375,14 @@ class BetEngine {
                 entries.add(LedgerEntry(
                   fromPlayerId: b, toPlayerId: a,
                   amount: zapatoAmt, betType: BetModuleType.oyeses,
-                  reason: '👟 Zapato AvA ($holesWithRanking oyeses)',
+                  reason: 'Zapato AvA ($holesWithRanking oyeses)',
                 ));
               } else if (bWinsVsA == holesWithRanking) {
                 // B le ganó todos los oyeses a A → zapato de B vs A
                 entries.add(LedgerEntry(
                   fromPlayerId: a, toPlayerId: b,
                   amount: zapatoAmt, betType: BetModuleType.oyeses,
-                  reason: '👟 Zapato AvA ($holesWithRanking oyeses)',
+                  reason: 'Zapato AvA ($holesWithRanking oyeses)',
                 ));
               }
             }

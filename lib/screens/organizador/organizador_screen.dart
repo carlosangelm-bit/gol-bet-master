@@ -35,6 +35,7 @@
 // para su propio dueño. La lista vive en core/escuchas.dart, una sola vez.
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:flutter/material.dart';
+import '../../core/golf_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/ancho.dart';
@@ -364,7 +365,7 @@ class _PortalState extends State<_Portal> {
                   setState(() => _seccion = SeccionDelPortal.values[i]),
               leading: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 18),
-                child: Text(torneo.emoji, style: const TextStyle(fontSize: 26)),
+                child: Icon(GolfIcons.deClave(torneo.emoji), size: GolfIcons.juntoAlHeroe),
               ),
               destinations: [
                 for (final s in SeccionDelPortal.values)
@@ -415,7 +416,7 @@ class _Cabecera extends StatelessWidget {
           constraints: BoxConstraints(maxWidth: ancho.anchoDeContenido),
           child: Row(children: [
             if (!ancho.esTabla) ...[
-              Text(torneo.emoji, style: const TextStyle(fontSize: 22)),
+              Icon(GolfIcons.deClave(torneo.emoji), size: GolfIcons.juntoATitulo),
               const SizedBox(width: 9),
             ],
             Expanded(

@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:golf_bet_master/core/golf_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:golf_bet_master/providers/torneo_provider.dart';
@@ -398,7 +399,7 @@ void main() {
           ]));
       expect(errores, isEmpty);
       expect(_pantalla(tester), contains('Rafael'));
-      expect(find.text('🏆'), findsWidgets);
+      expect(find.byIcon(GolfIcons.trofeo), findsWidgets);
     });
 
     testWidgets('y dice CON QUÉ RONDA se resolvió cada partido',

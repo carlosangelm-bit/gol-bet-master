@@ -64,6 +64,7 @@
 // habrían divergido en cuanto alguien tocara uno: es lo que pasó con el catálogo
 // de tipos de apuesta en cinco pantallas.
 // ─────────────────────────────────────────────────────────────────────────────
+import '../core/golf_icons.dart';
 import 'package:flutter/material.dart';
 
 import '../core/app_theme.dart';
@@ -366,7 +367,7 @@ class _ArbolDeLlaveVistaState extends State<ArbolDeLlaveVista> {
                           border: Border.all(color: t.primary),
                         ),
                         child: Column(children: [
-                          const Text('🏆', style: TextStyle(fontSize: 16)),
+                          const Icon(GolfIcons.trofeo, size: GolfIcons.juntoAValor),
                           Text(arbol.campeon!,
                               maxLines: 2,
                               textAlign: TextAlign.center,
@@ -635,7 +636,7 @@ class _PorFasesState extends State<_PorFases> {
       if (arbol.campeon != null) ...[
         const SizedBox(height: 10),
         Row(children: [
-          const Text('🏆', style: TextStyle(fontSize: 18)),
+          const Icon(GolfIcons.trofeo, size: GolfIcons.juntoAValor),
           const SizedBox(width: 8),
           Expanded(
             child: Text('Campeón: ${arbol.campeon}',

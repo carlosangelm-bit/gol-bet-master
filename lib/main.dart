@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN — Golf Bet Master
 // ─────────────────────────────────────────────────────────────────────────────
+import 'core/golf_icons.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -297,7 +298,7 @@ class _ErrorApp extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text('⚠️', style: TextStyle(fontSize: 48)),
+                const Icon(GolfIcons.aviso, size: GolfIcons.juntoAlHeroe),
                 const SizedBox(height: 16),
                 const Text('Error de inicialización',
                     style: TextStyle(color: Color(0xFFE53935),
@@ -342,7 +343,7 @@ class _AppErrorWidget extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Row(children: [
-                Text('⚠️', style: TextStyle(fontSize: 24)),
+                Icon(GolfIcons.aviso, size: GolfIcons.juntoATitulo),
                 SizedBox(width: 8),
                 Expanded(child: Text('Error de la aplicación',
                     style: TextStyle(color: Color(0xFFE53935),

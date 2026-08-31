@@ -5,6 +5,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+import '../core/golf_icons.dart';
 import '../engines/pair_agreement_engine.dart';
 import '../models/models.dart';
 import '../providers/round_provider.dart' show roundToJson, roundFromJson;
@@ -949,7 +950,7 @@ class RoundTemplate {
     return RoundTemplate(
       id:          doc.id,
       name:        d['name'] as String? ?? '',
-      emoji:       d['emoji'] as String? ?? '⛳️',
+      emoji:       d['emoji'] as String? ?? GolfIcons.claveInicial,
       description: d['description'] as String? ?? '',
       playerNames: List<String>.from(d['playerNames'] as List? ?? []),
       betGroupsJson: (d['betGroupsJson'] as List? ?? [])
@@ -1122,7 +1123,7 @@ class GamePreset {
     return GamePreset(
       id:          doc.id,
       name:        d['name'] as String? ?? '',
-      emoji:       d['emoji'] as String? ?? '⛳️',
+      emoji:       d['emoji'] as String? ?? GolfIcons.claveInicial,
       description: d['description'] as String? ?? '',
       modulesJson: (d['modulesJson'] as List? ?? [])
           .map((e) => Map<String, dynamic>.from(e as Map))
