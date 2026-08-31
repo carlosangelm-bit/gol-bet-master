@@ -262,6 +262,31 @@ y corregible — pero no hay un atajo desde esta sección. Va en la siguiente.
 **La última sección.** Con el padrón de Copa de Primavera y un campo con sus
 hoyos cargados:
 
+## Empieza por el campo — ahora está aquí
+
+**EL CAMPO** es el primer bloque de la sección, con su botón. Antes el aviso
+decía *«elige el campo y vuelve»* y no había dónde: el selector estaba en el
+editor del torneo, en la app.
+
+- **Sin campo**: dice *«Sin campo todavía · Tócalo para elegirlo»*, en rojo.
+- **Con campo**: el nombre más **los dos números que deciden todo** —
+  `18 hoyos · 4 par 3`. Con el nombre solo, un campo mal cargado se ve idéntico
+  a uno bueno hasta llegar al reparto.
+
+Tócalo: abre el **mismo selector** del asistente, del arranque rápido y del
+editor. Elige uno y el resto de la sección se rellena solo.
+
+## Si el campo no trae los par 3
+
+Aparece una rejilla de hoyos debajo del interruptor, **solo cuando puede hacer
+falta**. Dice cuáles son par 3 según el campo, y se puede **añadir y quitar**:
+un campo mal cargado puede traer un par 3 donde hay un par 4, y ahí la app
+pondría dos grupos en un tee donde no caben.
+
+El primer toque siembra la lista con los del campo; a partir de ahí manda la
+lista. El borde azul marca lo que has dictado tú, distinto de lo que trae el
+campo.
+
 ## Los cuatro números que hay que ver cuadrar
 
 **1 · Las salidas.** El interruptor de *«Dos salidas en los par 3»* debe decir

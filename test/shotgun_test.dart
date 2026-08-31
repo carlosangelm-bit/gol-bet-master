@@ -19,6 +19,9 @@ import 'package:golf_bet_master/core/ancho.dart';
 import 'package:golf_bet_master/core/app_theme.dart';
 import 'package:golf_bet_master/models/torneo.dart';
 import 'package:golf_bet_master/providers/player_provider.dart';
+import 'package:golf_bet_master/providers/torneo_provider.dart';
+import 'package:golf_bet_master/providers/user_profile_provider.dart';
+import 'package:golf_bet_master/widgets/course_picker_sheet.dart';
 import 'package:golf_bet_master/services/player_service.dart';
 import 'package:golf_bet_master/screens/organizador/salidas_seccion.dart';
 import 'package:golf_bet_master/models/models.dart';
@@ -173,7 +176,11 @@ void main() {
       // Suponer 18 con cuatro par 3 daría 22 salidas inventadas, y el
       // organizador se enteraría en el tee.
       final p = planDeShotgun(padron: _padron(80), campo: null);
-      expect(p.impedimento, contains('no tiene campo'));
+      // Y NO se manda a otra pantalla: el selector está arriba, en la misma
+      // sección. El mensaje decía "elige el campo y vuelve" cuando no había
+      // dónde elegirlo.
+      expect(p.impedimento, contains('arriba'));
+      expect(p.impedimento, isNot(contains('vuelve')));
       expect(p.salidas, isEmpty);
       expect(p.utilizable, isFalse);
     });
@@ -184,7 +191,11 @@ void main() {
           padron: _padron(80),
           campo: const CourseInfo(name: 'Bosques', holes: []));
       expect(p.impedimento, contains('Bosques'));
-      expect(p.impedimento, contains('par 3'));
+      // Y NO ofrece marcar par 3 a mano: sin ningún hoyo no se sabe cuántos
+      // habría que marcar. Ofrecer una salida que no existe es el fallo que
+      // este mensaje tenía.
+      expect(p.impedimento, isNot(contains('par 3 a mano')));
+      expect(p.impedimento, contains('Elige otro campo'));
       expect(p.utilizable, isFalse);
     });
 
@@ -444,4 +455,162 @@ void main() {
           reason: 'sobrar salidas se avisa pero no impide');
     });
   });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 7 · EL CAMPO SE ELIGE DONDE EL AVISO LO PIDE
+  //
+  // «No hay dónde cargar el campo. El aviso dice "elige el campo y vuelve" — y
+  // no hay dónde elegirlo.»
+  //
+  // Había dos posibilidades muy distintas y ninguna era la buena:
+  //
+  //   A · la opción del editor no hace nada    → NO: abre el selector y guarda
+  //   B · lo guarda y no llega aquí            → NO: la cadena está entera
+  //
+  // Era lo otro: el aviso mandaba a un sitio que no nombraba, y ese sitio está
+  // en OTRA superficie. Los dos primeros tests de aquí abajo son la prueba de
+  // que A y B no eran — si algún día una de las dos SE VUELVE verdad, fallan.
+  // ───────────────────────────────────────────────────────────────────────────
+  group('7 · el campo del torneo: la cadena y el selector', () {
+    test('CLAVE: fijar el campo sobrevive a copyWith y a Firestore', () {
+      // Descarta A y B de una vez: si `copyWith` o el viaje perdieran el campo,
+      // el editor haría su trabajo y la sección seguiría sin verlo.
+      final campo = _campo();
+      final t = Torneo(id: 't1', nombre: 'Copa').copyWith(campo: campo);
+      expect(t.campo?.name, 'Los Encinos');
+      expect(t.campo?.holes.length, 18);
+
+      final vuelta = Torneo.fromJson(t.toJson());
+      expect(vuelta.campo?.name, 'Los Encinos');
+      expect(vuelta.campo?.holes.where((h) => h.isPar3).length, 4,
+          reason: 'los PARES tienen que viajar, no solo el nombre');
+    });
+
+    test('CLAVE: y quitarlo también llega', () {
+      final t = Torneo(id: 't1', nombre: 'Copa', campo: _campo())
+          .copyWith(limpiarCampo: true);
+      expect(t.campo, isNull);
+      expect(Torneo.fromJson(t.toJson()).campo, isNull);
+    });
+
+    testWidgets('CLAVE: la sección enseña el campo con sus DOS números',
+        (tester) async {
+      // El nombre solo no basta: un campo mal cargado —18 hoyos y ningún par—
+      // se ve idéntico a uno bueno hasta llegar al reparto.
+      await montarSeccion(tester,
+          Torneo(id: 't1', nombre: 'Copa',
+              participantes: _padron(88), campo: _campo()));
+      final txt = textoDe(tester);
+      expect(txt, contains('EL CAMPO'));
+      expect(txt, contains('Los Encinos'));
+      expect(txt, contains('18 hoyos'));
+      expect(txt, contains('4 par 3'));
+    });
+
+    testWidgets('CLAVE: sin campo, el botón de elegirlo está AQUÍ',
+        (tester) async {
+      // El criterio 1. Antes el aviso mandaba a otra pantalla sin nombrarla.
+      await montarSeccion(tester,
+          Torneo(id: 't1', nombre: 'Copa', participantes: _padron(88)));
+      final txt = textoDe(tester);
+      expect(txt, contains('Sin campo todavía'));
+      expect(txt, contains('Tócalo para elegirlo'));
+      // Y el aviso ya no manda a ningún sitio que no esté a la vista.
+      expect(txt, contains('arriba'));
+      expect(txt, isNot(contains('y vuelve')));
+    });
+
+    testWidgets('y tocarlo abre el MISMO selector de siempre', (tester) async {
+      // Uno propio aquí habría dado dos formas de elegir campo y dos
+      // resultados para el mismo club.
+      await montarSeccion(tester,
+          Torneo(id: 't1', nombre: 'Copa', participantes: _padron(88)));
+      await tester.tap(find.text('Sin campo todavía'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(CoursePickerSheet), findsOneWidget);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  group('8 · los par 3 a mano, en los dos sentidos', () {
+    test('CLAVE: la lista SUSTITUYE al campo, no se le suma', () {
+      // Sumarse solo permitiría añadir. Y hace falta quitar: un campo mal
+      // cargado puede traer un par 3 donde hay un par 4, y ahí la app pondría
+      // dos grupos en un tee donde no caben.
+      final campo = _campo(par3: const {3, 7, 12, 16});
+      expect(salidasDe(campo).length, 22);
+      // Dictando SOLO dos, quedan dos: los otros dos del campo se quitan.
+      expect(salidasDe(campo, par3AMano: const {3, 7}).length, 20);
+      // Y dictando ninguno de los del campo, ninguno cuenta.
+      expect(salidasDe(campo, par3AMano: const {5}).length, 19);
+    });
+
+    test('CLAVE: vacío manda el campo — que es el caso normal', () {
+      // El contrapeso del test de arriba: si la lista vacía sustituyera, un
+      // campo con cuatro par 3 daría 18 salidas y nadie habría pedido eso.
+      expect(salidasDe(_campo()).length, 22);
+    });
+
+    test('un campo sin ningún par 3 da 18, y con dictado los que se digan', () {
+      final pelado = _campo(par3: const {});
+      expect(salidasDe(pelado).length, 18);
+      expect(salidasDe(pelado, par3AMano: const {4, 9, 14, 17}).length, 22);
+    });
+
+    testWidgets('CLAVE: y la pantalla lo ofrece cuando puede hacer falta',
+        (tester) async {
+      // El caso que produce 18 salidas en silencio: el campo no trae pares.
+      await montarSeccion(tester,
+          Torneo(id: 't1', nombre: 'Copa',
+              participantes: _padron(60), campo: _campo(par3: const {})));
+      final txt = textoDe(tester);
+      expect(txt, contains('no trae ningún par 3'));
+      expect(txt, contains('18 salidas'), reason: 'y dice cuántas hay ahora');
+    });
+
+    testWidgets('con los pares bien, dice cuáles son en vez de callarse',
+        (tester) async {
+      await montarSeccion(tester,
+          Torneo(id: 't1', nombre: 'Copa',
+              participantes: _padron(60), campo: _campo()));
+      expect(textoDe(tester), contains('Par 3 según el campo: 3, 7, 12, 16'));
+    });
+  });
 }
+
+/// Monta la sección con el torneo dado. Compartido por los grupos 6, 7 y 8.
+Future<void> montarSeccion(WidgetTester tester, Torneo t) async {
+  // Una ventana muy alta a propósito: un ListView no construye lo que no se ve,
+  // y el botón vive debajo de veinticuatro grupos.
+  tester.view.physicalSize = const Size(1440, 6000);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+  await tester.pumpWidget(MultiProvider(
+    providers: [
+      ChangeNotifierProvider(
+          create: (_) => PlayerProvider()
+            ..sembrar([
+              for (var i = 1; i <= 150; i++)
+                PlayerWithLink(player: Player(id: 'j$i', name: 'Jugador $i')),
+            ])),
+      ChangeNotifierProvider(create: (_) => TorneoProvider()..sembrar([t])),
+      // El selector de campo enseña los favoritos del perfil, así que necesita
+      // su provider. Montar con menos escondería que la hoja no abre.
+      ChangeNotifierProvider(create: (_) => UserProfileProvider()),
+    ],
+    child: MaterialApp(
+      home: Scaffold(
+        body: LayoutBuilder(
+          builder: (_, c) => SalidasSeccion(
+              torneo: t, ancho: anchoDe(c.maxWidth), t: GolfTheme.classic),
+        ),
+      ),
+    ),
+  ));
+  await tester.pump(const Duration(milliseconds: 200));
+}
+
+String textoDe(WidgetTester tester) => tester
+    .widgetList<Text>(find.byType(Text))
+    .map((w) => w.data ?? '')
+    .join(' · ');

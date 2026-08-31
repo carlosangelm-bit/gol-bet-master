@@ -57,9 +57,19 @@ class PuntoDeSalida {
 /// pequeño no la necesita: con 40 jugadores sobran salidas y meter dos grupos
 /// en un tee sin hacer falta solo hace esperar.
 ///
-/// [par3AMano] permite marcar hoyos como par 3 cuando el campo no trae los
-/// pares —o los trae mal—. Es la anulación a mano: el dato del campo manda,
-/// pero el organizador que está mirando el tee manda más.
+/// [par3AMano] es la anulación del organizador, y SUSTITUYE al dato del campo
+/// en vez de sumarse a él.
+///
+/// ── Por qué sustituye ──────────────────────────────────────────────────────
+///
+/// Sumarse solo permitiría AÑADIR. Y hace falta quitar: un campo mal cargado
+/// puede traer un par 3 donde hay un par 4, y entonces la app pondría dos
+/// grupos en un tee donde no caben. Con "sumarse", el botón de quitar de la
+/// pantalla no haría nada — una interfaz que dice "toca para quitar" y no quita
+/// es peor que no ofrecerlo.
+///
+/// Vacío = manda el campo, que es el caso normal. Con algo dentro, manda el
+/// organizador, que es quien está mirando el tee.
 List<PuntoDeSalida> salidasDe(
   CourseInfo campo, {
   bool dosEnPar3 = true,
@@ -67,7 +77,8 @@ List<PuntoDeSalida> salidasDe(
 }) {
   final salidas = <PuntoDeSalida>[];
   for (final h in campo.holes) {
-    final esPar3 = h.isPar3 || par3AMano.contains(h.hole);
+    final esPar3 =
+        par3AMano.isEmpty ? h.isPar3 : par3AMano.contains(h.hole);
     if (dosEnPar3 && esPar3) {
       salidas.add(PuntoDeSalida(h.hole, 'A'));
       salidas.add(PuntoDeSalida(h.hole, 'B'));
@@ -152,16 +163,23 @@ PlanDeShotgun planDeShotgun({
     return const PlanDeShotgun(
         grupos: [],
         salidas: [],
-        impedimento: 'Este torneo todavía no tiene campo. Elige el campo y '
-            'vuelve: las salidas salen de sus hoyos y de cuáles son par 3.');
+        // Y no se manda a nadie a otro sitio: el selector está en la misma
+        // pantalla, arriba. El aviso decía "elige el campo y vuelve" cuando no
+        // había dónde elegirlo — mandar a un sitio sin nombrarlo es peor que
+        // no decir nada.
+        impedimento: 'Elige el campo arriba: las salidas salen de sus hoyos y '
+            'de cuáles son par 3.');
   }
   if (campo.holes.isEmpty) {
     return PlanDeShotgun(
         grupos: const [],
         salidas: const [],
+        // Sin NINGÚN hoyo, marcar par 3 a mano no sirve: no se sabe cuántos
+        // hoyos hay que marcar. Decirlo aquí sería ofrecer una salida que no
+        // existe, que es el fallo que este mensaje acaba de tener.
         impedimento: '"${campo.name}" no trae sus hoyos, así que no se sabe '
-            'cuántas salidas hay ni cuáles son par 3. Cárgalos o marca los '
-            'par 3 a mano.');
+            'cuántas salidas hay. Elige otro campo, o vuelve a cargar este '
+            'desde el buscador.');
   }
 
   final salidas = salidasDe(campo, dosEnPar3: dosEnPar3, par3AMano: par3AMano);

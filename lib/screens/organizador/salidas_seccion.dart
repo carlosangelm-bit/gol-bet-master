@@ -18,6 +18,30 @@
 // falla en el móvil, y el día del torneo el organizador tiene el teléfono en
 // una mano y una hoja en la otra.
 //
+// ── EL CAMPO SE ELIGE AQUÍ, y por qué ──────────────────────────────────────
+//
+// «No hay dónde cargar el campo. El aviso dice "elige el campo y vuelve" — y no
+// hay dónde elegirlo.»
+//
+// Lo primero fue comprobar de qué se trataba, porque había dos posibilidades
+// muy distintas: que la opción del editor no hiciera nada, o que hiciera algo
+// que no llegara aquí. No era ninguna de las dos.
+//
+// El editor abre el selector, guarda `campo`, y `copyWith`, `toJson` y
+// `fromJson` lo llevan. El portal lee el torneo VIVO del provider, así que un
+// campo fijado en el editor SÍ llega. La cadena está entera.
+//
+// Lo que fallaba es lo otro: el aviso mandaba a un sitio que no nombraba, y ese
+// sitio está en OTRA SUPERFICIE —el editor de la app—. Es el mismo caso que la
+// pantalla de la tele: una función partida entre dos sitios donde el
+// organizador tiene que saltar para completar una tarea.
+//
+// Misma respuesta y mismo criterio: no es por dónde estás, es por lo que puedes
+// hacer. Y aquí lo que se está haciendo es organizar el torneo, así que el
+// campo se fija DESDE AQUÍ, con el MISMO selector que usa el editor, el
+// asistente y el arranque rápido. El editor lo conserva: fijarlo al crear el
+// torneo sigue siendo lo natural.
+//
 // ── Todo el cálculo está en shotgun.dart ────────────────────────────────────
 //
 // Aquí no se reparte nada ni se cuentan salidas. Esta pantalla elige el tamaño
@@ -31,10 +55,13 @@ import 'package:provider/provider.dart';
 import '../../core/ancho.dart';
 import '../../core/app_theme.dart';
 import '../../core/golf_icons.dart';
+import '../../models/models.dart';
 import '../../models/shotgun.dart';
 import '../../models/torneo.dart';
 import '../../providers/player_provider.dart';
+import '../../providers/torneo_provider.dart';
 import '../../services/live_round_service.dart';
+import '../../widgets/course_picker_sheet.dart';
 
 class SalidasSeccion extends StatefulWidget {
   final Torneo torneo;
@@ -56,6 +83,17 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
   bool _dosEnPar3 = true;
   bool _creando = false;
 
+  /// Los par 3 que el organizador marcó a mano.
+  ///
+  /// ── Por qué hace falta, aunque el campo traiga los pares ─────────────────
+  ///
+  /// `CourseHole.isPar3` mira el par, y un campo cargado sin pares trae todos
+  /// los hoyos a par 4 por defecto. El resultado no es un error: son 18 salidas
+  /// en vez de 22, en silencio, y el organizador se entera al ver que le faltan
+  /// cuatro. El dato del campo manda; el organizador que está mirando el tee
+  /// manda más.
+  Set<int> _par3AMano = {};
+
   /// Los grupos ya tocados a mano. Null mientras el reparto sea el automático.
   ///
   /// Se guarda el resultado y no las mudanzas: el organizador ve lo que hay, no
@@ -69,6 +107,7 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
       campo: widget.torneo.campo,
       tamano: _tamano,
       dosEnPar3: _dosEnPar3,
+      par3AMano: _par3AMano,
     );
     final tocados = _aMano;
     if (tocados == null) return base;
@@ -98,7 +137,21 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
             style: TextStyle(color: t.sub, fontSize: 12.5, height: 1.4)),
         const SizedBox(height: 18),
 
-        // ── El impedimento, arriba y con su número ──────────────────────────
+        // ── EL CAMPO, primero ──────────────────────────────────────────────
+        //
+        // Antes de los grupos y antes del aviso: todo lo de abajo sale de sus
+        // hoyos, así que sin campo no hay nada que decidir. Y va con su botón,
+        // no con una instrucción de ir a otro sitio.
+        _Etiqueta('EL CAMPO', t: t),
+        const SizedBox(height: 8),
+        _Campo(
+          campo: widget.torneo.campo,
+          t: t,
+          onElegir: _elegirCampo,
+        ),
+        const SizedBox(height: 22),
+
+        // ── El impedimento, con su número ──────────────────────────────────
         if (plan.impedimento != null) ...[
           _Nota(t: t, texto: plan.impedimento!, grave: true),
           const SizedBox(height: 14),
@@ -142,6 +195,36 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
             _aMano = null;
           }),
         ),
+        // ── Los par 3, cuando el campo no los trae ─────────────────────
+        //
+        // Solo aparece si hace falta: con los pares bien cargados esto sería
+        // una fila más que nadie necesita tocar.
+        if (_dosEnPar3 &&
+            widget.torneo.campo != null &&
+            widget.torneo.campo!.holes.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _Par3AMano(
+            campo: widget.torneo.campo!,
+            marcados: _par3AMano,
+            t: t,
+            onCambio: (h) => setState(() {
+              // El primer toque SIEMBRA la lista con los par 3 del campo: a
+              // partir de ahí la lista manda entera, así que quitar uno del
+              // campo funciona igual que añadir uno que no trae.
+              final base = _par3AMano.isEmpty
+                  ? widget.torneo.campo!.holes
+                      .where((x) => x.isPar3)
+                      .map((x) => x.hole)
+                      .toSet()
+                  : _par3AMano;
+              final nueva = {...base};
+              if (!nueva.remove(h)) nueva.add(h);
+              _par3AMano = nueva;
+              _aMano = null;
+            }),
+          ),
+        ],
+
         const SizedBox(height: 22),
 
         _Etiqueta('LOS GRUPOS', t: t),
@@ -186,6 +269,44 @@ class _SalidasSeccionState extends State<SalidasSeccion> {
             'actualiza; no las duplica.',
             style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
       ],
+    );
+  }
+
+  Future<void> _elegirCampo() async {
+    final t = widget.t;
+    final prov = context.read<TorneoProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: t.card,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      // El MISMO selector del editor, del asistente y del arranque rápido. Uno
+      // propio aquí habría dado dos formas de elegir campo y dos resultados
+      // para el mismo club.
+      builder: (hoja) => CoursePickerSheet(
+        t: t,
+        onSelected: (info, _) async {
+          Navigator.pop(hoja);
+          // El torneo VIVO, no la copia del argumento: la sección puede llevar
+          // rato abierta y guardar sobre una copia vieja borraría lo que se
+          // haya tocado en otra sección desde entonces.
+          final vivo = prov.torneos.firstWhere(
+              (x) => x.id == widget.torneo.id,
+              orElse: () => widget.torneo);
+          await prov.guardar(vivo.copyWith(campo: info));
+          if (!mounted) return;
+          // Las mudanzas a mano se descartan: el reparto anterior se hizo
+          // contra otro número de salidas y no significa nada con este campo.
+          setState(() => _aMano = null);
+          messenger.showSnackBar(SnackBar(
+              content: Text('Campo fijado: ${info.name}. '
+                  '${info.holes.where((h) => h.isPar3).length} par 3.')));
+        },
+      ),
     );
   }
 
@@ -332,6 +453,136 @@ class _Grupo extends StatelessWidget {
           ]),
         ),
       );
+}
+
+/// El campo del torneo, con su botón para elegirlo.
+///
+/// Enseña los DOS números que deciden todo lo de abajo: cuántos hoyos trae y
+/// cuántos son par 3. Con el nombre solo, un campo mal cargado —dieciocho hoyos
+/// y ningún par— se ve idéntico a uno bueno hasta llegar al reparto.
+class _Campo extends StatelessWidget {
+  final CourseInfo? campo;
+  final GolfTheme t;
+  final Future<void> Function() onElegir;
+  const _Campo({required this.campo, required this.t, required this.onElegir});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = campo;
+    final par3 = c == null ? 0 : c.holes.where((h) => h.isPar3).length;
+    return Material(
+      color: t.surface,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onElegir,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: c == null ? t.loss : t.divider),
+          ),
+          child: Row(children: [
+            Icon(GolfIcons.bandera,
+                size: GolfIcons.juntoAValor, color: c == null ? t.loss : t.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(c?.name ?? 'Sin campo todavía',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GolfType.value(c == null ? t.loss : t.text)),
+                    Text(
+                        c == null
+                            // El botón está aquí: no se manda a nadie a otro
+                            // sitio a hacer algo que se puede hacer tocando.
+                            ? 'Tócalo para elegirlo. Las salidas salen de sus '
+                                'hoyos.'
+                            : '${c.holes.length} hoyos · $par3 par 3 · '
+                                'toca para cambiarlo',
+                        style: GolfType.label(t.sub)),
+                  ]),
+            ),
+            Icon(Icons.chevron_right, size: 18, color: t.sub),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Marcar par 3 a mano. Solo se ofrece cuando puede hacer falta.
+class _Par3AMano extends StatelessWidget {
+  final CourseInfo campo;
+  final Set<int> marcados;
+  final GolfTheme t;
+  final void Function(int) onCambio;
+  const _Par3AMano({
+    required this.campo,
+    required this.marcados,
+    required this.t,
+    required this.onCambio,
+  });
+
+  /// Si este hoyo cuenta como par 3 AHORA. Vacío = manda el campo; con algo
+  /// dentro, manda la lista. Es la misma regla que `salidasDe`, y por eso se
+  /// escribe una vez y se usa en los tres sitios de la muestra.
+  bool _cuenta(CourseHole h) =>
+      marcados.isEmpty ? h.isPar3 : marcados.contains(h.hole);
+
+  @override
+  Widget build(BuildContext context) {
+    final delCampo = campo.holes.where((h) => h.isPar3).map((h) => h.hole).toSet();
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: t.divider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(
+            delCampo.isEmpty
+                // El caso que produce 18 salidas en silencio.
+                ? 'El campo no trae ningún par 3. Márcalos aquí si los tiene.'
+                : 'Par 3 según el campo: ${delCampo.join(', ')}. '
+                    'Toca para añadir o quitar.',
+            style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 5,
+          runSpacing: 5,
+          children: [
+            for (final h in campo.holes)
+              GestureDetector(
+                onTap: () => onCambio(h.hole),
+                child: Container(
+                  width: 30,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    // Tres estados y se distinguen: par 3 del campo, par 3
+                    // añadido a mano, y hoyo normal. Con dos, quitar un par 3
+                    // del campo se vería igual que no tenerlo.
+                    color: _cuenta(h) ? t.primary.withValues(alpha: 0.15) : t.card,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        // El borde marca lo que el ORGANIZADOR dictó, distinto
+                        // de lo que trae el campo: si no se distinguen, no se
+                        // sabe qué se ha tocado.
+                        color: marcados.isEmpty ? t.divider : t.primary),
+                  ),
+                  child: Text('${h.hole}',
+                      style: GolfType.label(_cuenta(h) ? t.primary : t.sub)),
+                ),
+              ),
+          ],
+        ),
+      ]),
+    );
+  }
 }
 
 class _Nota extends StatelessWidget {
