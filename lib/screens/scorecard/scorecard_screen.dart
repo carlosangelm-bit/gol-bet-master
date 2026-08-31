@@ -4646,7 +4646,7 @@ class _SkinsCellWidget extends StatelessWidget {
         ? p1.shortName
         : winnerIsP2
             ? p2.shortName
-            : '▶ otro';
+            : 'otro';
     final skinColor = winnerIsOther
         ? t.sub
         : winnerIsP1 ? t.profit : t.loss;

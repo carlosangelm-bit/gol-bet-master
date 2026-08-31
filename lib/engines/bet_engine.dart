@@ -2593,7 +2593,7 @@ class BetEngine {
         final pairDetails = <Map<String, dynamic>>[];
 
         if (pids.length < 2) {
-          reason = 'ERROR: Solo ${pids.length} jugador(es) — se necesitan ≥2';
+          reason = 'ERROR: Solo ${pids.length} jugador(es) — se necesitan 2 o más';
         } else if (pids.length == 2) {
           final s0 = strokesInPlayedHoles(pids[0], pids[1]);
           final s1 = strokesInPlayedHoles(pids[1], pids[0]);

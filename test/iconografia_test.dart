@@ -311,4 +311,123 @@ void main() {
       expect(GolfIcons.dobleBajoPar, Icons.keyboard_double_arrow_down);
     });
   });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 7 · EL REPERTORIO: lo que el contador de emojis NO cazaba
+  //
+  // Apareció un ▯ en el estado vacío de Plantillas y el contador marcaba cero.
+  // Al mirarlo salieron DOS problemas distintos, y merecen dos pruebas:
+  //
+  //   · RESIDUOS. `1️⃣` son TRES puntos de código: el dígito, un selector de
+  //     variación y un keycap envolvente. El barrido se llevó el selector y
+  //     dejó el keycap huérfano — un carácter que no se ve, no se busca y no
+  //     se distingue leyendo el código. Es el residuo que deja este tipo de
+  //     barrido, y es exactamente lo que hay que impedir que vuelva.
+  //
+  //   · GLIFOS QUE NO EXISTEN. El ▯ NO era un residuo: era `⋮` (U+22EE), un
+  //     carácter completo y bien formado del que la fuente no tiene dibujo.
+  //     Contra eso no vale una regla sobre codificación: la única defensa es
+  //     un REPERTORIO CERRADO —lo que se ha visto pintar en pantalla— donde
+  //     cada símbolo nuevo entra a mano y después de verlo.
+  //
+  // Las flechas → ← siguen dentro: son tipografía, heredan el color y están
+  // comprobadas en pantalla. Lo que cambia es que ahora hay una lista, y no
+  // un criterio en la cabeza de alguien.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// El repertorio: lo único no ASCII que puede aparecer en la interfaz.
+  ///
+  /// Para añadir uno: míralo primero en pantalla, en los dos temas. Ese es el
+  /// trámite entero, y es el que faltaba.
+  const repertorio = '·—→←×¿¡…–−•°«»½±ªº';
+
+  /// Puntos de código que están ROTOS o son INVISIBLES.
+  ///
+  /// No es cuestión de gusto: un selector de variación suelto o una marca
+  /// combinante huérfana no dibujan nada por sí solos y no se ven al revisar.
+  bool esResiduo(int c) =>
+      (c >= 0xFE00 && c <= 0xFE0F) ||    // selectores de variación
+      (c >= 0x200B && c <= 0x200F) ||    // ancho cero y bidi
+      (c >= 0x2060 && c <= 0x2064) ||    // juntadores invisibles
+      c == 0xFEFF ||                     // marca de orden de bytes
+      (c >= 0x0300 && c <= 0x036F) ||    // diacríticos combinantes
+      (c >= 0x20D0 && c <= 0x20F0) ||    // combinantes de símbolo (el keycap)
+      (c >= 0xD800 && c <= 0xDFFF) ||    // mitades sueltas de un par sustituto
+      (c < 0x20 && c != 0x0A && c != 0x09) ||
+      c == 0x7F;
+
+  /// Una letra latina con tilde, diéresis o eñe. Texto normal.
+  bool esLetraLatina(int c) => c >= 0xC0 && c <= 0x24F && c != 0xD7 && c != 0xF7;
+
+  /// Recorre la interfaz carácter a carácter.
+  ///
+  /// Mira la LÍNEA ENTERA sin su comentario, no las cadenas extraídas con una
+  /// expresión regular: el código Dart es ASCII, así que lo que queda no ASCII
+  /// está dentro de una cadena. Y no se le escapan las cadenas partidas o con
+  /// interpolación, que es justo donde se escondían los ordinales `1ª` `2º`.
+  ///
+  /// Se saltan las líneas de consola —`debugPrint`, `writeln`—: un volcado de
+  /// diagnóstico no es interfaz, y ahí las cajas de dibujo sí valen.
+  List<String> recorrerInterfaz(bool Function(int) falla) {
+    final malos = <String>[];
+    for (final f in Directory('lib').listSync(recursive: true)) {
+      if (f is! File || !f.path.endsWith('.dart')) continue;
+      var n = 0;
+      for (final l in f.readAsLinesSync()) {
+        n++;
+        if (l.contains('─') ||
+            l.contains('debugPrint(') ||
+            l.contains('writeln(') ||
+            l.contains('print(')) {
+          continue;
+        }
+        for (final c in _sinComentario(l).runes) {
+          if (c < 128 || esLetraLatina(c)) continue;
+          if (falla(c)) {
+            malos.add('${f.path}:$n  U+${c.toRadixString(16).toUpperCase()} '
+                '${String.fromCharCode(c)}');
+          }
+        }
+      }
+    }
+    return malos;
+  }
+
+  group('7 · ni residuos ni glifos que no existen', () {
+    test('CLAVE: ningún carácter roto ni invisible en la interfaz', () {
+      // El keycap huérfano de `1️⃣` entraba por aquí, y por ningún otro sitio.
+      expect(recorrerInterfaz(esResiduo), isEmpty,
+          reason: 'un punto de código que no dibuja nada por sí solo');
+    });
+
+    test('CLAVE: y ningún símbolo fuera del repertorio', () {
+      // El ⋮ entraba por aquí: completo, legal, y sin dibujo en la fuente.
+      expect(
+          recorrerInterfaz((c) =>
+              !esResiduo(c) && !repertorio.runes.contains(c)),
+          isEmpty,
+          reason: 'míralo en pantalla en los dos temas, y luego añádelo '
+              'al repertorio de arriba');
+    });
+
+    test('CONTRAPESO: el repertorio no está vacío ni se lo traga todo', () {
+      // Sin esto, borrar la lista o meterle un rango entero dejaría las dos
+      // pruebas de arriba en verde para siempre.
+      expect(repertorio.runes.length, greaterThanOrEqualTo(10));
+      expect(repertorio.runes.every((c) => !esResiduo(c)), isTrue,
+          reason: 'nada roto puede estar permitido');
+      // Y las flechas siguen dentro, que es la excepción declarada desde la
+      // entrega 1: son tipografía, no iconografía.
+      expect(repertorio.contains('→'), isTrue);
+    });
+
+    test('CONTRAPESO: el recorrido mira de verdad, no devuelve vacío siempre',
+        () {
+      // Si `recorrerInterfaz` estuviera roto —una ruta mala, un filtro que se
+      // come todo— las dos pruebas CLAVE pasarían sin mirar nada.
+      final letras = recorrerInterfaz((c) => c == 0x2192); // la flecha →
+      expect(letras, isNotEmpty,
+          reason: 'la interfaz tiene flechas: si no las ve, no ve nada');
+    });
+  });
 }

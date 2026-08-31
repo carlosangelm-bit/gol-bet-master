@@ -104,7 +104,22 @@ class _EmptyTemplates extends StatelessWidget {
         ),
       ),
       const SizedBox(height: 24),
-      Text('Ve a Inicio → ⋮ → "Guardar como plantilla"', style: TextStyle(color: t.primary, fontSize: 12, fontWeight: FontWeight.w600)),
+      // ── El ⋮ no solo no pintaba: mandaba a un sitio que no existe ─────────
+      //
+      // Decía «Ve a Inicio → ⋮ → Guardar como plantilla», y en Inicio no hay
+      // ningún menú de tres puntos: el botón está a la vista, dentro de la
+      // ronda en curso. Un icono haciendo de SUSTANTIVO dentro de una frase no
+      // se puede sustituir bien —es la misma familia que el tee horneado en el
+      // nombre del campo—, así que la instrucción va en palabras.
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Text(
+          'Con una ronda en curso, el botón "Guardar como plantilla" está en Inicio.',
+          style: TextStyle(
+              color: t.primary, fontSize: 12, fontWeight: FontWeight.w600),
+          textAlign: TextAlign.center,
+        ),
+      ),
     ]));
   }
 }

@@ -73,6 +73,14 @@ class GolfIcons {
   static const hoyoDirecto = Icons.adjust;                 // 🕳️ entró de fuera
   static const meta = Icons.flag_outlined;                 // 🏁 terminó
 
+  // ── Orden ─────────────────────────────────────────────────────────────────
+  //
+  // Eran 1️⃣ y 2️⃣: un dígito, un selector de variación y un keycap envolvente,
+  // TRES puntos de código para pintar un número dentro de una caja. Material
+  // tiene exactamente eso como un icono, y no se puede romper por la mitad.
+  static const uno = Icons.looks_one_outlined;             // 1️⃣
+  static const dos = Icons.looks_two_outlined;             // 2️⃣
+
   // ── Dinero y datos ────────────────────────────────────────────────────────
   static const dinero = Icons.payments_outlined;          // 💰
   static const grafico = Icons.bar_chart;                 // 📊

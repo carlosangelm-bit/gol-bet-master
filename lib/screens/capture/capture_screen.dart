@@ -1983,7 +1983,7 @@ class LowHighHoleBlock extends StatelessWidget {
           SizedBox(
             width: 46,
             child: Text(
-                !h.played ? '—' : (ganador == null ? 'empate' : (ganaA ? '◀' : '▶')),
+                !h.played ? '—' : (ganador == null ? 'empate' : (ganaA ? '←' : '→')),
                 textAlign: TextAlign.center,
                 style: TextStyle(color: t.sub, fontSize: 10)),
           ),

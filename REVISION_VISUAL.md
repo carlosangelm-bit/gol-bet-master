@@ -36,7 +36,12 @@ Tres insignias en fila: **bandera / dinero / trofeo**, con su etiqueta al lado.
 - **En oscuro**: mirar que no queden más brillantes que el título.
 
 ### 2 · Nueva ronda — *Setup* (la que más cambió: 25 emoji)
-Cuatro sitios en la misma pantalla:
+Cinco sitios en la misma pantalla:
+
+- **Los dos botones de arranque** (*Front 9 primero* / *Back 9 primero*). Eran
+  `1️⃣` y `2️⃣` y se habían roto: el dígito quedó suelto y el recuadro que lo
+  envuelve, huérfano. Ahora son iconos. Mirar que se vea **1** y **2** dentro
+  de su caja, y que el elegido tome el acento.
 
 - **El selector de marca** (la cuadrícula de doce). En claro, comprobar que la
   marca elegida —borde y relleno `primary`— se distingue de las otras once. Es
@@ -60,7 +65,14 @@ Los **seis eventos** en columna: birdie, eagle, par de arena, par único, birdie
 es donde se comprueba que **se distinguen entre sí de un vistazo**. Van en
 `t.sub` a 13 px.
 
-### 5 · Grupos de apuestas y Plantillas
+### 5 · Grupos de apuestas y Plantillas — y su estado vacío
+
+**Plantillas, sin ninguna guardada**: la frase del final decía *«Ve a Inicio →
+⋮ → Guardar como plantilla»*, y ese `⋮` salía como `▯`. No era un residuo: era
+un carácter completo del que la fuente no tiene dibujo. Y además mandaba a un
+menú de tres puntos **que no existe** — el botón está a la vista, dentro de la
+ronda en curso. Ahora lo dice en palabras. Mirar que la instrucción sea cierta.
+
 La **marca guardada**, en dos sitios: el botón grande del editor (34 px) y la
 tarjeta de la lista (22 px).
 
@@ -91,6 +103,12 @@ Vale una mirada en los dos temas: el trofeo del campeón y nada más.
 - Que una **marca vieja** (`'⛳'`, `'🏆'`, vacío, nulo) cae en la bandera sin
   lanzar.
 - Que las **doce claves** de la paleta dan doce iconos distintos.
+- Que no queda ningún **carácter roto o invisible**: selectores de variación
+  sueltos, marcas combinantes huérfanas, espacios de ancho cero, mitades de un
+  par sustituto.
+- Que no hay ningún **símbolo fuera del repertorio**. Hay una lista cerrada
+  —`· — → ← × ¿ ¡ … – − • ° « » ½ ± ª º`— y añadir uno exige verlo antes en
+  pantalla. Es el trámite que faltaba y por el que se coló el `⋮`.
 
 Lo que ninguna prueba puede decir es si el resultado se **ve bien**. Eso es lo
 que queda arriba.

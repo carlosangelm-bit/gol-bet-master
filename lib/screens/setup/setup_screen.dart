@@ -8319,10 +8319,10 @@ class _LaunchSheetState extends State<_LaunchSheet> {
                   letterSpacing: 0.8)),
           const SizedBox(height: 10),
           Row(children: [
-            Expanded(child: _startBtn(t, '1⃣', 'Front 9 primero',
+            Expanded(child: _startBtn(t, GolfIcons.uno, 'Front 9 primero',
                 'Hoyos 1–9 con stroke extra', StartingNine.front)),
             const SizedBox(width: 10),
-            Expanded(child: _startBtn(t, '2⃣', 'Back 9 primero',
+            Expanded(child: _startBtn(t, GolfIcons.dos, 'Back 9 primero',
                 'Hoyos 10–18 con stroke extra', StartingNine.back)),
           ]),
           const SizedBox(height: 12),
@@ -8386,7 +8386,7 @@ class _LaunchSheetState extends State<_LaunchSheet> {
   bool get _hasLinkedPlayers =>
       widget.players.any((p) => p.hasLinkedAccount);
 
-  Widget _startBtn(GolfTheme t, String icon, String title, String subtitle, StartingNine nine) {
+  Widget _startBtn(GolfTheme t, IconData icon, String title, String subtitle, StartingNine nine) {
     final sel = _selectedStartingNine == nine;
     return GestureDetector(
       onTap: () => setState(() => _selectedStartingNine = nine),
@@ -8403,7 +8403,9 @@ class _LaunchSheetState extends State<_LaunchSheet> {
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Text(icon, style: const TextStyle(fontSize: 22)),
+            Icon(icon,
+                size: GolfIcons.juntoATitulo,
+                color: sel ? t.primary : t.sub),
             const Spacer(),
             if (sel) Icon(Icons.check_circle_rounded, color: t.primary, size: 18),
           ]),
