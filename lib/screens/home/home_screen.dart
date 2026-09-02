@@ -1072,28 +1072,38 @@ class _EmptyView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ── EL HERO SE FUE, Y NO SE SUSTITUYÓ POR OTRO ─────────────────────────
+    //
+    // «Si aparece después del login, no le veo mucho sentido.»
+    //
+    // Ocupaba más de media pantalla de un iPhone para decir el nombre de una
+    // app que el usuario acaba de abrir, con tres chips —Golf, Apuestas,
+    // Resultados— que no navegaban a ningún sitio.
+    //
+    // Y había DOS cabeceras: la de arriba, que siempre está, ya lleva el nombre
+    // y el logotipo. La segunda repetía lo mismo debajo.
+    //
+    // La identidad no la da el nombre de la app: la da saber de quién es la
+    // sesión y cómo va. Eso ya existía —la tira con tu nombre y tu índice— y
+    // además es INFORMACIÓN, no decoración.
+    //
+    // ── Y el orden cambia: primero lo que se hace ─────────────────────────
+    //
+    // «La ronda primero.» Con ronda en curso, seguirla; sin ronda, empezar una.
+    // Y debajo el estado: el índice con su tendencia, el balance con su serie,
+    // lo que hay en juego.
+    //
+    // El coste de equivocarse aquí se midió solo: el índice pasó de 6,0 a 4,7 en
+    // veinte rondas y nadie lo vio, porque vivía en una tarjeta pequeña debajo
+    // de un hero enorme. Lo que no cabe arriba del pliegue no existe.
     return SingleChildScrollView(
       child: Column(
         children: [
-          // ── Hero section premium ────────────────────────────────────────
-          _HeroSection(t: t),
-
-          // ── Quién eres, y tu índice ─────────────────────────────────────
-          //
-          // Lo primero después de la marca: esta pantalla es la que ves al
-          // entrar, y hasta ahora no decía en ningún sitio de quién es la
-          // sesión. El índice va aquí y no en un bloque aparte porque responde
-          // a la misma pregunta —cómo te presenta la app— y se cambia en el
-          // mismo sitio.
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-            child: TiraIdentidadInicio(t: t),
-          ),
-
+          const SizedBox(height: 16),
           // ── Card de acciones ────────────────────────────────────────────
           Container(
-            margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
             decoration: BoxDecoration(
               color: t.card,
               borderRadius: BorderRadius.circular(24),
@@ -1258,7 +1268,13 @@ class _EmptyView extends StatelessWidget {
           // pantalla de arranque en una de consulta.
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            child: HistoricoInicio(t: t),
+            child: Column(children: [
+              // Quién eres y cómo vas, con la FORMA de tu índice al lado. La
+              // cifra sola no dice si estás bajando, que es la pregunta.
+              TiraIdentidadInicio(t: t),
+              const SizedBox(height: 14),
+              HistoricoInicio(t: t),
+            ]),
           ),
 
           // ── El catálogo de apuestas ─────────────────────────────────────
@@ -1276,224 +1292,6 @@ class _EmptyView extends StatelessWidget {
   }
 }
 
-// ── Sección hero premium con logo y fondo verde ───────────────────────────────
-class _HeroSection extends StatelessWidget {
-  final GolfTheme t;
-  const _HeroSection({required this.t});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFF0D2B0F),
-            Color(0xFF1A3A1C),
-            Color(0xFF1E4620),
-            Color(0xFF245527),
-          ],
-          stops: [0.0, 0.4, 0.75, 1.0],
-        ),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
-      ),
-      child: Stack(
-        children: [
-          // Fondo decorativo completo
-          Positioned.fill(
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(32)),
-              child: CustomPaint(painter: _HeroBgPainter()),
-            ),
-          ),
-
-          // Contenido centrado
-          Padding(
-            padding: const EdgeInsets.fromLTRB(32, 36, 32, 40),
-            child: Column(
-              children: [
-                // ── Logo con glow dorado ──────────────────────────────────
-                Container(
-                  width: 110, height: 110,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(28),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        blurRadius: 24,
-                        offset: const Offset(0, 8),
-                      ),
-                      BoxShadow(
-                        color: const Color(0xFFD4A520).withValues(alpha: 0.35),
-                        blurRadius: 36,
-                        spreadRadius: 6,
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(28),
-                    child: Image.asset('assets/icon/logo_main.png', fit: BoxFit.cover),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // ── Título ───────────────────────────────────────────────
-                const Text(
-                  'Golf Bet Master',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5,
-                    shadows: [Shadow(color: Colors.black38, blurRadius: 8, offset: Offset(0, 3))],
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'La forma inteligente de gestionar\ntus apuestas en el campo',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.70),
-                    fontSize: 13,
-                    height: 1.6,
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // ── Badges ───────────────────────────────────────────────
-                //
-                // Wrap y no Row: medido en test, los tres se salían 110 px por
-                // la derecha. Es el desbordamiento que llevaba tiempo saliendo
-                // en Inicio y que un comentario de más arriba atribuía al chip
-                // de tema de la cabecera —no era ahí—.
-                //
-                // Con la cautela de que en el entorno de test los emoji usan
-                // una fuente de recambio que puede medir distinto que en el
-                // navegador. Wrap es correcto en los dos casos: si caben, se
-                // ven igual; si no, bajan de línea en vez de recortarse.
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 10,
-                  runSpacing: 8,
-                  children: [
-                    _badge(GolfIcons.bandera, 'Golf'),
-                    _badge(GolfIcons.dinero, 'Apuestas'),
-                    _badge(GolfIcons.trofeo, 'Resultados'),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _badge(IconData icon, String label) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-    decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.10),
-      borderRadius: BorderRadius.circular(30),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-    ),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: GolfIcons.juntoAEtiqueta, color: Colors.white),
-      const SizedBox(width: 5),
-      Text(
-        label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.2,
-        ),
-      ),
-    ]),
-  );
-}
-
-// ── Pintor del fondo del hero ─────────────────────────────────────────────────
-class _HeroBgPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Glow dorado central detrás del logo
-    final glowPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          const Color(0xFFD4A520).withValues(alpha: 0.18),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(
-          center: Offset(size.width * 0.5, size.height * 0.28),
-          radius: size.width * 0.55));
-    canvas.drawCircle(
-        Offset(size.width * 0.5, size.height * 0.28),
-        size.width * 0.55,
-        glowPaint);
-
-    // Glow secundario esquina superior derecha
-    final glow2 = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          const Color(0xFF4CAF50).withValues(alpha: 0.12),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(
-          center: Offset(size.width * 0.9, size.height * 0.1),
-          radius: size.width * 0.4));
-    canvas.drawCircle(
-        Offset(size.width * 0.9, size.height * 0.1),
-        size.width * 0.4,
-        glow2);
-
-    // Líneas decorativas tipo ondas de fairway
-    final linePaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.045)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-    for (int i = 0; i < 5; i++) {
-      final path = Path();
-      final y = size.height * (0.15 + i * 0.18);
-      path.moveTo(0, y);
-      for (double x = 0; x <= size.width; x += 30) {
-        path.quadraticBezierTo(x + 15, y - 8, x + 30, y);
-      }
-      canvas.drawPath(path, linePaint);
-    }
-
-    // Puntos decorativos (hoyos del campo)
-    final dotPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.07)
-      ..style = PaintingStyle.fill;
-    final rng = math.Random(42);
-    for (int i = 0; i < 18; i++) {
-      final x = rng.nextDouble() * size.width;
-      final y = rng.nextDouble() * size.height;
-      canvas.drawCircle(Offset(x, y), 2.2, dotPaint);
-    }
-
-    // Arco decorativo inferior (transición suave)
-    final arcPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.04)
-      ..style = PaintingStyle.fill;
-    final arcPath = Path()
-      ..moveTo(0, size.height * 0.85)
-      ..quadraticBezierTo(size.width * 0.5, size.height * 0.72, size.width, size.height * 0.85)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(arcPath, arcPaint);
-  }
-
-  @override
-  bool shouldRepaint(_) => false;
-}
-
-// ── Sección de apuestas disponibles con detalle expandible ───────────────────
 class _QuickInfoCards extends StatelessWidget {
   final GolfTheme t;
   const _QuickInfoCards({required this.t});

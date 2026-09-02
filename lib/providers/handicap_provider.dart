@@ -30,6 +30,21 @@ class HandicapProvider extends ChangeNotifier {
   String get displayIndex => _result.displayIndex;
 
   // ── Inicializar escucha ───────────────────────────────────────────────────────
+  /// Siembra el resultado sin Firestore, para los tests de widget.
+  ///
+  /// Existe por el mismo motivo que `PerfilProvider.sembrar` y
+  /// `TorneoProvider.sembrar`: lo que hay que poder probar es lo que la
+  /// PANTALLA decide con un índice delante —que la tendencia se dibuja, que la
+  /// cifra cabe arriba del pliegue— y sin esto no había forma de poner un
+  /// índice delante.
+  @visibleForTesting
+  void sembrar(HandicapIndexResult r, {List<ScoreDifferential> diffs = const []}) {
+    _result = r;
+    _diffs = diffs;
+    _loading = false;
+    notifyListeners();
+  }
+
   void startListening() {
     if (_sub != null) return; // ya activo
     final uid = AuthService.uid;

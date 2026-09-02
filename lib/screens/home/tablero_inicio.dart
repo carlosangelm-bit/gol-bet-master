@@ -25,6 +25,8 @@ import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../models/perfil_resumen.dart';
 import '../../models/serie_balance.dart';
+import '../../models/tendencia.dart';
+import '../../widgets/grafico_tendencia.dart';
 import '../../widgets/grafico_balance.dart';
 import '../../providers/handicap_provider.dart';
 import '../../providers/perfil_provider.dart';
@@ -66,6 +68,15 @@ class TiraIdentidadInicio extends StatelessWidget {
 
     return _TiraIdentidad(
       t: t,
+      // ── La FORMA del índice, no solo la cifra ─────────────────────────────
+      //
+      // «4,7 de 20 rondas, no el 6,0 de hace unas entregas. Cambió y no lo
+      // habíamos visto.» Una cifra sola no dice si estás bajando, y esa es la
+      // pregunta que se hace quien mira su índice.
+      //
+      // La serie ya existía y ya estaba probada: vivía en Ajustes, a dos
+      // pantallas de aquí. Lo que faltaba era enseñarla donde se mira.
+      tendencia: tendenciaDeHandicap(hcp.result.allDifferentials),
       nombre: perfil?.nickname?.trim().isNotEmpty == true
           ? perfil!.nickname!.trim()
           : (perfil?.displayName ?? 'Tu perfil'),
@@ -137,6 +148,11 @@ class HistoricoInicio extends StatelessWidget {
 // app. Toca y vas a Ajustes, que es donde se cambian las dos.
 class _TiraIdentidad extends StatelessWidget {
   final GolfTheme t;
+
+  /// Cómo ha ido el índice. Se dibuja solo si tiene suficientes puntos: una
+  /// línea de dos puntos siempre sube o baja, y eso decora en vez de decir.
+  final SerieDeTendencia tendencia;
+
   final String nombre, correo;
   final int colorIndex;
   final String indice;
@@ -147,6 +163,7 @@ class _TiraIdentidad extends StatelessWidget {
     required this.nombre,
     required this.correo,
     required this.colorIndex,
+    required this.tendencia,
     required this.indice,
     required this.rondasDelIndice,
   });
@@ -184,6 +201,28 @@ class _TiraIdentidad extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
+            // La línea, entre el nombre y la cifra. Pequeña a propósito: es la
+            // forma del dato, no la hoja completa —esa está en Ajustes, con sus
+            // diferenciales—.
+            if (tendencia.suficiente) ...[
+              SizedBox(
+                width: 54,
+                height: 26,
+                child: CustomPaint(
+                  painter: PintorDeSerie(
+                    valores: tendencia.puntos.map((p) => p.indice).toList(),
+                    // En el handicap, menos es mejor: la línea baja cuando el
+                    // jugador mejora, y el color lo dice con el canal del score
+                    // —el dinero tiene el suyo reservado—.
+                    menosEsMejor: true,
+                    linea: t.primary,
+                    reja: t.divider,
+                    fondo: Colors.transparent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+            ],
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
               Text('ÍNDICE',
                   style: TextStyle(

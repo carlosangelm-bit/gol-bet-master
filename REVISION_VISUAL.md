@@ -454,3 +454,48 @@ el trabajo que esto viene a quitar.
 
 Baja Copa de Primavera a 88 y ve a **Grupos y salidas**: 22 grupos, 22 salidas, y
 el botón `Crear 22 rondas` encendido. **No hace falta montar otro torneo.**
+
+---
+
+# La pantalla de inicio · en un iPhone
+
+**Es la primera que se ve al abrir la app**, y la que más se mira con una mano.
+Lo que quepa arriba del pliegue es lo que existe.
+
+## Lo que se fue
+
+El **hero** entero: ocupaba más de media pantalla para decir el nombre de una app
+que acabas de abrir, con tres chips —Golf, Apuestas, Resultados— **que no
+navegaban a ningún sitio**.
+
+Había **dos cabeceras**. La de arriba, que siempre está, ya lleva el nombre y el
+logotipo. La segunda repetía lo mismo debajo. El nombre sigue apareciendo **una
+vez**.
+
+## Lo que hay que ver, sin desplazar
+
+Con el móvil en vertical y **sin tocar la pantalla**:
+
+**Sin ronda en curso:**
+
+1. **Nueva Ronda** — el botón, primero.
+2. **Tu nombre y tu ÍNDICE**, con **su línea de tendencia** al lado.
+3. **El bloque del dinero**.
+
+**Con ronda en curso:** el nombre de la ronda arriba, y **`Nueva Ronda` no
+aparece** — con una ronda abierta, empezar otra no es lo que se busca.
+
+## La línea del índice
+
+Es la novedad: la cifra sola no dice si estás bajando, y **tu índice pasó de 6,0
+a 4,7 sin que lo viéramos** porque vivía en una tarjeta pequeña bajo el hero.
+
+- **Con 20 rondas** debe haber una línea corta junto a la cifra.
+- **Con pocas rondas no debe haber línea** — con menos de cinco puntos
+  comparables describiría el ajuste de la tabla WHS, no tu juego. La hoja
+  completa, con sus diferenciales, sigue en **Ajustes**.
+
+## Lo que NO se movió de sitio
+
+**EN JUEGO**, **TU RIVAL HABITUAL** y **ÚLTIMAS RONDAS** siguen ahí, en ese
+orden, debajo. No se borró nada: se cambió qué va arriba.
