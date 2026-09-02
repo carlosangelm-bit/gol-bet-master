@@ -932,7 +932,11 @@ class _PresetConfigWidgets {
       case BetModuleType.oyeses:
         return _oyesesWidgets(cfg, t, setSt, update);
       case BetModuleType.units:
-        return _unitsWidgets(cfg, t, setSt, update);
+        // Editor con estado propio: los controllers viven en su State y NO se
+        // recrean en cada build (la causa del "no responde": el editor viejo era
+        // estático y creaba controllers nuevos en cada tecla → foco perdido y 2º
+        // dígito ignorado). La key estable preserva ese State entre rebuilds.
+        return [UnitsEditor(key: const ValueKey('units-editor'), cfg: cfg, t: t, onUpdate: update)];
     }
   }
 
@@ -1271,61 +1275,6 @@ class _PresetConfigWidgets {
     ];
   }
 
-  // ── Units ──────────────────────────────────────────────────────────────────
-  static List<Widget> _unitsWidgets(BetModuleInstance cfg, GolfTheme t, StateSetter setSt, void Function(BetModuleInstance) update) {
-    final u = cfg.units;
-    final ctrls = <UnitEventType, TextEditingController>{
-      for (final e in UnitEventType.values)
-        e: TextEditingController(text: u.valueFor(e).toStringAsFixed(0)),
-    };
-    void rebuild() {
-      final newMap = <UnitEventType, double>{};
-      for (final e in UnitEventType.values) {
-        final v = double.tryParse(ctrls[e]!.text);
-        if (v != null) newMap[e] = v;
-      }
-      update(cfg.copyWith(unitsConfig: UnitsConfig(eventValues: newMap)));
-    }
-    for (final e in UnitEventType.values) {
-      ctrls[e]!.addListener(rebuild);
-    }
-
-    return [
-      _label('VALOR POR EVENTO', t),
-      const SizedBox(height: 6),
-      Text('Valor individual que paga cada evento.', style: TextStyle(color: t.sub, fontSize: 11)),
-      const SizedBox(height: 12),
-      ...UnitEventType.values.map((e) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Row(children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(e.label, style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 13)),
-            Text(e.description, style: TextStyle(color: t.sub, fontSize: 10)),
-          ])),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 100,
-            child: TextField(
-              controller: ctrls[e],
-              keyboardType: const TextInputType.numberWithOptions(decimal: false),
-              textAlign: TextAlign.right,
-              style: TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 14),
-              decoration: InputDecoration(
-                prefixText: '\$ ',
-                prefixStyle: TextStyle(color: t.sub, fontSize: 12),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                fillColor: t.surface, filled: true,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: t.divider)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: t.divider)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: t.primary, width: 1.5)),
-              ),
-            ),
-          ),
-        ]),
-      )),
-    ];
-  }
-
   // ── Helpers ────────────────────────────────────────────────────────────────
   static Widget _label(String label, GolfTheme t) => Text(
     label, style: TextStyle(color: t.sub, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6),
@@ -1447,6 +1396,193 @@ class _FormatCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Editor de Unidades: los seis eventos con su importe.
+///
+/// Dos cosas, y las dos por la misma razón —el caso normal es que valgan lo
+/// mismo o casi—:
+///  1. "Mismo valor para todos": se pone uno y se aplica a los seis, y luego se
+///     ajusta el que pague distinto. Antes, poner $50 en los seis eran seis
+///     ediciones.
+///  2. La caja responde: los TextEditingController VIVEN aquí (initState/dispose),
+///     no se recrean en cada build. El editor anterior era estático y creaba
+///     controllers nuevos en cada tecla (con addListener que forzaba el rebuild),
+///     así que perdía el foco y se comía el 2º dígito — el mismo patrón que el
+///     onChanged que rompía la importación por pegado. Aquí `onChanged` solo
+///     propaga el valor al config; NUNCA reescribe el texto mientras se teclea
+///     (reescribirlo reposiciona el cursor, y en iOS/Web eso es justo el fallo).
+class UnitsEditor extends StatefulWidget {
+  final BetModuleInstance cfg;
+  final GolfTheme t;
+  final void Function(BetModuleInstance) onUpdate;
+  const UnitsEditor({
+    super.key,
+    required this.cfg,
+    required this.t,
+    required this.onUpdate,
+  });
+
+  @override
+  State<UnitsEditor> createState() => UnitsEditorState();
+}
+
+class UnitsEditorState extends State<UnitsEditor> {
+  late final Map<UnitEventType, TextEditingController> _ctrls;
+  late final TextEditingController _todosCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    final u = widget.cfg.units;
+    _ctrls = {
+      for (final e in UnitEventType.values)
+        e: TextEditingController(text: u.valueFor(e).toStringAsFixed(0)),
+    };
+    _todosCtrl =
+        TextEditingController(text: u.representativeValue.toStringAsFixed(0));
+  }
+
+  @override
+  void dispose() {
+    for (final c in _ctrls.values) {
+      c.dispose();
+    }
+    _todosCtrl.dispose();
+    super.dispose();
+  }
+
+  // Propaga los seis importes al config, sin tocar el texto de los campos.
+  void _propagar() {
+    final map = <UnitEventType, double>{};
+    for (final e in UnitEventType.values) {
+      final v = double.tryParse(_ctrls[e]!.text.trim());
+      if (v != null) map[e] = v;
+    }
+    widget.onUpdate(
+        widget.cfg.copyWith(unitsConfig: UnitsConfig(eventValues: map)));
+  }
+
+  void _aplicarATodos() {
+    final v = double.tryParse(_todosCtrl.text.trim());
+    if (v == null) return;
+    final txt = v.toStringAsFixed(0);
+    for (final e in UnitEventType.values) {
+      _ctrls[e]!.text = txt;
+    }
+    widget.onUpdate(
+        widget.cfg.copyWith(unitsConfig: widget.cfg.units.withAllEventsValue(v)));
+    FocusScope.of(context).unfocus();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Los seis eventos quedaron en \$$txt.')));
+    }
+  }
+
+  Widget _campo(TextEditingController c,
+      {required VoidCallback? onChanged, TextInputAction? action}) {
+    final t = widget.t;
+    return TextField(
+      controller: c,
+      keyboardType: const TextInputType.numberWithOptions(decimal: false),
+      textAlign: TextAlign.right,
+      textInputAction: action,
+      onChanged: onChanged == null ? null : (_) => onChanged(),
+      onSubmitted: action == TextInputAction.done ? (_) => _aplicarATodos() : null,
+      style:
+          TextStyle(color: t.text, fontWeight: FontWeight.w700, fontSize: 14),
+      decoration: InputDecoration(
+        prefixText: '\$ ',
+        prefixStyle: TextStyle(color: t.sub, fontSize: 12),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        fillColor: t.surface,
+        filled: true,
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: t.divider)),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: t.divider)),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: t.primary, width: 1.5)),
+      ),
+    );
+  }
+
+  Widget _lbl(String s) => Text(s,
+      style: TextStyle(
+          color: widget.t.sub,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.6));
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1 · Mismo valor para todos — el caso normal es que valgan igual.
+        _lbl('MISMO VALOR PARA TODOS'),
+        const SizedBox(height: 6),
+        Text('Ponlo una vez y ajusta abajo el que pague distinto.',
+            style: TextStyle(color: t.sub, fontSize: 11)),
+        const SizedBox(height: 10),
+        Row(children: [
+          SizedBox(
+              width: 110,
+              child: _campo(_todosCtrl, onChanged: null, action: TextInputAction.done)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: FilledButton(
+              onPressed: _aplicarATodos,
+              style: FilledButton.styleFrom(
+                backgroundColor: t.primary,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Aplicar a todos',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 18),
+        Divider(color: t.divider, height: 1),
+        const SizedBox(height: 18),
+
+        // 2 · Valor por evento — para el que pague distinto.
+        _lbl('VALOR POR EVENTO'),
+        const SizedBox(height: 6),
+        Text('Ajusta solo el que no valga lo mismo.',
+            style: TextStyle(color: t.sub, fontSize: 11)),
+        const SizedBox(height: 12),
+        ...UnitEventType.values.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(children: [
+                Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Text(e.label,
+                          style: TextStyle(
+                              color: t.text,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13)),
+                      Text(e.description,
+                          style: TextStyle(color: t.sub, fontSize: 10)),
+                    ])),
+                const SizedBox(width: 12),
+                SizedBox(
+                    width: 100,
+                    child: _campo(_ctrls[e]!, onChanged: _propagar)),
+              ]),
+            )),
+      ],
     );
   }
 }
