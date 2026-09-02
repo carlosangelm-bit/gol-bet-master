@@ -163,7 +163,7 @@ class _ScoresSeccionState extends State<ScoresSeccion> {
       backgroundColor: widget.t.card,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _HojaDeTarjeta(ronda: ronda, t: widget.t),
+      builder: (_) => HojaDeTarjeta(ronda: ronda, t: widget.t),
     );
     if (cambiada == true) await _cargar();
   }
@@ -172,16 +172,21 @@ class _ScoresSeccionState extends State<ScoresSeccion> {
 // ─────────────────────────────────────────────────────────────────────────────
 // LA TARJETA, CON CORRECCIÓN
 // ─────────────────────────────────────────────────────────────────────────────
-class _HojaDeTarjeta extends StatefulWidget {
+/// La tarjeta de un grupo, con corrección.
+///
+/// Pública para poder montarla en un test con una ronda cualquiera: el camino
+/// real pasa por Firestore, y el fallo de las cuatro filas vivía justo en el
+/// trozo que ninguna prueba alcanzaba.
+class HojaDeTarjeta extends StatefulWidget {
   final Round ronda;
   final GolfTheme t;
-  const _HojaDeTarjeta({required this.ronda, required this.t});
+  const HojaDeTarjeta({super.key, required this.ronda, required this.t});
 
   @override
-  State<_HojaDeTarjeta> createState() => _HojaDeTarjetaState();
+  State<HojaDeTarjeta> createState() => _HojaDeTarjetaState();
 }
 
-class _HojaDeTarjetaState extends State<_HojaDeTarjeta> {
+class _HojaDeTarjetaState extends State<HojaDeTarjeta> {
   late Round _r = widget.ronda;
   bool _guardando = false;
   bool _cambiada = false;
@@ -280,7 +285,22 @@ class _HojaDeTarjetaState extends State<_HojaDeTarjeta> {
                           ),
                       ]),
                       const SizedBox(height: 4),
-                      for (final p in _r.realPlayers)
+                      // ── QUIÉN LLEVA TARJETA, no quién juega ────────────
+                      //
+                      // Aquí ponía `realPlayers` y por eso la tarjeta de un
+                      // equipo salía con CUATRO filas, una por miembro — justo
+                      // lo que el modo equipos viene a evitar—.
+                      //
+                      // El mecanismo estaba: `scoringPlayers` respeta el
+                      // `equipoId` que la ronda declara, y la captura del
+                      // jugador ya lo usaba en sus seis sitios. Esta hoja no lo
+                      // consultaba. La familia de siempre: el dato existe y la
+                      // superficie no lo lee.
+                      //
+                      // Los cuatro siguen viéndose: están en la fila del grupo,
+                      // en la lista de Scores en vivo. Lo que no tienen es
+                      // score propio, porque juegan una bola.
+                      for (final p in _r.scoringPlayers)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Row(children: [

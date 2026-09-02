@@ -394,7 +394,13 @@ jugaron una bola, no tienen score propio.
 
 1. Crea las rondas por lotes desde Grupos y salidas, con equipos.
 2. Abre una tarjeta en Scores en vivo. Debe haber **una sola fila de score**,
-   la del equipo, no cuatro.
+   titulada `Equipo 01 · Sierra`, con dieciocho puntos — no cuatro filas con
+   los nombres de las personas. Los cuatro se siguen viendo **en la lista de
+   grupos**, que es donde toca: en la tarjeta no tienen score propio porque
+   juegan una bola.
+
+   *Y lo mismo desde la app*: si uno de los cuatro entra a capturar, ve la fila
+   del equipo, no la suya.
 3. Anota los 18 hoyos y **cierra la ronda**.
 4. Vuelve a la tabla del torneo: el equipo debe aparecer **con su score**.
 
