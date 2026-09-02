@@ -239,6 +239,62 @@ const sinNombre = '—';
 /// Aditivo: [liga] es lo que había, así que un torneo guardado se lee igual. La
 /// diferencia no está en cómo se juega —eso no lo cambia un torneo— sino en QUÉ
 /// se enseña: una tabla acumulada, o una llave donde cada partido elimina.
+/// Cuánto dura el torneo.
+///
+/// ── Por qué es un campo del TORNEO y no un tipo aparte ──────────────────────
+///
+/// Se preguntó si un torneo formal debía ser otra cosa desde el principio, sin
+/// compatibilidad que respetar. La respuesta es NO, y el argumento decisivo no
+/// es de diseño: es de seguridad.
+///
+/// Cualquier marca de "esto es de pago" puesta en el torneo la escribe el
+/// propio usuario — los torneos viven en `users/{uid}/torneos`, que su dueño
+/// escribe entero. O sea que un tipo de torneo «formal» no puede cobrar nada:
+/// se pondría solo. Lo único que puede cobrar es la marca de la CUENTA, que
+/// vive fuera y no la escribe nadie desde la app.
+///
+/// Y sin esa función, un tipo aparte solo duplicaría lo que ya hay:
+/// participantes, rondas, tabla, método, acumulación. Un torneo formal y la
+/// liga de los sábados son la misma cosa operada con herramientas distintas.
+///
+/// ── Entonces por qué existe esto ────────────────────────────────────────────
+///
+/// Porque la duración es un dato REAL del torneo y hoy no está. Lo que hay
+/// —`FormatoDeTorneo` es forma de competir, `FuenteDeRondas` es qué rondas
+/// cuentan, `desde`/`hasta` solo se usa con el rango— no lo dice: una liga de
+/// temporada puede estar en modo «marcadas» y no tener fechas.
+///
+/// Sirve para todos, no solo para quien paga: saber que un torneo es de un día
+/// cambia lo que la app puede dar por hecho. Y cuando llegue el precio, es el
+/// dato que necesita.
+enum DuracionDeTorneo {
+  /// Un día. Un shotgun, una copa, un torneo de empresa.
+  unDia,
+
+  /// Un fin de semana. Dos o tres jornadas seguidas.
+  finDeSemana,
+
+  /// Una temporada. Meses, y la tabla se mira cada semana.
+  temporada,
+}
+
+extension DuracionDeTorneoInfo on DuracionDeTorneo {
+  String get label => switch (this) {
+        DuracionDeTorneo.unDia => 'Un día',
+        DuracionDeTorneo.finDeSemana => 'Un fin de semana',
+        DuracionDeTorneo.temporada => 'Una temporada',
+      };
+
+  String get descripcion => switch (this) {
+        DuracionDeTorneo.unDia =>
+          'Se juega y se cierra el mismo día. Un shotgun, una copa.',
+        DuracionDeTorneo.finDeSemana =>
+          'Dos o tres jornadas seguidas, con una tabla que las suma.',
+        DuracionDeTorneo.temporada =>
+          'Meses. La tabla se mira cada semana y las rondas van llegando.',
+      };
+}
+
 enum FormatoDeTorneo {
   /// La tabla de siempre: todos suman, gana quien más acumula.
   liga,
@@ -460,6 +516,12 @@ class Torneo {
   /// La ventaja de las rondas del torneo. Null = sin decidir, se pregunta.
   final VentajaDeTorneo? ventaja;
 
+  /// Cuánto dura. Ver [DuracionDeTorneo].
+  ///
+  /// Por defecto UN DÍA: es lo que es un torneo mientras nadie diga otra cosa,
+  /// y lo que menos supone. Una liga de temporada se declara.
+  final DuracionDeTorneo duracion;
+
   /// Si el torneo se juega POR EQUIPOS.
   ///
   /// ── Por qué es una bandera del torneo y no un formato de ronda ───────────
@@ -524,6 +586,7 @@ class Torneo {
     this.desempates = const {},
     this.plantillaId,
     this.ventaja,
+    this.duracion = DuracionDeTorneo.unDia,
     this.porEquipos = false,
     this.equipos = const [],
     this.campo,
@@ -564,6 +627,7 @@ class Torneo {
     Map<String, String>? desempates,
     String? plantillaId,
     VentajaDeTorneo? ventaja,
+    DuracionDeTorneo? duracion,
     bool? porEquipos,
     List<EquipoDeTorneo>? equipos,
     CourseInfo? campo,
@@ -605,6 +669,7 @@ class Torneo {
         plantillaId:
             limpiarPlantilla ? null : (plantillaId ?? this.plantillaId),
         ventaja: limpiarVentaja ? null : (ventaja ?? this.ventaja),
+        duracion: duracion ?? this.duracion,
         porEquipos: porEquipos ?? this.porEquipos,
         equipos: equipos ?? this.equipos,
         campo: limpiarCampo ? null : (campo ?? this.campo),
@@ -641,6 +706,7 @@ class Torneo {
         if (desempates.isNotEmpty) 'desempates': desempates,
         if (plantillaId != null) 'plantillaId': plantillaId,
         if (ventaja != null) 'ventaja': ventaja!.name,
+        if (duracion != DuracionDeTorneo.unDia) 'duracion': duracion.name,
         if (porEquipos) 'porEquipos': true,
         if (equipos.isNotEmpty)
           'equipos': equipos.map((e) => e.toJson()).toList(),
@@ -689,6 +755,9 @@ class Torneo {
         // `is Map` y no `!= null`: es la misma familia del "holes: 3" que tiró
         // el buscador de campos. Un campo malformado deja el torneo sin campo,
         // no ilegible.
+        duracion: DuracionDeTorneo.values.firstWhere(
+            (d) => d.name == j['duracion'],
+            orElse: () => DuracionDeTorneo.unDia),
         porEquipos: j['porEquipos'] == true,
         equipos: [
           for (final e in (j['equipos'] as List?) ?? const [])

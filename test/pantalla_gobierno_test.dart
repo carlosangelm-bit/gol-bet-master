@@ -1,4 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
+import 'dart:io';
 // LA PANTALLA, GOBERNADA DESDE UN SOLO SITIO
 //
 // «La función está partida en dos: el diseño en el portal, encender y apagar en
@@ -32,6 +33,7 @@ import 'package:golf_bet_master/models/patrocinio.dart';
 import 'package:golf_bet_master/models/resultados_del_torneo.dart';
 import 'package:golf_bet_master/models/round_result.dart';
 import 'package:golf_bet_master/models/torneo.dart';
+import 'package:golf_bet_master/providers/organizador_provider.dart';
 import 'package:golf_bet_master/providers/auth_provider.dart';
 import 'package:golf_bet_master/providers/betting_group_provider.dart';
 import 'package:golf_bet_master/providers/handicap_provider.dart';
@@ -42,7 +44,7 @@ import 'package:golf_bet_master/screens/torneos/torneos_screen.dart';
 import 'package:golf_bet_master/providers/perfil_provider.dart';
 import 'package:golf_bet_master/providers/torneo_provider.dart';
 import 'package:golf_bet_master/screens/organizador/pantalla_seccion.dart';
-import 'package:golf_bet_master/screens/torneos/tele_sheet.dart';
+import 'package:golf_bet_master/screens/organizador/tele_sheet.dart';
 import 'package:golf_bet_master/services/tele_service.dart';
 
 Torneo _torneo({
@@ -209,42 +211,44 @@ void main() {
   });
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 4 · CÓMO SE LLEGA AL PORTAL
+  // 4 · CÓMO SE LLEGA AL PORTAL — y por dónde YA NO
   //
-  // «No hay ningún enlace en la app: hoy se entra escribiendo /organizador/{id}
-  // con un id que solo se puede sacar de Firestore. Un organizador no puede
-  // llegar a su propio portal.»
+  // Este grupo probaba un botón en la pantalla del torneo. Se añadió porque no
+  // había forma de llegar al portal, y era cierto entonces.
   //
-  // Es la forma que más veces se ha repetido en este proyecto, otra vez: la
-  // cosa existe, la capa siguiente no la alcanza. Se construyó el portal, se
-  // construyó su ruta, y no había puerta.
+  // Con la línea de negocio trazada, ese botón era una PUERTA LATERAL desde el
+  // módulo del jugador: el portal es otro producto y no se entra por dentro de
+  // la app del golfista. Se entra por el logo, y solo con la marca.
+  //
+  // Así que el test cambia de sentido: ahora exige que la puerta lateral NO
+  // esté. Es la misma comprobación mirando al otro lado.
   // ───────────────────────────────────────────────────────────────────────────
-  group('4 · el portal tiene puerta', () {
-    testWidgets('CLAVE: la pantalla del torneo lleva al portal',
-        (tester) async {
-      tester.view.physicalSize = const Size(430, 932);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
-      final t = _torneo();
-      await tester.pumpWidget(MultiProvider(
-        providers: [
-          ChangeNotifierProvider(create: (_) => RoundProvider()),
-          ChangeNotifierProvider(create: (_) => AuthProvider()),
-          ChangeNotifierProvider(create: (_) => PlayerProvider()..sembrar(const [])),
-          ChangeNotifierProvider(create: (_) => HandicapProvider()),
-          ChangeNotifierProvider(create: (_) => UserProfileProvider()),
-          ChangeNotifierProvider(create: (_) => BettingGroupProvider()),
-          ChangeNotifierProvider(create: (_) => PerfilProvider()),
-          ChangeNotifierProvider(create: (_) => TorneoProvider()..sembrar([t])),
-        ],
-        child: MaterialApp(home: TorneoTablaScreen(torneo: t)),
-      ));
-      await tester.pump(const Duration(milliseconds: 150));
+  group('4 · al portal se entra por el logo, no por la pantalla del torneo',
+      () {
+    test('CLAVE: la pantalla del torneo ya no lleva al portal', () {
+      final codigo =
+          File('lib/screens/torneos/torneos_screen.dart').readAsStringSync();
+      expect(codigo.contains('OrganizadorScreen'), isFalse,
+          reason: 'el portal es otro producto: no se entra desde el jugador');
+      expect(codigo.contains('Portal de organizador'), isFalse);
+    });
 
-      // Y junto al de compartir, que es donde se busca: las dos cosas que se
-      // hacen con un torneo hacia fuera.
-      expect(find.byTooltip('Portal de organizador'), findsOneWidget);
-      expect(find.byTooltip('Compartir'), findsOneWidget);
+    test('CLAVE: y el logo de Inicio sí', () {
+      final codigo =
+          File('lib/screens/home/home_screen.dart').readAsStringSync();
+      expect(codigo, contains('abrirModuloDeOrganizador'));
+    });
+
+    test('CLAVE: la pantalla de la casa club salió de la hoja del jugador', () {
+      // Encenderla es lo que se cobra al organizador. Estaba montada en la
+      // hoja de compartir del golfista, y eso era cruzar la línea.
+      final codigo =
+          File('lib/screens/torneos/torneos_screen.dart').readAsStringSync();
+      expect(codigo.contains('BloqueTele('), isFalse);
+      // Pero APAGARLA sigue pasando por aquí: «dejar de compartir» tiene que
+      // apagar también la pared, o la frase del botón sería mentira. Cortar
+      // nunca se cobra.
+      expect(codigo, contains('apagarTele('));
     });
   });
 

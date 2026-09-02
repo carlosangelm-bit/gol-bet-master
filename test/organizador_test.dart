@@ -23,6 +23,7 @@ import 'package:golf_bet_master/main.dart';
 import 'package:golf_bet_master/models/inscritos.dart';
 import 'package:golf_bet_master/models/models.dart';
 import 'package:golf_bet_master/models/torneo.dart';
+import 'package:golf_bet_master/providers/organizador_provider.dart';
 import 'package:golf_bet_master/providers/auth_provider.dart';
 import 'package:golf_bet_master/providers/betting_group_provider.dart';
 import 'package:golf_bet_master/providers/handicap_provider.dart';
@@ -400,6 +401,11 @@ void main() {
           ChangeNotifierProvider(create: (_) => HandicapProvider()),
           ChangeNotifierProvider(create: (_) => PerfilProvider()),
           ChangeNotifierProvider(create: (_) => BettingGroupProvider()),
+          // La marca de organizador: el logo de Inicio la consulta, así que un
+          // harness sin ella no monta. Sembrada en false —una cuenta normal—
+          // porque lo que estos tests miran es la app del jugador.
+          ChangeNotifierProvider<OrganizadorProvider>(
+              create: (_) => OrganizadorProvider()..sembrar(false)),
           ChangeNotifierProvider<TorneoProvider>.value(value: torneos),
         ],
         child: MaterialApp(home: OrganizadorScreen(torneoId: id)),

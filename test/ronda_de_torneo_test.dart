@@ -30,6 +30,7 @@ import 'package:golf_bet_master/models/round_result.dart';
 import 'package:golf_bet_master/models/torneo.dart';
 import 'package:golf_bet_master/models/torneo_publicado.dart';
 import 'package:golf_bet_master/models/torneo_seguido.dart';
+import 'package:golf_bet_master/providers/organizador_provider.dart';
 import 'package:golf_bet_master/providers/betting_group_provider.dart';
 import 'package:golf_bet_master/providers/handicap_provider.dart';
 import 'package:golf_bet_master/providers/perfil_provider.dart';
@@ -524,6 +525,11 @@ Future<List<String>> _montarEditor(WidgetTester tester, Torneo torneo) async {
       ChangeNotifierProvider(create: (_) => HandicapProvider()),
       ChangeNotifierProvider(create: (_) => UserProfileProvider()),
       ChangeNotifierProvider(create: (_) => BettingGroupProvider()),
+      // La marca de organizador: el logo de Inicio la consulta, así que un
+      // harness sin ella no monta. Sembrada en false —una cuenta normal—
+      // porque lo que estos tests miran es la app del jugador.
+      ChangeNotifierProvider<OrganizadorProvider>(
+          create: (_) => OrganizadorProvider()..sembrar(false)),
       ChangeNotifierProvider<PlayerProvider>.value(
           value: PlayerProvider()
             ..sembrar([

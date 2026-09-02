@@ -17,6 +17,7 @@ import 'package:golf_bet_master/core/ancho.dart';
 import 'package:golf_bet_master/core/app_theme.dart';
 import 'package:golf_bet_master/models/patrocinio.dart';
 import 'package:golf_bet_master/models/torneo.dart';
+import 'package:golf_bet_master/providers/organizador_provider.dart';
 import 'package:golf_bet_master/providers/torneo_provider.dart';
 import 'package:golf_bet_master/screens/organizador/patrocinio_seccion.dart';
 import 'package:golf_bet_master/services/patrocinio_storage.dart';
@@ -193,6 +194,10 @@ void main() {
       await tester.pumpWidget(MultiProvider(
         providers: [
           ChangeNotifierProvider(create: (_) => TorneoProvider()..sembrar([t])),
+          // La marca de organizador: el logo de Inicio la consulta. En false,
+          // que es una cuenta normal — es lo que estos tests miran.
+          ChangeNotifierProvider<OrganizadorProvider>(
+              create: (_) => OrganizadorProvider()..sembrar(false)),
         ],
         child: MaterialApp(
           home: Scaffold(

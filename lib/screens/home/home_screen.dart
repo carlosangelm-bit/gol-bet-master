@@ -2,6 +2,7 @@
 // HOME SCREEN — Pantalla principal: iniciar ronda, estado de ronda activa
 // ─────────────────────────────────────────────────────────────────────────────
 import '../../core/golf_icons.dart';
+import '../organizador/puerta_del_modulo.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
@@ -15,6 +16,8 @@ import '../../models/models.dart';
 import '../torneos/republicar_al_cerrar.dart';
 import '../../providers/round_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/organizador_provider.dart';
+
 import '../../services/live_round_service.dart';
 import '../../services/guest_invite_service.dart';
 import '../../services/caddie_service.dart';
@@ -96,6 +99,67 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+/// El logo, que abre el módulo de organizador a quien lo tiene.
+class _LogoDelModulo extends StatelessWidget {
+  const _LogoDelModulo();
+
+  @override
+  Widget build(BuildContext context) {
+    final org = context.watch<OrganizadorProvider>();
+    return GestureDetector(
+      onTap: () => abrirModuloDeOrganizador(context),
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+            BoxShadow(
+              color: const Color(0xFFD4A520).withValues(alpha: 0.20),
+              blurRadius: 16,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        child: Stack(children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.asset('assets/icon/logo_main.png', fit: BoxFit.cover),
+          ),
+          // ── La señal, SOLO para quien lo tiene ──────────────────────────
+          //
+          // Un punto en la esquina. Quien no tiene el módulo no ve nada: una
+          // insignia que no lleva a ningún sitio es de las cosas que este
+          // proyecto ya quitó una vez —los tres chips del hero—.
+          //
+          // Y para quien SÍ lo tiene, hace falta: un logo que además es un
+          // botón no se distingue de un logo, y el módulo se usa el día del
+          // torneo con prisa.
+          if (org.marcado == true)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: Container(
+                width: 11,
+                height: 11,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD4A520),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFF0D2B0F), width: 2),
+                ),
+              ),
+            ),
+        ]),
+      ),
+    );
+  }
+}
+
 // ── Header premium con fondo verde y logo ────────────────────────────────────
 class _HomeHeader extends StatelessWidget {
   final GolfTheme t;
@@ -133,27 +197,18 @@ class _HomeHeader extends StatelessWidget {
                 // Fila logo + controles
                 Row(
                   children: [
-                    // Logo
-                    Container(
-                      width: 42, height: 42,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.35),
-                            blurRadius: 12, offset: const Offset(0, 4),
-                          ),
-                          BoxShadow(
-                            color: const Color(0xFFD4A520).withValues(alpha: 0.20),
-                            blurRadius: 16, spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.asset('assets/icon/logo_main.png', fit: BoxFit.cover),
-                      ),
-                    ),
+                    // ── EL LOGO ES LA PUERTA DEL MÓDULO ──────────────────
+                    //
+                    // «Se da clic en el logo de la app y se despliega el módulo
+                    // de organizador.» Y solo lo ve quien está marcado.
+                    //
+                    // Es el sitio correcto por lo que NO es: no es una pestaña
+                    // —el módulo no es una parte de la app del jugador— ni un
+                    // botón en la pantalla del torneo, que era una puerta
+                    // lateral desde el módulo del jugador y por eso se quitó.
+                    // El logo es la marca del producto, y el módulo es el otro
+                    // producto.
+                    _LogoDelModulo(),
                     const SizedBox(width: 10),
                     // Nombre app
                     Expanded(

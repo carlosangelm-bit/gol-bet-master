@@ -26,8 +26,7 @@ import '../../providers/torneo_provider.dart';
 import 'torneo_editor_screen.dart';
 import 'torneo_enlace_screen.dart';
 import 'llave_screen.dart';
-import '../organizador/organizador_screen.dart';
-import 'tele_sheet.dart';
+import '../organizador/tele_sheet.dart';
 
 /// La cifra con signo la define el modelo: la usan la tabla, el cuadro y la
 /// vista de invitado, y tres copias habrían acabado dando tres formatos.
@@ -407,25 +406,6 @@ class _TorneoTabla extends StatelessWidget {
         title: Text(torneo.nombre),
         elevation: 0,
         actions: [
-          // ── CÓMO SE LLEGA AL PORTAL ─────────────────────────────────
-          //
-          // No había forma. El portal vivía en `/organizador/{id}` y ese id
-          // solo se podía sacar de Firestore: un organizador no podía llegar a
-          // su propio portal.
-          //
-          // Se empuja la ruta en vez de cambiar la URL a propósito. Empujarla
-          // funciona igual en el teléfono y en el navegador, y no saca al
-          // organizador de donde estaba —volver es el botón de atrás de
-          // siempre—. La dirección escrita a mano sigue existiendo para
-          // abrirlo en el ordenador del club, que es su caso.
-          IconButton(
-            icon: Icon(Icons.dashboard_outlined, color: t.sub),
-            tooltip: 'Portal de organizador',
-            onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => OrganizadorScreen(torneoId: torneo.id))),
-          ),
           IconButton(
             icon: Icon(Icons.ios_share, color: t.sub),
             tooltip: 'Compartir',
@@ -850,10 +830,15 @@ Future<void> _compartir(BuildContext context, Torneo torneoArg,
               'Este enlace es el mismo toda la vida del torneo: al actualizar la '
               'tabla no cambia, así que no hay que reenviarlo.',
               style: TextStyle(color: t.sub, fontSize: 11, height: 1.35)),
-          // La pantalla de la casa club. Va DESPUÉS y con separador porque es
-          // otro enlace, otra tabla y otras reglas: la de arriba pide cuenta y
-          // lleva el bote; esta se ve sin cuenta y no lleva un importe.
-          BloqueTele(torneo: torneoArg, tabla: tabla),
+          // ── LA PANTALLA DE LA CASA CLUB YA NO ESTÁ AQUÍ ──────────────────
+          //
+          // Estaba, y era cruzar la línea: encenderla es lo que se cobra al
+          // organizador, y esta hoja es del módulo del jugador.
+          //
+          // Vive en el portal —Portal → La pantalla—, que es donde ya estaba su
+          // otra mitad. Y APAGARLA sigue pasando por aquí: «dejar de compartir»
+          // tiene que apagar también la pared, o la frase del botón sería
+          // mentira. Cortar nunca se cobra.
           const SizedBox(height: 10),
           // APAGAR, no borrar. Un enlace de WhatsApp acaba donde no se previó, así
           // que hay que poder cortarlo; pero borrarlo obligaba a generar otro

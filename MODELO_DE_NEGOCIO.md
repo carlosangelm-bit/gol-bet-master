@@ -165,6 +165,68 @@ historial:
 
 ---
 
+## La línea, ya trazada
+
+**Construido.** Lo que queda pendiente es el cobro, no la separación.
+
+### Cómo se entra
+
+**Por el logo de Inicio**, y solo lo ve quien está marcado. Con marca, un punto
+dorado en la esquina; sin marca, nada — una insignia que no lleva a ningún sitio
+es lo que este proyecto ya quitó una vez.
+
+**Y qué ve quien no la tiene:** una hoja que dice qué es el módulo, que es la
+única forma de venderlo desde dentro. Con una línea que decide si suma o resta:
+*«Crear tus torneos, su tabla y compartirla ya lo tienes, y seguirá siendo
+gratis. Esto es otra cosa.»* Sin ella, la hoja parece decir que lo que ya tienes
+está detrás de un pago.
+
+**No hay botón de comprar.** Se contrata hablando, que es lo que encaja con
+pagar por evento.
+
+### Dónde vive la marca
+
+`organizadores/{uid}` · `allow get` para uno mismo · `allow write: if false`.
+
+**La EXISTENCIA es la marca**: no hay un campo `activo` que consultar. Un
+booleano dentro daría dos estados para lo mismo —documento ausente y documento
+en false— y el día que alguien escriba solo uno, la cuenta queda en un limbo.
+
+**Cómo lo administra Carlos: la consola de Firebase.** Crear el documento
+`organizadores/{uid}` con lo que quiera dentro. Una pantalla de administración
+es trabajo que no hace falta todavía y que además traería su propio problema
+—quién es el master— más grande que el que resuelve. El día que haya cobro
+automático, lo escribe el webhook.
+
+### Lo que se movió
+
+| Estaba | Está |
+|---|---|
+| Botón al portal en la pantalla del torneo | fuera — era una puerta lateral |
+| `BloqueTele` en la hoja de compartir | fuera — encenderla es lo que se cobra |
+| `tele_sheet.dart` en `screens/torneos/` | `screens/organizador/` |
+| `republicar_pantalla.dart` en `screens/torneos/` | `screens/organizador/` |
+
+**Apagar la pared se queda en el lado del jugador**: «dejar de compartir» tiene
+que apagarla, o la frase del botón sería mentira. **Cortar nunca se cobra.**
+
+### Y el torneo del organizador NO es otra cosa
+
+Se preguntó si debía serlo, sin compatibilidad que respetar. **No**, y el
+argumento decisivo no es de diseño sino de seguridad:
+
+**Cualquier marca de «esto es de pago» puesta en el torneo la escribe el propio
+usuario** — los torneos viven en `users/{uid}/torneos`, que su dueño escribe
+entero. Un tipo de torneo «formal» no puede cobrar nada: se pondría solo.
+
+Lo único que puede cobrar es la marca de la **cuenta**, que vive fuera. Y sin esa
+función, un tipo aparte solo duplicaría participantes, rondas, tabla, método y
+acumulación.
+
+**Lo que sí se añadió es `DuracionDeTorneo`** —un día / fin de semana /
+temporada— porque es un dato real que no existía, y sirve para todos, no solo
+para quien paga.
+
 ## Lo que esto pide de aquí en adelante
 
 Una regla, corta: **cada función nueva dice de qué lado cae antes de escribirse.**

@@ -20,6 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:golf_bet_master/models/formaciones.dart';
 import 'package:golf_bet_master/models/models.dart';
+import 'package:golf_bet_master/providers/organizador_provider.dart';
 import 'package:golf_bet_master/providers/auth_provider.dart';
 import 'package:golf_bet_master/providers/betting_group_provider.dart';
 import 'package:golf_bet_master/providers/handicap_provider.dart';
@@ -61,6 +62,11 @@ Future<List<String>> _hastaCompiten(WidgetTester tester, int cuantos) async {
       ChangeNotifierProvider(create: (_) => HandicapProvider()),
       ChangeNotifierProvider(create: (_) => UserProfileProvider()),
       ChangeNotifierProvider(create: (_) => BettingGroupProvider()),
+      // La marca de organizador: el logo de Inicio la consulta, así que un
+      // harness sin ella no monta. Sembrada en false —una cuenta normal—
+      // porque lo que estos tests miran es la app del jugador.
+      ChangeNotifierProvider<OrganizadorProvider>(
+          create: (_) => OrganizadorProvider()..sembrar(false)),
       ChangeNotifierProvider(create: (_) => TorneoProvider()),
       ChangeNotifierProvider(create: (_) => PerfilProvider()),
       ChangeNotifierProvider<PlayerProvider>.value(

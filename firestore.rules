@@ -20,6 +20,43 @@ service cloud.firestore {
     // consulta —ver torneoResultados, que es el único caso—.
 
     // ══════════════════════════════════════════════════════════════════════
+    // QUIÉN ES ORGANIZADOR — y por qué no puede vivir en users/{uid}
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // El módulo de organizador es un producto que se contrata. Así que hay una
+    // marca, y la marca decide si se ve.
+    //
+    // ── NO en users/{uid}, y esto es lo que salva el modelo ─────────────────
+    //
+    // La regla de ese documento es `allow write: if request.auth.uid ==
+    // userId`, sin restricción de campos. Un campo "esOrganizador" ahí lo
+    // escribiría el propio usuario con su token y una llamada a la API, sin
+    // tocar la app. La interfaz no interviene: es una escritura directa.
+    //
+    // O sea que cualquier marca guardada donde el usuario escribe es una marca
+    // que el usuario se pone. Tiene que estar FUERA.
+    //
+    // ── GET para uno mismo. WRITE para nadie ───────────────────────────────
+    //
+    // Se lee el propio documento —la app necesita saber si enseñar el módulo—
+    // y no se lista: quién ha contratado es información de negocio, no un
+    // directorio. Cuarta vez que esta distinción decide una regla en este
+    // fichero.
+    //
+    // Y NADIE escribe desde la app. Se administra desde la consola de Firebase
+    // mientras el volumen lo permita, y el día que haya cobro automático lo
+    // escribirá el webhook con credenciales de servidor. Un `allow write` para
+    // el propio usuario convertiría el producto en gratis.
+    //
+    // Mismo trato que courseCorrections, y por el mismo motivo: un dato que la
+    // app LEE y no escribe nunca.
+    match /organizadores/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+      allow write: if false;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // CORRECCIONES DE CAMPO — la colección que NO tenía regla
     // ══════════════════════════════════════════════════════════════════════
     //

@@ -19,6 +19,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/betting_group_provider.dart';
 import '../providers/handicap_provider.dart';
+import '../providers/organizador_provider.dart';
 import '../providers/perfil_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/round_provider.dart';
@@ -87,6 +88,11 @@ bool iniciarEscuchas(BuildContext context) {
   intentar('PerfilProvider', () => context.read<PerfilProvider>().startListening());
   intentar('TorneoProvider', () => context.read<TorneoProvider>().startListening());
   intentar('BettingGroupProvider', () => context.read<BettingGroupProvider>().init());
+  // La marca de organizador: una lectura, una vez por sesión. Va aquí y no en
+  // el logo porque el logo se pinta en cada fotograma, y porque «todavía no lo
+  // sé» tiene que resolverse antes de que alguien lo toque.
+  intentar('OrganizadorProvider',
+      () => context.read<OrganizadorProvider>().comprobar());
 
   // TorneoProvider es el testigo: es el único que sabe decir si se suscribió, y
   // es el que hace falta para que una ruta propia sepa de qué torneo habla.

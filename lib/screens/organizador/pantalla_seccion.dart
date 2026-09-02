@@ -29,9 +29,9 @@ import '../../core/app_theme.dart';
 import '../../core/golf_icons.dart';
 import '../../models/torneo.dart';
 import '../../providers/torneo_provider.dart';
-import '../torneos/tele_sheet.dart';
+import 'tele_sheet.dart';
 import '../../services/tele_service.dart';
-import '../torneos/republicar_pantalla.dart';
+import 'republicar_pantalla.dart';
 
 class PantallaSeccion extends StatelessWidget {
   final Torneo torneo;

@@ -23,6 +23,7 @@ import 'package:golf_bet_master/models/importar_jugadores.dart' hide nombreCompa
 import 'package:golf_bet_master/models/inscritos.dart';
 import 'package:golf_bet_master/models/models.dart';
 import 'package:golf_bet_master/models/torneo.dart';
+import 'package:golf_bet_master/providers/organizador_provider.dart';
 import 'package:golf_bet_master/providers/player_provider.dart';
 import 'package:golf_bet_master/providers/torneo_provider.dart';
 import 'package:golf_bet_master/screens/organizador/inscritos_tabla.dart';
@@ -252,6 +253,10 @@ void main() {
           ChangeNotifierProvider(
               create: (_) => PlayerProvider()..sembrar(directorio(150))),
           ChangeNotifierProvider(create: (_) => TorneoProvider()..sembrar([t])),
+          // La marca de organizador: el logo de Inicio la consulta. En false,
+          // que es una cuenta normal — es lo que estos tests miran.
+          ChangeNotifierProvider<OrganizadorProvider>(
+              create: (_) => OrganizadorProvider()..sembrar(false)),
         ],
         child: MaterialApp(
           home: Scaffold(

@@ -15,6 +15,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:golf_bet_master/providers/organizador_provider.dart';
 import 'package:golf_bet_master/providers/round_provider.dart';
 import 'package:golf_bet_master/providers/auth_provider.dart';
 import 'package:golf_bet_master/providers/player_provider.dart';
@@ -46,6 +47,10 @@ Future<List<String>> _montar(WidgetTester tester, Size tamano) async {
       ChangeNotifierProvider(create: (_) => UserProfileProvider()),
       // El tablero enseña lo que hay EN JUEGO en los torneos abiertos.
       ChangeNotifierProvider(create: (_) => TorneoProvider()),
+      // La marca de organizador: el logo de Inicio la consulta. En false,
+      // que es una cuenta normal — es lo que estos tests miran.
+      ChangeNotifierProvider<OrganizadorProvider>(
+          create: (_) => OrganizadorProvider()..sembrar(false)),
     ],
     child: const MaterialApp(home: HomeScreen()),
   ));

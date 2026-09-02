@@ -35,7 +35,7 @@ import '../../models/patrocinio.dart';
 import '../../models/torneo.dart';
 import '../../providers/torneo_provider.dart';
 import '../../services/tele_service.dart';
-import '../torneos/republicar_pantalla.dart';
+import 'republicar_pantalla.dart';
 import '../../services/patrocinio_storage.dart';
 
 class PatrocinioSeccion extends StatelessWidget {

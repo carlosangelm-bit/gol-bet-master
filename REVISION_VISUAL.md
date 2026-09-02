@@ -672,3 +672,44 @@ creó de dieciocho — o hay un score perdido en la vuelta.
 
 Sería un fallo nuevo. Mira primero el número que dice el propio aviso: con
 `9 hoyos en juego` la cuenta es correcta y el problema estaría en otra parte.
+
+---
+
+# La línea entre el golfista y el organizador
+
+**Hace falta verificarlo con DOS cuentas**: una marcada y otra sin marcar.
+
+## Marcar una cuenta
+
+En la consola de Firebase, crea el documento `organizadores/{uid}` — con lo que
+quieras dentro, o vacío. **La existencia es la marca.**
+
+## Con la cuenta marcada
+
+1. **El logo de Inicio** tiene un **punto dorado** en la esquina.
+2. **Tócalo**: se abre el portal. Con un solo torneo entra directo; con varios
+   pregunta cuál.
+3. **Portal → La pantalla** sigue teniendo el encendido, el enlace y el diseño.
+
+## Con la cuenta SIN marcar — el criterio que importa
+
+1. **El logo no tiene punto.**
+2. **Tócalo**: sale una hoja que explica qué es el módulo, **y que dice que
+   crear torneos seguirá siendo gratis**. No debe parecer un fallo ni un
+   «no tienes permiso».
+3. **No hay botón de comprar** — se contrata hablando.
+
+## Y lo que ya NO debe estar en ninguna de las dos
+
+- **En la pantalla del torneo**, el botón al portal: **fuera**.
+- **En la hoja de compartir**, el bloque de la pantalla del club: **fuera**.
+- Pero **«Dejar de compartir» sigue apagando la pared**. Compruébalo: enciende
+  la pantalla desde el portal, y desde la app del jugador deja de compartir el
+  torneo. El enlace `/tv/` debe quedar apagado.
+
+## Lo que protege lo que se queda
+
+**Crea un torneo desde el perfil con la cuenta sin marcar.** La liga de los
+sábados: su tabla, su enlace de WhatsApp, jugar en torneos de otros. **Todo
+igual que siempre.** Si algo de eso pide una marca, la separación está mal
+hecha.

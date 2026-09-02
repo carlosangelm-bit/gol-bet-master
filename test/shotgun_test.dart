@@ -19,6 +19,7 @@ import 'package:provider/provider.dart';
 import 'package:golf_bet_master/core/ancho.dart';
 import 'package:golf_bet_master/core/app_theme.dart';
 import 'package:golf_bet_master/models/torneo.dart';
+import 'package:golf_bet_master/providers/organizador_provider.dart';
 import 'package:golf_bet_master/providers/player_provider.dart';
 import 'package:golf_bet_master/providers/torneo_provider.dart';
 import 'package:golf_bet_master/providers/user_profile_provider.dart';
@@ -696,6 +697,10 @@ Future<void> montarSeccion(WidgetTester tester, Torneo t) async {
                 PlayerWithLink(player: Player(id: 'j$i', name: 'Jugador $i')),
             ])),
       ChangeNotifierProvider(create: (_) => TorneoProvider()..sembrar([t])),
+      // La marca de organizador: el logo de Inicio la consulta. En false,
+      // que es una cuenta normal — es lo que estos tests miran.
+      ChangeNotifierProvider<OrganizadorProvider>(
+          create: (_) => OrganizadorProvider()..sembrar(false)),
       // El selector de campo enseña los favoritos del perfil, así que necesita
       // su provider. Montar con menos escondería que la hoja no abre.
       ChangeNotifierProvider(create: (_) => UserProfileProvider()),
