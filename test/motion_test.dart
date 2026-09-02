@@ -324,7 +324,14 @@ void main() {
     test('CLAVE: no suben de donde están', () {
       // El día que este número crezca, alguien escribió una duración a mano
       // teniendo la escala delante. Bajarlo es bienvenido: se ajusta el tope.
-      expect(aMano(), lessThanOrEqualTo(66),
+      //
+      // +2 (66 → 68): el llenado de corrido (scores_seccion.dart) usa dos
+      // duraciones de INPUT-TIMING, no de animación — la espera de un 2º dígito
+      // (650) y el debounce del guardado (700). GolfMotion es la escala de
+      // MOVIMIENTO (máx 450); un debounce no cabe ahí ni debería. Son las únicas
+      // dos que no son motion; cualquier duración de animación nueva escrita a
+      // mano sigue fallando aquí (69 > 68).
+      expect(aMano(), lessThanOrEqualTo(68),
           reason: 'hay una escala en GolfMotion: úsala en vez de un número');
     });
 

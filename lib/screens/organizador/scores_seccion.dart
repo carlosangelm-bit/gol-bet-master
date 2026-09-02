@@ -43,7 +43,10 @@
 // prometer tiempo real y enseñar algo de hace dos horas. Las dos listas van
 // separadas y cada una con su fecha.
 // ─────────────────────────────────────────────────────────────────────────────
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/ancho.dart';
 import '../../core/app_theme.dart';
 import '../../core/golf_icons.dart';
@@ -191,6 +194,97 @@ class _HojaDeTarjetaState extends State<HojaDeTarjeta> {
   bool _guardando = false;
   bool _cambiada = false;
 
+  // Un FocusNode por (jugador, hoyo): el llenado de corrido avanza el foco al
+  // hoyo siguiente de la MISMA fila. Al llegar al último, para.
+  final Map<String, List<FocusNode>> _focos = {};
+  // El guardado a Firestore va con debounce: tecleando 18 hoyos de corrido no se
+  // hacen 18 escrituras; se acumula en `_r` (local, inmediato) y se sube el
+  // round entero poco después de la última tecla, o al cerrar.
+  Timer? _saveTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    for (final p in _r.scoringPlayers) {
+      _focos[p.id] = List.generate(_r.totalHoles, (_) => FocusNode());
+    }
+  }
+
+  @override
+  void dispose() {
+    _saveTimer?.cancel();
+    for (final l in _focos.values) {
+      for (final f in l) {
+        f.dispose();
+      }
+    }
+    super.dispose();
+  }
+
+  /// Anota (o corrige) el hoyo `holeIndex` (0-based) de `jugador` y avanza el
+  /// foco. Rellenar un hueco pasa por el mismo `conCorreccion` que corregir, así
+  /// que el registro lo distingue solo: "se anotó 6" vs "5 → 4".
+  void _anotar(Player jugador, int holeIndex, int valor, {bool advance = true}) {
+    final hoyo = holeIndex + 1;
+    final r2 = conCorreccion(
+      _r,
+      jugadorId: jugador.id,
+      hoyo: hoyo,
+      nuevo: valor,
+      porUid: AuthService.uid ?? '',
+      porNombre: AuthService.currentUser?.displayName ?? 'El organizador',
+      cuando: DateTime.now(),
+    );
+    if (!identical(r2, _r)) {
+      setState(() {
+        _r = r2;
+        _cambiada = true;
+      });
+      _programarGuardado();
+    }
+    if (!advance) return; // blur: se guardó, pero no se mueve el foco
+    // El salto es al HOYO, dentro de la fila. Al acabar la fila PARA: no salta
+    // al jugador siguiente (decisión de Carlos) — un número de más se escribiría
+    // en la fila de otro sin que nadie lo viera.
+    final focos = _focos[jugador.id];
+    if (focos != null && holeIndex + 1 < focos.length) {
+      focos[holeIndex + 1].requestFocus();
+    } else {
+      FocusScope.of(context).unfocus(); // fila completa
+    }
+  }
+
+  void _programarGuardado() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 700), _guardar);
+  }
+
+  Future<void> _guardar() async {
+    _saveTimer?.cancel();
+    if (_guardando) {
+      _programarGuardado(); // ya hay uno en curso; reintenta al terminar
+      return;
+    }
+    final snapshot = _r;
+    setState(() => _guardando = true);
+    final ok = await LiveRoundService.guardarCorregida(snapshot);
+    if (!mounted) return;
+    setState(() => _guardando = false);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo guardar. Revisa la conexión; los '
+              'números siguen en pantalla.')));
+    }
+  }
+
+  Future<void> _cerrar() async {
+    // Sube cualquier cambio pendiente antes de salir: no se pierde el último.
+    if (_saveTimer?.isActive ?? false) {
+      await _guardar();
+    }
+    if (mounted) Navigator.pop(context, _cambiada);
+  }
+
   Future<void> _corregir(Player jugador, int hoyo) async {
     final actual = _r.scores[jugador.id]?[hoyo]?.grossScore;
     final nuevo = await _pedirScore(context, widget.t, jugador, hoyo, actual);
@@ -262,7 +356,10 @@ class _HojaDeTarjetaState extends State<HojaDeTarjeta> {
                       strokeWidth: 2, color: t.primary)),
           ]),
           const SizedBox(height: 2),
-          Text('Toca un score para corregirlo. Queda anotado quién lo hizo.',
+          Text(
+              'Teclea los golpes de corrido: el foco pasa al hoyo siguiente '
+              'solo y para al 18. Mantén pulsada una casilla para corregir o '
+              'borrar. Queda anotado quién anotó qué.',
               style: TextStyle(color: t.sub, fontSize: 12)),
           const SizedBox(height: 12),
           Expanded(
@@ -312,15 +409,20 @@ class _HojaDeTarjetaState extends State<HojaDeTarjeta> {
                                   style: GolfType.value(t.text)),
                             ),
                             for (final h in hoyos)
-                              _Casilla(
+                              _CasillaEditable(
+                                key: ValueKey('${p.id}-$h'),
                                 score: _r.scores[p.id]?[h]?.grossScore,
                                 par: _r.course.holes
                                     .where((x) => x.hole == h)
                                     .map((x) => x.par)
                                     .firstOrNull,
                                 t: t,
-                                onTap:
-                                    _guardando ? null : () => _corregir(p, h),
+                                focusNode: _focos[p.id]![h - 1],
+                                onCommitted: (v, {bool advance = true}) =>
+                                    _anotar(p, h - 1, v, advance: advance),
+                                // Mantener pulsado: diálogo clásico (corregir con
+                                // teclado numérico grande, o BORRAR el hoyo).
+                                onLongPress: () => _corregir(p, h),
                               ),
                           ]),
                         ),
@@ -362,7 +464,7 @@ class _HojaDeTarjetaState extends State<HojaDeTarjeta> {
             child: SizedBox(
               width: double.infinity,
               child: TextButton(
-                onPressed: () => Navigator.pop(context, _cambiada),
+                onPressed: _cerrar,
                 style: TextButton.styleFrom(foregroundColor: t.sub),
                 child: const Text('Cerrar'),
               ),
@@ -433,35 +535,155 @@ Future<(int?,)?> _pedirScore(
 // ─────────────────────────────────────────────────────────────────────────────
 // PIEZAS
 // ─────────────────────────────────────────────────────────────────────────────
-class _Casilla extends StatelessWidget {
+/// Casilla EDITABLE en línea: se teclea el score encima y el foco pasa solo al
+/// siguiente hoyo (lo hace el padre en `onCommitted`). Rellenar una tarjeta de
+/// 18 se siente como en papel, sin abrir un diálogo por hoyo.
+///
+/// El salto y los dos dígitos (criterio 1 y 2 del encargo):
+///  - Un dígito 3–9 es inequívoco (30+ no existe en golf): guarda y avanza YA.
+///  - Un 1 o un 2 puede ser el score o el inicio de 10–20: espera 650 ms un 2º
+///    dígito. Si llega, forma el número (10–20) y avanza; si no, guarda el
+///    único y avanza. Enter/Tab fuerzan el avance sin esperar.
+///  - Al salir de la casilla sin avanzar, un valor válido pendiente se guarda
+///    igual (no se pierde).
+class _CasillaEditable extends StatefulWidget {
   final int? score;
   final int? par;
   final GolfTheme t;
-  final VoidCallback? onTap;
-  const _Casilla({
+  final FocusNode focusNode;
+  // advance=true (tecleo): guarda y avanza al hoyo siguiente. advance=false
+  // (blur): guarda el valor pendiente pero NO mueve el foco — si el usuario tocó
+  // otra casilla, no se lo robamos.
+  final void Function(int value, {bool advance}) onCommitted;
+  final VoidCallback? onLongPress;
+  const _CasillaEditable({
+    super.key,
     required this.score,
     required this.par,
     required this.t,
-    required this.onTap,
+    required this.focusNode,
+    required this.onCommitted,
+    this.onLongPress,
   });
 
   @override
+  State<_CasillaEditable> createState() => _CasillaEditableState();
+}
+
+class _CasillaEditableState extends State<_CasillaEditable> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.score?.toString() ?? '');
+  Timer? _ambiguo; // espera de un posible 2º dígito tras un 1 o un 2
+
+  @override
+  void initState() {
+    super.initState();
+    widget.focusNode.addListener(_onFoco);
+  }
+
+  @override
+  void didUpdateWidget(covariant _CasillaEditable old) {
+    super.didUpdateWidget(old);
+    // Si el score cambió por fuera (guardado/otra corrección) y esta casilla no
+    // está enfocada, se refleja; si está enfocada, manda lo que se teclea.
+    if (widget.score != old.score && !widget.focusNode.hasFocus) {
+      final txt = widget.score?.toString() ?? '';
+      if (_ctrl.text != txt) _ctrl.text = txt;
+    }
+  }
+
+  @override
+  void dispose() {
+    _ambiguo?.cancel();
+    widget.focusNode.removeListener(_onFoco);
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onFoco() {
+    if (widget.focusNode.hasFocus) {
+      // Al entrar, selecciona todo: teclear reemplaza (sirve para corregir).
+      _ctrl.selection =
+          TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+    } else {
+      // Al salir: un valor válido que aún esperaba 2º dígito se guarda igual,
+      // pero SIN avanzar el foco (el usuario ya movió el foco a otra parte).
+      _ambiguo?.cancel();
+      final v = int.tryParse(_ctrl.text.trim());
+      if (v != null && v >= 1 && v <= 20 && v != widget.score) {
+        widget.onCommitted(v, advance: false);
+      }
+    }
+    if (mounted) setState(() {}); // repinta el borde de foco
+  }
+
+  void _commit(int v) {
+    _ambiguo?.cancel();
+    widget.onCommitted(v, advance: true); // el padre persiste y avanza el foco
+  }
+
+  void _esperar(int d) {
+    _ambiguo?.cancel();
+    _ambiguo = Timer(const Duration(milliseconds: 650), () {
+      if (mounted) _commit(d);
+    });
+  }
+
+  void _setText(String s) {
+    if (_ctrl.text == s) return;
+    _ctrl.value = TextEditingValue(
+      text: s,
+      selection: TextSelection.collapsed(offset: s.length),
+    );
+  }
+
+  void _onChanged(String raw) {
+    _ambiguo?.cancel();
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) {
+      _setText('');
+      return;
+    }
+    if (digits.length >= 2) {
+      final two = int.parse(digits.substring(0, 2));
+      if (two >= 10 && two <= 20) {
+        _setText(digits.substring(0, 2));
+        _commit(two); // 2 dígitos válidos → completo
+      } else {
+        // 2º dígito imposible (p. ej. 25): se descarta, se sigue sobre el 1º.
+        final first = digits.substring(0, 1);
+        _setText(first);
+        _esperar(int.parse(first));
+      }
+      return;
+    }
+    final d = int.parse(digits);
+    _setText(digits);
+    if (d >= 3 && d <= 9) {
+      _commit(d); // inequívoco de una cifra → avanza ya
+    } else if (d == 1 || d == 2) {
+      _esperar(d); // podría crecer a 10–20
+    }
+    // d == 0: no es un score; no se guarda (se espera corrección).
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // El color dice la relación con el par, que es como se lee una tarjeta.
-    // El hueco NO es cero: es "todavía no", y por eso va en el token de dato
-    // ausente y no en el de resultado.
+    final t = widget.t;
+    final v = int.tryParse(_ctrl.text);
     final Color color;
-    if (score == null || par == null) {
+    if (v == null || widget.par == null) {
       color = t.sub;
-    } else if (score! < par!) {
+    } else if (v < widget.par!) {
       color = t.profit;
-    } else if (score! > par!) {
+    } else if (v > widget.par!) {
       color = t.loss;
     } else {
       color = t.text;
     }
-    return InkWell(
-      onTap: onTap,
+    final enfocada = widget.focusNode.hasFocus;
+    return GestureDetector(
+      onLongPress: widget.onLongPress,
       child: Container(
         width: 34,
         height: 30,
@@ -470,10 +692,36 @@ class _Casilla extends StatelessWidget {
         decoration: BoxDecoration(
           color: t.surface,
           borderRadius: BorderRadius.circular(5),
-          border: Border.all(color: t.divider),
+          border: Border.all(color: enfocada ? t.primary : t.divider),
         ),
-        child: Text(score?.toString() ?? '·',
-            style: GolfType.value(color)),
+        child: TextField(
+          controller: _ctrl,
+          focusNode: widget.focusNode,
+          keyboardType: TextInputType.number,
+          textAlign: TextAlign.center,
+          textInputAction: TextInputAction.next,
+          maxLength: 2,
+          buildCounter: (_,
+                  {required int currentLength,
+                  required bool isFocused,
+                  int? maxLength}) =>
+              null,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          style: GolfType.value(color),
+          cursorColor: t.primary,
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: EdgeInsets.zero,
+            border: InputBorder.none,
+            hintText: '·',
+            hintStyle: GolfType.value(t.sub),
+          ),
+          onChanged: _onChanged,
+          onSubmitted: (_) {
+            final val = int.tryParse(_ctrl.text.trim());
+            if (val != null && val >= 1 && val <= 20) _commit(val);
+          },
+        ),
       ),
     );
   }
