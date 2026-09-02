@@ -499,3 +499,40 @@ a 4,7 sin que lo viéramos** porque vivía en una tarjeta pequeña bajo el hero.
 
 **EN JUEGO**, **TU RIVAL HABITUAL** y **ÚLTIMAS RONDAS** siguen ahí, en ese
 orden, debajo. No se borró nada: se cambió qué va arriba.
+
+---
+
+# El índice y las rondas de nueve hoyos
+
+## Lo que hay que ver en Ajustes → tu índice
+
+**El índice va a subir.** Tres de tus ocho diferenciales usados eran de nueve
+hoyos, y daban alrededor de la mitad de lo que la misma calidad de juego daría
+en dieciocho — así que ganaban la selección de los ocho mejores siempre.
+
+**En la lista de diferenciales:**
+
+1. **Las rondas de nueve aparecen combinadas de dos en dos**, con los dos
+   nombres: `Ronda A + Ronda B`. Un diferencial de dieciocho por cada par.
+2. **Si tienes un número impar de nueves, el último dice que espera pareja** —
+   en gris, en la lista, con su motivo: *«WHS junta dos rondas de nueve para
+   hacer un diferencial de dieciocho»*. No desaparece.
+3. El combinado se fecha con **la más reciente de las dos**.
+
+> **No hay nada que recalcular.** Los diferenciales guardados no estaban mal:
+> cada uno era el diferencial correcto de sus nueve hoyos. Lo que estaba mal era
+> compararlos con los de dieciocho, y eso se corrige al calcular el índice — así
+> que se arregla solo al abrir la app.
+
+## Y el detalle de una ronda, en el iPhone
+
+Toca una ronda de la lista. La fila **SALIDA** ya no se parte letra por letra ni
+se sale por la derecha.
+
+**Y hay una fila nueva: `CR · SLOPE`.** Eran el tercer y cuarto dato de la misma
+línea. Nada sobraba —esos dos números solo aparecen aquí, y son los que
+destaparon el sesgo— así que no se quitó nada: se separó.
+
+En una ronda de nueve verás **`35.9 · 149`**: el CR es la mitad porque es un
+total, y el Slope no lo es porque es una pendiente. **Las dos cosas son
+correctas**; el fallo era compararlo con un dieciocho.

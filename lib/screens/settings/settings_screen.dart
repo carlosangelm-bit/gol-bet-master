@@ -516,8 +516,19 @@ class _HandicapTrackerSheet extends StatelessWidget {
     // se mira el gráfico. Una fila en gris con su motivo dice lo mismo sin
     // desaparecer, que era el requisito de verdad: una ronda que no cuenta
     // tiene que verse como tal.
-    final diffs = [...result.allDifferentials, ...result.descartadas]
-      ..sort((a, b) => b.playedAt.compareTo(a.playedAt));
+    // ── Y EL NUEVE QUE ESPERA PAREJA, en la lista también ──────────────────
+    //
+    // WHS combina dos rondas de nueve en un diferencial de dieciocho, así que
+    // un nueve impar no entra en el índice hasta que llegue el siguiente.
+    //
+    // Va en la LISTA por el mismo motivo que las descartadas: una ronda jugada
+    // que no aparece en ningún sitio se lee como un fallo de guardado, y así es
+    // como este proyecto ha perdido datos ya. Con su motivo al lado.
+    final diffs = [
+      ...result.allDifferentials,
+      ...result.descartadas,
+      if (result.nueveSinPareja != null) result.nueveSinPareja!,
+    ]..sort((a, b) => b.playedAt.compareTo(a.playedAt));
 
     return DraggableScrollableSheet(
       expand: false,
@@ -647,6 +658,11 @@ class _HandicapTrackerSheet extends StatelessWidget {
                     return _DiffRow(
                       diff: d,
                       isUsed: isUsed,
+                      // Se compara por id porque es lo único estable: el nueve
+                      // que espera es un diferencial guardado como cualquier
+                      // otro, y lo que lo distingue es no tener pareja.
+                      esperaPareja:
+                          result.nueveSinPareja?.roundId == d.roundId,
                       rank: i + 1,
                       t: t,
                       borrado: rr.isEmpty && d.esImposible
@@ -786,42 +802,67 @@ String? _teeDeLaRonda(BuildContext context, ScoreDifferential diff) {
 ///
 /// Y cuando no puede, DICE POR QUÉ. "No guardada" a secas deja al usuario sin
 /// saber si el dato no está o si la app no supo buscarlo.
+/// De qué salida se jugó, cuando la ronda no la guardó.
+///
+/// ── El CR y el Slope se fueron a su propia fila ────────────────────────────
+///
+/// Esto devolvía CUATRO datos en una línea: «no guardada · CR 35,9 · Slope 149
+/// · no coincide con ninguna salida de tus campos». En un iPhone no cabía, y
+/// tampoco se leía: el CR y el Slope son datos de la RONDA, no una explicación
+/// de por qué no se sabe la salida.
+///
+/// Nada sobraba —los dos números solo aparecen aquí, y son los que destaparon
+/// el sesgo de las rondas de nueve— así que no se quitó nada: se separó.
 String _salidaDeducida(BuildContext context, ScoreDifferential diff) {
-  final numeros = 'CR ${diff.courseRating.toStringAsFixed(1)} · '
-      'Slope ${diff.slopeRating}';
   final candidatas = _salidasConocidas(context);
   if (candidatas.isEmpty) {
     // El motivo concreto: no hay contra qué comparar.
-    return 'no guardada · $numeros · sin campos guardados con los que '
-        'compararla';
+    return 'no guardada · sin campos con los que compararla';
   }
   final n = salidaSegunRating(candidatas, diff.courseRating, diff.slopeRating);
   if (n == null) {
     // Devolver la más parecida sería inventar el dato en vez de la cifra.
-    return 'no guardada · $numeros · no coincide con ninguna salida de tus '
-        'campos';
+    return 'no guardada · no coincide con ninguna de tus campos';
   }
   // Con la marca: deducida no es lo mismo que guardada.
   return '$n · deducida del CR y el Slope';
 }
 
 /// Una línea de etiqueta y valor del detalle de una ronda.
-class _DatoDeRonda extends StatelessWidget {
+///
+/// Pública para poder MEDIRLA en un test: el fallo que tenía —la etiqueta
+/// partida letra a letra y el valor desbordando— es geometría, y la geometría
+/// se comprueba con números, no mirando.
+class DatoDeRonda extends StatelessWidget {
   final String etiqueta;
   final String valor;
   final GolfTheme t;
-  const _DatoDeRonda(
-      {required this.etiqueta, required this.valor, required this.t});
+  const DatoDeRonda(
+      {super.key, required this.etiqueta, required this.valor, required this.t});
 
+  // ── QUIÉN SE LLEVA EL ESPACIO QUE SOBRA ─────────────────────────────────
+  //
+  // Se lo llevaba la ETIQUETA, con `Expanded`. Y como el valor no tenía
+  // límite, en un iPhone pasaban las dos cosas a la vez: el valor se salía por
+  // la derecha, y a la etiqueta le quedaban cero píxeles, así que «SALIDA» se
+  // partía LETRA POR LETRA en vertical.
+  //
+  // Al revés es lo correcto: la etiqueta mide lo que mide —son cuatro palabras
+  // fijas— y el valor se queda con el resto y baja de línea si no cabe. El
+  // valor es el dato; la etiqueta solo lo nombra.
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: Text(etiqueta, style: GolfType.label(t.sub))),
-              Text(valor, style: GolfType.value(t.text, size: 15)),
+              Text(etiqueta, style: GolfType.label(t.sub)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(valor,
+                    textAlign: TextAlign.right,
+                    style: GolfType.value(t.text, size: 15)),
+              ),
             ]),
       );
 }
@@ -829,6 +870,9 @@ class _DatoDeRonda extends StatelessWidget {
 class _DiffRow extends StatelessWidget {
   final ScoreDifferential diff;
   final bool isUsed;
+
+  /// Este nueve está guardado y aún no cuenta: le falta su pareja.
+  final bool esperaPareja;
   final int rank;
   final GolfTheme t;
 
@@ -839,6 +883,7 @@ class _DiffRow extends StatelessWidget {
   const _DiffRow({
     required this.diff,
     required this.isUsed,
+    this.esperaPareja = false,
     required this.rank,
     required this.t,
     required this.borrado,
@@ -846,10 +891,23 @@ class _DiffRow extends StatelessWidget {
   });
 
   /// Por qué esta ronda no cuenta. Vacío si cuenta.
-  String get _porQueNoCuenta => diff.esImposible
-      ? 'No cuenta: el diferencial es imposible. Suele ser una ronda que se '
-          'cerró con pocos hoyos capturados.'
-      : '';
+  ///
+  /// Dos motivos, y son distintos: uno es un dato roto y el otro es que WHS
+  /// pide dos nueves para hacer un diferencial. El segundo se arregla jugando
+  /// otros nueve, así que la frase lo dice — «no cuenta» a secas mandaría a
+  /// buscar un fallo que no existe.
+  String get _porQueNoCuenta {
+    if (diff.esImposible) {
+      return 'No cuenta: el diferencial es imposible. Suele ser una ronda que '
+          'se cerró con pocos hoyos capturados.';
+    }
+    if (esperaPareja) {
+      return 'Espera pareja: WHS junta dos rondas de nueve para hacer un '
+          'diferencial de dieciocho. Cuando juegues otros nueve, las dos '
+          'entrarán juntas.';
+    }
+    return '';
+  }
 
   Future<void> _menu(BuildContext context) async {
     await showModalBottomSheet(
@@ -886,22 +944,31 @@ class _DiffRow extends StatelessWidget {
               //
               // Es lo que permite saber qué rondas del histórico salieron con
               // el tee equivocado, que era la pregunta abierta.
-              _DatoDeRonda(
+              DatoDeRonda(
                   etiqueta: 'SALIDA',
                   valor: diff.teeName ?? _salidaDeducida(context, diff),
                   t: t),
-              _DatoDeRonda(
+              // Los dos números con los que se calculó, en su propia fila.
+              // Con nueve hoyos el CR es la mitad del de dieciocho y el Slope
+              // NO: es una pendiente, no un total. Verlo aquí es lo que
+              // destapó que los nueves dominaban el índice.
+              DatoDeRonda(
+                  etiqueta: 'CR · SLOPE',
+                  valor: '${diff.courseRating.toStringAsFixed(1)} · '
+                      '${diff.slopeRating}',
+                  t: t),
+              DatoDeRonda(
                   etiqueta: 'IDA · VUELTA',
                   valor: diff.hayVueltas
                       ? '${diff.frontNine} · ${diff.backNine}'
                       // Se DICE por qué falta, en vez de no enseñar el campo.
                       : 'no se guardó en esta ronda',
                   t: t),
-              _DatoDeRonda(
+              DatoDeRonda(
                   etiqueta: 'TOTAL · RBA',
                   valor: '${diff.grossScore} · ${diff.adjustedGrossScore}',
                   t: t),
-              _DatoDeRonda(
+              DatoDeRonda(
                   etiqueta: 'DIFERENCIAL',
                   valor: diff.differential.toStringAsFixed(1),
                   t: t),

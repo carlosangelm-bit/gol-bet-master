@@ -148,6 +148,13 @@ class HandicapIndexResult {
   /// no le sirve a nadie para encontrarlas.
   final List<ScoreDifferential> descartadas;
 
+  /// El nueve que espera pareja, si hay uno.
+  ///
+  /// No entra en el índice —ver `emparejarNueves`— y por eso hay que DECIRLO:
+  /// una ronda jugada que no aparece en ningún sitio se lee como un fallo de
+  /// guardado, que es la forma en que este proyecto ha perdido datos ya.
+  final ScoreDifferential? nueveSinPareja;
+
   const HandicapIndexResult({
     this.index,
     required this.totalRounds,
@@ -156,6 +163,7 @@ class HandicapIndexResult {
     this.esrAdjustment = 0.0,
     this.tableAdjustment = 0.0,
     this.descartadas = const [],
+    this.nueveSinPareja,
   });
 
   bool get hasIndex => index != null;
@@ -237,6 +245,135 @@ class HandicapService {
     final vueltas = playingHandicap ~/ 18;
     final resto = playingHandicap % 18;
     return vueltas + (strokeIndex <= resto ? 1 : 0);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LAS RONDAS DE NUEVE HOYOS — por qué dominaban el índice
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // «¿Por qué las rondas de diferenciales casi todas agarra las de 9 hoyos?»
+  //
+  // No era casualidad, y no era una coincidencia estadística: era ARITMÉTICA.
+  //
+  // El diferencial se calcula `(113 / Slope) × (RBA − CR)`. Con nueve hoyos, la
+  // app partía el CR a la mitad —71,7 → 35,9— y el RBA es también la mitad,
+  // pero el multiplicador `113 / Slope` NO se parte, porque el Slope es una
+  // pendiente y no un total.
+  //
+  //   18 hoyos:  (113/149) × (90 − 71,7) = 13,9
+  //    9 hoyos:  (113/149) × (47 − 35,9) =  8,4
+  //
+  // O sea que un nueve produce sistemáticamente ALREDEDOR DE LA MITAD del
+  // diferencial que produciría la misma calidad de juego en dieciocho. Y como
+  // WHS coge los OCHO MEJORES de veinte, los nueves ganan siempre. Tres de los
+  // ocho usados eran de nueve hoyos, y por eso el índice estaba bajo.
+  //
+  // El código ya tenía un comentario que decía «para rondas de 9 hoyos se dobla
+  // el diferencial (estándar WHS)». No doblaba nada: describía una intención que
+  // nunca se escribió. Es la forma más difícil de encontrar un fallo — el
+  // comentario dice que está resuelto.
+  //
+  // ── QUÉ DICE WHS, y por qué SUMAR es lo correcto ──────────────────────────
+  //
+  // El estándar no dobla un nueve: COMBINA DOS. Un score de nueve produce un
+  // diferencial de nueve, que se guarda hasta que llega el siguiente y los dos
+  // forman un diferencial de dieciocho.
+  //
+  // Y la aritmética confirma que sumar es la operación:
+  //
+  //   d₁ + d₂ = (113/S)(r₁−CR₉) + (113/S)(r₂−CR₉)
+  //           = (113/S)((r₁+r₂) − 2·CR₉)
+  //           = (113/S)(RBA₁₈ − CR₁₈)
+  //
+  // Que es exactamente el diferencial de dieciocho. No es una aproximación:
+  // es la misma expresión.
+  //
+  // ── DÓNDE se hace, y por qué NO hay migración ─────────────────────────────
+  //
+  // Aquí, al calcular el índice — no al guardar el diferencial. Por el mismo
+  // motivo que la guarda del suelo, escrito unas líneas más abajo: los
+  // diferenciales están GUARDADOS en Firestore, así que arreglar el cálculo de
+  // la ronda solo arreglaría las futuras.
+  //
+  // Y trae algo mejor: los diferenciales guardados NO ESTÁN MAL. Cada uno es el
+  // diferencial correcto de sus nueve hoyos. Lo que estaba mal era compararlos
+  // con los de dieciocho. Así que no hay nada que corregir en los datos, solo
+  // en la selección — y el índice se arregla solo, sin recalcular nada.
+  //
+  // ── LO QUE LA APP NO GUARDA, y se dice en vez de calcularlo mal ───────────
+  //
+  // Dos cosas, y las dos son aproximaciones que quedan escritas:
+  //
+  //   · El SLOPE de nueve hoyos. WHS publica uno propio; la app guarda uno por
+  //     tee, que es el de dieciocho. Como el Slope entra en `113/Slope` en los
+  //     dos diferenciales que se suman, el error se cancela casi entero: la
+  //     suma sigue siendo `(113/S)(RBA₁₈ − CR₁₈)` con S del tee.
+  //   · El CR de la IDA y el de la VUELTA por separado. Se usa la mitad del de
+  //     dieciocho, y las dos mitades de un campo no valen lo mismo. Sumar dos
+  //     nueves del mismo tee vuelve a dar el CR de dieciocho exacto, así que
+  //     el error también se cancela al combinar — no al mirar un nueve suelto.
+  //
+  // Un nueve SIN PAREJA no se usa. Se guarda y se dice, que es el criterio 2.
+
+  /// Combina dos diferenciales de nueve hoyos en uno de dieciocho.
+  ///
+  /// Se fecha con la ronda MÁS RECIENTE de las dos: el diferencial de dieciocho
+  /// no existía hasta que se jugó la segunda, y fecharlo con la primera lo
+  /// metería antes de tiempo en la ventana de veinte.
+  static ScoreDifferential combinarNueves(
+      ScoreDifferential a, ScoreDifferential b) {
+    final primera = a.playedAt.isBefore(b.playedAt) ? a : b;
+    final segunda = a.playedAt.isBefore(b.playedAt) ? b : a;
+    return ScoreDifferential(
+      // El id lleva los dos: un diferencial combinado tiene que poder decir de
+      // qué dos rondas salió, o se lee como una ronda de dieciocho que nadie
+      // jugó.
+      roundId: '${primera.roundId}+${segunda.roundId}',
+      roundName: '${primera.roundName} + ${segunda.roundName}',
+      playedAt: segunda.playedAt,
+      differential:
+          double.parse((a.differential + b.differential).toStringAsFixed(1)),
+      grossScore: a.grossScore + b.grossScore,
+      adjustedGrossScore: a.adjustedGrossScore + b.adjustedGrossScore,
+      courseRating: a.courseRating + b.courseRating,
+      slopeRating: segunda.slopeRating,
+      parTotal: a.parTotal + b.parTotal,
+      holesPlayed: a.holesPlayed + b.holesPlayed,
+      courseName: primera.courseName == segunda.courseName
+          ? primera.courseName
+          : '${primera.courseName} + ${segunda.courseName}',
+      frontNine: primera.grossScore,
+      backNine: segunda.grossScore,
+      teeName: segunda.teeName,
+    );
+  }
+
+  /// Empareja los nueves de [diffs] y devuelve la lista lista para el índice.
+  ///
+  /// Los de dieciocho pasan tal cual. Los de nueve se ordenan por fecha y se
+  /// combinan de dos en dos, en el orden en que se jugaron. El que sobre queda
+  /// fuera y se devuelve aparte.
+  static ({List<ScoreDifferential> paraElIndice, ScoreDifferential? sinPareja})
+      emparejarNueves(List<ScoreDifferential> diffs) {
+    final dieciocho = <ScoreDifferential>[];
+    final nueves = <ScoreDifferential>[];
+    for (final d in diffs) {
+      (d.holesPlayed <= 9 ? nueves : dieciocho).add(d);
+    }
+    nueves.sort((a, b) => a.playedAt.compareTo(b.playedAt));
+
+    final combinados = <ScoreDifferential>[];
+    for (var i = 0; i + 1 < nueves.length; i += 2) {
+      combinados.add(combinarNueves(nueves[i], nueves[i + 1]));
+    }
+    // El impar sobra. Es el más RECIENTE porque van en orden: el que espera
+    // pareja es el último que se jugó, no uno de hace meses.
+    final sobra = nueves.length.isOdd ? nueves.last : null;
+
+    return (
+      paraElIndice: [...dieciocho, ...combinados],
+      sinPareja: sobra,
+    );
   }
 
   /// Calcula el Score Differential para una ronda.
@@ -445,8 +582,20 @@ class HandicapService {
     final descartadas = allDiffs.where((d) => d.esImposible).toList()
       ..sort((a, b) => b.playedAt.compareTo(a.playedAt));
 
+    // ── LOS NUEVES SE COMBINAN ANTES DE SELECCIONAR ──────────────────────────
+    //
+    // Es el paso que faltaba, y va AQUÍ y no antes: la ventana de veinte se
+    // cuenta sobre diferenciales de dieciocho, así que dos nueves ocupan UNA
+    // plaza, no dos. Emparejar después de recortar a veinte habría dejado la
+    // ventana con veintitantas rondas dentro.
+    //
+    // Ver la cabecera de `emparejarNueves`: los guardados no están mal, lo que
+    // estaba mal era compararlos con los de dieciocho.
+    final emparejados = emparejarNueves(buenos);
+    final sinPareja = emparejados.sinPareja;
+
     // Ordenar por fecha descendente y tomar las últimas 20
-    final sorted = [...buenos]
+    final sorted = [...emparejados.paraElIndice]
       ..sort((a, b) => b.playedAt.compareTo(a.playedAt));
     final last20 = sorted.take(20).toList();
 
@@ -460,6 +609,7 @@ class HandicapService {
         allDifferentials: last20,
         tableAdjustment: entry.adj,
         descartadas: descartadas,
+        nueveSinPareja: sinPareja,
       );
     }
 
@@ -503,6 +653,7 @@ class HandicapService {
       esrAdjustment: esrAdj,
       tableAdjustment: entry.adj,
       descartadas: descartadas,
+      nueveSinPareja: sinPareja,
     );
   }
 
