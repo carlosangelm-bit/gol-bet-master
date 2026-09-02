@@ -629,3 +629,46 @@ dice la regla: *«La serpiente es del último en la secuencia del hoyo»*.
 
 **Comprueba el dinero:** con cuatro jugadores y 100, un dueño paga **300**. Sin
 contestar, dos dueños pagan más.
+
+---
+
+# El aviso de score incompleto, tercera vuelta
+
+## No era la cuenta
+
+Con **nueve declarados y nueve anotados el aviso no aparece** — hay una sonda que
+lo comprueba. Lo que pasaba es que esa ronda tenía **dieciocho hoyos en juego**.
+
+Hay **dos maneras** de que una ronda «de nueve» tenga dieciocho:
+
+1. se **creó como de dieciocho** y se dejó en nueve
+2. hay un **score suelto en el segundo segmento** — basta uno
+
+En los dos casos el aviso decía la verdad. Lo que estaba mal era **cómo**.
+
+## Qué se ve ahora
+
+En vez de seis líneas nombrando a los tres jugadores, **una** que diagnostica:
+
+```
+⊘ La ronda tiene 18 hoyos en juego y 9 sin anotar (10–18)
+```
+
+**Los dos números son el diagnóstico**: si dice 18 y esperabas 9, la ronda se
+creó de dieciocho — o hay un score perdido en la vuelta.
+
+## Y lo que hay que comprobar que NO se perdió
+
+**El caso para el que el aviso se escribió sigue vivo.** Anota un hoyo dejando a
+**uno** de los jugadores sin score, y los otros dos sí. Debe decir el nombre:
+
+```
+⊘ Nassau · falta Dylan
+```
+
+**Ahí sí falta una persona.** Cuando faltan todos, lo que falta es el hoyo.
+
+## Si aparece con 9 en juego
+
+Sería un fallo nuevo. Mira primero el número que dice el propio aviso: con
+`9 hoyos en juego` la cuenta es correcta y el problema estaría en otra parte.

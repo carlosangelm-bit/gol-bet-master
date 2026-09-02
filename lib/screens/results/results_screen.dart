@@ -1702,6 +1702,28 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
     return pid;
   }
 
+  /// «10–18» en vez de «10, 11, 12, 13, 14, 15, 16, 17, 18».
+  ///
+  /// Nueve números seguidos no se leen; un rango sí. Con hoyos sueltos se
+  /// enumeran, que es cuando el detalle importa.
+  static String _rango(Set<int> hoyos) {
+    final l = hoyos.toList()..sort();
+    if (l.isEmpty) return '';
+    final tramos = <String>[];
+    var desde = l.first, previo = l.first;
+    for (final h in l.skip(1)) {
+      if (h == previo + 1) {
+        previo = h;
+        continue;
+      }
+      tramos.add(desde == previo ? '$desde' : '$desde–$previo');
+      desde = h;
+      previo = h;
+    }
+    tramos.add(desde == previo ? '$desde' : '$desde–$previo');
+    return tramos.join(', ');
+  }
+
   /// Jugadores cuyos scores necesita esta apuesta para liquidar.
   ///
   /// Delega en Round.scoreCarriersOfModule en vez de re-derivarlo: preguntar
@@ -1735,7 +1757,30 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
     //
     // Es el mismo colapso que la ficha de la regla, en otra superficie: los N
     // módulos son UNA apuesta.
+    // ── TERCERA VUELTA DE ESTE AVISO, Y NO ERA LA CUENTA ────────────────────
+    //
+    // Las dos veces anteriores la causa fue contar los dieciocho hoyos del
+    // campo. Esta vez la cuenta está bien: con nueve declarados y nueve
+    // anotados el aviso no aparece —hay una sonda que lo comprueba—.
+    //
+    // Lo que pasaba es que la ronda tenía DIECIOCHO hoyos en juego: o se creó
+    // como de dieciocho y se dejó en nueve, o hay un score suelto en el segundo
+    // segmento, que es lo que hace que `singleNine` deje de ser cierto.
+    //
+    // O sea que el aviso decía la verdad y la decía MAL, de dos formas:
+    //
+    //   · nombraba JUGADORES cuando lo que falta son HOYOS. «falta CAM, RICH,
+    //     Dylan» con tres jugadores en la ronda es "faltan todos", que es otra
+    //     manera de decir que no falta ninguno en concreto.
+    //   · lo repetía seis veces, una por apuesta, cuando la causa era una.
+    //
+    // Así que ahora se distingue: si a TODOS les falta en los MISMOS hoyos, el
+    // que falta es el hoyo y se dice cuántos. Si le falta a algunos, se nombran
+    // —que es el caso para el que este aviso se escribió—.
     final porTipo = <BetModuleType, ({int duelos, Set<String> faltan})>{};
+    // Los hoyos sin anotar por NADIE, comunes a toda la ronda. Es la causa que
+    // se dice una vez en vez de seis.
+    final hoyosVacios = <int>{};
     for (final e in mods) {
       final (grp, m) = e;
       final pids = _jugadoresDe(grp, m);
@@ -1757,15 +1802,23 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
       final enJuego = BetEngine.segmentsOf(round).hoyosEnJuego;
       for (final h in enJuego) {
         var lleno = true;
+        var vacio = true;
         for (final pid in pids) {
           if (!round.getScore(pid, h).hasScore) {
             lleno = false;
             faltan.add(_nombreCorto(pid));
+          } else {
+            vacio = false;
           }
         }
         if (lleno) completos++;
+        // Un hoyo donde NADIE anotó: es el hoyo el que falta, no una persona.
+        if (vacio) hoyosVacios.add(h);
       }
       if (completos >= enJuego.length) continue;
+      // Si lo único que falta son hoyos vacíos, esta apuesta no aporta nada al
+      // aviso: su motivo es el de la ronda, y se dice una vez más abajo.
+      if (completos + hoyosVacios.length >= enJuego.length) continue;
       final previo = porTipo[m.type];
       porTipo[m.type] = (
         duelos: (previo?.duelos ?? 0) + 1,
@@ -1773,7 +1826,19 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
       );
     }
 
+    final enJuego = BetEngine.segmentsOf(round).hoyosEnJuego;
     final incompletas = [
+      // ── LA CAUSA COMÚN, UNA VEZ ──────────────────────────────────────────
+      //
+      // Con hoyos que nadie anotó, el motivo es de la RONDA y no de cada
+      // apuesta. Y se dice CUÁNTOS hoyos hay en juego, que es el dato que
+      // convierte un aviso confuso en un diagnóstico: «18 en juego y 9 sin
+      // anotar» explica de golpe una ronda que se creó de dieciocho y se dejó
+      // en nueve.
+      if (hoyosVacios.isNotEmpty)
+        'La ronda tiene ${enJuego.length} hoyos en juego y '
+            '${hoyosVacios.length} sin anotar '
+            '(${_rango(hoyosVacios)})',
       for (final e in porTipo.entries)
         e.value.duelos > 1
             // Con varios módulos del mismo tipo, quién falta se repite en todos:
