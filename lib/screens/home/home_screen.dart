@@ -1138,51 +1138,41 @@ class _EmptyView extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
 
-                // Botón principal – Nueva Ronda
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SetupScreen())),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFD4A520),
-                      foregroundColor: const Color(0xFF0D2B0F),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
-                      elevation: 4,
-                      shadowColor: const Color(0xFFD4A520).withValues(alpha: 0.4),
+                // Las tres acciones como TOKENS en una sola fila. Antes eran
+                // tres botones de ancho completo —tres filas— y el bloque de
+                // arranque quedaba demasiado alto, empujando el histórico bajo el
+                // pliegue. Mismo tamaño las tres; "Nueva ronda" conserva el acento
+                // dorado como pista de la acción principal, sin ocupar más.
+                Row(
+                  children: [
+                    _AccionToken(
+                      t: t,
+                      icon: Icons.add_circle_outline_rounded,
+                      label: 'Nueva Ronda',
+                      primary: true,
+                      onTap: () => Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const SetupScreen())),
                     ),
-                    icon: const Icon(Icons.add_circle_outline_rounded, size: 22),
-                    label: const Text(
-                      'Nueva Ronda',
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    _AccionToken(
+                      t: t,
+                      icon: Icons.tag_rounded,
+                      label: 'Unirse con código',
+                      onTap: () => showDialog(
+                        context: context,
+                        builder: (_) =>
+                            _JoinByCodeDialog(t: t, parentContext: context),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Botón secundario – Unirse con código
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => showDialog(
-                      context: context,
-                      builder: (_) => _JoinByCodeDialog(t: t, parentContext: context),
+                    // "Lo de siempre" = puntos de partida guardados (plantillas y
+                    // grupos, unificados en presentación). Ver TemplatesScreen.
+                    _AccionToken(
+                      t: t,
+                      icon: Icons.library_books_outlined,
+                      label: 'Lo de siempre',
+                      onTap: () => Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const TemplatesScreen())),
                     ),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: t.primary.withValues(alpha: 0.6)),
-                      foregroundColor: t.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                    icon: Icon(Icons.tag_rounded, size: 18, color: t.primary),
-                    label: Text(
-                      'Unirse con código',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: t.primary),
-                    ),
-                  ),
+                  ],
                 ),
                 const SizedBox(height: 12),
 
@@ -1218,45 +1208,6 @@ class _EmptyView extends StatelessWidget {
                     ),
                   ),
 
-                // ── LA puerta a los puntos de partida guardados ──────────
-                //
-                // Una sola, y en Home: es donde se empieza una ronda. Ajustes es
-                // donde se configura la app, no donde se arranca a jugar.
-                //
-                // Detrás hay dos modelos —RoundTemplate y BettingGroup— y
-                // ninguno es superconjunto del otro: la plantilla puede guardar
-                // apuestas por EQUIPOS y el grupo no; el grupo guarda
-                // REFERENCIAS a jugadores y la plantilla solo nombres. Fundirlos
-                // sin pérdida pediría un tercer modelo y migrar los dos.
-                //
-                // Así que la unificación es de PRESENTACIÓN: una lista, una
-                // acción de guardar. El usuario no distingue, que es lo que
-                // importa; por dentro cada uno sigue guardándose como sabe.
-                // Botón secundario – Usar plantilla
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const TemplatesScreen())),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: t.primary.withValues(alpha: 0.5)),
-                      foregroundColor: t.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
-                    ),
-                    icon: Icon(Icons.library_books_outlined, size: 18, color: t.primary),
-                    label: Text(
-                      'Lo de siempre',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                        color: t.primary,
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -4182,6 +4133,70 @@ class _HeaderAction extends StatelessWidget {
           child: Center(
             child: Icon(icon,
                 color: Colors.white.withValues(alpha: 0.85), size: 20),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Una acción de arranque como TOKEN: icono + etiqueta corta, tamaño igual entre
+/// las tres (van en una Row de Expanded). `primary` la rellena de dorado (Nueva
+/// ronda); las demás van delineadas sobre la superficie.
+class _AccionToken extends StatelessWidget {
+  final GolfTheme t;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool primary;
+  const _AccionToken({
+    required this.t,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.primary = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = primary ? const Color(0xFF0D2B0F) : t.primary;
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: Material(
+          color: primary ? const Color(0xFFD4A520) : t.surface,
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: primary
+                    ? null
+                    : Border.all(color: t.primary.withValues(alpha: 0.35)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 22, color: fg),
+                  const SizedBox(height: 6),
+                  Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      height: 1.15,
+                      fontWeight: FontWeight.w800,
+                      color: fg,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
