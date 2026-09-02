@@ -325,6 +325,24 @@ class _CaptureScreenState extends State<CaptureScreen> {
                   const SizedBox(height: 10),
                 ],
 
+                // ── Snake: quién fue el ÚLTIMO ─────────────────────────
+                //
+                // «Es el último en la secuencia del hoyo.» Y la app registra
+                // quién hizo tres putts, no en qué orden.
+                //
+                // La pregunta va DESPUÉS de la tabla y no antes, al revés que
+                // Wolf: en Wolf la respuesta se sabe en el tee, antes de
+                // anotar. Aquí solo se puede preguntar cuando los putts ya
+                // están anotados —es lo que la hace aparecer— así que ponerla
+                // arriba sería reservar sitio para algo que casi nunca hay.
+                //
+                // Y el criterio que decide si esto estorba: solo aparece cuando
+                // DOS o más pasan el umbral en este hoyo. Snake se juega en
+                // rondas normales donde la mayoría de los hoyos no tienen ni un
+                // 3-putt; si asomara cuando no toca, el remedio sería peor que
+                // la regla que falta.
+                SnakeUltimoSection(hole: _currentHole, t: t),
+
                 // ── Con quién vas en este bloque ──────────────────────
                 //
                 // Sixes no pregunta nada: las parejas se derivan del bloque.
@@ -483,6 +501,154 @@ class _BotonDeCierre extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Quién fue el último en pasar el umbral de putts, en este hoyo.
+///
+/// ── Aparece SOLO cuando hay más de uno ──────────────────────────────────────
+///
+/// Con cero o un jugador por encima del umbral no hay nada que preguntar: sin
+/// ninguno no hay serpiente, y con uno ya se sabe de quién es. La pregunta
+/// existe únicamente para el caso raro, y fuera de él devuelve nada — ni un
+/// hueco, ni un título, ni un separador.
+///
+/// ── Y se puede contestar DESPUÉS ────────────────────────────────────────────
+///
+/// No es un modal que aparece una vez y se va: es una fila del hoyo. Mientras
+/// esté sin contestar sigue ahí, y volviendo al hoyo se contesta o se cambia.
+/// En el campo una pregunta a mitad de hoyo se queda sin responder, y
+/// descubrirlo al cerrar sin poder arreglarlo sería peor que no preguntar.
+/// Pública para poder montarla en un test: el criterio que decide si esto
+/// estorba es que NO aparezca fuera del caso raro, y eso solo se comprueba
+/// montándola con cero, uno y dos culpables.
+class SnakeUltimoSection extends StatelessWidget {
+  final int hole;
+  final GolfTheme t;
+  const SnakeUltimoSection({super.key, required this.hole, required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final prov = context.watch<RoundProvider>();
+    final round = prov.round;
+    if (round == null) return const SizedBox.shrink();
+
+    // El umbral sale del módulo de Snake de la ronda. Sin Snake pactado no hay
+    // pregunta que hacer, aunque haya cinco 3-putts.
+    final mods = [
+      for (final g in round.betGroups)
+        for (final m in g.modules)
+          if (m.type == BetModuleType.snake) m,
+    ];
+    if (mods.isEmpty) return const SizedBox.shrink();
+    final umbral = mods.first.snake.umbral;
+
+    // Quiénes pasaron el umbral EN ESTE HOYO. Solo con score: los putts de un
+    // HoleScore vacío son 0 por defecto, no una lectura.
+    // realPlayers y no scoringPlayers: los putts son de una PERSONA. Un equipo
+    // no hace tres putts, igual que no pega un tiro de aproximación — es la
+    // misma razón por la que el ranking de oyes usa esta lista.
+    final pasaron = [
+      for (final p in round.realPlayers) // pasaron: putts de una persona
+        if (round.getScore(p.id, hole).hasScore &&
+            round.getScore(p.id, hole).putts >= umbral)
+          p,
+    ];
+    if (pasaron.length < 2) return const SizedBox.shrink();
+
+    final dicho = round.ultimoEnPasarElUmbral[hole];
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: t.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: dicho == null
+                  ? t.accent.withValues(alpha: 0.55)
+                  : t.divider),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(GolfIcons.arrastra,
+                size: GolfIcons.juntoAValor,
+                color: dicho == null ? t.accent : t.sub),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                  '${pasaron.length} con $umbral putts o más. '
+                  '¿Quién fue el último?',
+                  style: GolfType.value(t.text)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          // Wrap y no Row: con tres o cuatro nombres largos una fila se sale
+          // por la derecha, y las pruebas de geometría lo cazan a 320 px.
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final p in pasaron)
+                _ChipDeUltimo(
+                  nombre: p.name,
+                  elegido: dicho == p.id,
+                  t: t,
+                  // Volver a tocar al elegido lo DESELECCIONA: contestar mal y
+                  // no poder deshacerlo es peor que la pregunta.
+                  onTap: () => prov.marcarUltimoEnPasarElUmbral(
+                      hole, dicho == p.id ? null : p.id),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // ── LO QUE PASA SI NADIE CONTESTA, dicho aquí ──────────────────
+          //
+          // Es lo que sustituye a la opción que salió de la configuración. No
+          // se pacta de antemano: se dice en el momento de la pregunta, que es
+          // donde importa.
+          Text(
+              dicho == null
+                  ? 'Si no lo dices, la serpiente es de los ${pasaron.length} '
+                      'y cada uno paga completo.'
+                  : 'La serpiente de este hoyo es de '
+                      '${pasaron.firstWhere((p) => p.id == dicho, orElse: () => pasaron.first).name}.',
+              style: GolfType.label(t.sub)),
+        ]),
+      ),
+    );
+  }
+}
+
+class _ChipDeUltimo extends StatelessWidget {
+  final String nombre;
+  final bool elegido;
+  final GolfTheme t;
+  final VoidCallback onTap;
+  const _ChipDeUltimo({
+    required this.nombre,
+    required this.elegido,
+    required this.t,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: elegido ? t.primary.withValues(alpha: 0.15) : t.card,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+                color: elegido ? t.primary : t.divider,
+                width: elegido ? 1.5 : 1),
+          ),
+          child: Text(nombre,
+              style: GolfType.value(elegido ? t.primary : t.text)),
+        ),
+      );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

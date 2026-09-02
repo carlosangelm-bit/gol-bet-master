@@ -108,9 +108,29 @@ class SnakeEngine {
           .map((pid) => round.getScore(pid, h).putts)
           .reduce((a, b) => a > b ? a : b);
 
+      // ── EL ÚLTIMO EN LA SECUENCIA, SI SE DIJO ─────────────────────────────
+      //
+      // «La serpiente es del último en la secuencia del hoyo.» Con dos o más
+      // pasando el umbral en el mismo hoyo, la tarjeta pregunta cuál fue, y la
+      // respuesta vive en la ronda. Con ella, el empate desaparece: hay un
+      // dueño y no dos.
+      //
+      // Sin ella —nadie contestó— se cae en la regla de empate, que es lo que
+      // pasa cuando el orden no se sabe. Y eso es lo que sustituye a la opción
+      // que salió de la configuración: no se pacta, se dice en la pregunta.
+      //
+      // Se comprueba que el nombrado ESTÉ entre los culpables: una respuesta
+      // guardada y luego corregido el score —el que dijo tres putts ahora dice
+      // dos— no puede quedarse mandando sobre un hoyo que ya no le toca.
+      final dicho = round.ultimoEnPasarElUmbral[h];
+      final duenos = culpables.length > 1 && dicho != null &&
+              culpables.contains(dicho)
+          ? <String>[dicho]
+          : culpables;
+
       return SnakeResultado(
         hoyo: h,
-        duenos: culpables,
+        duenos: duenos,
         putts: putts,
         umbral: cfg.umbral,
         hoyosSinCapturar: sinCapturar,

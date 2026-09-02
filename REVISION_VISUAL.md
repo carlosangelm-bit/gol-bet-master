@@ -578,3 +578,54 @@ y sixes. Ya había pasado con Snake.
 
 Ahora la lista **sale del catálogo**, así que un tipo nuevo no puede volverse
 invisible por olvido.
+
+---
+
+# Snake: quién se la queda con dos 3-putts
+
+## Lo primero: que NO aparezca
+
+**Es el criterio que decide si esto estorba.** Snake se juega en rondas normales
+donde la mayoría de los hoyos no tienen ni un 3-putt.
+
+Anota una ronda con Snake pactado y comprueba que en la tarjeta **no hay nada**:
+
+- en un hoyo **sin ningún** 3-putt
+- en un hoyo con **uno solo** — ya se sabe de quién es la serpiente
+- y en una ronda **sin Snake**, aunque haya cinco 3-putts
+
+## Y cuando sí
+
+Anota **dos jugadores con 3 putts en el mismo hoyo**. Debajo de la tabla debe
+salir una fila:
+
+```
+🔄  2 con 3 putts o más. ¿Quién fue el último?
+    [ Ana Robles ]  [ Beto Lara ]
+    Si no lo dices, la serpiente es de los 2 y cada uno paga completo.
+```
+
+**Toca uno.** La frase cambia a *«La serpiente de este hoyo es de Beto Lara»*.
+**Tócalo otra vez** y se deselecciona — contestar mal y no poder deshacerlo
+sería peor que la pregunta.
+
+**Con tres 3-putts** salen los tres nombres, y no deben salirse por la derecha.
+
+## Se puede contestar después
+
+**No es un modal.** Sal del hoyo, vuelve, y la pregunta sigue ahí mientras no se
+haya contestado. En el campo una pregunta a mitad de hoyo se queda sin
+responder, y descubrirlo al cerrar sin poder arreglarlo sería peor que no
+preguntar.
+
+## Y lo que salió de la configuración
+
+En **Detalle → Snake** ya no está la opción *«si dos empatan»*. En su sitio se
+dice la regla: *«La serpiente es del último en la secuencia del hoyo»*.
+
+> Pactar de antemano algo que se te va a preguntar en el momento es preguntar
+> dos veces. El comportamiento sin respuesta —los dos pagan completo— es el que
+> ya era por defecto, y ahora se dice **en la propia pregunta**.
+
+**Comprueba el dinero:** con cuatro jugadores y 100, un dueño paga **300**. Sin
+contestar, dos dueños pagan más.

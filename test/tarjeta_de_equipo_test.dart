@@ -179,15 +179,26 @@ void main() {
           File('lib/screens/capture/capture_screen.dart').readAsStringSync();
       expect(codigo, contains('round.scoringPlayers.asMap()'),
           reason: 'las filas de la tabla salen de quién lleva tarjeta');
-      // El único `realPlayers` legítimo aquí es el ranking de oyes: un equipo
-      // no pega un tiro de aproximación.
+      // Los `realPlayers` legítimos de esta pantalla, NOMBRADOS. Un recuento a
+      // secas se actualiza subiendo el número, y entonces deja de decir nada:
+      // lo que hay que fijar es CUÁLES y por qué.
+      //
+      //   · el ranking de oyes  → un equipo no pega un tiro de aproximación
+      //   · el último 3-putt    → un equipo no hace tres putts
+      //
+      // Las dos son cosas de una PERSONA. Cualquier tercera tiene que
+      // justificarse aquí antes de compilar.
+      const permitidos = ['unranked', 'pasaron'];
       final vivas = codigo
           .split('\n')
           .where((l) => !l.trimLeft().startsWith('//'))
           .where((l) => l.contains('realPlayers'))
           .toList();
-      expect(vivas.length, 1, reason: 'solo el ranking de oyes');
-      expect(vivas.single, contains('unranked'));
+      expect(vivas, isNotEmpty);
+      for (final l in vivas) {
+        expect(permitidos.any(l.contains), isTrue,
+            reason: 'realPlayers sin justificar: ${l.trim()}');
+      }
     });
   });
 

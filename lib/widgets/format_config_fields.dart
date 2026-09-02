@@ -131,18 +131,28 @@ List<Widget> snakeFields({
           t),
       const SizedBox(height: 18),
 
-      // El empate es una ELECCIÓN visible, no un accidente del orden de la
-      // lista de jugadores. Con dos que llegan al umbral en el mismo último
-      // hoyo hay dos respuestas defendibles y ninguna es obvia.
-      _etiqueta('SI DOS EMPATAN EN EL ÚLTIMO HOYO', t),
-      const SizedBox(height: 8),
-      _opciones([SnakeEmpate.ambosPagan.label, SnakeEmpate.dividen.label],
-          cfg.empate == SnakeEmpate.dividen ? 1 : 0, t,
-          (i) => onChanged(cfg.copyWith(
-              empate:
-                  i == 1 ? SnakeEmpate.dividen : SnakeEmpate.ambosPagan))),
-      const SizedBox(height: 6),
-      _nota(cfg.empate.description, t),
+      // ── LA OPCIÓN DE EMPATE SALIÓ DE AQUÍ ──────────────────────────────
+      //
+      // «Hoy ya existe una configuración que dice que si se empata los dos
+      // pagan o se divide, pero no hay manera de empatar: uno tiene que estar
+      // más cerca forzosamente.»
+      //
+      // Y la regla de Carlos: la serpiente es del ÚLTIMO en la secuencia del
+      // hoyo. O sea que el empate no era imposible: era INALCANZABLE, porque
+      // nada preguntaba el orden.
+      //
+      // Ahora se pregunta, en el hoyo y solo cuando pasa. Y pactar de antemano
+      // algo que se te va a preguntar en el momento es preguntar dos veces, así
+      // que la opción sale de aquí.
+      //
+      // El enum y su valor por defecto SIGUEN: son lo que pasa cuando nadie
+      // responde la pregunta, y eso se dice en la propia pregunta. Las rondas
+      // guardadas con la otra opción se siguen leyendo igual.
+      _nota(
+          'La serpiente es del último en la secuencia del hoyo. Si dos llegan '
+          'al umbral en el mismo hoyo, la tarjeta pregunta cuál fue — solo '
+          'cuando pasa.',
+          t),
     ];
 
 // ── RABBIT ───────────────────────────────────────────────────────────────────

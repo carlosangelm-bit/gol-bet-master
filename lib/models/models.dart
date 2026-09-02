@@ -4170,6 +4170,28 @@ class Round {
   /// Solo se persisten en rondas en vivo (liveRounds Firestore).
   final List<BetChangeProposal> pendingProposals;
 
+  /// Quién fue el ÚLTIMO en pasar el umbral de putts, por hoyo.
+  ///
+  /// ── Por qué hace falta un dato nuevo ──────────────────────────────────────
+  ///
+  /// «La serpiente es del último en la secuencia del hoyo.» Y eso no se podía
+  /// saber: la app registra QUIÉN hizo tres putts, no en qué orden.
+  ///
+  /// Sin el orden, dos jugadores que pasan el umbral en el mismo hoyo son un
+  /// empate de verdad, y el motor tenía que elegir entre dos respuestas
+  /// defendibles. Con el orden, el empate desaparece: siempre hay un último.
+  ///
+  /// ── Y por qué un mapa por HOYO y no una lista de secuencia ───────────────
+  ///
+  /// Guardar el orden completo de putts de cada hoyo sería un dato mucho mayor
+  /// para responder una pregunta mucho más pequeña, y habría que capturarlo
+  /// siempre. Esto solo guarda la respuesta a la única pregunta que importa —
+  /// quién fue el último de los que pasaron el umbral— y solo en los hoyos
+  /// donde hubo más de uno.
+  ///
+  /// Vacío es lo normal: la mayoría de los hoyos no tienen ni un 3-putt.
+  final Map<int, String> ultimoEnPasarElUmbral;
+
   /// El equipo que lleva la tarjeta de esta ronda, si es una ronda de equipo.
   ///
   /// ── Por qué un campo y no derivarlo de las apuestas ──────────────────────
@@ -4214,6 +4236,7 @@ class Round {
     List<BetChangeProposal>? pendingProposals,
     this.correcciones = const [],
     this.equipoId,
+    this.ultimoEnPasarElUmbral = const {},
   }) : pairSliding = pairSliding ?? const {},
        pendingProposals = pendingProposals ?? const [];
 
@@ -4507,6 +4530,7 @@ class Round {
     List<BetChangeProposal>? pendingProposals,
     List<CorreccionDeScore>? correcciones,
     String? equipoId,
+    Map<int, String>? ultimoEnPasarElUmbral,
   }) => Round(
     id: id, name: name, course: course,
     players: players ?? this.players,
@@ -4531,6 +4555,8 @@ class Round {
     pendingProposals: pendingProposals ?? this.pendingProposals,
     correcciones: correcciones ?? this.correcciones,
     equipoId: equipoId ?? this.equipoId,
+    ultimoEnPasarElUmbral:
+        ultimoEnPasarElUmbral ?? this.ultimoEnPasarElUmbral,
   );
 }
 

@@ -70,6 +70,15 @@ Map<String, dynamic> roundToJson(Round r) {
   // Quién lleva la tarjeta cuando no hay apuestas de las que deducirlo. Sin
   // esto, la ronda se recarga y los cuatro vuelven a tener tarjeta propia.
   if (r.equipoId != null) 'equipoId': r.equipoId,
+  // Quién fue el último en pasar el umbral de putts, por hoyo. Tiene que estar
+  // aquí: `saveRound` escribe con merge:false, así que lo que no salga de esta
+  // función se borra al anotar el hoyo siguiente — y la respuesta se daría una
+  // vez para perderse sola.
+  if (r.ultimoEnPasarElUmbral.isNotEmpty)
+    'ultimoEnPasarElUmbral': {
+      for (final e in r.ultimoEnPasarElUmbral.entries)
+        e.key.toString(): e.value,
+    },
   };
 }
 
@@ -207,6 +216,11 @@ Round roundFromJson(Map<String, dynamic> j) {
         .whereType<CorreccionDeScore>()
         .toList(),
     equipoId: j['equipoId'] as String?,
+    ultimoEnPasarElUmbral: {
+      for (final e in asMap(j['ultimoEnPasarElUmbral']).entries)
+        if (int.tryParse('${e.key}') != null && e.value is String)
+          int.parse('${e.key}'): e.value as String,
+    },
   );
 }
 
@@ -370,6 +384,28 @@ class RoundProvider extends ChangeNotifier {
   }
 
   void setTab(int i) { _tabIndex = i; notifyListeners(); }
+
+  /// Marca quién fue el ÚLTIMO en pasar el umbral de putts en [hoyo].
+  ///
+  /// [playerId] en null lo borra: contestar mal y no poder deshacerlo es peor
+  /// que la pregunta. Sin respuesta, el motor de Snake cae en la regla de
+  /// empate, que es lo que se dice en la propia pregunta.
+  void marcarUltimoEnPasarElUmbral(int hoyo, String? playerId) {
+    final r = _round;
+    if (r == null) return;
+    final mapa = {...r.ultimoEnPasarElUmbral};
+    if (playerId == null) {
+      mapa.remove(hoyo);
+    } else {
+      mapa[hoyo] = playerId;
+    }
+    _round = r.copyWith(ultimoEnPasarElUmbral: mapa);
+    notifyListeners();
+    _persist();
+    // Y a la ronda en vivo: los otros tres tienen que ver la misma respuesta,
+    // o cada teléfono liquidaría una serpiente distinta.
+    if (r.isLive) LiveRoundService.saveRound(_round!);
+  }
 
   // ── Round lifecycle ────────────────────────────────────────────────────────
   void startRound(Round r) {
