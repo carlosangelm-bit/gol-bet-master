@@ -158,8 +158,13 @@ void main() {
       final t = _torneo(participantes: const ['p1', 'fantasma']);
       final f = filasDeInscritos(t, _directorio);
       expect(f, hasLength(2));
-      expect(f.last.huerfano, isTrue);
-      expect(f.last.nombre, contains('no encontrada'));
+      expect(f.last.origen, OrigenDeLaFicha.sinFicha);
+      // Con el ID delante: es lo único que se puede buscar en la consola para
+      // averiguar qué pasó, y antes el nombre no lo decía.
+      expect(f.last.nombre, contains('Sin ficha'));
+      expect(f.last.nombre, contains('fantasma'));
+      // Y NO se puede editar su handicap: no hay ficha que editar.
+      expect(f.last.editable, isFalse);
     });
 
     test('y no se cuela en una búsqueda de otro', () {

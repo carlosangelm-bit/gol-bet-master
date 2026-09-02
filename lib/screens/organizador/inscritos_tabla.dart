@@ -46,8 +46,11 @@ import 'package:provider/provider.dart';
 
 import '../../core/ancho.dart';
 import '../../core/app_theme.dart';
+import '../../core/golf_icons.dart';
 import '../../models/inscritos.dart';
+import '../../models/models.dart';
 import '../../models/torneo.dart';
+import '../../services/player_service.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/torneo_provider.dart';
 import 'organizador_screen.dart';
@@ -56,11 +59,27 @@ class InscritosTabla extends StatefulWidget {
   final Torneo torneo;
   final Ancho ancho;
   final GolfTheme t;
+
+  /// id → nombre de quien ya jugó, sacado de la tabla del torneo.
+  ///
+  /// ── Por qué llega de fuera y no se calcula aquí ──────────────────────────
+  ///
+  /// El portal YA construye la tabla completa —y con ella el nombre de cada
+  /// inscrito, incluidos los que solo existen dentro de una ronda y los de
+  /// otras cuentas, cuyos ids hay que traducir—. Calcularlo otra vez aquí daría
+  /// dos resoluciones del mismo nombre con dos precedencias, que es la clase de
+  /// diferencia que aparece meses después en una sola fila.
+  ///
+  /// Sin esto, esta pantalla era la única del portal que NO leía esos nombres:
+  /// la pared los enseñaba y la lista de inscritos ponía «Ficha no encontrada».
+  final Map<String, String> nombresDeRondas;
+
   const InscritosTabla({
     super.key,
     required this.torneo,
     required this.ancho,
     required this.t,
+    this.nombresDeRondas = const {},
   });
 
   @override
@@ -71,6 +90,22 @@ class _InscritosTablaState extends State<InscritosTabla> {
   final _busca = TextEditingController();
   OrdenDeInscritos _orden = OrdenDeInscritos.inscripcion;
   bool _descendente = false;
+
+  /// Las fichas del catálogo global de los inscritos que esta cuenta no tiene
+  /// vinculados.
+  ///
+  /// ── El fallo que esto arregla ────────────────────────────────────────────
+  ///
+  /// El portal abría Copa CGM 2026 y enseñaba «Ficha no encontrada» en las 47
+  /// filas. Y no era cierto: la ficha existía, lo que faltaba era el VÍNCULO.
+  /// El directorio de una cuenta son sus `playerLinks`, y un torneo cuyos
+  /// inscritos se juntaron desde rondas tiene ids de gente que esta cuenta
+  /// nunca vinculó.
+  ///
+  /// Se resuelven al abrir, por id, que es exactamente lo que la regla de
+  /// `players` permite: `allow get`, sin `list`.
+  Map<String, ({Player ficha, bool mia})> _globales = const {};
+  bool _resolviendo = false;
 
   /// Los marcados para quitar. Vacío = no hay modo selección.
   ///
@@ -83,6 +118,25 @@ class _InscritosTablaState extends State<InscritosTabla> {
   void dispose() {
     _busca.dispose();
     super.dispose();
+  }
+
+  /// Pide las fichas que faltan. Una vez, y solo las que faltan.
+  ///
+  /// Se llama desde `build` porque el directorio llega por stream: cuáles
+  /// faltan no se sabe hasta que ha llegado, y puede llegar después de montar.
+  /// El `_resolviendo` impide que un rebuild dispare la misma tanda otra vez.
+  Future<void> _resolverQueFaltan(Set<String> faltan) async {
+    if (_resolviendo || faltan.isEmpty) return;
+    _resolviendo = true;
+    final nuevas = await PlayerService.fichasGlobales(faltan);
+    if (!mounted) {
+      _resolviendo = false;
+      return;
+    }
+    setState(() {
+      _globales = {..._globales, ...nuevas};
+      _resolviendo = false;
+    });
   }
 
   void _ordenarPor(OrdenDeInscritos o) => setState(() {
@@ -183,12 +237,32 @@ class _InscritosTablaState extends State<InscritosTabla> {
     final t = widget.t;
     final ancho = widget.ancho;
     final dir = context.watch<PlayerProvider>().directory;
+    // Las que el directorio no resuelve y todavía no se han pedido. Se piden
+    // después del fotograma: hacerlo dentro del build sería un setState en
+    // pleno pintado.
+    final enDirectorio = {for (final pw in dir) pw.player.id};
+    final faltan = widget.torneo.participantes
+        .where((p) =>
+            !enDirectorio.contains(p) &&
+            !_globales.containsKey(p) &&
+            // Lo que una ronda ya resolvió no se le pide al catálogo: en Copa
+            // CGM 2026 son 28 lecturas que no hacen falta, y ninguna habría
+            // encontrado nada porque esos ids nunca pasaron por `players`.
+            !widget.nombresDeRondas.containsKey(p))
+        .toSet();
+    if (faltan.isNotEmpty && !_resolviendo) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _resolverQueFaltan(faltan));
+    }
+
     final filas = filasDeInscritos(
       widget.torneo,
       dir,
       busca: _busca.text,
       orden: _orden,
       descendente: _descendente,
+      globales: _globales,
+      nombresDeRondas: widget.nombresDeRondas,
     );
     final total = widget.torneo.participantes.length;
 
@@ -486,31 +560,78 @@ class _Fila extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-                color: fila.huerfano ? t.sub : t.text,
+                color: fila.origen == OrigenDeLaFicha.sinFicha
+                    ? t.loss
+                    : t.text,
                 fontSize: 14.5,
-                fontStyle: fila.huerfano ? FontStyle.italic : null,
+                fontStyle: fila.origen == OrigenDeLaFicha.sinFicha
+                    ? FontStyle.italic
+                    : null,
                 fontWeight: FontWeight.w600)),
       ),
-      if (fila.huerfano) ...[
+      // ── EL MOTIVO, no «no encontrada» ──────────────────────────────────
+      //
+        // El aviso decía «su ficha ya no está en tu directorio» para todos, y son
+      // casos distintos: uno se añade, otro se ve y no se toca, otro pide crear
+      // ficha y el último se quita. Con 47 filas iguales, saber el motivo es lo
+      // único que permite arreglarlo.
+      //
+      // Y la sonda contra producción dice cuál pesa: de los 47 de Copa CGM
+      // 2026, 10 del directorio, 0 del catálogo, 28 de rondas y 9 huérfanos.
+      if (fila.origen != OrigenDeLaFicha.directorio) ...[
         const SizedBox(width: 6),
         Tooltip(
-          message: 'Está inscrito pero su ficha ya no está en tu directorio.',
-          child: Icon(Icons.help_outline, size: 15, color: t.sub),
+          message: switch (fila.origen) {
+            OrigenDeLaFicha.directorio => '',
+            OrigenDeLaFicha.global => fila.editable
+                ? 'Su ficha existe pero no está en tu directorio: el nombre y '
+                    'el handicap salen del catálogo. Añádelo a tu directorio '
+                    'para tenerlo a mano al crear rondas.'
+                : 'Su ficha la creó otra cuenta. Puedes verlo e inscribirlo, '
+                    'pero su handicap se edita desde donde se creó.',
+            // El mayoritario. Dice de dónde sale el nombre, por qué falta el
+            // handicap, y qué hacer para que deje de faltar.
+            OrigenDeLaFicha.rondas =>
+              'Su nombre sale de una ronda que ya jugó: nunca se le creó ficha, '
+                  'y por eso no tiene handicap. Créale una ficha en tu '
+                  'directorio para poder fijarlo.',
+            OrigenDeLaFicha.sinFicha =>
+              'Está inscrito y no aparece en ningún sitio: ni ficha, ni una '
+                  'ronda jugada. Suele ser una ficha borrada: quítalo del '
+                  'torneo y vuelve a inscribirlo.',
+          },
+          child: Icon(
+              switch (fila.origen) {
+                // La nube: está en el catálogo, fuera de tu directorio.
+                OrigenDeLaFicha.global => Icons.cloud_outlined,
+                // Jugó. No es un aviso: es un dato incompleto, y el icono del
+                // golpe dice de dónde viene el nombre.
+                OrigenDeLaFicha.rondas => GolfIcons.golpe,
+                _ => GolfIcons.aviso,
+              },
+              size: 15,
+              color: fila.origen == OrigenDeLaFicha.sinFicha ? t.loss : t.sub),
         ),
       ],
     ]);
 
     final handicap = InkWell(
-      onTap: fila.huerfano ? null : onHandicap,
+      onTap: fila.editable ? onHandicap : null,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 8),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           // VALOR. El par label/value es lo que hace el trabajo: ninguno de los
           // dos arregla nada por su cuenta.
-          Text(fila.huerfano ? '—' : _hcp,
-              style: GolfType.value(fila.huerfano ? t.sub : t.text)),
-          if (!fila.huerfano) ...[
+          // `—` en cuanto NO haya ficha. Antes solo cuando faltaba del todo, y
+          // los 28 que solo existen en una ronda enseñaban un 0 que se lee como
+          // el handicap de un scratch.
+          Text(fila.handicapConocido ? _hcp : '—',
+              style:
+                  GolfType.value(fila.handicapConocido ? t.text : t.sub)),
+          // El lápiz solo si de verdad se puede: ofrecer un campo que va a
+          // fallar al guardar es peor que no ofrecerlo.
+          if (fila.editable) ...[
             const SizedBox(width: 6),
             Icon(Icons.edit, size: 13, color: t.sub),
           ],

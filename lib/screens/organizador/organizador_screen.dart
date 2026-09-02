@@ -378,8 +378,18 @@ class _PortalState extends State<_Portal> {
     );
 
     final contenido = switch (_seccion) {
-      SeccionDelPortal.inscritos =>
-        InscritosTabla(torneo: torneo, ancho: ancho, t: t),
+      SeccionDelPortal.inscritos => InscritosTabla(
+          torneo: torneo,
+          ancho: ancho,
+          t: t,
+          // Los nombres que la tabla YA resolvió. Se filtra `sinNombre` porque
+          // la tabla cae en «—» cuando no sabe, y pasar ese «—» como nombre
+          // haría que un inscrito irresoluble pareciera resuelto.
+          nombresDeRondas: {
+            for (final f in [...tabla.filas, ...tabla.bajoMinimo])
+              if (f.nombre != sinNombre) f.playerId: f.nombre,
+          },
+        ),
       SeccionDelPortal.patrocinio => PatrocinioSeccion(
           torneo: torneo, ancho: ancho, t: t, tabla: tabla, lista: !_cargando),
       SeccionDelPortal.pantalla => PantallaSeccion(

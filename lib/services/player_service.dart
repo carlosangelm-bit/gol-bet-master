@@ -442,6 +442,75 @@ class PlayerService {
   // BÚSQUEDA — Jugadores globales (para añadir al directorio)
   // ══════════════════════════════════════════════════════════════════════════════
 
+  /// Las fichas GLOBALES de [ids], para los inscritos que esta cuenta no tiene
+  /// vinculados.
+  ///
+  /// ── El fallo que esto arregla ─────────────────────────────────────────────
+  ///
+  /// El directorio de una cuenta es `users/{uid}/playerLinks`: sus VÍNCULOS al
+  /// catálogo global. Un inscrito puede tener ficha en el catálogo sin que esta
+  /// cuenta la haya vinculado —pasa cuando el torneo se llena con gente de otras
+  /// cuentas—, y entonces «no encontrada» era «no vinculada»: la ficha existe, y
+  /// la regla de `players` permite pedirla —`allow get`, y la app siempre pide
+  /// por id—. Es exactamente para esto.
+  ///
+  /// ── Lo que esto NO arregló, medido ────────────────────────────────────────
+  ///
+  /// Se escribió para los 47 de Copa CGM 2026 que salían como «Ficha no
+  /// encontrada», y la sonda contra producción dijo que resuelve a CERO de
+  /// ellos: sus ids son UUID creados en el aparato y nunca pasaron por
+  /// `players`. Los 28 que se arreglaron salen de `RoundResult.playerNames`,
+  /// en [OrigenDeLaFicha.rondas].
+  ///
+  /// Se queda porque el caso que cubre es real y distinto —una ficha ajena, que
+  /// el directorio no tiene y el catálogo sí— y porque ahora solo se le pregunta
+  /// por los ids que ninguna ronda resolvió: nueve en ese torneo, no cuarenta y
+  /// siete.
+  ///
+  /// ── Y NO se vincula al leerla ─────────────────────────────────────────────
+  ///
+  /// Leer para enseñar un nombre no puede meter cuarenta y siete personas en el
+  /// directorio de nadie. Vincular es una decisión, y se ofrece aparte.
+  ///
+  /// Los ids que no existan se omiten: un inscrito cuya ficha se borró de
+  /// verdad sigue siendo un huérfano, y hay que poder decirlo.
+  /// Devuelve la ficha y SI ES DE ESTA CUENTA.
+  ///
+  /// La propiedad va aparte y no dentro de `Player` a propósito: es un hecho del
+  /// almacén —quién creó el documento— y no un atributo de la persona. Metido en
+  /// el modelo viajaría a sitios donde no significa nada.
+  ///
+  /// Importa porque la regla de `players` deja modificar al CREADOR: el handicap
+  /// de una ficha ajena se puede ver y no tocar, y la pantalla tiene que decirlo
+  /// en vez de ofrecer un campo que va a fallar al guardar.
+  static Future<Map<String, ({Player ficha, bool mia})>> fichasGlobales(
+      Iterable<String> ids) async {
+    final uid = AuthService.uid;
+    if (uid == null || ids.isEmpty) return const {};
+    final unicos = ids.toSet().toList();
+    try {
+      final docs =
+          await Future.wait(unicos.map((id) => _players.doc(id).get()));
+      final out = <String, ({Player ficha, bool mia})>{};
+      for (final d in docs) {
+        if (!d.exists) continue;
+        final creador = d.data()?['createdByUserId'] as String?;
+        out[d.id] = (
+          ficha: _playerFromDoc(d),
+          // Sin creador es de las viejas: la regla las deja editar a cualquiera,
+          // así que decir que no se puede sería mentir en el otro sentido.
+          mia: creador == null || creador == uid,
+        );
+      }
+      return out;
+    } catch (e) {
+      if (kDebugMode) debugPrint('fichasGlobales: $e');
+      // Vacío, no a medias: media resolución dejaría unas filas con nombre y
+      // otras sin él, y eso se lee como que a esas les pasa algo distinto.
+      return const {};
+    }
+  }
+
   /// Busca jugadores del catálogo global creados por este usuario.
   /// En el futuro podría incluir jugadores compartidos (isShared: true).
   static Future<List<Player>> searchPlayers(String query) async {

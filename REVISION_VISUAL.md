@@ -713,3 +713,54 @@ quieras dentro, o vacío. **La existencia es la marca.**
 sábados: su tabla, su enlace de WhatsApp, jugar en torneos de otros. **Todo
 igual que siempre.** Si algo de eso pide una marca, la separación está mal
 hecha.
+
+---
+
+# Los 47 inscritos sin nombre · Copa CGM 2026
+
+## Lo que se creía y lo que la sonda midió
+
+La primera lectura fue «son fichas del catálogo global sin vincular», y era
+**falsa**. La sonda contra producción contó los 47 inscritos reales:
+
+| cuántos | dónde está su nombre | qué se ve ahora |
+|---|---|---|
+| **10** | en su directorio | nombre y handicap, editables |
+| **0** | en el catálogo `players` | — (la hipótesis no resolvía a nadie) |
+| **28** | solo dentro de una ronda jugada | **nombre sí, handicap `—`** |
+| **9** | en ningún sitio | `Sin ficha · <id>` y su motivo |
+
+Los 37 sin ficha llevan ids UUID con guiones —los que genera el aparato— y no
+ids de Firestore de veinte caracteres: **nunca pasaron por `players`**. Son
+jugadores creados dentro de una ronda, y el torneo se llenó con `fuente: rango`,
+o sea barriendo rondas.
+
+El nombre estaba en casa: `RoundResult.playerNames` guarda id → nombre del día
+jugado, y **la tabla del torneo ya lo leía** para no enseñar «—» en la pared.
+Esta pantalla era la única del portal que no lo consultaba.
+
+## Qué mirar
+
+1. **Abre Copa CGM 2026 → Inscritos.** De 47 filas, **38 con nombre**. Antes:
+   cero.
+2. **Los 28 que jugaron** llevan el icono del golpe y su handicap es `—`, no un
+   0. Un 0 ahí es indistinguible del handicap de un scratch.
+3. **Los 9 huérfanos** salen en rojo y en cursiva, con **su id** en el nombre:
+   es lo único que se puede buscar para averiguar qué pasó.
+4. **El ⓘ dice cuatro cosas distintas**, no una:
+   - del catálogo y tuya → «añádelo a tu directorio»
+   - del catálogo y ajena → «su handicap se edita desde donde se creó»
+   - de una ronda → «nunca se le creó ficha… **créale una** para fijarlo»
+   - de ningún sitio → «ni ficha, ni una ronda jugada: **quítalo y vuelve a
+     inscribirlo**»
+5. **El lápiz solo aparece donde se puede editar.** Ofrecer un campo que va a
+   fallar al guardar es peor que no ofrecerlo.
+
+## Lo que protege esto
+
+- **El «—» de la tabla no puede colarse por nombre.** La tabla del torneo cae en
+  «—» cuando no sabe quién es alguien; si ese relleno pasara por nombre, los 9
+  huérfanos parecerían resueltos. Se para dentro de `filasDeInscritos`, no en
+  quien llama, para que ningún futuro llamador pueda colarlo.
+- **Copa de Primavera sigue igual**: sus 68 estaban todos en el directorio y
+  siguen saliendo por ahí.

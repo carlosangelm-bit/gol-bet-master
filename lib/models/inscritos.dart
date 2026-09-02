@@ -22,6 +22,7 @@
 // nuevo, no un parche aquí.
 // ─────────────────────────────────────────────────────────────────────────────
 import '../services/player_service.dart';
+import 'models.dart';
 import 'torneo.dart';
 
 /// Cómo se ordena la tabla.
@@ -52,6 +53,36 @@ extension OrdenDeInscritosTexto on OrdenDeInscritos {
 }
 
 /// Una fila de la tabla.
+/// De dónde sale el nombre de un inscrito. Ver [FilaDeInscrito.origen].
+enum OrigenDeLaFicha {
+  /// Está en el directorio de esta cuenta. Todo editable.
+  directorio,
+
+  /// Está en el catálogo global pero esta cuenta no la tiene vinculada. Es el
+  /// caso de un torneo cuyos inscritos se juntaron desde rondas, y era el que
+  /// se enseñaba como «Ficha no encontrada».
+  global,
+
+  /// Jugó rondas y NUNCA tuvo ficha.
+  ///
+  /// Es el caso mayoritario de Copa CGM 2026 y el que la sonda destapó: de sus
+  /// 47 inscritos, 10 estaban en el directorio, 0 en el catálogo global y
+  /// **28 solo existían dentro de una ronda**. Sus ids son UUID con guiones
+  /// —los que genera el aparato— y no ids de Firestore de veinte caracteres:
+  /// nunca pasaron por `players`.
+  ///
+  /// El nombre sí se sabe, y de primera mano: `RoundResult.playerNames` guarda
+  /// id → nombre del día que se jugó. El handicap NO: un RoundResult no lo
+  /// lleva. Así que aquí se enseña el nombre y el handicap se queda en `—`,
+  /// porque poner un 0 sería otra vez un valor plausible tapando uno que falta.
+  rondas,
+
+  /// No existe en ninguna parte. Huérfana de verdad.
+  ///
+  /// Nueve de los 47: ni ficha, ni catálogo, ni una sola ronda de esta cuenta.
+  sinFicha,
+}
+
 class FilaDeInscrito {
   final String playerId;
   final String nombre;
@@ -65,14 +96,51 @@ class FilaDeInscrito {
   /// Pasa de verdad: el organizador borra una ficha del directorio y el id se
   /// queda inscrito. Sin esto la fila desaparecía y el recuento no cuadraba con
   /// la lista guardada, que es la clase de diferencia que nadie explica.
-  final bool huerfano;
+  /// De dónde salió el nombre de esta fila.
+  ///
+  /// ── Por qué NO es un bool ─────────────────────────────────────────────────
+  ///
+  /// Era `huerfano`, y con eso el portal enseñaba «Ficha no encontrada» en las
+  /// cuarenta y siete filas de un torneo real. Y no era cierto: la ficha
+  /// existía, lo que faltaba era el VÍNCULO de esta cuenta.
+  ///
+  /// Son cuatro estados y cada uno pide algo distinto:
+  ///
+  ///   · del directorio → nombre y handicap, editables
+  ///   · global         → nombre y handicap, y el handicap NO editable si la
+  ///                      ficha la creó otra cuenta
+  ///   · rondas         → nombre sí, handicap no: hay que crearle ficha
+  ///   · sin ficha      → esta sí es huérfana de verdad, y hay que decirlo
+  ///
+  /// Con un bool, los tres últimos se veían igual — y `rondas` es el que le
+  /// pasó a 28 de los 47.
+  ///
+  /// El orden de preferencia no es un detalle: el DIRECTORIO manda porque es
+  /// donde el organizador editó el handicap; luego el catálogo, que es la ficha
+  /// de verdad; y solo entonces el nombre de una ronda, que es el nombre de
+  /// ESE día y pudo cambiar.
+  final OrigenDeLaFicha origen;
+
+  /// Si el handicap se puede editar desde aquí.
+  final bool editable;
+
+  /// Compatibilidad de lectura para quien solo pregunta «¿falta la ficha?».
+  bool get huerfano => origen == OrigenDeLaFicha.sinFicha;
+
+  /// Si el handicap de esta fila es un DATO y no un relleno.
+  ///
+  /// Solo una ficha lleva handicap. Un nombre sacado de una ronda no, y el 0
+  /// que salía en su sitio era indistinguible del handicap de un scratch.
+  bool get handicapConocido =>
+      origen == OrigenDeLaFicha.directorio || origen == OrigenDeLaFicha.global;
 
   const FilaDeInscrito({
     required this.playerId,
     required this.nombre,
     required this.handicap,
     required this.inscrito,
-    this.huerfano = false,
+    this.origen = OrigenDeLaFicha.directorio,
+    this.editable = true,
   });
 }
 
@@ -88,6 +156,19 @@ List<FilaDeInscrito> filasDeInscritos(
   String busca = '',
   OrdenDeInscritos orden = OrdenDeInscritos.inscripcion,
   bool descendente = false,
+  /// Las fichas del catálogo GLOBAL de los que no están en el directorio.
+  ///
+  /// Vienen de fuera porque leerlas es una llamada a la red y esta función es
+  /// pura: se puede probar sin sesión, que es la mitad del motivo de que exista.
+  Map<String, ({Player ficha, bool mia})> globales = const {},
+
+  /// id → nombre, sacado de las rondas ya jugadas.
+  ///
+  /// Es `RoundResult.playerNames`, que la tabla del torneo YA lee para no
+  /// enseñar «—» en la pared. Esta pantalla no lo leía: la misma forma de fallo
+  /// que ya ha aparecido varias veces en el proyecto —la lógica existe, la capa
+  /// siguiente no la consulta—.
+  Map<String, String> nombresDeRondas = const {},
 }) {
   final porId = {for (final pw in directorio) pw.player.id: pw};
 
@@ -95,13 +176,45 @@ List<FilaDeInscrito> filasDeInscritos(
   for (var i = 0; i < torneo.participantes.length; i++) {
     final pid = torneo.participantes[i];
     final pw = porId[pid];
+    final global = pw == null ? globales[pid] : null;
+
+    // El directorio manda cuando está: es donde el organizador editó el
+    // handicap, y la ficha global puede llevar otro.
+    // La guarda `pw == null && global == null` es solo una consulta menos: el
+    // orden de preferencia ya lo impone la cadena de `??` de abajo.
+    //
+    // Lo que sí es una guarda de verdad es descartar el RELLENO. La tabla del
+    // torneo cae en `sinNombre` —«—»— cuando no sabe quién es alguien, y si ese
+    // «—» entrara aquí como nombre, un inscrito irresoluble se marcaría como
+    // resuelto: nombre «—», ningún aviso y ningún motivo. Se para AQUÍ y no en
+    // quien llama, porque así ningún futuro llamador puede colarlo.
+    final crudo = pw == null && global == null ? nombresDeRondas[pid] : null;
+    final deRonda =
+        crudo == null || crudo.trim().isEmpty || crudo == sinNombre
+            ? null
+            : crudo;
+    final origen = pw != null
+        ? OrigenDeLaFicha.directorio
+        : global != null
+            ? OrigenDeLaFicha.global
+            : deRonda != null
+                ? OrigenDeLaFicha.rondas
+                : OrigenDeLaFicha.sinFicha;
+
     filas.add(FilaDeInscrito(
       playerId: pid,
-      // Sin ficha no hay nombre. Se enseña que falta en vez de esconder la fila.
-      nombre: pw?.displayName ?? 'Ficha no encontrada',
-      handicap: pw?.player.handicapBase ?? 0,
+      nombre: pw?.displayName ??
+          global?.ficha.name ??
+          deRonda ??
+          // Esta sí no existe. Con el id delante, porque es lo único que se
+          // puede buscar en la consola para averiguar qué pasó.
+          'Sin ficha · $pid',
+      handicap: pw?.player.handicapBase ?? global?.ficha.handicapBase ?? 0,
       inscrito: i + 1,
-      huerfano: pw == null,
+      origen: origen,
+      // El handicap de una ficha ajena se ve y no se toca: la regla de
+      // `players` deja modificar al creador.
+      editable: pw != null || (global?.mia ?? false),
     ));
   }
 
