@@ -2899,9 +2899,44 @@ class _SetupScreenState extends State<SetupScreen> {
     ]);
   }
 
+  /// El importe base de [cuenta], con UNA precedencia y escrita.
+  ///
+  /// ── El fallo: dos fuentes para el mismo número ────────────────────────────
+  ///
+  /// «Coloco unidades de 25 y en el paso 7 aparecen 50.»
+  ///
+  /// Esto saltaba directamente de `_montoBase` —lo tecleado en Montos— a
+  /// reconstruir la receta, que devuelve el DEFAULT. Y se saltaba el sitio
+  /// donde estaba el 25: el módulo que el paso de Detalle ya había configurado
+  /// y que `_sincronizarModulos` conserva con `conservandoAjustes`.
+  ///
+  /// O sea que Detalle guardaba bien —volver atrás lo enseñaba— y Montos leía
+  /// de otro sitio. Es la forma que más veces se ha repetido en este proyecto,
+  /// y aquí hacía más daño que en ninguna otra: la pantalla decía 50 sobre una
+  /// apuesta pactada a 25.
+  ///
+  /// Las tres fuentes, en orden, y el orden es la decisión:
+  ///
+  ///   1 · lo TECLEADO en Montos. Es lo último que hizo una persona.
+  ///   2 · lo que quedó en el MÓDULO desde Detalle. Es lo que se va a liquidar.
+  ///   3 · el default de la receta, cuando no hay ni una cosa ni la otra.
   double _baseDe(BetCount cuenta) {
     final propio = _montoBase[cuenta];
     if (propio != null) return propio;
+
+    // El módulo del flujo de esta cuenta: el que lleva lo ajustado en Detalle.
+    // Se busca por el id con prefijo, que es el mismo que pone
+    // `_sincronizarModulos` — buscar por tipo cruzaría con los duelos que el
+    // usuario haya pactado a mano.
+    final delFlujo = <BetModuleInstance>[
+      for (final g in _groups)
+        for (final m in g.modules)
+          if (m.id.startsWith('flujo_${cuenta.name}')) m,
+    ];
+    if (delFlujo.isNotEmpty && delFlujo.first.baseValue > 0) {
+      return delFlujo.first.baseValue;
+    }
+
     final m = BetRecipe.build(
       cuenta: cuenta, bola: _bola,
       participantIds: _participantesDe(cuenta),
@@ -2946,7 +2981,11 @@ class _SetupScreenState extends State<SetupScreen> {
           SizedBox(
             width: 96,
             child: TextField(
-              controller: _ctrlMonto('base_${cuenta.name}', _baseDe(cuenta)),
+              controller: _ctrlMonto('base_${cuenta.name}', _baseDe(cuenta),
+                  // Tecleado = hay una entrada propia en Montos para esta
+                  // cuenta. Es la misma condición que hace ganar a `_montoBase`
+                  // en `_baseDe`, así que las dos no pueden discrepar.
+                  tecleado: _montoBase.containsKey(cuenta)),
               keyboardType: TextInputType.number,
               textAlign: TextAlign.right,
               style: GolfType.bodyNum(t.text),
@@ -3127,11 +3166,27 @@ class _SetupScreenState extends State<SetupScreen> {
   /// Tienen que sobrevivir al rebuild: creados dentro del builder, el TextField
   /// perdía el controller mientras tenía el foco, el IME se desconectaba y el
   /// campo resultaba imposible de enfocar. Ya pasó con los sheets de apuesta.
-  TextEditingController _ctrlMonto(String clave, double? valor) {
+  /// El campo de un importe, con su texto al día.
+  ///
+  /// ── Por qué no basta con `putIfAbsent` ────────────────────────────────────
+  ///
+  /// El controlador se creaba una vez con el valor de entonces y no volvía a
+  /// mirarlo. Así que visitar Montos ANTES de configurar Detalle dejaba el
+  /// campo con el default cacheado: se corregía el 25 en Detalle, se volvía a
+  /// Montos, `_baseDe` ya devolvía 25 y el campo seguía enseñando 50.
+  ///
+  /// Es la otra mitad del mismo fallo, y hay que atender las dos: una era leer
+  /// de otro sitio, esta es no volver a leer.
+  ///
+  /// [tecleado] distingue los dos casos. Si la persona escribió en este campo,
+  /// su valor manda y no se toca — sobrescribirle lo que acaba de escribir
+  /// sería peor que el fallo—. Si no, el campo sigue a su fuente.
+  TextEditingController _ctrlMonto(String clave, double? valor,
+      {bool tecleado = false}) {
+    final texto = valor == null ? '' : valor.toStringAsFixed(0);
     final c = _cfgCtrls.putIfAbsent(
-        'monto_$clave',
-        () => TextEditingController(
-            text: valor == null ? '' : valor.toStringAsFixed(0)));
+        'monto_$clave', () => TextEditingController(text: texto));
+    if (!tecleado && c.text != texto) c.text = texto;
     return c;
   }
 

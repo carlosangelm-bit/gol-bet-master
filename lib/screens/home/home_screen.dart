@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_theme.dart';
 import '../../widgets/app_destinations.dart';
+import '../../engines/bet_engine.dart';
 import '../../models/models.dart';
 import '../torneos/republicar_al_cerrar.dart';
 import '../../providers/round_provider.dart';
@@ -2020,7 +2021,7 @@ class _ActiveRoundView extends StatelessWidget {
     final round    = prov.round!;
     final balances = prov.balances;
     final completed = round.players.isNotEmpty
-        ? _countCompletedHoles(round)
+        ? hoyosCompletos(round)
         : 0;
 
     return SingleChildScrollView(
@@ -2033,7 +2034,7 @@ class _ActiveRoundView extends StatelessWidget {
             // Botón finalizar — solo para el owner/admin de la ronda live
             if (!round.isFinished && (prov.isLiveOwner || !round.isLive))
               GestureDetector(
-                onTap: () => _confirmFinish(context, prov, t),
+                onTap: () => confirmarFinalizarRonda(context, prov, t),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(color: t.primary, borderRadius: BorderRadius.circular(20)),
@@ -3270,93 +3271,6 @@ class _ActiveRoundView extends StatelessWidget {
     );
   }
 
-  int _countCompletedHoles(Round round) {
-    final maxHole = round.totalHoles;
-    final activePlayers = round.scoringPlayers;
-    for (int h = maxHole; h >= 1; h--) {
-      if (activePlayers.every((p) => round.getScore(p.id, h).hasScore)) return h;
-    }
-    return 0;
-  }
-
-  void _confirmFinish(BuildContext context, RoundProvider prov, GolfTheme t) {
-    // Solo el owner/admin puede finalizar una ronda en vivo
-    if (prov.isLiveRound && !prov.isLiveOwner) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Solo el organizador puede finalizar la ronda.'),
-        backgroundColor: Colors.red.shade700,
-        duration: const Duration(seconds: 3),
-      ));
-      return;
-    }
-    final completed = _countCompletedHoles(prov.round!);
-    final total = prov.round!.totalHoles;
-    showDialog(context: context, builder: (ctx) => AlertDialog(
-      backgroundColor: t.card,
-      title: Text('Finalizar ronda', style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
-      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Se guardarán los resultados y la ronda pasará al historial.', style: TextStyle(color: t.sub)),
-        if (completed < total) ...[
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: t.accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              'Hoyos completados: $completed/$total',
-              style: TextStyle(color: t.accent, fontWeight: FontWeight.w600, fontSize: 13),
-            ),
-          ),
-        ],
-      ]),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancelar', style: TextStyle(color: t.sub))),
-        TextButton(onPressed: () async {
-          Navigator.pop(ctx);
-          // Capturar la ronda ANTES de que finishRound limpie el estado
-          final roundSnapshot = prov.round;
-                    // Los proveedores se leen AQUÍ, antes del await: después de cerrar,
-          // esta pantalla puede estar destruida y `context` ya no vale. Es
-          // exactamente lo que impedía que el resultado llegara al torneo.
-          final _tp = context.read<TorneoProvider>();
-          final _misTorneos = _tp.torneos;
-          final _seguidos = _tp.seguidos;
-          final _miFicha = context.read<UserProfileProvider>().profile?.myPlayerId;
-          final ok = await prov.finishRound(
-              misTorneos: _misTorneos, seguidos: _seguidos, miFicha: _miFicha);
-          if (!ok && context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: const Text(
-'Sin conexión a Firestore. La ronda se guardó localmente y se sincronizará automáticamente cuando haya conexión.'),
-              backgroundColor: Colors.orange.shade700,
-              duration: const Duration(seconds: 5),
-            ));
-          }
-          // Mostrar diálogo de ajuste de sliding
-          if (roundSnapshot != null && context.mounted) {
-            await showSlidingAdjustmentDialog(context, roundSnapshot);
-          }
-          // El enlace del torneo se refresca solo. Publicar por primera vez
-          // sigue siendo una decisión; dejar la tabla vieja no debería serlo.
-          if (roundSnapshot != null && context.mounted) {
-            final refrescados =
-                await republicarTorneosDe(context, roundSnapshot);
-            if (refrescados.isNotEmpty && context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text(refrescados.length == 1
-                    ? 'Tabla de ${refrescados.first} actualizada para quien tenga el enlace.'
-                    : 'Tablas actualizadas: ${refrescados.join(', ')}.'),
-                duration: const Duration(seconds: 4),
-              ));
-            }
-          }
-        }, child: Text('Finalizar', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700))),
-      ],
-    ));
-  }
-
   void _confirmAbandon(BuildContext context, RoundProvider prov, GolfTheme t) {
     showDialog(context: context, builder: (ctx) => AlertDialog(
       backgroundColor: t.card,
@@ -4202,4 +4116,122 @@ class _AccionToken extends StatelessWidget {
       ),
     );
   }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CERRAR LA RONDA — un solo sitio, y desde donde se está anotando
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// «Hay que añadir un botón para cerrar ronda para que el score se guarde sin
+// tener que salirme de la ronda.»
+//
+// Cerrar vivía como método privado de la vista de Inicio, así que para cerrar
+// había que ir a Inicio. En el campo, con el móvil en una mano, salir de la
+// pantalla donde estás anotando es el paso que sobra.
+//
+// Y es el momento en que MÁS COSAS PASAN: se guarda el resultado, se publica al
+// torneo, se calcula el índice, se liquida el dinero y se refrescan las tablas
+// compartidas. Es el que menos debería depender de encontrar el sitio.
+//
+// Así que sale de la clase y pasa a ser una función. Copiarla a la tarjeta
+// habría dado dos cierres, y el que se quedara atrás sería el que no publica
+// —que es justo el fallo que esta secuencia ya tuvo una vez—.
+
+/// Cuántos hoyos EN JUEGO están completos.
+///
+/// ── Contaba 1..totalHoles, y eso no son los hoyos de la ronda ─────────────
+///
+/// Con `totalHoles = 9` recorría del 9 al 1. Una ronda de nueve que sale por
+/// el diez tiene sus scores en el 10..18, así que devolvía CERO y el diálogo
+/// decía «Hoyos completados: 0/9» sobre una ronda entera.
+///
+/// `segmentsOf` ya resuelve por qué mitad se salió. Es la misma primitiva que
+/// usa la tarjeta, así que no hay una segunda aritmética que pueda discrepar.
+int hoyosCompletos(Round round) {
+  final enJuego = BetEngine.segmentsOf(round).hoyosEnJuego;
+  final anotan = round.scoringPlayers;
+  var completos = 0;
+  for (final h in enJuego) {
+    if (anotan.every((p) => round.getScore(p.id, h).hasScore)) completos++;
+  }
+  return completos;
+}
+
+Future<void> confirmarFinalizarRonda(
+  BuildContext context, RoundProvider prov, GolfTheme t) async {
+  // Solo el owner/admin puede finalizar una ronda en vivo
+  if (prov.isLiveRound && !prov.isLiveOwner) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text('Solo el organizador puede finalizar la ronda.'),
+      backgroundColor: Colors.red.shade700,
+      duration: const Duration(seconds: 3),
+    ));
+    return;
+  }
+  final completed = hoyosCompletos(prov.round!);
+  final total = prov.round!.totalHoles;
+  showDialog(context: context, builder: (ctx) => AlertDialog(
+    backgroundColor: t.card,
+    title: Text('Finalizar ronda', style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
+    content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Se guardarán los resultados y la ronda pasará al historial.', style: TextStyle(color: t.sub)),
+      if (completed < total) ...[
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: t.accent.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            'Hoyos completados: $completed/$total',
+            style: TextStyle(color: t.accent, fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+        ),
+      ],
+    ]),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancelar', style: TextStyle(color: t.sub))),
+      TextButton(onPressed: () async {
+        Navigator.pop(ctx);
+        // Capturar la ronda ANTES de que finishRound limpie el estado
+        final roundSnapshot = prov.round;
+                  // Los proveedores se leen AQUÍ, antes del await: después de cerrar,
+        // esta pantalla puede estar destruida y `context` ya no vale. Es
+        // exactamente lo que impedía que el resultado llegara al torneo.
+        final _tp = context.read<TorneoProvider>();
+        final _misTorneos = _tp.torneos;
+        final _seguidos = _tp.seguidos;
+        final _miFicha = context.read<UserProfileProvider>().profile?.myPlayerId;
+        final ok = await prov.finishRound(
+            misTorneos: _misTorneos, seguidos: _seguidos, miFicha: _miFicha);
+        if (!ok && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: const Text(
+'Sin conexión a Firestore. La ronda se guardó localmente y se sincronizará automáticamente cuando haya conexión.'),
+            backgroundColor: Colors.orange.shade700,
+            duration: const Duration(seconds: 5),
+          ));
+        }
+        // Mostrar diálogo de ajuste de sliding
+        if (roundSnapshot != null && context.mounted) {
+          await showSlidingAdjustmentDialog(context, roundSnapshot);
+        }
+        // El enlace del torneo se refresca solo. Publicar por primera vez
+        // sigue siendo una decisión; dejar la tabla vieja no debería serlo.
+        if (roundSnapshot != null && context.mounted) {
+          final refrescados =
+              await republicarTorneosDe(context, roundSnapshot);
+          if (refrescados.isNotEmpty && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(refrescados.length == 1
+                  ? 'Tabla de ${refrescados.first} actualizada para quien tenga el enlace.'
+                  : 'Tablas actualizadas: ${refrescados.join(', ')}.'),
+              duration: const Duration(seconds: 4),
+            ));
+          }
+        }
+      }, child: Text('Finalizar', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700))),
+    ],
+  ));
 }

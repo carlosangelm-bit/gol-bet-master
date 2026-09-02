@@ -536,3 +536,45 @@ destaparon el sesgo— así que no se quitó nada: se separó.
 En una ronda de nueve verás **`35.9 · 149`**: el CR es la mitad porque es un
 total, y el Slope no lo es porque es una pendiente. **Las dos cosas son
 correctas**; el fallo era compararlo con un dieciocho.
+
+---
+
+# Cuatro de la ronda real de nueve
+
+## 1 · Cerrar desde donde se anota
+
+En la cabecera de **Score**, a la derecha del contador de hoyos, hay una
+**bandera de meta**. Ciérrala desde ahí, en cualquier hoyo.
+
+> El botón «Terminar» ya existía, **pero solo en el último hoyo** — había que
+> llegar al nueve o al dieciocho con la navegación en un estado concreto. Y era
+> un **segundo cierre**: dos implementaciones de guardar, publicar al torneo,
+> liquidar el sliding y refrescar las tablas. Ahora hay una y dos puertas.
+
+**Comprueba que el diálogo dice los hoyos bien.** En una ronda de nueve que sale
+por el diez decía **«Hoyos completados: 0/9»** sobre una ronda entera.
+
+## 2 · El monto del paso 5 en el paso 7
+
+Pon **25** en el detalle de unidades (paso 5) y avanza a **Montos** (paso 7):
+debe decir **25**.
+
+**Y al revés, que es el caso que quedaba roto:** ve a Montos *primero*, vuelve
+atrás a Detalle, pon 25, y vuelve a Montos. **También debe decir 25** — antes el
+campo se quedaba con el default cacheado.
+
+Si escribes en Montos, tu número manda y ya no se toca.
+
+## 4 · Una ronda de 9 completa no avisa de nada
+
+Cierra una ronda de nueve con todos los scores. En Resultados **no debe salir el
+aviso rojo «Sin score completo»**. Contaba los dieciocho hoyos del campo.
+
+## 5 · El desglose por jugador
+
+En el detalle de un duelo, **todas las apuestas que cobraron deben tener su
+línea**. Faltaban seis de trece: bola baja/alta, snake, rabbit, wolf, stableford
+y sixes. Ya había pasado con Snake.
+
+Ahora la lista **sale del catálogo**, así que un tipo nuevo no puede volverse
+invisible por olvido.

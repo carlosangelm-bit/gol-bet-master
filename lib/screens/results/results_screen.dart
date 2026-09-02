@@ -1195,7 +1195,22 @@ class _DuelCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final order = [
+    // ── EL ORDEN SALE DEL CATÁLOGO, no de una lista a mano ─────────────────
+    //
+    // «En el detalle por jugador no aparecen todas las apuestas.»
+    //
+    // Aquí había SIETE tipos escritos a mano, y el catálogo tiene TRECE. Los
+    // seis que faltaban —bola baja/alta, snake, rabbit, wolf, stableford y
+    // sixes— cobraban en el neto y no salían en el desglose.
+    //
+    // Y ya había pasado exactamente esto con Snake. Arreglarlo añadiendo los
+    // seis dejaría el mismo fallo esperando al catorceavo tipo, así que la lista
+    // se DERIVA: los preferidos primero, por costumbre de lectura, y detrás
+    // todo lo que el catálogo tenga y esta lista no nombre.
+    //
+    // Una apuesta que cobra y no se ve es lo que hace desconfiar del reparto
+    // entero, y ahora añadir un tipo no puede volverla invisible.
+    const preferidos = [
       BetModuleType.skins,
       BetModuleType.nassau,
       BetModuleType.matchAutoPress,
@@ -1203,6 +1218,10 @@ class _DuelCard extends StatelessWidget {
       BetModuleType.putts,
       BetModuleType.oyeses,
       BetModuleType.units,
+    ];
+    final order = [
+      ...preferidos,
+      ...BetModuleType.values.where((x) => !preferidos.contains(x)),
     ];
     final allTypes = order.where((type) {
       for (final gr in round.betGroups) {
@@ -1722,17 +1741,31 @@ class _RoundBetsSummaryState extends State<_RoundBetsSummary> {
       final pids = _jugadoresDe(grp, m);
       final faltan = <String>{};
       var completos = 0;
-      for (final ch in round.course.holes) {
+      // ── LOS HOYOS QUE LA RONDA JUEGA, no los que tiene el campo ───────────
+      //
+      // Aquí ponía `round.course.holes`, o sea los DIECIOCHO del campo. En una
+      // ronda de nueve, nueve hoyos llenos nunca llegaban a dieciocho, así que
+      // una ronda completa salía siempre en rojo con «Sin score completo».
+      //
+      // Es el sitio que quedó sin tocar la vez anterior, y lo dije entonces:
+      // «el aviso de arriba sale de `incompletas`, que no toqué. Si esa cuenta
+      // también mira los 18 del campo, seguirá apareciendo». Era eso.
+      //
+      // `segmentsOf` ya resuelve por qué mitad se salió y cuántos hoyos se
+      // juegan de verdad. Es la misma primitiva que usa la tarjeta, así que no
+      // hay una segunda aritmética que pueda discrepar.
+      final enJuego = BetEngine.segmentsOf(round).hoyosEnJuego;
+      for (final h in enJuego) {
         var lleno = true;
         for (final pid in pids) {
-          if (!round.getScore(pid, ch.hole).hasScore) {
+          if (!round.getScore(pid, h).hasScore) {
             lleno = false;
             faltan.add(_nombreCorto(pid));
           }
         }
         if (lleno) completos++;
       }
-      if (completos >= round.course.holes.length) continue;
+      if (completos >= enJuego.length) continue;
       final previo = porTipo[m.type];
       porTipo[m.type] = (
         duelos: (previo?.duelos ?? 0) + 1,

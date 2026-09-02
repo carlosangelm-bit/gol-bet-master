@@ -11,6 +11,7 @@
 //   5. Navegación prev/next hoyo
 // ─────────────────────────────────────────────────────────────────────────────
 import '../../core/golf_icons.dart';
+import '../home/home_screen.dart' show confirmarFinalizarRonda;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -18,14 +19,10 @@ import '../../core/app_theme.dart';
 import '../../engines/bet_engine.dart';
 import '../../models/formaciones.dart';
 import '../../models/models.dart';
-import '../torneos/republicar_al_cerrar.dart';
 import '../../providers/round_provider.dart';
 import '../../widgets/common_widgets.dart';
-import '../../widgets/sliding_adjustment_dialog.dart';
 import '../../engines/sixes_engine.dart';
 import '../../engines/wolf_engine.dart';
-import '../../providers/torneo_provider.dart';
-import '../../providers/user_profile_provider.dart';
 
 class CaptureScreen extends StatefulWidget {
   const CaptureScreen({super.key});
@@ -437,6 +434,57 @@ class _CaptureScreenState extends State<CaptureScreen> {
   }
 }
 
+/// Cerrar la ronda desde donde se está anotando.
+///
+/// Solo lo enseña a quien puede: en una ronda en vivo cierra el organizador, y
+/// un botón que responde «solo el organizador puede finalizar» a los otros tres
+/// es un botón que engaña tres veces por ronda.
+class _BotonDeCierre extends StatelessWidget {
+  final GolfTheme t;
+  const _BotonDeCierre({required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final prov = context.watch<RoundProvider>();
+    if (!prov.hasRound) return const SizedBox.shrink();
+    if (prov.isLiveRound && !prov.isLiveOwner) return const SizedBox.shrink();
+    // ── En estrecho, solo el icono ──────────────────────────────────────────
+    //
+    // Con cinco jugadores en 320 px, «Cerrar» desbordaba la cabecera por
+    // 0,35 px — lo cazaron las pruebas de geometría que ya existían—. La
+    // palabra ayuda cuando cabe; el icono de meta se entiende sin ella, y una
+    // cabecera desbordada no se entiende de ninguna manera.
+    // ── UN ICONO, y con su alto acotado ─────────────────────────────────────
+    //
+    // Se probó con la palabra «Cerrar» al lado y no cupo: la cabecera crecía
+    // veintiséis píxeles y con cinco jugadores eso empuja la última fila de la
+    // tabla por debajo del pliegue. Lo cazaron las pruebas de geometría que ya
+    // existían —la del Wolf y la de 320 px—, que miden justo eso.
+    //
+    // Así que va como icono, con el alto atado al de la insignia de hoyos que
+    // ya estaba al lado: entra en el espacio que la cabecera ya ocupaba, no en
+    // uno nuevo. La bandera de meta se entiende sin palabra, y el tooltip la
+    // pone para quien la busque.
+    return Tooltip(
+      message: 'Cerrar la ronda y guardar el score',
+      child: SizedBox(
+        width: 34,
+        height: 24,
+        child: Material(
+          color: t.primary.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            onTap: () => confirmarFinalizarRonda(context, prov, t),
+            borderRadius: BorderRadius.circular(12),
+            child: Icon(GolfIcons.meta,
+                size: GolfIcons.juntoAEtiqueta, color: t.primary),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HEADER
 // ─────────────────────────────────────────────────────────────────────────────
@@ -455,7 +503,20 @@ class _CaptureHeader extends StatelessWidget {
       child: Row(children: [
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Score', style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 20, letterSpacing: -0.3)),
-          Text(round.name, style: TextStyle(color: t.sub, fontSize: 12)),
+          // ── UNA LÍNEA, y por qué importa ─────────────────────────────────
+          //
+          // El botón de cerrar le quita ancho a esta columna, así que un nombre
+          // largo —«Equipo 01 · Sierra · Hoyo 7B»— pasaba a DOS líneas y la
+          // cabecera crecía 26 px. Con cinco jugadores eso empuja la última
+          // fila de la tabla por debajo del pliegue, y lo cazó la prueba del
+          // Wolf que mide exactamente eso.
+          //
+          // El nombre de la ronda ya está en la pantalla de arriba y en el
+          // selector de hoyos: aquí es una referencia, no el dato.
+          Text(round.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: t.sub, fontSize: 12)),
         ])),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -467,6 +528,22 @@ class _CaptureHeader extends StatelessWidget {
           child: Text('$completed/$effectiveTotal hoyos',
               style: TextStyle(color: t.primary, fontSize: 12, fontWeight: FontWeight.w700)),
         ),
+        // ── CERRAR LA RONDA, AQUÍ ──────────────────────────────────────────
+        //
+        // «Hay que añadir un botón para cerrar ronda sin tener que salirme de
+        // la ronda.» Cerrar vivía en Inicio, así que había que salir de la
+        // pantalla donde se está anotando para guardar lo anotado.
+        //
+        // Es el MISMO cierre que el de Inicio, no una copia: `confirmarFinalizarRonda`
+        // guarda, publica al torneo, liquida el sliding y refresca las tablas
+        // compartidas. Dos cierres habrían dado uno que no publica, que es el
+        // fallo que esta secuencia ya tuvo.
+        //
+        // Va con confirmación —la del cierre— porque cerrar no se deshace. Y no
+        // se esconde detrás de un menú: es la última cosa que se hace en la
+        // ronda y la que más cosas dispara.
+        const SizedBox(width: 8),
+        _BotonDeCierre(t: t),
       ]),
     );
   }
@@ -1742,94 +1819,26 @@ class _HoleNavButtons extends StatelessWidget {
     ]);
   }
 
-  Future<void> _finishRound(BuildContext context) async {
-    final prov = context.read<RoundProvider>();
-    final t    = prov.theme;
-
-    // Solo el owner/admin puede finalizar una ronda en vivo
-    if (prov.isLiveRound && !prov.isLiveOwner) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Solo el organizador puede finalizar la ronda.'),
-        backgroundColor: Colors.red.shade700,
-        duration: const Duration(seconds: 3),
-      ));
-      return;
-    }
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: t.card,
-        title: Text('Finalizar ronda', style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
-        content: Text('Los resultados se guardarán en el historial y la ronda quedará cerrada.',
-            style: TextStyle(color: t.sub)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancelar', style: TextStyle(color: t.sub))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Finalizar', style: TextStyle(color: t.primary, fontWeight: FontWeight.w700))),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    if (!context.mounted) return;
-
-    // Capturar la ronda ANTES de que finishRound limpie el estado
-    final round = prov.round;
-
-    // Y los proveedores también, por lo mismo pero peor: cerrar quita la
-    // pestaña Score, así que ESTA pantalla se destruye. Todo lo que se lea de
-    // `context` después del await es tarde — es lo que dejaba el resultado sin
-    // publicar, con la marca puesta y el seguimiento correcto.
-    final tp = context.read<TorneoProvider>();
-    final misTorneos = tp.torneos;
-    final seguidos = tp.seguidos;
-    final miFicha = context.read<UserProfileProvider>().profile?.myPlayerId;
-
-    final ok = await prov.finishRound(
-        misTorneos: misTorneos, seguidos: seguidos, miFicha: miFicha);
-    if (!context.mounted) return;
-    prov.setTab(0);
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Sin conexión. La ronda se guardó localmente y se sincronizará cuando haya conexión.'),
-        backgroundColor: Colors.orange.shade700,
-        duration: const Duration(seconds: 5),
-      ));
-    }
-
-    // Mostrar diálogo de ajuste de sliding
-    if (round != null && context.mounted) {
-      await showSlidingAdjustmentDialog(context, round);
-    }
-
-    // Lo que pasó al enviar el resultado a los torneos. Se LEE del provider, no
-    // se calcula aquí: el envío ya ocurrió dentro de finishRound y esta pantalla
-    // puede estar destruida. Si no llega a enseñarse no se pierde nada — que era
-    // justo el problema cuando el envío vivía aquí.
-    final envios = prov.ultimosEnvios;
-    if (envios.isNotEmpty && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(envios.map((e) => e.frase).join(' ')),
-        duration: Duration(seconds: envios.any((e) => !e.enviado) ? 9 : 4),
-      ));
-      prov.limpiarEnvios();
-    }
-
-    // El enlace del torneo se refresca solo. Publicar por primera vez sigue
-    // siendo una decisión; dejar la tabla vieja no debería serlo.
-    if (round != null && context.mounted) {
-      final refrescados = await republicarTorneosDe(context, round);
-      if (refrescados.isNotEmpty && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(refrescados.length == 1
-              ? 'Tabla de ${refrescados.first} actualizada para quien tenga el enlace.'
-              : 'Tablas actualizadas: ${refrescados.join(', ')}.'),
-          duration: const Duration(seconds: 4),
-        ));
-      }
-    }
-  }
+  /// Cerrar la ronda. UNA sola implementación, la de `home_screen`.
+  ///
+  /// ── Había DOS cierres, y el segundo estaba escondido ─────────────────────
+  ///
+  /// «Hay que añadir un botón para cerrar ronda sin salirme de la ronda.» Y el
+  /// botón existía: «Terminar», pero SOLO en el último hoyo. Había que llegar
+  /// al nueve o al dieciocho con la navegación en un estado concreto para
+  /// verlo, así que en la práctica se cerraba desde Inicio.
+  ///
+  /// Y peor: era una SEGUNDA implementación del cierre. Las dos hacían lo mismo
+  /// —guardar, publicar al torneo, liquidar el sliding, refrescar las tablas—
+  /// y eso significa que cualquier cosa que se añada al cierre hay que
+  /// añadirla dos veces. La que se quedara atrás sería la que no publica, que
+  /// es el fallo que esta secuencia ya tuvo.
+  ///
+  /// Ahora hay una, y dos puertas: «Terminar» en el último hoyo y la bandera de
+  /// la cabecera en todos.
+  Future<void> _finishRound(BuildContext context) =>
+      confirmarFinalizarRonda(context, context.read<RoundProvider>(),
+          context.read<RoundProvider>().theme);
 }
 
 class _NavBtn extends StatelessWidget {
