@@ -757,6 +757,220 @@ class BetEngine {
     return entries;
   }
 
+  /// Los valores de las tres apuestas, con el carry natural resuelto.
+  ///
+  /// ── La regla, dicha por Carlos sobre una ronda real de cinco ─────────────
+  ///
+  ///     «El carry natural solo traslada el valor de la apuesta del F9 al B9.
+  ///      Es decir, los 50 se pasan al B9 y vale 100, pero no toca el 100 del
+  ///      match.»
+  ///
+  /// TRASLADA, no multiplica. Y lo que se trasladaba antes multiplicando también
+  /// el total de 18 era dinero cobrado de más:
+  ///
+  ///     50 · 50 · 100, F9 empatado
+  ///       antes:   B9 $100   Total $200   ← el total no debía moverse
+  ///       ahora:   B9 $100   Total $100
+  ///
+  /// Con front == back el ×2 acertaba el B9 por casualidad (50×2 == 50+50) y
+  /// erraba el total siempre. Con front != back erraba los dos: 30 y 50 dan 80,
+  /// no 100.
+  ///
+  /// [f9Completo] hace falta porque un F9 a medias va 0-0 casi siempre, y sin
+  /// esto la pantalla en vivo anunciaría un carry en el hoyo 2.
+  static ValoresDelNassau valoresDelNassau(
+    NassauConfig cfg, {
+    required bool f9Completo,
+    required int marcadorF9,
+  }) {
+    // Lo que se traslada es dinero SIN DUEÑO. Si el F9 tuvo ganador, ese dinero
+    // ya está adjudicado y no hay nada que llevar.
+    final natural = cfg.carryEnabled && f9Completo && marcadorF9 == 0;
+    return ValoresDelNassau(
+      front: cfg.frontValue,
+      back: natural ? cfg.backValue + cfg.frontValue : cfg.backValue,
+      total: cfg.totalValue,
+      backPress: cfg.backPressValue,
+      carryNatural: natural,
+    );
+  }
+
+  /// Quién puede PEDIR carry en esta pareja, o null si nadie.
+  ///
+  /// ── «Solo lo puedo pedir si voy perdiendo» ────────────────────────────────
+  ///
+  /// Es la condición de Carlos, y la respuesta es siempre UN jugador o ninguno:
+  /// el que perdió la primera vuelta. Devolver el id y no un booleano es lo que
+  /// permite que el botón salga con su nombre en vez de ofrecer a los dos una
+  /// opción que uno de ellos no puede tomar.
+  ///
+  /// Devuelve null cuando:
+  ///
+  ///   · el módulo no juega carry,
+  ///   · el primer nueve no está completo —no se sabe quién pierde—,
+  ///   · quedó EMPATADO: entonces no hay perdedor y lo que corre es el carry
+  ///     natural, que se aplica solo y no se pide,
+  ///   · o ya se pidió.
+  ///
+  /// La guarda vive aquí, en el momento de PEDIR, y no en la liquidación. Si la
+  /// liquidación la repitiera, una corrección de score que le diera la vuelta al
+  /// F9 borraría en silencio una apuesta ya pactada — y un pacto no se deshace
+  /// porque cambie un número.
+  static String? quienPuedePedirCarry(
+      Round round, String p1Id, String p2Id, BetModuleInstance mod) {
+    final cfg = mod.nassau;
+    if (!cfg.carryEnabled) return null;
+    if (cfg.carryPedidoPor(p1Id, p2Id) != null) return null;
+
+    final seg = segmentsOf(round);
+    if (seg.singleNine || seg.firstNine.isEmpty) return null;
+
+    final deltas = _deltasDelDuelo(round, p1Id, p2Id, mod);
+    var margen = 0, jugados = 0;
+    for (final h in seg.firstNine) {
+      if (!deltas.containsKey(h)) continue;
+      jugados++;
+      margen += deltas[h]!;
+    }
+    if (jugados != seg.firstNine.length) return null;
+    if (margen == 0) return null;
+    return margen > 0 ? p2Id : p1Id;
+  }
+
+  /// Los deltas hoyo a hoyo del duelo, en perspectiva de [p1Id].
+  ///
+  /// +1 = p1 gana el hoyo, −1 = lo pierde, 0 = empate. Los hoyos que no tienen
+  /// las dos tarjetas no aparecen en el mapa.
+  ///
+  /// Existe porque los dos caminos de liquidación del Nassau —con presiones y
+  /// sin ellas— tenían este bucle copiado. Dos copias de «quién gana el hoyo» es
+  /// la clase de cosa que se arregla en una y sigue mal en la otra.
+  static Map<int, int> _deltasDelDuelo(
+      Round round, String p1Id, String p2Id, BetModuleInstance mod) {
+    final recv = _strokesP1ReceivesFromP2(round, p1Id, p2Id);
+
+    // p1IsBase = p1 da strokes (recv<=0 desde perspectiva p1)
+    final p1IsBase   = recv <= 0;
+    final baseId     = p1IsBase ? p1Id : p2Id;
+    final receiverId = p1IsBase ? p2Id : p1Id;
+    final recvAbs    = recv.abs().round();
+
+    final allHoles = round.course.holes;
+    final (cursoF9, cursoB9) = _courseHolesF9B9(allHoles, round.startingNine);
+
+    final out = <int, int>{};
+    for (final ch in allHoles) {
+      final h = ch.hole;
+      final sBase     = round.getScore(baseId, h);
+      final sReceiver = round.getScore(receiverId, h);
+      if (!sBase.hasScore || !sReceiver.hasScore) continue;
+
+      final cursoDeEsteNueve =
+          cursoF9.any((hh) => hh.hole == ch.hole) ? cursoF9 : cursoB9;
+      final golpes = mod.useHandicap && recvAbs > 0
+          ? GameEngine.strokesReceivedFromOfficial18Sliding(
+              diff18: recvAbs,
+              ch: ch,
+              courseHolesInSameNine: cursoDeEsteNueve,
+              startingNine: round.startingNine,
+              isNineHolesStartingNine: BetEngine.isNineStartingNine(
+                  ch: ch,
+                  courseF9: cursoF9,
+                  courseB9: cursoB9,
+                  startingNine: round.startingNine),
+            )
+          : 0;
+      final grossBase   = sBase.grossScore!;
+      final netReceiver = sReceiver.grossScore! - golpes;
+      if (grossBase < netReceiver) {
+        out[h] = p1IsBase ? 1 : -1;
+      } else if (grossBase > netReceiver) {
+        out[h] = p1IsBase ? -1 : 1;
+      } else {
+        out[h] = 0;
+      }
+    }
+    return out;
+  }
+
+  /// El margen de la apuesta del CARRY PEDIDO sobre el segundo nueve, o null si
+  /// nadie lo pidió en esta pareja.
+  ///
+  /// Es una apuesta PARALELA: los mismos nueve hoyos que el B9, el mismo
+  /// importe, y lo único que cambia es que el solicitante recibe un golpe más.
+  /// Las dos se liquidan, y por eso son dos asientos.
+  ///
+  /// ── El golpe extra cae DENTRO de esos nueve, y eso no es un detalle ───────
+  ///
+  /// La ventaja de un par se guarda como un número de DIECIOCHO hoyos y se
+  /// reparte entre las dos vueltas: la de inicio se lleva `ceil(d/2)` y la otra
+  /// `floor(d/2)`. Así que sumar uno a la ventaja de dieciocho **no** da un golpe
+  /// más en esta apuesta: con una ventaja de 1, ese golpe cae en el SI 1 del
+  /// campo, que está en la PRIMERA vuelta — donde esta apuesta no se juega.
+  ///
+  /// Carlos lo dijo en los términos correctos: «si en el B9 le tocaban 3 golpes
+  /// de ventaja, con el carry le tocarían 4». Tres y cuatro EN ESA VUELTA. Así
+  /// que el uno se suma al reparto de la vuelta, no al número de dieciocho, y
+  /// cae en el hoyo más difícil de los nueve que aún no tuviera golpe.
+  ///
+  /// ── Y responde solo lo que Carlos preguntó ────────────────────────────────
+  ///
+  /// «¿Y si el que pide carry no tiene ventaja?» Se suma sobre la ventaja CON
+  /// SIGNO, así que quien recibía 0 pasa a recibir 1 —y de paso deja de ser el
+  /// que da golpes—, y quien daba 2 pasa a dar 1. Una sola línea cubre los tres
+  /// casos.
+  static int? _margenDelCarryPedido(
+      Round round, String p1Id, String p2Id, BetModuleInstance mod,
+      RoundSegments seg) {
+    final quien = mod.nassau.carryPedidoPor(p1Id, p2Id);
+    if (quien == null || seg.singleNine || seg.secondNine.isEmpty) return null;
+
+    // La ventaja de p1 EN ESTA VUELTA, con signo. El segundo nueve nunca es la
+    // vuelta de inicio, así que se lleva el `floor`.
+    final recv = _strokesP1ReceivesFromP2(round, p1Id, p2Id);
+    final share = GameEngine.slidingShareForNine(
+      diff18: recv.abs().round(),
+      startingNine: round.startingNine,
+      targetIsStartingNine: false,
+    );
+    var ventaja = recv >= 0 ? share : -share;
+
+    // El golpe del carry.
+    ventaja += quien == p1Id ? 1 : -1;
+
+    final p1Recibe = ventaja > 0;
+    final receiverId = p1Recibe ? p1Id : p2Id;
+    final baseId = p1Recibe ? p2Id : p1Id;
+    final golpesEnLaVuelta = ventaja.abs();
+
+    // Los hoyos DEL CURSO de esta vuelta: el reparto por SI necesita los nueve
+    // completos, no solo los jugados, o una ronda a medias concentraría los
+    // golpes en los primeros hoyos.
+    final delNueve = [
+      for (final ch in round.course.holes)
+        if (seg.secondNine.contains(ch.hole)) ch
+    ];
+
+    var margen = 0, jugados = 0;
+    for (final ch in delNueve) {
+      final sBase = round.getScore(baseId, ch.hole);
+      final sRecv = round.getScore(receiverId, ch.hole);
+      if (!sBase.hasScore || !sRecv.hasScore) continue;
+      jugados++;
+      final golpes = mod.useHandicap
+          ? GameEngine.strokesReceivedInPlayedHoles(
+              diff: golpesEnLaVuelta, ch: ch, playedHoles: delNueve)
+          : 0;
+      final neto = sRecv.grossScore! - golpes;
+      if (sBase.grossScore! < neto) {
+        margen += p1Recibe ? -1 : 1;
+      } else if (sBase.grossScore! > neto) {
+        margen += p1Recibe ? 1 : -1;
+      }
+    }
+    return jugados == 0 ? null : margen;
+  }
+
   static List<LedgerEntry> _nassauPair(Round round, String p1Id, String p2Id, BetModuleInstance mod) {
     // Si las presiones están activas, usar el motor completo de press
     if (mod.nassau.pressEnabled) {
@@ -765,78 +979,27 @@ class BetEngine {
 
     final entries = <LedgerEntry>[];
     final cfg = mod.nassau;
-    int front = 0, back = 0;
+    final seg = segmentsOf(round);
 
-    final recv = _strokesP1ReceivesFromP2(round, p1Id, p2Id);
-    // p1IsBase = p1 da strokes (recv<=0 desde perspectiva p1)
-    final p1IsBase    = recv <= 0;
-    final baseId      = p1IsBase ? p1Id : p2Id;
-    final receiverId  = p1IsBase ? p2Id : p1Id;
-    final recvAbs     = recv.abs().round();
-    final allHoles = round.course.holes;
+    // El bucle de «quién gana el hoyo» vive en _deltasDelDuelo: estaba copiado
+    // aquí y en la rama con presiones, y dos copias de la misma cuenta es lo que
+    // deja una arreglada y la otra cobrando mal.
+    final deltas = _deltasDelDuelo(round, p1Id, p2Id, mod);
 
-    final holeMap = { for (final ch in allHoles) ch.hole: ch };
-
-    // Hoyos del CURSO (no jugados) en F9 y B9 — distribución de SI correcta
-    final (courseF9nassau, courseB9nassau) =
-        _courseHolesF9B9(allHoles, round.startingNine);
-
-    // Segmentación lógica: el primer segmento jugado es siempre "Front",
-    // aunque sus hoyos se numeren 10-18. Ver BetEngine.segmentsOf.
-    final seg       = segmentsOf(round);
-    final holeOrder = seg.playOrder;
-
-    for (final h in holeOrder) {
-      final ch = holeMap[h]!;
-      final sBase     = round.getScore(baseId,     h);
-      final sReceiver = round.getScore(receiverId, h);
-      if (!sBase.hasScore || !sReceiver.hasScore) continue;
-
-      final courseHolesForHoleN = courseF9nassau.any((hh) => hh.hole == ch.hole)
-          ? courseF9nassau : courseB9nassau;
-      final strokesHere = mod.useHandicap && recvAbs > 0
-          ? GameEngine.strokesReceivedFromOfficial18Sliding(
-              diff18:              recvAbs,
-              ch:                  ch,
-              courseHolesInSameNine: courseHolesForHoleN,
-              startingNine:        round.startingNine,
-              isNineHolesStartingNine: BetEngine.isNineStartingNine(ch: ch, courseF9: courseF9nassau, courseB9: courseB9nassau, startingNine: round.startingNine),
-            )
-          : 0;
-
-      final grossBase   = sBase.grossScore!;
-      final netReceiver = sReceiver.grossScore! - strokesHere;
-
-      final int delta;
-      if      (grossBase < netReceiver) {
-        delta = p1IsBase ? 1 : -1;
-      } else if (grossBase > netReceiver) delta = p1IsBase ? -1 : 1;
-      else                              delta = 0;
-
-      // Segmentación LÓGICA: el primer segmento jugado es siempre "front",
-      // independientemente de si los números de hoyo son 1-9 ó 10-18.
-      if (seg.isFirst(h)) {
-        front += delta;
+    int front = 0, back = 0, f9Jugados = 0;
+    for (final e in deltas.entries) {
+      if (seg.isFirst(e.key)) {
+        front += e.value;
+        f9Jugados++;
       } else {
-        back  += delta;
+        back += e.value;
       }
     }
-
     final total = front + back;
 
-    // ── El carry SOLO si el primer segmento quedó empatado ─────────────────
-    //
-    // La rama con presiones ya lo exigía; ESTA no. Usaba cfg.effectiveBackValue,
-    // que es un getter y solo mira carryApplied: multiplicaba aunque el F9 lo
-    // hubiera ganado alguien. Medido: A gana el F9 y el B9, y el B9 salía a 100
-    // en vez de 50.
-    //
-    // Lo que se traslada es dinero SIN DUEÑO. Si el segmento anterior tuvo
-    // ganador, ese dinero ya está adjudicado y no hay nada que llevar.
-    final carryVale = cfg.carryApplied && front == 0;
-    final backVal = carryVale ? cfg.backValue * cfg.carryFactor : cfg.backValue;
-    final totalVal =
-        carryVale ? cfg.totalValue * cfg.carryFactor : cfg.totalValue;
+    final v = valoresDelNassau(cfg,
+        f9Completo: seg.firstNine.isNotEmpty && f9Jugados == seg.firstNine.length,
+        marcadorF9: front);
 
     // ── La PRESIÓN DE APERTURA de la vuelta trasera ────────────────────────
     //
@@ -848,21 +1011,38 @@ class BetEngine {
     // importe sobre los mismos hoyos ya nos dieron tres filas idénticas y $3550
     // que nadie entendía. Aquí conviven a propósito, así que tienen que poder
     // distinguirse en el desglose sin contar cuál es cuál.
+    //
+    // Y es, además, LA PRESIÓN que Carlos describe: «la presión solo afecta el
+    // B9, no requiere empate». Una segunda apuesta de $50 sobre el B9 se paga
+    // igual que un B9 de $100 —mismos hoyos, mismo marcador— con la ventaja de
+    // que en el desglose se ven las dos y no un número doblado sin explicación.
     if (cfg.aperturaB9For(p1Id, p2Id) && !seg.singleNine) {
       _addNassauSegment(entries, p1Id, p2Id, back, cfg.backValue,
           'Apertura 2ª vuelta');
     }
 
+    // ── EL CARRY PEDIDO: la segunda apuesta, con un golpe más ──────────────
+    //
+    // Los mismos nueve hoyos y el mismo importe que el B9; lo único distinto es
+    // la ventaja del que lo pidió. Se liquidan LAS DOS, y por eso son dos
+    // asientos: es la única forma de que se vea que se jugaron dos apuestas y
+    // no una a doble precio.
+    final mCarry = _margenDelCarryPedido(round, p1Id, p2Id, mod, seg);
+    if (mCarry != null) {
+      _addNassauSegment(entries, p1Id, p2Id, mCarry, cfg.backValue,
+          'Carry · un golpe más');
+    }
+
     if (seg.singleNine) {
-      _addNassauSegment(entries, p1Id, p2Id, front, cfg.frontValue, 'Nassau 9 hoyos');
+      _addNassauSegment(entries, p1Id, p2Id, front, v.front, 'Nassau 9 hoyos');
     } else {
       // La etiqueta solo se desambigua con salida por el 10: ver
       // RoundSegments.etiqueta. Saliendo por el 1 dice Front 9 como siempre.
-      _addNassauSegment(entries, p1Id, p2Id, front, cfg.frontValue,
+      _addNassauSegment(entries, p1Id, p2Id, front, v.front,
           'Nassau ${seg.etiqueta(true, round.startingNine)}');
-      _addNassauSegment(entries, p1Id, p2Id, back, backVal,
+      _addNassauSegment(entries, p1Id, p2Id, back, v.back,
           'Nassau ${seg.etiqueta(false, round.startingNine)}');
-      _addNassauSegment(entries, p1Id, p2Id, total, totalVal, 'Nassau Total 18');
+      _addNassauSegment(entries, p1Id, p2Id, total, v.total, 'Nassau Total 18');
     }
     return entries;
   }
@@ -888,53 +1068,23 @@ class BetEngine {
     // Usa la config unificada de NassauConfig (pressEnabled garantizado true aquí)
     final cfg = mod.nassau;
 
-    final recv = _strokesP1ReceivesFromP2(round, p1Id, p2Id);
-    final p1IsBase    = recv <= 0;
-    final baseId      = p1IsBase ? p1Id : p2Id;
-    final receiverId  = p1IsBase ? p2Id : p1Id;
-    final recvAbs     = recv.abs().round();
-    final allHoles    = round.course.holes;
-
-    // Hoyos del CURSO (no jugados) en F9 y B9 — distribución de SI correcta
-    final (courseF9press, courseB9press) =
-        _courseHolesF9B9(allHoles, round.startingNine);
-
     // ── Segmentos lógicos de la ronda (ver BetEngine.segmentsOf) ─────────────
     final seg = segmentsOf(round);
 
-    // ── Calcular deltas hoyo a hoyo ──────────────────────────────────────────
-    final Map<int, int> deltaByHole = {};
-    for (final ch in allHoles) {
-      final h = ch.hole;
-      final sBase     = round.getScore(baseId, h);
-      final sReceiver = round.getScore(receiverId, h);
-      if (!sBase.hasScore || !sReceiver.hasScore) continue;
-      final courseHolesForPress = courseF9press.any((hh) => hh.hole == ch.hole)
-          ? courseF9press : courseB9press;
-      final strokes = mod.useHandicap && recvAbs > 0
-          ? GameEngine.strokesReceivedFromOfficial18Sliding(
-              diff18:              recvAbs,
-              ch:                  ch,
-              courseHolesInSameNine: courseHolesForPress,
-              startingNine:        round.startingNine,
-              isNineHolesStartingNine: BetEngine.isNineStartingNine(ch: ch, courseF9: courseF9press, courseB9: courseB9press, startingNine: round.startingNine),
-            )
-          : 0;
-      final grossBase    = sBase.grossScore!;
-      final netReceiver  = sReceiver.grossScore! - strokes;
-      if      (grossBase < netReceiver) {
-        deltaByHole[h] = p1IsBase ?  1 : -1;
-      } else if (grossBase > netReceiver) deltaByHole[h] = p1IsBase ? -1 :  1;
-      else                              deltaByHole[h] = 0;
-    }
+    // Los deltas salen del helper compartido: este bucle estaba copiado del
+    // Nassau sin presiones, palabra por palabra.
+    final deltaByHole = _deltasDelDuelo(round, p1Id, p2Id, mod);
 
-    // ── Detectar carry (primer segmento empatado) ────────────────────────────
-    int front = 0;
+    // ── El carry natural: TRASLADA el valor del F9 al B9 ─────────────────────
+    int front = 0, f9Jugados = 0;
     for (final h in seg.firstNine) {
-      front += (deltaByHole[h] ?? 0);
+      if (!deltaByHole.containsKey(h)) continue;
+      f9Jugados++;
+      front += deltaByHole[h]!;
     }
-    // carryEnabled ahora está en NassauConfig
-    final carryActive = cfg.carryEnabled && cfg.carryApplied && front == 0;
+    final v = valoresDelNassau(cfg,
+        f9Completo: seg.firstNine.isNotEmpty && f9Jugados == seg.firstNine.length,
+        marcadorF9: front);
 
     // ── Liquidar segmento con presiones ─────────────────────────────────────
     // [holes] son los hoyos REALES del segmento en orden de juego (no un rango
@@ -1046,15 +1196,18 @@ class BetEngine {
         pressValue: cfg.frontPressValue,
         segLabel:   'Nassau ${seg.etiqueta(true, round.startingNine)}',
       );
-      // Segundo segmento (lógicamente "Back 9", con carry si aplica)
-      final effBack      = carryActive ? cfg.backValue      * cfg.carryFactor : cfg.backValue;
-      final effBackPress = carryActive ? cfg.backPressValue * cfg.carryFactor : cfg.backPressValue;
+      // Segundo segmento. Si el F9 quedó empatado, su dinero está aquí dentro.
+      //
+      // La PRESIÓN automática NO se traslada: lo que el carry mueve es «el valor
+      // de la apuesta del F9», y una presión es su propia apuesta con su propio
+      // importe. Antes se multiplicaba también, y eso era dinero de más encima
+      // del dinero de más.
       liquidateSegment(
         holes:      seg.secondNine,
-        segValue:   effBack,
-        pressValue: effBackPress,
+        segValue:   v.back,
+        pressValue: v.backPress,
         segLabel: 'Nassau ${seg.etiqueta(false, round.startingNine)}'
-            '${carryActive ? ' (x${cfg.carryFactor.toStringAsFixed(0)})' : ''}',
+            '${v.carryNatural ? ' (+F9)' : ''}',
       );
       // ── La PRESIÓN DE APERTURA, también con presiones activadas ──────────
       //
@@ -1070,12 +1223,29 @@ class BetEngine {
         );
       }
 
+      // ── EL CARRY PEDIDO ──────────────────────────────────────────────────
+      //
+      // Mismos nueve hoyos, mismo importe, un golpe más de ventaja para quien lo
+      // pidió. Va sin presiones automáticas por el mismo motivo que la apertura:
+      // es una apuesta que se pide entera.
+      //
+      // No se liquida con `liquidateSegment` porque su marcador es OTRO —los
+      // deltas se recalculan con la ventaja aumentada— y meterlo por el mismo
+      // sitio obligaría a pasarle un mapa de deltas distinto, que es justo la
+      // clase de parámetro que un día alguien olvida.
+      final mCarry = _margenDelCarryPedido(round, p1Id, p2Id, mod, seg);
+      if (mCarry != null) {
+        _addNassauSegment(entries, p1Id, p2Id, mCarry, cfg.backValue,
+            'Carry · un golpe más');
+      }
+
       // Total 18: suma todos los deltas disponibles
       int total = 0;
       for (final delta in deltaByHole.values) {
         total += delta;
       }
-      final effTotal = carryActive ? cfg.totalValue * cfg.carryFactor : cfg.totalValue;
+      // El total de 18 es una apuesta APARTE y el carry no la toca. Aquí estaba
+      // el dinero cobrado de más: con 50·50·100 y el F9 empatado salía $200.
       void addTotal(int score, double val) {
         if (score > 0) {
           entries.add(LedgerEntry(fromPlayerId: p2Id, toPlayerId: p1Id,
@@ -1085,7 +1255,7 @@ class BetEngine {
               amount: val, betType: BetModuleType.nassau, reason: 'Nassau Total 18'));
         }
       }
-      addTotal(total, effTotal);
+      addTotal(total, v.total);
     }
 
     return entries;
@@ -1572,7 +1742,7 @@ class BetEngine {
     final seg       = segmentsOf(round);
     final holeOrder = seg.playOrder;
 
-    int front = 0, back = 0;
+    int front = 0, back = 0, frontPlayed = 0;
 
     for (final h in holeOrder) {
       final delta = GameEngine.holeDeltaVs(
@@ -1582,6 +1752,7 @@ class BetEngine {
       if (delta == null) continue;
       if (seg.isFirst(h)) {
         front += delta;
+        frontPlayed++;
       } else {
         back += delta;
       }
@@ -1613,9 +1784,15 @@ class BetEngine {
     } else {
       addSegment(front, cfg.frontValue,
           'Nassau ${seg.etiqueta(true, round.startingNine)} (${sideA.name} vs ${sideB.name})');
-      addSegment(back, cfg.effectiveBackValue,
+      // Mismo carry que en el duelo individual, del mismo sitio: los getters
+      // `effective*` no exigían siquiera que el F9 hubiera empatado.
+      final v = valoresDelNassau(cfg,
+          f9Completo: frontPlayed == seg.firstNine.length &&
+              seg.firstNine.isNotEmpty,
+          marcadorF9: front);
+      addSegment(back, v.back,
           'Nassau ${seg.etiqueta(false, round.startingNine)} (${sideA.name} vs ${sideB.name})');
-      addSegment(total, cfg.effectiveTotalValue, 'Nassau Total 18 (${sideA.name} vs ${sideB.name})');
+      addSegment(total, v.total, 'Nassau Total 18 (${sideA.name} vs ${sideB.name})');
     }
     return entries;
   }
@@ -2066,6 +2243,13 @@ class BetEngine {
     final idA = sideA.playerIds.first;
     final idB = sideB.playerIds.first;
 
+    // El MISMO cálculo que la liquidación. Antes la pantalla usaba los getters
+    // `effective*` y el motor multiplicaba a mano: dos cuentas distintas, y la
+    // pantalla podía anunciar un número que la liquidación no pagaba.
+    final v = valoresDelNassau(cfg,
+        f9Completo: seg.firstNine.isNotEmpty && frontPlayed == seg.firstNine.length,
+        marcadorF9: front);
+
     final List<NassauPress> presses = [];
     if (cfg.pressEnabled) {
       _detectPressesInSegment(presses, frontHistory, seg.firstNine, frontPlayed,
@@ -2082,9 +2266,9 @@ class BetEngine {
       front: front, back: back, total: front + back,
       frontPlayed: frontPlayed, backPlayed: backPlayed,
       presses: presses,
-      frontVal: cfg.frontValue,
-      backVal:  cfg.effectiveBackValue,
-      totalVal: cfg.effectiveTotalValue,
+      frontVal: v.front,
+      backVal:  v.back,
+      totalVal: v.total,
     );
   }
 
@@ -2109,7 +2293,6 @@ class BetEngine {
     final p1Id = pids[0];
     final p2Id = pids[1];
     final cfg  = mod.matchAutoPress;
-    final cf   = cfg.carryFactorForPair(p1Id, p2Id);
 
     // Deltas hoyo a hoyo en orden real de juego
     final hd = _buildHoleDeltas(round, p1Id, p2Id, mod);
@@ -2122,8 +2305,8 @@ class BetEngine {
       deltas:     deltas,
       trigger:    cfg.pressTriggerValue,
       maxPresses: cfg.maxPresses ?? 99,
-      matchValue: cfg.matchValue * cf,
-      pressValue: cfg.pressValue * cf,
+      matchValue: cfg.matchValue,
+      pressValue: cfg.pressValue,
     );
 
     // Liquidar cada match
@@ -2156,7 +2339,6 @@ class BetEngine {
     Round round, String p1Id, String p2Id, BetModuleInstance mod,
   ) {
     final cfg = mod.matchAutoPress;
-    final cf  = cfg.carryFactorForPair(p1Id, p2Id);
 
     final hd = _buildHoleDeltas(round, p1Id, p2Id, mod);
     final holeOrder = hd.$1;
@@ -2180,8 +2362,8 @@ class BetEngine {
       deltas:     deltas,
       trigger:    cfg.pressTriggerValue,
       maxPresses: cfg.maxPresses ?? 99,
-      matchValue: cfg.matchValue * cf,
-      pressValue: cfg.pressValue * cf,
+      matchValue: cfg.matchValue,
+      pressValue: cfg.pressValue,
     );
 
     final results = <MatchPressLiveStatus>[];
@@ -2923,6 +3105,10 @@ class BetEngine {
     //   p1IsBase=false: delta=-1 si base(p2) gana, +1 si pierde  →  +1 = p1 arriba
     // Por tanto NO se normaliza: pasar frontHistory/backHistory directamente.
     final List<NassauPress> presses = [];
+    final v = valoresDelNassau(cfg,
+        f9Completo: seg.firstNine.isNotEmpty && frontPlayed == seg.firstNine.length,
+        marcadorF9: front);
+
     if (cfg.pressEnabled) {
       _detectPressesInSegment(presses, frontHistory, seg.firstNine, frontPlayed,
           p1Id, p2Id, cfg.autoPressTrigger,
@@ -2938,9 +3124,9 @@ class BetEngine {
       front: front, back: back, total: front + back,
       frontPlayed: frontPlayed, backPlayed: backPlayed,
       presses: presses,
-      frontVal: cfg.frontValue,
-      backVal:  cfg.effectiveBackValue,
-      totalVal: cfg.effectiveTotalValue,
+      frontVal: v.front,
+      backVal:  v.back,
+      totalVal: v.total,
       holesWonP1: holesWonP1,
       holesWonP2: holesWonP2,
     );
@@ -3006,14 +3192,12 @@ class BetEngine {
       }
     }
 
-    // Carry: primer segmento completo y empatado
-    final f9Complete  = seg.firstNine.isNotEmpty && frontPlayed == seg.firstNine.length;
-    final carryActive = cfg.carryEnabled && cfg.carryApplied && f9Complete && front == 0;
-
-    // Valores efectivos
-    final effBackVal       = carryActive ? cfg.backValue      * cfg.carryFactor : cfg.backValue;
-    final effBackPressVal  = carryActive ? cfg.backPressValue * cfg.carryFactor : cfg.backPressValue;
-    final effTotalVal      = carryActive ? cfg.totalValue     * cfg.carryFactor : cfg.totalValue;
+    // Los MISMOS valores que la liquidación, del mismo sitio. Esta pantalla es
+    // la que Carlos mira durante la ronda: si dijera un número distinto del que
+    // se paga al cerrar, el fallo se descubre cobrando.
+    final v = valoresDelNassau(cfg,
+        f9Completo: seg.firstNine.isNotEmpty && frontPlayed == seg.firstNine.length,
+        marcadorF9: front);
 
     // El delta ya está calculado en perspectiva de p1 (positivo = p1 arriba):
     //   p1IsBase=true : delta= 1 si base(p1) gana, -1 si pierde
@@ -3037,11 +3221,11 @@ class BetEngine {
       front: front, back: back, total: front + back,
       frontPlayed: frontPlayed, backPlayed: backPlayed,
       frontVal:      cfg.frontValue,
-      backVal:       effBackVal,
-      totalVal:      effTotalVal,
+      backVal:       v.back,
+      totalVal:      v.total,
       frontPressVal: cfg.frontPressValue,
-      backPressVal:  effBackPressVal,
-      carryActive:   carryActive,
+      backPressVal:  v.backPress,
+      carryActive:   v.carryNatural,
       carryEnabled:  cfg.carryEnabled,
       frontPresses:  frontPresses,
       backPresses:   backPresses,
@@ -3326,6 +3510,49 @@ class _LowHighTally {
 
   /// Positiva = gana el lado A.
   double get diff => aTotal - bTotal;
+}
+
+/// Los valores de las tres apuestas del Nassau, ya con el carry natural puesto.
+///
+/// ── Por qué existe esto, y no tres líneas repetidas ─────────────────────────
+///
+/// El carry llegó a producción cobrando de más, y no por un despiste: había
+/// CINCO sitios calculando el valor de los segmentos por su cuenta —dos en el
+/// motor con `* carryFactor` escrito a mano, tres a través de los getters
+/// `effective*` del modelo— y no estaban de acuerdo entre ellos. Uno exigía el
+/// F9 empatado y otro no; unos multiplicaban la presión y otros no.
+///
+/// Con cinco definiciones, arreglar una deja las otras cuatro cobrando mal, y la
+/// pantalla en vivo puede enseñar un número que la liquidación no paga. Ahora
+/// hay una sola y los cinco sitios la llaman: [BetEngine.valoresDelNassau].
+class ValoresDelNassau {
+  /// El primer nueve. Si el carry se lo llevó, su dinero ya está en [back] y
+  /// aquí queda 0 — pero da igual, porque un segmento empatado no paga nadie.
+  final double front;
+
+  /// El segundo nueve, con el traslado del F9 si lo hubo.
+  final double back;
+
+  /// Los dieciocho. **Nunca** lo toca el carry: es una apuesta aparte.
+  final double total;
+
+  /// Cada presión automática del segundo nueve.
+  ///
+  /// Tampoco la toca el carry. Lo que se traslada es «el valor de la apuesta
+  /// del F9», y una presión no es el segmento: es su propia apuesta, con su
+  /// propio importe configurado.
+  final double backPress;
+
+  /// El F9 quedó empatado y su dinero se pasó al B9.
+  final bool carryNatural;
+
+  const ValoresDelNassau({
+    required this.front,
+    required this.back,
+    required this.total,
+    required this.backPress,
+    required this.carryNatural,
+  });
 }
 
 class RoundSegments {

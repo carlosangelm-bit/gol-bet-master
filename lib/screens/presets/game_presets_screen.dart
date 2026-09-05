@@ -1063,28 +1063,25 @@ class _PresetConfigWidgets {
       _toggleRow(
         title: 'Carry en Back 9',
         subtitle: n.carryEnabled
-            ? 'Si el F9 termina empatado, el B9 vale x${n.carryFactor.toStringAsFixed(0)}'
+            ? 'Si el F9 empata, sus \$${n.frontValue.toStringAsFixed(0)} pasan '
+                'al B9: vale \$${(n.backValue + n.frontValue).toStringAsFixed(0)}. '
+                'El total de 18 no cambia.'
             : 'Sin carry — el B9 siempre vale su monto normal',
         value: n.carryEnabled,
         onChanged: (v) => setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(carryEnabled: v)))),
         t: t,
       ),
       if (n.carryEnabled) ...[
-        const SizedBox(height: 12),
-        _label('MULTIPLICADOR CARRY', t), const SizedBox(height: 8),
-        _segmented(['x2', 'x3', 'x4'],
-            n.carryFactor >= 4 ? 2 : n.carryFactor >= 3 ? 1 : 0, t, (i) {
-          setSt(() => update(cfg.copyWith(nassauConfig: n.copyWith(
-            carryFactor: (i + 2).toDouble(),
-          ))));
-        }),
-        const SizedBox(height: 4),
+        const SizedBox(height: 8),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2),
           child: Text(
-            'Si el F9 termina igualado, el B9 (\$${n.backValue.toStringAsFixed(0)}) '
-            'pasa a valer \$${(n.backValue * n.carryFactor).toStringAsFixed(0)}.',
-            style: TextStyle(color: t.sub, fontSize: 11),
+            'El carry TRASLADA: no multiplica. Los '
+                '\$${n.frontValue.toStringAsFixed(0)} del F9 empatado se suman al B9 '
+                '(\$${n.backValue.toStringAsFixed(0)} → '
+                '\$${(n.backValue + n.frontValue).toStringAsFixed(0)}), y el Total 18 '
+                'sigue valiendo \$${n.totalValue.toStringAsFixed(0)}.',
+            style: TextStyle(color: t.sub, fontSize: 11, height: 1.35),
           ),
         ),
       ],

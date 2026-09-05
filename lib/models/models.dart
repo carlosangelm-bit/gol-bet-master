@@ -1444,18 +1444,23 @@ class MatchAutoPressConfig {
   final TieRule tieRule;          // push por defecto
   final bool allowMultiplePresses;// permite más de una presión simultánea
   final int? maxPresses;          // máximo de presiones (null = ilimitado)
-  // ── Carry ────────────────────────────────────────────────────────────────────
-  // Cuando un jugador pide carry al terminar la primera vuelta:
-  // - el matchValue se multiplica por carryFactor (default 2×)
-  // - todas las presiones activas y futuras también se multiplican
-  // carryByPair: clave = pairKey(p1Id, p2Id), valor = factor aplicado
-  // Permite que cada duelo dentro de un grupo tenga su propio carry
-  // sin afectar a otros duelos que compartan el módulo.
-  final Map<String, double> carryByPair; // clave: pairKey(id1,id2) → carryFactor
-
-  // Deprecated fields kept for backwards-compat / migration
-  final bool carryApplied;        // legacy: true cuando el carry fue aceptado (grupo de 2)
-  final double carryFactor;       // legacy: multiplicador del carry (default 2.0)
+  // ── El carry NO vive aquí ────────────────────────────────────────────────────
+  //
+  // Había `carryApplied`, `carryFactor` y `carryByPair`: pedir carry multiplicaba
+  // el match y todas sus presiones. Los tres se RETIRARON, y el motivo es que el
+  // carry no multiplica nada.
+  //
+  // Lo que el grupo juega —dicho por Carlos revisando una ronda real— es que el
+  // que va perdiendo pide una apuesta APARTE, del mismo importe, con un golpe
+  // más de ventaja. Eso no es un factor sobre lo que ya hay: es una segunda
+  // apuesta, y vive en [NassauConfig.carryPedidoByPair], que guarda QUIÉN la
+  // pidió, porque el golpe extra es de una persona y no del par.
+  //
+  // Aquí no se sustituye por nada. Match + Press es UNA apuesta sobre los
+  // dieciocho, sin primer y segundo nueve: no hay segmento anterior del que
+  // trasladar dinero, ni un «entrar en la 2ª vuelta» donde pedir la paralela.
+  // Y la apuesta paralela que nace de ir por detrás ya existe aquí con su
+  // nombre: es la PRESIÓN.
 
   const MatchAutoPressConfig({
     this.matchValue = 100,
@@ -1465,9 +1470,6 @@ class MatchAutoPressConfig {
     this.tieRule = TieRule.push,
     this.allowMultiplePresses = true,
     this.maxPresses,
-    this.carryApplied = false,
-    this.carryFactor = 2.0,
-    this.carryByPair = const {},
   });
 
   // Helper: clave canónica del par (IDs ordenados, separados por '|')
@@ -1476,27 +1478,10 @@ class MatchAutoPressConfig {
     return '${sorted[0]}|${sorted[1]}';
   }
 
-  // ¿Tiene carry activo para este par específico?
-  bool carryAppliedForPair(String id1, String id2) {
-    final key = pairKey(id1, id2);
-    if (carryByPair.containsKey(key)) return true;
-    // Retrocompatibilidad: si carryApplied global y no hay carryByPair, se aplica a todos los pares
-    if (carryApplied && carryByPair.isEmpty) return true;
-    return false;
-  }
-
-  // Factor de carry para este par específico
-  double carryFactorForPair(String id1, String id2) {
-    final key = pairKey(id1, id2);
-    return carryByPair[key] ?? (carryApplied && carryByPair.isEmpty ? carryFactor : 1.0);
-  }
-
   MatchAutoPressConfig copyWith({
     double? matchValue, double? pressValue, int? pressTriggerValue,
     GrossNetMode? mode, TieRule? tieRule,
     bool? allowMultiplePresses, int? maxPresses,
-    bool? carryApplied, double? carryFactor,
-    Map<String, double>? carryByPair,
   }) => MatchAutoPressConfig(
     matchValue:          matchValue         ?? this.matchValue,
     pressValue:          pressValue         ?? this.pressValue,
@@ -1505,9 +1490,6 @@ class MatchAutoPressConfig {
     tieRule:             tieRule            ?? this.tieRule,
     allowMultiplePresses:allowMultiplePresses ?? this.allowMultiplePresses,
     maxPresses:          maxPresses         ?? this.maxPresses,
-    carryApplied:        carryApplied       ?? this.carryApplied,
-    carryFactor:         carryFactor        ?? this.carryFactor,
-    carryByPair:         carryByPair        ?? this.carryByPair,
   );
 
   Map<String, dynamic> toJson() => {
@@ -1518,18 +1500,9 @@ class MatchAutoPressConfig {
     'tieRule':             tieRule.name,
     'allowMultiplePresses':allowMultiplePresses,
     if (maxPresses != null) 'maxPresses': maxPresses,
-    'carryApplied':        carryApplied,
-    'carryFactor':         carryFactor,
-    if (carryByPair.isNotEmpty) 'carryByPair': carryByPair,
   };
 
   factory MatchAutoPressConfig.fromJson(Map<String, dynamic> j) {
-    // Migrar carryByPair desde JSON
-    Map<String, double> carryByPairParsed = {};
-    if (j['carryByPair'] != null) {
-      final raw = j['carryByPair'] as Map<String, dynamic>;
-      carryByPairParsed = raw.map((k, v) => MapEntry(k, (v as num).toDouble()));
-    }
     return MatchAutoPressConfig(
       matchValue:          (j['matchValue']        as num?)?.toDouble() ?? 100,
       pressValue:          (j['pressValue']        as num?)?.toDouble() ?? 50,
@@ -1540,9 +1513,6 @@ class MatchAutoPressConfig {
         (e) => e.name == (j['tieRule'] ?? 'push'), orElse: () => TieRule.push),
       allowMultiplePresses: j['allowMultiplePresses'] as bool? ?? true,
       maxPresses:           j['maxPresses'] as int?,
-      carryApplied:         j['carryApplied'] as bool? ?? false,
-      carryFactor:          (j['carryFactor'] as num?)?.toDouble() ?? 2.0,
-      carryByPair:          carryByPairParsed,
     );
   }
 
@@ -1629,25 +1599,41 @@ class NassauConfig {
   final GrossNetMode mode;
   final TieRule tieRule;
   // ── Carry ────────────────────────────────────────────────────────────────────
-  final bool carryEnabled;      // el F9 empatado dobla el valor del B9
+  //
+  // ── SON DOS COSAS, y antes eran una sola mal hecha ──────────────────────────
+  //
+  // Había un MULTIPLICADOR configurable: pedir carry hacía que el B9 y el total
+  // de 18 valieran ×2. Carlos revisó una ronda real de cinco y las dos partes
+  // estaban mal.
+  //
+  //   1 · EL CARRY NATURAL **traslada**, no multiplica. Si el F9 queda empatado
+  //       su dinero no tiene dueño y se pasa al B9: con 50·50·100 el B9 vale
+  //       $100 —$50 propios más los $50 del F9— y **el total de 18 sigue siendo
+  //       $100**. Es una apuesta aparte y nadie la tocó.
+  //
+  //       Con front == back el multiplicador acertaba el B9 por casualidad
+  //       (50×2 == 50+50) y erraba el total siempre. Con front != back erraba
+  //       los dos: 30 y 50 dan 80, no 100.
+  //
+  //   2 · EL CARRY PEDIDO no es un factor, es VENTAJA. Solo lo pide quien va
+  //       perdiendo, y lo que compra es una SEGUNDA apuesta sobre los mismos
+  //       nueve hoyos, del mismo importe, en la que recibe un golpe más:
+  //       si le tocaban 3, en la del carry le tocan 4. Se juegan las dos.
+  //
+  // Por eso el mapa guarda QUIÉN lo pidió y no cuánto multiplica: el golpe extra
+  // es de una persona, no del par.
+  final bool carryEnabled;
 
-  /// Carry aceptado POR PAREJA: clave [carryPairKey], valor el factor.
+  /// Quién PIDIÓ el carry en cada pareja: [carryPairKey] → id del solicitante.
   ///
-  /// En un grupo de cuatro, A puede pedir carry contra B y no contra C.
-  /// [carryApplied] es un booleano de módulo entero y no puede expresarlo;
-  /// Match + Press ya resolvió este caso y aquí se replica, porque el carry
-  /// por pareja tiene el mismo sentido en Nassau.
+  /// En un grupo de cuatro, A puede pedirlo contra B y no contra C. El valor es
+  /// el id porque la apuesta del carry se juega con la ventaja de ESE jugador
+  /// aumentada en un golpe, y con la clave sola no se sabría de quién.
   ///
-  /// Usa el separador '|' a propósito, el mismo que MatchAutoPressConfig: así
-  /// migrar un módulo de un tipo al otro es copiar el mapa tal cual. Con
-  /// separadores distintos habría que traducir cada clave, y una traducción
-  /// fallida no da error — el carry simplemente dejaría de aplicarse.
-  final Map<String, double> carryByPair;
-
-  /// Legacy: carry de módulo entero. Se conserva para las rondas guardadas
-  /// antes de [carryByPair]; las nuevas ediciones escriben el mapa.
-  final bool carryApplied;
-  final double carryFactor;     // multiplicador carry (default 2.0)
+  /// Usa el separador '|' a propósito, el mismo que MatchAutoPressConfig y que
+  /// [aperturaB9ByPair]: las tres claves son intercambiables sin traducir, y una
+  /// traducción fallida no da error — la apuesta simplemente no aparecería.
+  final Map<String, String> carryPedidoByPair;
   // ── Presiones ────────────────────────────────────────────────────────────────
   // pressEnabled=false → Nassau clásico sin presiones
   // pressEnabled=true  → presiones automáticas por segmento
@@ -1690,8 +1676,6 @@ class NassauConfig {
     this.mode                 = GrossNetMode.net,
     this.tieRule              = TieRule.push,
     this.carryEnabled         = false,
-    this.carryApplied         = false,
-    this.carryFactor          = 2.0,
     this.pressEnabled         = false,
     this.autoPressTrigger     = 2,
     this.frontPressValue      = 50,
@@ -1704,7 +1688,7 @@ class NassauConfig {
     this.allowMultiplePresses = false,
     this.maxPresses,
     this.aperturaB9ByPair = const {},
-    this.carryByPair = const {},
+    this.carryPedidoByPair = const {},
   });
 
   /// Clave canónica del par. Mismo formato que [MatchAutoPressConfig.pairKey].
@@ -1713,31 +1697,18 @@ class NassauConfig {
     return '${sorted[0]}|${sorted[1]}';
   }
 
-  /// ¿Hay carry activo para esta pareja?
-  ///
-  /// Si el mapa está vacío se cae al booleano legacy, para que una ronda
-  /// guardada antes de [carryByPair] siga comportándose igual.
-  bool carryAppliedForPair(String id1, String id2) {
-    if (carryByPair.containsKey(carryPairKey(id1, id2))) return true;
-    return carryApplied && carryByPair.isEmpty;
-  }
+  /// Quién pidió el carry en esta pareja, o null si nadie.
+  String? carryPedidoPor(String id1, String id2) =>
+      carryPedidoByPair[carryPairKey(id1, id2)];
 
   /// ¿Esta pareja abrió la presión de apertura del B9?
   bool aperturaB9For(String id1, String id2) =>
       aperturaB9ByPair[carryPairKey(id1, id2)] == true;
 
-  /// Factor de carry de esta pareja. 1.0 = sin carry.
-  double carryFactorForPair(String id1, String id2) {
-    final key = carryPairKey(id1, id2);
-    return carryByPair[key] ??
-        (carryApplied && carryByPair.isEmpty ? carryFactor : 1.0);
-  }
-
   NassauConfig copyWith({
     double? frontValue, double? backValue, double? totalValue,
     GrossNetMode? mode, TieRule? tieRule,
-    bool? carryEnabled, Map<String, double>? carryByPair,
-    bool? carryApplied, double? carryFactor,
+    bool? carryEnabled, Map<String, String>? carryPedidoByPair,
     bool? pressEnabled, int? autoPressTrigger,
     double? frontPressValue, double? backPressValue,
     bool? allowMultiplePresses, int? maxPresses,
@@ -1749,9 +1720,7 @@ class NassauConfig {
     mode:                 mode                 ?? this.mode,
     tieRule:              tieRule              ?? this.tieRule,
     carryEnabled:         carryEnabled         ?? this.carryEnabled,
-    carryApplied:         carryApplied         ?? this.carryApplied,
-    carryByPair:          carryByPair          ?? this.carryByPair,
-    carryFactor:          carryFactor          ?? this.carryFactor,
+    carryPedidoByPair:    carryPedidoByPair    ?? this.carryPedidoByPair,
     pressEnabled:         pressEnabled         ?? this.pressEnabled,
     autoPressTrigger:     autoPressTrigger     ?? this.autoPressTrigger,
     frontPressValue:      frontPressValue      ?? this.frontPressValue,
@@ -1761,10 +1730,19 @@ class NassauConfig {
     aperturaB9ByPair:     aperturaB9ByPair     ?? this.aperturaB9ByPair,
   );
 
-  // Valores efectivos considerando carry
-  double get effectiveBackValue      => carryApplied ? backValue      * carryFactor : backValue;
-  double get effectiveTotalValue     => carryApplied ? totalValue     * carryFactor : totalValue;
-  double get effectiveBackPressValue => carryApplied ? backPressValue * carryFactor : backPressValue;
+  // ── Los «valores efectivos» ya no viven aquí ──────────────────────────────
+  //
+  // Eran tres getters —`effectiveBackValue`, `effectiveTotalValue`,
+  // `effectiveBackPressValue`— que multiplicaban por el factor. Se retiraron
+  // con el multiplicador, y con ellos el motivo por el que el fallo llegó a
+  // producción: había CINCO sitios calculando el valor de los segmentos por su
+  // cuenta —dos en el motor con `* carryFactor` a mano, tres a través de estos
+  // getters— y ninguno estaba de acuerdo con los otros. Uno exigía el F9
+  // empatado, otro no; unos multiplicaban la presión, otros no.
+  //
+  // Ahora hay UNO: [BetEngine.valoresDelNassau]. Vive en el motor y no en el
+  // modelo porque necesita saber cómo quedó el primer nueve, que es un hecho de
+  // la ronda y no de la configuración.
 
   Map<String, dynamic> toJson() => {
     'frontValue':           frontValue,
@@ -1773,9 +1751,7 @@ class NassauConfig {
     'mode':                 mode.name,
     'tieRule':              tieRule.name,
     'carryEnabled':         carryEnabled,
-    'carryApplied':         carryApplied,
-    if (carryByPair.isNotEmpty) 'carryByPair': carryByPair,
-    'carryFactor':          carryFactor,
+    if (carryPedidoByPair.isNotEmpty) 'carryPedidoByPair': carryPedidoByPair,
     'pressEnabled':         pressEnabled,
     'autoPressTrigger':     autoPressTrigger,
     'frontPressValue':      frontPressValue,
@@ -1795,11 +1771,12 @@ class NassauConfig {
       mode:     GrossNetMode.values.firstWhere((e) => e.name == (j['mode'] ?? 'net'),  orElse: () => GrossNetMode.net),
       tieRule:  TieRule.values.firstWhere((e) => e.name == (j['tieRule'] ?? 'push'), orElse: () => TieRule.push),
       carryEnabled:         j['carryEnabled']         as bool? ?? false,
-      carryApplied:         j['carryApplied']         as bool? ?? false,
-      carryByPair: (j['carryByPair'] as Map?)?.map(
-              (k, v) => MapEntry(k.toString(), (v as num).toDouble())) ??
+      // Sin lectura del multiplicador viejo, a propósito: una ronda guardada con
+      // `carryApplied` pierde el carry y hay que volver a pedirlo. Es el precio
+      // de la limpieza, y es de dos toques.
+      carryPedidoByPair: (j['carryPedidoByPair'] as Map?)
+              ?.map((k, v) => MapEntry(k.toString(), v.toString())) ??
           const {},
-      carryFactor:          (j['carryFactor']         as num?)?.toDouble() ?? 2.0,
       pressEnabled:         j['pressEnabled']         as bool? ?? false,
       // retrocompat: autoPressTrigger también puede venir como pressTriggerValue
       autoPressTrigger:     (j['autoPressTrigger']    as int?)
@@ -3036,8 +3013,6 @@ class BetModuleInstance {
             mode:     GrossNetMode.values.firstWhere((e) => e.name == (np['mode'] ?? 'net'), orElse: () => GrossNetMode.net),
             tieRule:  TieRule.values.firstWhere((e) => e.name == (np['tieRule'] ?? 'push'), orElse: () => TieRule.push),
             carryEnabled:         np['carryEnabled']         as bool? ?? false,
-            carryApplied:         np['carryApplied']         as bool? ?? false,
-            carryFactor:          (np['carryFactor']         as num?)?.toDouble() ?? 2.0,
             pressEnabled:         true,  // era nassauPress → press siempre activo
             autoPressTrigger:     (np['pressTriggerValue']   as int?) ?? 2,
             frontPressValue:      (np['frontPressValue']     as num?)?.toDouble() ?? 50,

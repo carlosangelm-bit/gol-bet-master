@@ -146,7 +146,6 @@ BetModuleInstance _nassauMod(
   bool press = false,
   int trigger = 2,
   bool carry = false,
-  bool carryApplied = false,
   double front = 50,
   double back = 50,
   double total = 100,
@@ -166,7 +165,6 @@ BetModuleInstance _nassauMod(
         frontPressValue: frontPress,
         backPressValue: backPress,
         carryEnabled: carry,
-        carryApplied: carryApplied,
         allowMultiplePresses: allowMultiple,
         maxPresses: maxPresses,
       ),
@@ -675,7 +673,7 @@ void main() {
       // carryEnabled=false: aunque el Front empate, el Back vale $50 (no $100).
       final scoresA = [4,4,4,4,4,4,4,4,4, 3,3,3,3,3,3,3,3,3]; // Front=0, Back=+9
       final scoresB = [4,4,4,4,4,4,4,4,4, 4,4,4,4,4,4,4,4,4];
-      final mod = _nassauMod(['A','B'], carry: false, carryApplied: false);
+      final mod = _nassauMod(['A','B'], carry: false);
       final round = _makeRound(
         players: [{'id':'A','hcp':0.0},{'id':'B','hcp':0.0}],
         groups: [_group(['A','B'], mod)],
@@ -693,11 +691,13 @@ void main() {
           reason: 'Carry disabled: Back debe valer \$50 no \$100');
     });
 
-    test('G5.2 – carry enabled + carryApplied=true, Front empatado → Back duplicado', () {
-      // carryEnabled=true + carryApplied=true → Back vale $100 (50 * 2.0).
+    test('G5.2 – carry enabled, Front empatado → el Back lleva el traslado', () {
+      // Los $50 del F9 empatado pasan al B9: 50 + 50 = $100. Con estos valores
+      // el resultado coincide con el ×2 que había antes; lo que separa las dos
+      // cuentas es el Total 18, y eso lo fija presiones_y_carry_test.
       final scoresA = [4,4,4,4,4,4,4,4,4, 3,3,3,3,3,3,3,3,3];
       final scoresB = [4,4,4,4,4,4,4,4,4, 4,4,4,4,4,4,4,4,4];
-      final mod = _nassauMod(['A','B'], carry: true, carryApplied: true);
+      final mod = _nassauMod(['A','B'], carry: true);
       final round = _makeRound(
         players: [{'id':'A','hcp':0.0},{'id':'B','hcp':0.0}],
         groups: [_group(['A','B'], mod)],
@@ -720,7 +720,7 @@ void main() {
       // Front lógico (10-18) empatado → carry → Back lógico (1-9) vale x2.
       final scoresA = [4,4,4,4,4,4,4,4,4, 3,3,3,3,3,3,3,3,3]; // 10-18 push; 1-9 A gana
       final scoresB = [4,4,4,4,4,4,4,4,4, 4,4,4,4,4,4,4,4,4];
-      final mod = _nassauMod(['A','B'], carry: true, carryApplied: true);
+      final mod = _nassauMod(['A','B'], carry: true);
       final round = _makeRound(
         players: [{'id':'A','hcp':0.0},{'id':'B','hcp':0.0}],
         groups: [_group(['A','B'], mod)],
@@ -740,11 +740,12 @@ void main() {
       expect(backE.first.toPlayerId, equals('A'));
     });
 
-    test('G5.4 – carry: Front no empatado → Back NO se duplica', () {
-      // carryApplied=false: el carry no se aplicó porque el Front no fue push.
+    test('G5.4 – carry: Front no empatado → Back NO lleva nada', () {
+      // Ya no hay bandera que apagar: lo apaga el propio marcador. El F9 lo ganó
+      // A, así que ese dinero tiene dueño y no hay nada que trasladar.
       final scoresA = [3,4,4,4,4,4,4,4,4, 3,3,3,3,3,3,3,3,3]; // Front: A gana H1
       final scoresB = [4,4,4,4,4,4,4,4,4, 4,4,4,4,4,4,4,4,4];
-      final mod = _nassauMod(['A','B'], carry: true, carryApplied: false);
+      final mod = _nassauMod(['A','B'], carry: true);
       final round = _makeRound(
         players: [{'id':'A','hcp':0.0},{'id':'B','hcp':0.0}],
         groups: [_group(['A','B'], mod)],

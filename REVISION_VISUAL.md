@@ -764,3 +764,69 @@ Esta pantalla era la única del portal que no lo consultaba.
   quien llama, para que ningún futuro llamador pueda colarlo.
 - **Copa de Primavera sigue igual**: sus 68 estaban todos en el directorio y
   siguen saliendo por ahí.
+
+---
+
+# Carry y presión: las reglas, corregidas
+
+## 1 · El carry natural TRASLADA, no multiplica
+
+**Era dinero cobrado de más, y estaba en producción.** Con `50 · 50 · 100` y el
+F9 empatado, el Total 18 salía **$200**.
+
+| | antes | ahora |
+|---|---|---|
+| F9 | $0 (empatado) | $0 |
+| B9 | $100 | $100 — *$50 propios + $50 del F9* |
+| **Total 18** | **$200** | **$100** ← es una apuesta aparte |
+| Presión del B9 | $50 (doblada) | **$25** — no es el segmento |
+
+Con F9 y B9 iguales el `×2` acertaba el B9 **por casualidad** (50×2 = 50+50) y
+erraba el total siempre. Con valores distintos erraba los dos: 30 y 50 dan 80,
+no 100.
+
+**Y era por cinco caminos.** Había cinco sitios calculando el valor de los
+segmentos por su cuenta —dos en el motor con `* carryFactor` a mano, tres a
+través de los getters `effective*` del modelo— y no estaban de acuerdo: uno
+exigía el F9 empatado y otro no. Ahora hay **uno**, y la pantalla en vivo lee el
+mismo.
+
+## 2 · El carry pedido: ventaja, no multiplicador
+
+El `×2 / ×3 / ×4` **se retiró** de los tres editores y de los dos módulos.
+
+**Al terminar la primera vuelta pasa una de dos, y son excluyentes:**
+
+- **El F9 quedó empatado** → carry natural. Se cuenta lo que pasó. **No hay
+  botón.**
+- **El F9 lo ganó alguien** → **solo el que perdió** puede pedirlo. El botón sale
+  con su nombre.
+
+## Qué mirar
+
+1. **Abre un duelo con el primer nueve terminado.** Si empató, el panel dice
+   *«sus $50 pasan a la segunda: el B9 vale $100. El Total 18 sigue en $100»*.
+2. **Si lo ganó alguien**, el botón dice **«Dylan pide carry»** — con el nombre
+   del que va perdiendo, no una elección entre los dos.
+3. **El texto dice los golpes**: *«recibe 1 golpe de ventaja en vez de 0»*. Y
+   que **son dos apuestas, no una a doble precio**.
+4. **Pedido**, el panel cuenta: *«DOS apuestas sobre la 2ª vuelta, de $50 cada
+   una: la normal, y la del carry con un golpe más para Dylan»*.
+5. **En el desglose salen las dos líneas**: `Nassau Back 9` y
+   `Carry · un golpe más`. Nunca una sola al doble.
+6. **El chip del duelo dice `CARRY +F9`**, no `CARRY ×2`.
+
+## 3 · La presión
+
+**Ya existía y ya era correcta**: es la **apertura de 2ª vuelta**. Una segunda
+apuesta de $50 sobre el B9 se paga igual que un B9 de $100 —mismos hoyos, mismo
+marcador—, y en el desglose se ven las dos en vez de un número doblado.
+
+Responde las dos dudas: **sí, siempre el doble** (es una apuesta del mismo
+importe), y **no, el match no se convierte en $200** (solo toca el B9).
+
+## Lo que se rompe, y es aceptable
+
+**Una ronda guardada con el multiplicador pierde el carry** y hay que volver a
+pedirlo — dos toques. Sin migración, a propósito: traducir un multiplicador a
+una ventaja se inventaría un golpe que nadie pactó.

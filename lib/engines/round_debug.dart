@@ -345,7 +345,7 @@ class RoundDebug {
     final cfg = mod.nassau;
     final isBack = round.startingNine == StartingNine.back;
     buf.writeln('  nassauMode=${cfg.pressEnabled ? 'con press (trigger=${cfg.autoPressTrigger})' : 'sin press'}');
-    buf.writeln('  carry=${cfg.carryEnabled}  carryApplied=${cfg.carryApplied}');
+    buf.writeln('  carry=${cfg.carryEnabled}  carryPedido=${cfg.carryPedidoByPair}');
     buf.writeln('  startingNine=${round.startingNine.name}  → seg1=${isBack ? '10-18' : '1-9'}  seg2=${isBack ? '1-9' : '10-18'}');
 
     for (int i = 0; i < pids.length; i++) {

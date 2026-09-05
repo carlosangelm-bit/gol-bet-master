@@ -1348,8 +1348,8 @@ class _OneVOneViewState extends State<_OneVOneView> {
                 round: round, p1: effP1, p2: effP2, t: t,
                 expanded: finalPairs.length == 1,
                 myPlayerId: myPlayer?.id,
-                onApplyCarry: (ctx, factor, nassauMods, matchMods) =>
-                    _applyCarry(ctx, effP1.id, effP2.id, factor, nassauMods, matchMods),
+                onPedirCarry: (ctx, solicitante, nassauMods) =>
+                    _pedirCarry(ctx, effP1.id, effP2.id, solicitante, nassauMods),
                 onAbrirApertura: (ctx, nassauMods) =>
                     _abrirApertura(ctx, effP1.id, effP2.id, nassauMods),
               ),
@@ -1472,35 +1472,36 @@ class _OneVOneViewState extends State<_OneVOneView> {
     prov.updateBetGroups(newGroups);
   }
 
-  void _applyCarry(BuildContext context, String p1Id, String p2Id, double factor,
-      List<BetModuleInstance> nassauMods, List<BetModuleInstance> matchMods) {
+  /// [solicitante] pide el carry contra su rival.
+  ///
+  /// ── Lo que se guarda es QUIÉN, no cuánto ─────────────────────────────────
+  ///
+  /// Antes se guardaba un factor —×2, ×3, ×4— y se escribía en los dos tipos de
+  /// módulo. Ahora se guarda el id del que lo pide, porque lo que compra el
+  /// carry es un golpe más de ventaja **para él**, y con la clave del par sola
+  /// no se sabría de quién es ese golpe.
+  ///
+  /// Solo va al Nassau. Match + Press es una apuesta sobre los dieciocho sin
+  /// primer y segundo nueve: no hay «entrar en la 2ª vuelta» donde pedir la
+  /// paralela, y la apuesta que nace de ir por detrás ya existe allí con su
+  /// nombre — es la presión.
+  void _pedirCarry(BuildContext context, String p1Id, String p2Id,
+      String solicitante, List<BetModuleInstance> nassauMods) {
     final prov  = context.read<RoundProvider>();
     final round = prov.round!;
+    final clave = NassauConfig.carryPairKey(p1Id, p2Id);
 
     final newGroups = round.betGroups.map((g) {
       final newModules = g.modules.map((m) {
-        if (nassauMods.any((nm) => nm.id == m.id)) {
-          return m.copyWith(nassauConfig: m.nassau.copyWith(carryApplied: true, carryFactor: factor));
+        if (m.type != BetModuleType.nassau) return m;
+        if (!nassauMods.any((nm) => nm.id == m.id) &&
+            !(m.nassau.carryEnabled && m.containsPair(p1Id, p2Id))) {
+          return m;
         }
-        if (matchMods.any((mm) => mm.id == m.id)) {
-          final existingByPair = Map<String, double>.from(m.matchAutoPress.carryByPair);
-          existingByPair[MatchAutoPressConfig.pairKey(p1Id, p2Id)] = factor;
-          return m.copyWith(
-            matchAutoPressConfig: m.matchAutoPress.copyWith(
-              carryByPair: existingByPair,
-              carryApplied: true,
-              carryFactor: factor,
-            ),
-          );
-        }
-        // Nassau con carry (pressEnabled o no): aplica si tiene carryEnabled
-        if (m.type == BetModuleType.nassau && m.nassau.carryEnabled) {
-          if (m.containsPair(p1Id, p2Id)) {
-            return m.copyWith(nassauConfig: m.nassau.copyWith(
-              carryApplied: true, carryFactor: factor));
-          }
-        }
-        return m;
+        final mapa = Map<String, String>.from(m.nassau.carryPedidoByPair)
+          ..[clave] = solicitante;
+        return m.copyWith(
+            nassauConfig: m.nassau.copyWith(carryPedidoByPair: mapa));
       }).toList();
       return BetGroup(id: g.id, name: g.name, format: g.format, playerIds: g.playerIds, modules: newModules);
     }).toList();
@@ -1808,9 +1809,9 @@ class _MatchDuelCard extends StatefulWidget {
   final GolfTheme t;
   final bool expanded;
   final String? myPlayerId;   // ID del jugador del usuario autenticado (para resaltar)
-  final void Function(BuildContext ctx, double factor,
-      List<BetModuleInstance> nassauMods,
-      List<BetModuleInstance> matchMods) onApplyCarry;
+  /// Pedir carry. Lleva QUIÉN lo pide porque el golpe extra es suyo.
+  final void Function(BuildContext ctx, String solicitante,
+      List<BetModuleInstance> nassauMods) onPedirCarry;
 
   /// Abrir la presión de apertura de la 2ª vuelta.
   final void Function(BuildContext, List<BetModuleInstance> nassauMods)
@@ -1819,7 +1820,7 @@ class _MatchDuelCard extends StatefulWidget {
   const _MatchDuelCard({
     required this.round, required this.p1, required this.p2,
     required this.t, required this.expanded,
-    required this.onApplyCarry,
+    required this.onPedirCarry,
     required this.onAbrirApertura,
     this.myPlayerId,
   });
@@ -1970,21 +1971,26 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
                   t: t),
 
             // Carry
-            _CarryPanel(
+            CarryPanel(
               round: round, p1: p1, p2: p2, t: t,
               nassauModules:     nassauModules,
               matchPressModules: matchMods,
-              onApplyCarry: (factor) =>
-                  widget.onApplyCarry(context, factor, nassauModules, matchMods),
+              onPedirCarry: (solicitante) =>
+                  widget.onPedirCarry(context, solicitante, nassauModules),
             ),
 
             // ── La presión de apertura, en SU PROPIO bloque ─────────────────
             //
             // Comparte momento con el carry —"al entrar la 2ª vuelta"— y no
-            // sitio: son decisiones distintas. El carry multiplica lo que ya
-            // hay y solo existe si el F9 empató; esta abre una apuesta nueva y
-            // no depende de cómo fuera el F9. Juntarlas obligaría a explicar en
-            // un párrafo por qué a veces se puede una y no la otra.
+            // sitio: son decisiones distintas. El carry solo lo pide el que va
+            // perdiendo; esta la pide cualquiera y no depende de cómo fuera el
+            // F9. Juntarlas obligaría a explicar en un párrafo por qué a veces
+            // se puede una y no la otra.
+            //
+            // Y ES LA PRESIÓN. Cuando Carlos dice «la presión solo afecta el
+            // B9, se puede pedir en cualquier circunstancia», está describiendo
+            // esto: una segunda apuesta de $50 sobre el B9 se paga igual que un
+            // B9 de $100, y el Total 18 no se mueve.
             if (nassauModules.isNotEmpty)
               _AperturaPanel(
                 round: round,
@@ -3252,8 +3258,10 @@ class _NassauLivePanel extends StatelessWidget {
                     color: t.accent.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(6),
                   ),
+                  // «+F9» y no «×2»: dice lo que pasó —el dinero del primer
+                  // nueve está aquí— en vez de un factor que ya no existe.
                   child: Text(
-                    'CARRY ×${mod.nassau.carryFactor.toStringAsFixed(0)}',
+                    'CARRY +F9',
                     style: TextStyle(color: t.profit, fontSize: 8,
                         fontWeight: FontWeight.w800),
                   ),
@@ -3712,22 +3720,45 @@ class _MatchPressLivePanel extends StatelessWidget {
 }
 
 // ── Panel Carry ──────────────────────────────────────────────────────────────
-// Aparece al final de la primera vuelta cuando hay módulos Nassau o Match+Press.
-// Solo visible en rondas de 18 hoyos. Muestra botón para activar carry.
-class _CarryPanel extends StatefulWidget {
+//
+// ── El carry son DOS cosas, y este panel enseña la que toque ────────────────
+//
+// Al terminar la primera vuelta pasa una de dos, y son excluyentes:
+//
+//   · EL F9 QUEDÓ EMPATADO → carry NATURAL. Su dinero no tiene dueño y se pasa
+//     al B9, solo. No hay nada que pedir: se cuenta lo que pasó.
+//
+//   · EL F9 LO GANÓ ALGUIEN → el que perdió puede PEDIR carry. Lo que compra es
+//     una segunda apuesta sobre los mismos nueve, del mismo importe, en la que
+//     recibe un golpe más. Se juegan las dos.
+//
+// Antes el panel ofrecía un botón «Activar Carry ×2» en el primer caso y se
+// atenuaba en el segundo — exactamente al revés de las dos reglas.
+//
+// ── Y no es privado ─────────────────────────────────────────────────────────
+//
+// El camino real para llegar aquí pasa por la tarjeta de duelo, que pasa por la
+// pantalla, que pasa por Firestore: ningún test de widget llegaba, y el trozo
+// sin cubrir era justo el que decidía si el botón sale y para quién. Montarlo
+// suelto con una ronda cualquiera es barato, y es lo que convierte «el motor
+// funciona» en «la pantalla lo usa». Mismo precedente que la hoja del equipo.
+class CarryPanel extends StatefulWidget {
   final Round round;
   final Player p1, p2;
   final GolfTheme t;
   final List<BetModuleInstance> nassauModules;
   final List<BetModuleInstance> matchPressModules;
-  final void Function(double factor) onApplyCarry;
-  const _CarryPanel({
+
+  /// Lo pide el jugador que se pasa: el golpe extra es suyo.
+  final void Function(String solicitante) onPedirCarry;
+  const CarryPanel({
     required this.round, required this.p1, required this.p2, required this.t,
     required this.nassauModules, required this.matchPressModules,
-    required this.onApplyCarry,
+    required this.onPedirCarry,
   });
-  @override State<_CarryPanel> createState() => _CarryPanelState();
+  @override State<CarryPanel> createState() => _CarryPanelState();
 }
+
 
 /// Los hoyos del primer nueve que le faltan a alguno de los dos.
 ///
@@ -3776,59 +3807,28 @@ class _FaltanScoresDelPrimerNueve extends StatelessWidget {
       );
 }
 
-class _CarryPanelState extends State<_CarryPanel> {
-  // ── Determinar si mostrar el panel ──────────────────────────────────────────
-  // Condiciones:
-  // 1. Hay módulos Nassau o Match+Press
-  // 2. La ronda es de 18 hoyos
-  // 3. La primera vuelta está completada (los 9 hoyos del primer segmento)
-  // 4. El carry no ha sido aplicado aún
+class _CarryPanelState extends State<CarryPanel> {
+  bool get _hayNassauConCarry =>
+      widget.nassauModules.any((m) => m.nassau.carryEnabled);
 
-  bool _firstNineComplete(Round round) {
-    final firstHoles = round.startingNine == StartingNine.back
-        ? List.generate(9, (i) => i + 10)   // hoyos 10-18
-        : List.generate(9, (i) => i + 1);   // hoyos 1-9
-    return firstHoles.every((h) =>
-        round.getScore(widget.p1.id, h).hasScore &&
-        round.getScore(widget.p2.id, h).hasScore);
+  /// Quién pidió el carry en esta pareja, si alguien.
+  String? get _solicitante {
+    for (final m in widget.nassauModules) {
+      final q = m.nassau.carryPedidoPor(widget.p1.id, widget.p2.id);
+      if (q != null) return q;
+    }
+    return null;
   }
 
-  bool get _carryAlreadyApplied {
-    final p1Id = widget.p1.id;
-    final p2Id = widget.p2.id;
-    // Verificar carry por par (nuevo mecanismo) o legacy carry global
-    final matchCarry = widget.matchPressModules.any((m) =>
-        m.matchAutoPress.carryAppliedForPair(p1Id, p2Id));
-    final nassauCarry = widget.nassauModules.any((m) => m.nassau.carryApplied);
-    return nassauCarry || matchCarry;
-  }
-
-  bool get _hasCarryModules =>
-      widget.nassauModules.isNotEmpty || widget.matchPressModules.isNotEmpty;
-
-  /// Quién ganó la primera vuelta, o null si quedó empatada.
+  /// El estado del primer nueve: null si empatado o sin jugar.
   ///
-  /// ── La condición que faltaba ──────────────────────────────────────────────
-  ///
-  /// El carry del golf existe SOLO cuando el segmento anterior queda en push: lo
-  /// que se traslada es un dinero que no tiene dueño. Si el F9 lo ganó alguien,
-  /// ese dinero ya está adjudicado y no hay nada que llevar.
-  ///
-  /// El motor ya lo exigía —`carryActive` pide `front == 0`— así que activarlo
-  /// con el F9 ganado no multiplicaba nada. Pero la pantalla lo ofrecía igual, y
-  /// eso es peor que no ofrecerlo: el grupo cree que pactó algo y el dinero sale
-  /// igual que antes.
-  ///
-  /// Se ATENÚA con el motivo en vez de esconderlo, por el criterio de siempre:
-  /// quien vino a buscarlo necesita saber por qué no está.
-  String? get _ganadorDelPrimerNueve {
-    final st = BetEngine.nassauLiveStatus(
-        widget.round, widget.p1.id, widget.p2.id,
-        widget.nassauModules.isNotEmpty
-            ? widget.nassauModules.first
-            : widget.matchPressModules.first);
-    if (st.frontPlayed == 0 || st.front == 0) return null;
-    return st.front > 0 ? widget.p1.shortName : widget.p2.shortName;
+  /// Devuelve el MARGEN en perspectiva de p1: >0 lo gana p1, <0 lo gana p2.
+  int? get _marcadorF9 {
+    if (widget.nassauModules.isEmpty) return null;
+    final st = BetEngine.nassauLiveStatus(widget.round, widget.p1.id,
+        widget.p2.id, widget.nassauModules.first);
+    if (st.frontPlayed == 0) return null;
+    return st.front;
   }
 
   @override
@@ -3836,95 +3836,83 @@ class _CarryPanelState extends State<_CarryPanel> {
     final round = widget.round;
     final t = widget.t;
     if (round.totalHoles < 18) return const SizedBox.shrink();
-    if (!_hasCarryModules)     return const SizedBox.shrink();
+    // Match + Press ya no tiene carry: su apuesta paralela es la presión.
+    if (!_hayNassauConCarry) return const SizedBox.shrink();
+    if (hoyosQueFaltanDelPrimerNueve(round, widget.p1.id, widget.p2.id)
+        .isNotEmpty) {
+      return const SizedBox.shrink();
+    }
 
-    final firstNineDone = _firstNineComplete(round);
-    if (!firstNineDone && !_carryAlreadyApplied) return const SizedBox.shrink();
-
+    final cfg = widget.nassauModules.first.nassau;
     final n1 = widget.p1.shortName;
     final n2 = widget.p2.shortName;
+    final margen = _marcadorF9;
+    final quien = _solicitante;
 
-    // Calcular factor por defecto (×2) y qué apuestas se verían afectadas
-    final defaultFactor = 2.0;
-    final nassauDesc = widget.nassauModules.map((m) {
-      final cfg = m.nassau;
-      final b = cfg.effectiveBackValue;
-      final tot = cfg.effectiveTotalValue;
-      return 'Nassau B9: \$${b.toStringAsFixed(0)}  ·  18H: \$${tot.toStringAsFixed(0)}';
-    }).join('\n');
-    final matchDesc = widget.matchPressModules.map((m) {
-      final cfg = m.matchAutoPress;
-      final p1Id = widget.p1.id;
-      final p2Id = widget.p2.id;
-      final alreadyApplied = cfg.carryAppliedForPair(p1Id, p2Id);
-      final currentFactor  = cfg.carryFactorForPair(p1Id, p2Id);
-      final mv = alreadyApplied ? cfg.matchValue * currentFactor : cfg.matchValue * defaultFactor;
-      final pv = alreadyApplied ? cfg.pressValue * currentFactor : cfg.pressValue * defaultFactor;
-      return 'Match: \$${mv.toStringAsFixed(0)}  ·  Press: \$${pv.toStringAsFixed(0)}';
-    }).join('\n');
-
-    if (_carryAlreadyApplied) {
-      // Panel indicador: carry ya activo
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: GCard(child: Row(children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: BoxDecoration(
-              color: t.accent.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: t.accent.withValues(alpha: 0.4)),
-            ),
-            child: Text('×2', style: TextStyle(color: t.accent, fontWeight: FontWeight.w900, fontSize: 14)),
-          ),
-          const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('CARRY ACTIVO', style: TextStyle(color: t.accent, fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 0.8)),
-            const SizedBox(height: 2),
-            Text('Las apuestas de la 2ª vuelta están duplicadas', style: TextStyle(color: t.sub, fontSize: 11)),
-          ])),
-        ])),
+    // ── Ya se pidió: se cuenta lo que hay en juego ───────────────────────────
+    if (quien != null) {
+      final nombre = quien == widget.p1.id ? n1 : n2;
+      return _tarjeta(
+        t: t,
+        color: t.accent,
+        icono: GolfIcons.duelo,
+        titulo: 'CARRY PEDIDO',
+        // Los dos números que hacen falta para saber qué se juega: cuántas
+        // apuestas y con qué ventaja cada una.
+        cuerpo: 'Se juegan DOS apuestas sobre la 2ª vuelta, de '
+            '\$${cfg.backValue.toStringAsFixed(0)} cada una: la normal, y la '
+            'del carry con un golpe más de ventaja para $nombre.',
       );
     }
 
-    // ── El F9 no quedó empatado: no hay nada que trasladar ────────────────
-    final ganador = _ganadorDelPrimerNueve;
-    if (ganador != null) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: GCard(
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(Icons.currency_exchange, color: t.divider, size: 16),
-          const SizedBox(width: 8),
-          Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                Text('CARRY',
-                    style: TextStyle(
-                        color: t.divider,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 10,
-                        letterSpacing: 0.8)),
-                const SizedBox(height: 3),
-                Text(
-                    'No aplica: la primera vuelta la ganó $ganador, así que no '
-                    'hay nada que trasladar. El carry solo existe cuando el '
-                    'segmento anterior queda empatado.',
-                    style: TextStyle(color: t.sub, fontSize: 11, height: 1.3)),
-              ])),
-        ])),
+    // ── El F9 empató: el carry natural, y no hay nada que pedir ─────────────
+    if (margen == 0) {
+      return _tarjeta(
+        t: t,
+        color: t.profit,
+        icono: Icons.currency_exchange,
+        titulo: 'CARRY NATURAL',
+        cuerpo: 'La primera vuelta quedó empatada, así que sus '
+            '\$${cfg.frontValue.toStringAsFixed(0)} pasan a la segunda: el B9 '
+            'vale \$${(cfg.backValue + cfg.frontValue).toStringAsFixed(0)}. '
+            'El Total 18 sigue en '
+            '\$${cfg.totalValue.toStringAsFixed(0)} — es una apuesta aparte.',
       );
     }
+    if (margen == null) return const SizedBox.shrink();
 
-    // Panel con botón para activar carry
+    // ── Lo ganó alguien: lo puede pedir EL QUE VA PERDIENDO ─────────────────
+    //
+    // Es la regla de Carlos: «el carry solo lo puedo pedir si voy perdiendo».
+    // El botón sale con el nombre de quien puede, y no como una elección entre
+    // los dos: una opción que no se puede tomar es peor que no ofrecerla.
+    // Del motor, no de una cuenta propia: la regla de quién puede pedirlo se
+    // decide en un solo sitio y se prueba allí.
+    final perdedorId = BetEngine.quienPuedePedirCarry(
+        round, widget.p1.id, widget.p2.id, widget.nassauModules.first);
+    if (perdedorId == null) return const SizedBox.shrink();
+    final perdedor = perdedorId == widget.p1.id ? n1 : n2;
+    final ganador = perdedorId == widget.p1.id ? n2 : n1;
+
+    // La ventaja que ese jugador tiene HOY en el B9, para poder decir «3 → 4».
+    final ventaja = BetEngine.strokesP1ReceivesFromP2(
+        round, perdedorId, perdedorId == widget.p1.id ? widget.p2.id : widget.p1.id);
+    final tiene = ventaja > 0 ? ventaja.round() : 0;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      child: GCard(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(Icons.currency_exchange, color: t.accent, size: 16),
+          Icon(GolfIcons.duelo, color: t.accent, size: 16),
           const SizedBox(width: 8),
-          Expanded(child: Text('CARRY', style: TextStyle(color: t.sub, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.8))),
+          Expanded(
+              child: Text('CARRY',
+                  style: TextStyle(
+                      color: t.sub,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 10,
+                      letterSpacing: 0.8))),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(
@@ -3932,36 +3920,41 @@ class _CarryPanelState extends State<_CarryPanel> {
               borderRadius: BorderRadius.circular(6),
               border: Border.all(color: t.accent.withValues(alpha: 0.3)),
             ),
-            child: Text('Al entrar la 2ª vuelta', style: TextStyle(color: t.accent, fontSize: 9, fontWeight: FontWeight.w700)),
+            child: Text('Solo el que va perdiendo',
+                style: TextStyle(
+                    color: t.accent, fontSize: 9, fontWeight: FontWeight.w700)),
           ),
         ]),
         const SizedBox(height: 10),
         Text(
-          '$n1 o $n2 pueden pedir carry: las apuestas de la 2ª vuelta se duplican.',
-          style: TextStyle(color: t.sub, fontSize: 11),
+          '$ganador ganó la primera vuelta. $perdedor puede pedir carry: se '
+          'juega una SEGUNDA apuesta de '
+          '\$${cfg.backValue.toStringAsFixed(0)} sobre los mismos nueve hoyos, '
+          'en la que recibe ${tiene + 1} golpe${tiene + 1 == 1 ? '' : 's'} de '
+          'ventaja en vez de $tiene.',
+          style: TextStyle(color: t.sub, fontSize: 11, height: 1.35),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'La apuesta normal sigue jugándose igual. Son dos, no una a doble '
+          'precio.',
+          style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3),
         ),
         const SizedBox(height: 10),
-        // Preview de los nuevos valores
-        if (nassauDesc.isNotEmpty) ...[
-          Text(nassauDesc, style: TextStyle(color: t.text, fontSize: 11, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-        ],
-        if (matchDesc.isNotEmpty) ...[
-          Text(matchDesc, style: TextStyle(color: t.text, fontSize: 11, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 10),
-        ],
-        // Botón
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            icon: const Text('×2', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
-            label: const Text('Activar Carry', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-            onPressed: () => _showCarryDialog(context, defaultFactor, n1, n2),
+            icon: Icon(GolfIcons.duelo, size: GolfIcons.juntoAValor),
+            label: Text('$perdedor pide carry',
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 13)),
+            onPressed: () => widget.onPedirCarry(perdedorId),
             style: ElevatedButton.styleFrom(
               backgroundColor: t.accent,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 11),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
           ),
         ),
@@ -3969,64 +3962,35 @@ class _CarryPanelState extends State<_CarryPanel> {
     );
   }
 
-  void _showCarryDialog(BuildContext context, double defaultFactor, String n1, String n2) {
-    final t = widget.t;
-    final ctrl = TextEditingController(text: defaultFactor.toStringAsFixed(0));
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: t.card,
-        title: Row(children: [
-          Icon(GolfIcons.rapido, size: GolfIcons.juntoATitulo, color: t.accent),
+  Widget _tarjeta({
+    required GolfTheme t,
+    required Color color,
+    required IconData icono,
+    required String titulo,
+    required String cuerpo,
+  }) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: GCard(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(icono, color: color, size: 16),
           const SizedBox(width: 8),
-          Text('Carry', style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 17)),
-        ]),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(
-            'Las apuestas de la 2ª vuelta (Back 9 y Match total) se multiplican por el factor indicado.',
-            style: TextStyle(color: t.sub, fontSize: 13),
-          ),
-          const SizedBox(height: 16),
-          Text('FACTOR DE MULTIPLICACIÓN', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
-          const SizedBox(height: 8),
-          TextField(
-            controller: ctrl,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            textAlign: TextAlign.center,
-            style: TextStyle(color: t.text, fontWeight: FontWeight.w800, fontSize: 22),
-            decoration: InputDecoration(
-              prefixText: '×',
-              prefixStyle: TextStyle(color: t.accent, fontWeight: FontWeight.w800, fontSize: 18),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              fillColor: t.surface, filled: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.divider)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.divider)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.accent, width: 1.5)),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text('Por defecto ×2 (dobla todas las apuestas de la 2ª vuelta)', style: TextStyle(color: t.sub, fontSize: 10)),
-        ]),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancelar', style: TextStyle(color: t.sub)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final factor = double.tryParse(ctrl.text) ?? defaultFactor;
-              if (factor > 0) {
-                widget.onApplyCarry(factor);
-                Navigator.pop(ctx);
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: t.accent, foregroundColor: Colors.white),
-            child: Text('Confirmar Carry ×${ctrl.text}', style: const TextStyle(fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-  }
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(titulo,
+                    style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 10,
+                        letterSpacing: 0.8)),
+                const SizedBox(height: 3),
+                Text(cuerpo,
+                    style: TextStyle(color: t.sub, fontSize: 11, height: 1.35)),
+              ])),
+        ])),
+      );
 }
 
 // ── Hoyo a hoyo + columna Skins ───────────────────────────────────────────────
