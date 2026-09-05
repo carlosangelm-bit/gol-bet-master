@@ -830,3 +830,62 @@ importe), y **no, el match no se convierte en $200** (solo toca el B9).
 **Una ronda guardada con el multiplicador pierde el carry** y hay que volver a
 pedirlo — dos toques. Sin migración, a propósito: traducir un multiplicador a
 una ventaja se inventaría un golpe que nadie pactó.
+
+---
+
+# La línea «5 3 1»
+
+## Qué es
+
+Cada número es una apuesta viva y todas avanzan a la vez. Cada presión que se
+abre añade un número al final, entrando en 0:
+
+```
+Gana el 1º   1
+Gana el 2º   2 0      ← nace una presión
+Gana el 3º   3 1
+Gana el 4º   4 2 0    ← nace otra
+Gana el 5º   5 3 1
+```
+
+**Una línea dice tres cosas**: cuántas apuestas hay vivas, por cuánto va cada
+una, y —por su longitud— cuántas presiones se abrieron.
+
+**No cambia ningún cálculo.** Cada número es *el mismo* que enseña su tarjeta en
+el bloque de presiones, leído del mismo sitio. Hay una prueba que los compara
+número a número.
+
+## Qué mirar
+
+1. **La cabecera del duelo** dice `F9 +5 +3 +1 · B9 +2 0`, donde antes decía
+   *«CAM +2 · F9: AS · B9: CAM 2UP · 3 presiones activas»*.
+2. **Los bloques de abajo no cambian** — ni el de NASSAU ni los de PRESIONES.
+3. **El subrótulo dice de qué hoyo salió cada presión**: `Presiones desde H3 ·
+   H6 · H12`, en el mismo orden que los números de la línea.
+4. **Míralo desde el otro jugador**: los mismos hoyos leídos desde Dylan salen
+   `F9 −5 −3 −1`.
+5. **Con el duelo empatado** también sale (`F9 0`), no solo cuando alguien va
+   arriba.
+
+## Las tres determinaciones
+
+- **Por segmento**, una línea por nueve. El «5 3 1» clásico es de una vuelta de
+  nueve, y encaja con la apuesta: una presión nace dentro de un segmento y muere
+  al acabarlo. **El Total 18 no entra**: no tiene cadena de presiones, así que
+  nunca añadiría ni quitaría un número. Se queda en su bloque.
+- **Una presión recién abierta y una empatada a mitad son el mismo `0`**, a
+  propósito: en la apuesta significan lo mismo —nadie va arriba—. Lo que las
+  separa es *historia*, no estado, y va en el subrótulo.
+- **Con signo y desde quien mira.** El «5 3 1» del campo lo canta el que gana y
+  da por hecho que la misma persona va arriba en las tres. No siempre: una
+  presión **nace para el que va perdiendo**, y puede ganarla. Entonces la línea
+  real es `+1 −1`, y sin signo no hay forma de escribirla. Quien va ganando en
+  las tres lee `+5 +3 +1`, que en voz alta sigue siendo «cinco, tres, uno».
+
+## Un matiz que la línea hereda
+
+Mientras el nueve se juega, cada presión enseña su marcador **en vivo**; cuando
+el nueve termina, el que **se liquidó** —una presión cierra donde nace la
+siguiente—. Así que `+5 +3 +1` a mitad puede quedar en `+5 +1 +1` al cerrar. No
+son dos cuentas: son dos momentos, y el bloque de al lado dice exactamente lo
+mismo.

@@ -795,6 +795,60 @@ class BetEngine {
     );
   }
 
+  /// Las líneas del duelo, una por nueve jugado. Ver [LineaDelDuelo].
+  ///
+  /// ── Por segmento, y no una sola de toda la vuelta ─────────────────────────
+  ///
+  /// El «5 3 1» clásico es de una vuelta de NUEVE, y así lo describe Carlos: de
+  /// sus tres números, el primero es el F9. Y encaja con cómo funciona la
+  /// apuesta: una presión nace dentro de un segmento y muere al acabarlo, así
+  /// que la cadena «segmento + sus presiones» ES la unidad. Juntar las dos
+  /// vueltas en una línea mezclaría apuestas que ni siquiera coinciden en el
+  /// tiempo.
+  ///
+  /// ── Y el Total 18 no entra ────────────────────────────────────────────────
+  ///
+  /// Es una apuesta viva, sí, pero no tiene cadena de presiones: nunca añadiría
+  /// un número ni lo quitaría, y metida en la línea la haría ilegible sin decir
+  /// nada que la línea no diga ya. Se queda en su bloque, que no cambia.
+  static List<LineaDelDuelo> lineasDelDuelo(
+      Round round, String p1Id, String p2Id, BetModuleInstance mod) {
+    final st = nassauPressLiveStatus(round, p1Id, p2Id, mod);
+    final seg = segmentsOf(round);
+
+    // ── La guarda de `pressEnabled` es del LLAMADOR ──────────────────────────
+    //
+    // `nassauPressLiveStatus` detecta presiones mire o no la configuración: los
+    // tres sitios que ya lo usaban preguntan `mod.pressEnabled` antes de
+    // llamarlo. Sin esta línea, un grupo que NO juega presiones vería aparecer
+    // números en su línea — apuestas que nadie abrió.
+    final presionesDe = mod.nassau.pressEnabled
+        ? (List<NassauPress> l) => l
+        : (List<NassauPress> _) => const <NassauPress>[];
+
+    LineaDelDuelo? linea(
+        String etiqueta, int marcador, int jugados, List<NassauPress> presiones) {
+      if (jugados == 0) return null;
+      return LineaDelDuelo(
+        etiqueta: etiqueta,
+        // El segmento primero, y las presiones por orden de nacimiento: es el
+        // orden en el que se cantan, y el que hace que la última sea la nueva.
+        numeros: [marcador, ...presionesDe(presiones).map((p) => p.score)],
+        jugados: jugados,
+      );
+    }
+
+    if (seg.singleNine) {
+      // Una sola vuelta: la etiqueta sobra, no hay con qué confundirla.
+      final l = linea('', st.front, st.frontPlayed, st.frontPresses);
+      return l == null ? const [] : [l];
+    }
+    return [
+      linea('F9', st.front, st.frontPlayed, st.frontPresses),
+      linea('B9', st.back, st.backPlayed, st.backPresses),
+    ].whereType<LineaDelDuelo>().toList();
+  }
+
   /// Quién puede PEDIR carry en esta pareja, o null si nadie.
   ///
   /// ── «Solo lo puedo pedir si voy perdiendo» ────────────────────────────────
@@ -3698,6 +3752,71 @@ class NassauLiveStatus {
     this.holesWonP1 = 0,
     this.holesWonP2 = 0,
   });
+}
+
+/// La línea del argot: «quedamos 5 3 1».
+///
+/// ── Qué dice, y por qué una línea dice tres cosas ───────────────────────────
+///
+/// Cada número es una apuesta VIVA de ese nueve, en el orden en que nacieron:
+/// primero el segmento, después cada presión. Todas avanzan a la vez, y cada
+/// presión que se abre añade un número al final entrando en 0:
+///
+///     Gana el 1º   1
+///     Gana el 2º   2 0      ← nace una presión
+///     Gana el 3º   3 1
+///     Gana el 4º   4 2 0    ← nace otra
+///     Gana el 5º   5 3 1
+///
+/// De un vistazo: cuántas apuestas hay vivas, por cuánto va cada una y —por la
+/// longitud— cuántas presiones se abrieron.
+///
+/// Los datos ya estaban todos; lo que faltaba era decirlos como se dicen en el
+/// campo. Esto no cambia ningún cálculo: cada número es EL MISMO que enseña su
+/// tarjeta en el bloque de presiones, leído del mismo sitio.
+///
+/// Y por eso hereda su matiz: mientras el nueve se juega, cada presión enseña su
+/// marcador EN VIVO; cuando el nueve termina, el que se liquidó —una presión
+/// cierra donde nace la siguiente—. Son dos momentos de la misma apuesta, no dos
+/// cuentas distintas.
+class LineaDelDuelo {
+  /// 'F9' / 'B9', o vacío en una ronda de nueve, donde no hay con qué
+  /// confundirla.
+  final String etiqueta;
+
+  /// Un número por apuesta viva, **en perspectiva de p1**: positivo = p1 arriba.
+  ///
+  /// El primero es el segmento; los demás, sus presiones por orden de
+  /// nacimiento.
+  final List<int> numeros;
+
+  /// Hoyos jugados del segmento. Con 0 la línea todavía no existe.
+  final int jugados;
+
+  const LineaDelDuelo({
+    required this.etiqueta,
+    required this.numeros,
+    required this.jugados,
+  });
+
+  /// Cuántas presiones se abrieron. Es la longitud menos el segmento.
+  int get presiones => numeros.length - 1;
+
+  /// La línea escrita.
+  ///
+  /// ── Por qué va CON SIGNO y no «5 3 1» a secas ─────────────────────────────
+  ///
+  /// El «5 3 1» del campo lo canta el que va ganando, y da por hecho que la
+  /// misma persona va arriba en las tres. No siempre: una presión NACE para el
+  /// que va perdiendo, y puede ganarla. Entonces la línea real es «+5 −2», y sin
+  /// signo no hay forma de escribirla — habría que nombrar a un jugador por
+  /// número, que es exactamente el bloque que ya existe.
+  ///
+  /// Con signo hay UN formato para los dos casos, y va desde quien mira, como
+  /// todo lo demás en la app. Quien va ganando en las tres lee «+5 +3 +1», que
+  /// en voz alta sigue siendo «cinco, tres, uno».
+  String get texto =>
+      numeros.map((n) => n == 0 ? '0' : (n > 0 ? '+$n' : '−${n.abs()}')).join(' ');
 }
 
 class NassauPress {

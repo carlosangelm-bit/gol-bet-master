@@ -1903,7 +1903,7 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
         behavior: HitTestBehavior.opaque,
         child: Stack(
           children: [
-            _MatchStatusCard(
+            MatchStatusCard(
               round: round, p1: p1, p2: p2, t: t,
               skinsModules:      skinsModules,
               nassauModules:     nassauModules,
@@ -2078,7 +2078,13 @@ class _PlayerSelector extends StatelessWidget {
 // ── Match / Skins Status Card ─────────────────────────────────────────────────
 // Premium hero card: gradiente según estado, score grande centrado,
 // avatares con nombres, pills secundarias (thru, carry, dinero).
-class _MatchStatusCard extends StatelessWidget {
+/// La cabecera del duelo.
+///
+/// No es privada por el mismo motivo que [CarryPanel]: el camino real para
+/// llegar aquí pasa por la pantalla y por Firestore, así que ningún test de
+/// widget alcanzaba el renglón donde vive la línea «5 3 1». Montarla suelta con
+/// una ronda cualquiera es barato.
+class MatchStatusCard extends StatelessWidget {
   final Round round;
   final Player p1, p2;
   final GolfTheme t;
@@ -2086,7 +2092,7 @@ class _MatchStatusCard extends StatelessWidget {
   final List<BetModuleInstance> nassauModules;
   final List<BetModuleInstance> matchPressModules;
   final List<BetModuleInstance> oyesModules;
-  const _MatchStatusCard({
+  const MatchStatusCard({
     required this.round, required this.p1, required this.p2, required this.t,
     required this.skinsModules, required this.nassauModules,
     this.matchPressModules = const [],
@@ -2112,8 +2118,6 @@ class _MatchStatusCard extends StatelessWidget {
   Widget _buildNassauCard(BuildContext context) {
     final mod  = nassauModules.first;
     final st   = BetEngine.nassauLiveStatus(round, p1.id, p2.id, mod);
-    final n1   = p1.shortName;
-    final n2   = p2.shortName;
     final lastH       = GameEngine.lastCompletedHole(round, [p1.id, p2.id]);
     final playedCount = st.frontPlayed + st.backPlayed;
 
@@ -2123,17 +2127,19 @@ class _MatchStatusCard extends StatelessWidget {
     final holesP2 = st.holesWonP2;
     final lead    = holesP1 - holesP2;  // positivo = p1 va arriba
 
-    // ── Estado de cada segmento (para el diffLabel) ───────────────────────────
-    final fLabel = st.frontPlayed == 0
-        ? 'F9: –'
-        : st.front == 0
-            ? 'F9: AS'
-            : 'F9: ${st.front > 0 ? n1 : n2} ${st.front.abs()}UP';
-    final bLabel = st.backPlayed == 0
-        ? 'B9: –'
-        : st.back == 0
-            ? 'B9: AS'
-            : 'B9: ${st.back > 0 ? n1 : n2} ${st.back.abs()}UP';
+    // ── LA LÍNEA: «quedamos 5 3 1» ───────────────────────────────────────────
+    //
+    // Sustituye a «F9: AS · B9: CAM 2UP», que decía LO MISMO con otro
+    // vocabulario y sin las presiones: había que leer el bloque de abajo para
+    // saber cuántas apuestas seguían vivas. La línea lo dice de un vistazo, y en
+    // las palabras que se usan en el campo mientras alguien cobra.
+    //
+    // Va en perspectiva de p1, que es quien mira: la tarjeta ya coloca al
+    // jugador propio en esa posición.
+    final lineas = BetEngine.lineasDelDuelo(round, p1.id, p2.id, mod);
+    final linea = lineas
+        .map((l) => l.etiqueta.isEmpty ? l.texto : '${l.etiqueta} ${l.texto}')
+        .join('  ·  ');
 
     // ── Color y etiqueta basados en hoyos ganados (misma lógica que skins) ────
     final Color accentColor;
@@ -2150,24 +2156,35 @@ class _MatchStatusCard extends StatelessWidget {
       accentColor = const Color(0xFF1565C0);
       gradColors  = const [Color(0xFF1A3A6B), Color(0xFF0D1F3C)];
       stateWord   = 'EMPATADO';
-      diffLabel   = '$fLabel  ·  $bLabel';
+      diffLabel   = linea;
     } else if (lead > 0) {
       accentColor = const Color(0xFF35C759);
       gradColors  = const [Color(0xFF1F8F3A), Color(0xFF0E3D1B)];
       stateWord   = 'GANANDO';
-      diffLabel   = '$n1 +$lead  ·  $fLabel  ·  $bLabel';
+      diffLabel   = linea;
     } else {
       accentColor = const Color(0xFFFF453A);
       gradColors  = const [Color(0xFF7A1E1E), Color(0xFF2A0E0E)];
       stateWord   = 'PERDIENDO';
-      diffLabel   = '$n2 +${lead.abs()}  ·  $fLabel  ·  $bLabel';
+      diffLabel   = linea;
     }
 
-    // subLabel: presiones activas
+    // ── El subrótulo: DÓNDE nació cada presión ───────────────────────────────
+    //
+    // Decía «3 presiones activas», y eso la línea ya lo dice por su longitud:
+    // repetirlo es gastar el único renglón que queda.
+    //
+    // Lo que la línea NO dice es cuál acaba de nacer. Una presión recién abierta
+    // entra en 0, y una empatada a mitad también es 0 — y son el mismo 0 a
+    // propósito: en la apuesta significan lo mismo, que nadie va arriba. Lo que
+    // las separa es HISTORIA, no estado, y va aquí: el hoyo de cada una, en el
+    // mismo orden que los números de la línea.
     String? subLabel;
-    final totalPresses = st.presses.length;
-    if (totalPresses > 0) {
-      subLabel = '$totalPresses press${totalPresses > 1 ? 'iones' : 'ión'} activa${totalPresses > 1 ? 's' : ''}';
+    // `st.presses` viene ya en el orden F9 y luego B9, el mismo en el que la
+    // línea coloca sus números.
+    final nacimientos = [for (final p in st.presses) 'H${p.startHole}'];
+    if (nacimientos.isNotEmpty) {
+      subLabel = 'Presiones desde ${nacimientos.join(' · ')}';
     }
 
     return _PremiumResultBadge(
