@@ -7,20 +7,24 @@
 //
 // Cuando una pareja tiene varias apuestas, se elige UNA para representar el
 // duelo. El criterio es el DINERO en juego, tomado del ledger: es la única
-// unidad común entre tipos. Match + Press, Nassau y Skins compiten los tres en
-// la misma comparación.
+// unidad común entre tipos. Nassau y Skins compiten en la misma comparación.
+//
+// Fueron tres: Match + Press estaba aquí y se retiró por ser un Nassau sin
+// partición en vueltas. Tenerlos separados obligaba a este motor a elegir cuál
+// de los dos representaba el duelo cuando la partida llevaba ambos, que es un
+// desempate que no describía nada real.
 //
 // A igualdad de importe decide un orden declarado —match play antes que hoyo
 // suelto: ver [_ordenDesempate]— y no el orden en que estén escritas las ramas.
 //
 // Por qué NO se comparan los márgenes: cada tipo mide el suyo en su propia
-// unidad. Nassau cuenta segmentos ganados (máx. 3); Match contaba asientos del
-// ledger, de modo que un match con dos presses daba 3. Compararlos era comparar
-// segmentos contra filas, y el resultado era casualidad. Por eso [DuelResult]
-// no expone un `absMargin` y su [DuelResult.margin] vale solo por el signo.
+// unidad. Nassau cuenta segmentos ganados (máx. 3); el desaparecido Match
+// contaba asientos del ledger, de modo que un match con dos presses daba 3.
+// Compararlos era comparar segmentos contra filas, y el resultado era
+// casualidad. Por eso [DuelResult] no expone un `absMargin` y su
+// [DuelResult.margin] vale solo por el signo.
 //
 // Cada apuesta deduce su ganador de sus propios entries:
-//   · Match + Press → signo del neto del match principal
 //   · Nassau        → segmentos ganados (front / back / total)
 //   · Skins         → skins acumuladas
 // En empate perfecto no hay ajuste.
@@ -190,8 +194,12 @@ class SlidingAdjustmentEngine {
   /// defecto. Es la dirección segura —ganar en medal, putts, oyes, unidades,
   /// snake, rabbit o wolf NO es ganar el duelo— y es la regla que se fijó
   /// jugando: el sliding solo se mueve con el match o los skins.
+  ///
+  /// Match + Press estaba aquí y se fue con él: era un Nassau sin partición en
+  /// vueltas, y mantener los dos obligaba a este motor a elegir cuál de los dos
+  /// representaba el duelo cuando la partida llevaba ambos. Ahora no hay que
+  /// elegir.
   static const tiposConDuelo = {
-    BetModuleType.matchAutoPress,
     BetModuleType.nassau,
     BetModuleType.skins,
   };
@@ -382,17 +390,12 @@ class SlidingAdjustmentEngine {
         ? pairEntries.where((e) => e.betType == t).toList()
         : const [];
 
-    final matchEntries  = de(BetModuleType.matchAutoPress);
     final nassauEntries = de(BetModuleType.nassau);
     final skinsEntries  = de(BetModuleType.skins);
 
-    DuelResult? matchResult;
     DuelResult? nassauResult;
     DuelResult? skinsResult;
 
-    if (matchEntries.isNotEmpty) {
-      matchResult = _duelFromMatchEntries(p1Id, p2Id, matchEntries);
-    }
     if (nassauEntries.isNotEmpty) {
       nassauResult = _duelFromNassauEntries(p1Id, p2Id, nassauEntries);
     }
@@ -411,7 +414,7 @@ class SlidingAdjustmentEngine {
     // Skins entra aquí también. Antes quedaba fuera del if y solo aparecía si
     // no había ninguno de los otros dos, así que unos Skins de $500 perdían
     // contra un Nassau de $60 por estar después en la cadena de ??.
-    final candidatos = [matchResult, nassauResult, skinsResult]
+    final candidatos = [nassauResult, skinsResult]
         .whereType<DuelResult>()
         .toList();
     if (candidatos.isEmpty) return null;
@@ -485,85 +488,10 @@ class SlidingAdjustmentEngine {
   /// ventaja trata de equilibrar el enfrentamiento directo, y ahí un match
   /// describe mejor la relación entre dos jugadores que un recuento de skins.
   static int _ordenDesempate(BetModuleType t) => switch (t) {
-        BetModuleType.matchAutoPress => 0,
         BetModuleType.nassau => 1,
         BetModuleType.skins => 2,
         _ => 3,
       };
-
-  // ── Match: balancear amount recibido vs pagado ──────────────────────────────
-  // El label del match principal contiene 'Match H' o 'Match' sin número de press.
-  // Las presiones contienen 'Press'.
-  static DuelResult _duelFromMatchEntries(
-      String p1Id, String p2Id, List<LedgerEntry> entries) {
-    // Separar match principal (reason empieza con 'Match' y no contiene 'Press')
-    // vs presiones. Usamos solo el match principal para determinar el ganador.
-    final primaryEntries = entries.where((e) {
-      final r = e.reason.toLowerCase();
-      return r.contains('match') && !r.contains('press');
-    }).toList();
-
-    // Sin match principal ganado, es EMPATE. No se cae a las presiones.
-    //
-    // Antes se usaban TODAS las entradas cuando no había match principal, así
-    // que un match empatado en hoyos con una presión ganada declaraba ganador:
-    // el sliding se movía por dinero de presiones y no por el resultado.
-    //
-    // Una presión es dinero, no resultado deportivo. Si el match acabó AS, el
-    // sliding no se toca — que es justo lo que separa "ajustar por el resultado"
-    // de "ajustar por el dinero".
-    if (primaryEntries.isEmpty) {
-      return DuelResult(
-        playerAId: p1Id, playerBId: p2Id,
-        margin: 0,
-        netAmount: _netoEntre(p1Id, entries),
-        betType: BetModuleType.matchAutoPress,
-        sourceBet: 'Match empatado',
-      );
-    }
-    final relevant = primaryEntries;
-
-    double p1net = 0; // cuánto recibió p1 (- cuánto pagó)
-    for (final e in relevant) {
-      if (e.toPlayerId   == p1Id) p1net += e.amount;
-      if (e.fromPlayerId == p1Id) p1net -= e.amount;
-    }
-
-    // Solo el SIGNO. Antes se contaban asientos del ledger y se llamaban
-    // "matches ganados": un match con dos presses daba margen 3, que además se
-    // comparaba contra los segmentos de Nassau. Filas contra segmentos.
-    //
-    // Quién ganó sale del neto, que sí es un hecho. Cuánto ganó, en unidades
-    // de match, no se puede saber desde el ledger, así que no se inventa.
-    final margin = p1net > 0.001 ? 1 : p1net < -0.001 ? -1 : 0;
-
-    // Dinero en juego: sobre TODOS los entries, presses incluidas.
-    //
-    // El ganador se decide con `relevant` —solo el match principal— pero el
-    // importe no puede ignorar las presiones: son dinero real entre estos dos,
-    // y dejarlas fuera subestimaría el Match justo en la comparación que
-    // decide qué apuesta representa el duelo.
-    var neto = 0.0;
-    for (final e in entries) {
-      if (e.toPlayerId   == p1Id) neto += e.amount;
-      if (e.fromPlayerId == p1Id) neto -= e.amount;
-    }
-
-    final label = margin > 0
-        ? 'Match (gana ${entries.length > 1 ? "con presiones" : "el match"})'
-        : margin < 0
-            ? 'Match (pierde ${entries.length > 1 ? "con presiones" : "el match"})'
-            : 'Match (AS)';
-
-    return DuelResult(
-      playerAId: p1Id,
-      playerBId: p2Id,
-      margin:    margin,
-      netAmount: neto.abs(),
-      betType:   BetModuleType.matchAutoPress,
-      sourceBet: label,
-    );
-  }
 
   // ── Nassau: contar segmentos ganados ─────────────────────────────────────────
   // Cada entry de Nassau corresponde a un segmento (Front 9, Back 9, Total 18).

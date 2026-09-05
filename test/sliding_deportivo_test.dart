@@ -232,15 +232,6 @@ void main() {
 // que un match empatado con una presión ganada declaraba ganador. Una presión es
 // dinero, no resultado deportivo.
 void _empateConDinero() {
-  /// Entradas de un match: el principal empatado —sin asiento— y una presión
-  /// ganada por p1. Es la forma exacta que produce el motor.
-  List<LedgerEntry> matchEmpatadoConPress() => [
-        LedgerEntry(
-            fromPlayerId: b1, toPlayerId: a1, amount: 50,
-            betType: BetModuleType.matchAutoPress,
-            reason: 'Press H10–H18'),
-      ];
-
   /// Nassau con los segmentos repartidos 1–1 y una presión ganada por p1.
   List<LedgerEntry> nassauEmpatadoConPress() => [
         LedgerEntry(
@@ -255,21 +246,6 @@ void _empateConDinero() {
       ];
 
   group('el empate en hoyos NO mueve la ventaja', () {
-    test('match sin principal ganado es empate, aunque la presión pague', () {
-      // El módulo tiene que ser de match: el gate por tipo filtra las entradas
-      // de una apuesta que esta pareja no juega uno contra uno.
-      final r = _round([_individual(BetModuleType.matchAutoPress, todos)]);
-      final d = SlidingAdjustmentEngine.computeDuelForTest(
-          p1Id: a1, p2Id: b1, round: r,
-          allEntries: matchEmpatadoConPress());
-      expect(d, isNotNull);
-      expect(d!.margin, 0, reason: 'la presión no decide el match');
-      expect(d.isTie, isTrue);
-      // Y el dinero se conserva: sirve para elegir qué apuesta representa el
-      // duelo, que es otra pregunta que quién ganó.
-      expect(d.netAmount, 50);
-    });
-
     test('nassau empatado a segmentos es empate, aunque la presión pague', () {
       final r = _round([_individual(BetModuleType.nassau, todos)]);
       final d = SlidingAdjustmentEngine.computeDuelForTest(
@@ -302,15 +278,14 @@ void _empateConDinero() {
 
   group('winnerId con empate', () {
     test('devuelve null, no al segundo jugador', () {
-      // Antes daba playerBId con margin 0: un empate declaraba ganador al
-      // segundo. El consumidor mira isTie primero y por eso no se veía, pero
-      // cualquier otro que lo lea directo se lo come.
-      final r = _round([_individual(BetModuleType.matchAutoPress, todos)]);
+      // Un empate no tiene ganador. Devolver al segundo sería inventarse uno.
+      final r = _round([_individual(BetModuleType.nassau, todos)]);
       final d = SlidingAdjustmentEngine.computeDuelForTest(
           p1Id: a1, p2Id: b1, round: r,
-          allEntries: matchEmpatadoConPress());
-      expect(d!.winnerId, isNull);
-      expect(d.loserId, isNull);
+          allEntries: nassauEmpatadoConPress());
+      expect(d, isNotNull);
+      expect(d!.margin, 0);
+      expect(d.winnerId, isNull);
     });
   });
 }

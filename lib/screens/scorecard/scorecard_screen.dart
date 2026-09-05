@@ -1180,8 +1180,6 @@ class _OneVOneViewState extends State<_OneVOneView> {
           // Usar hoyos ganados (mismo indicador que el badge visual)
           final nst = BetEngine.nassauLiveStatus(round, p1.id, p2.id, m);
           matchStatus = nst.holesWonP1 - nst.holesWonP2;
-        } else if (m.type == BetModuleType.matchAutoPress) {
-          matchStatus = GameEngine.matchPlayStatus(round, p1.id, p2.id, true);
         }
       }
     }
@@ -1363,7 +1361,7 @@ class _OneVOneViewState extends State<_OneVOneView> {
   ///
   /// Estrategia en orden de prioridad:
   ///  1. BetGroups con exactamente 2 jugadores → duelo directo.
-  ///  2. Módulos 1v1 (nassau / matchAutoPress) con participantIds de 2
+  ///  2. Módulos 1v1 (nassau) con participantIds de 2
   ///     dentro de grupos multi-jugador → cada par de participantIds = un duelo.
   ///  3. BetGroups con más de 2 jugadores → round-robin entre todos ellos.
   ///  4. Fallback: round-robin entre todos los displayPlayers de la ronda.
@@ -1416,8 +1414,7 @@ class _OneVOneViewState extends State<_OneVOneView> {
     // ── Prioridad 2: módulos nassau/match con participantIds de exactamente 2 ─
     for (final g in round.betGroups) {
       for (final m in g.modules) {
-        if (m.type == BetModuleType.nassau ||
-            m.type == BetModuleType.matchAutoPress) {
+        if (m.type == BetModuleType.nassau) {
           final pids = m.effectivePids(g.playerIds);
           if (pids.length == 2) {
             addPair(pids[0], pids[1]);
@@ -1481,10 +1478,8 @@ class _OneVOneViewState extends State<_OneVOneView> {
   /// carry es un golpe más de ventaja **para él**, y con la clave del par sola
   /// no se sabría de quién es ese golpe.
   ///
-  /// Solo va al Nassau. Match + Press es una apuesta sobre los dieciocho sin
-  /// primer y segundo nueve: no hay «entrar en la 2ª vuelta» donde pedir la
-  /// paralela, y la apuesta que nace de ir por detrás ya existe allí con su
-  /// nombre — es la presión.
+  /// Y no se ofrece cuando la partida es un match sobre los 18 —los dos nueves a
+  /// cero—: no hay «entrar en la 2ª vuelta» donde pedir la paralela.
   void _pedirCarry(BuildContext context, String p1Id, String p2Id,
       String solicitante, List<BetModuleInstance> nassauMods) {
     final prov  = context.read<RoundProvider>();
@@ -1893,7 +1888,6 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
     final t                = widget.t;
     final skinsModules     = _findModules(BetModuleType.skins);
     final nassauModules    = _findModules(BetModuleType.nassau);
-    final matchMods        = _findModules(BetModuleType.matchAutoPress);
     final oyesModules      = _findModules(BetModuleType.oyeses);
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -1907,7 +1901,6 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
               round: round, p1: p1, p2: p2, t: t,
               skinsModules:      skinsModules,
               nassauModules:     nassauModules,
-              matchPressModules: matchMods,
               oyesModules:       oyesModules,
             ),
             // Indicador de expansión (chevron) en la esquina inferior derecha
@@ -1945,12 +1938,6 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
               child: _NassauLivePanel(round: round, p1: p1, p2: p2, mod: mod, t: t),
             )),
 
-            // Paneles Match+Press
-            ...matchMods.map((mod) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _MatchPressLivePanel(round: round, p1: p1, p2: p2, mod: mod, t: t),
-            )),
-
             // Hoyo a hoyo
             _HoleByHoleMatch(
               round: round, p1: p1, p2: p2, t: t,
@@ -1974,7 +1961,6 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
             CarryPanel(
               round: round, p1: p1, p2: p2, t: t,
               nassauModules:     nassauModules,
-              matchPressModules: matchMods,
               onPedirCarry: (solicitante) =>
                   widget.onPedirCarry(context, solicitante, nassauModules),
             ),
@@ -2090,12 +2076,10 @@ class MatchStatusCard extends StatelessWidget {
   final GolfTheme t;
   final List<BetModuleInstance> skinsModules;
   final List<BetModuleInstance> nassauModules;
-  final List<BetModuleInstance> matchPressModules;
   final List<BetModuleInstance> oyesModules;
   const MatchStatusCard({
     required this.round, required this.p1, required this.p2, required this.t,
     required this.skinsModules, required this.nassauModules,
-    this.matchPressModules = const [],
     this.oyesModules       = const [],
   });
 
@@ -2355,19 +2339,7 @@ class MatchStatusCard extends StatelessWidget {
     // lo toma siempre de LedgerEngine.breakdownBetween para consistencia)
     String? subLabel;
 
-    if (matchPressModules.isNotEmpty) {
-      final mod         = matchPressModules.first;
-      final presses     = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
-      final pressSegments = presses.skip(1).where((pr) => pr.played > 0).toList();
-      if (pressSegments.isNotEmpty) {
-        final pw1          = pressSegments.where((pr) => pr.leadingPlayerId == p1.id).length;
-        final pw2          = pressSegments.where((pr) => pr.leadingPlayerId == p2.id).length;
-        final ties         = pressSegments.where((pr) => pr.score == 0).length;
-        final totalPresses = pressSegments.length;
-        final tieStr       = ties > 0 ? '  ($ties AS)' : '';
-        subLabel = 'Presiones: $n1 $pw1 – $pw2 $n2$tieStr  •  $totalPresses jugadas';
-      }
-    } else if (nassauModules.isNotEmpty && nassauModules.first.pressEnabled) {
+    if (nassauModules.isNotEmpty && nassauModules.first.pressEnabled) {
       // Nassau con presiones: sub-label deportivo (F9/B9 status)
       final mod  = nassauModules.first;
       final st   = BetEngine.nassauLiveStatus(round, p1.id, p2.id, mod);
@@ -3559,218 +3531,17 @@ class _NassauSegment extends StatelessWidget {
   }
 }
 
-// ── Match + Auto Press — Panel en vivo ──────────────────────────────────────
-// Muestra el estado del match principal + lista dinámica de presiones.
-// Usa colores: verde (arriba), azul (empate), rojo (abajo) por cada presión.
-class _MatchPressLivePanel extends StatelessWidget {
-  final Round round;
-  final Player p1, p2;
-  final BetModuleInstance mod;
-  final GolfTheme t;
-  const _MatchPressLivePanel({required this.round, required this.p1, required this.p2, required this.mod, required this.t});
-
-  @override
-  Widget build(BuildContext context) {
-    final cfg = mod.matchAutoPress;
-    final n1  = p1.shortName;
-    final n2  = p2.shortName;
-
-    // Estado general: quién va ganando el match (score global H1-totalHoles)
-    final presses  = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
-
-    // Balance SOLO de Match+Press calculado desde live status (fiable, independiente de pids del módulo)
-    // Suma: para cada segmento con resultado, +value si p1 gana (leadingPlayerId == p1.id), -value si p2 gana
-    double mpBal = 0.0;
-    for (final pr in presses) {
-      if (pr.played == 0) continue;
-      if (pr.leadingPlayerId == p1.id) mpBal += pr.value;
-      if (pr.leadingPlayerId == p2.id) mpBal -= pr.value;
-    }
-    final balColor  = mpBal > 0.005 ? t.profit : mpBal < -0.005 ? t.loss : t.sub;
-    final primary  = presses.isNotEmpty ? presses.first : null; // siempre el Match principal
-    final matchScore   = primary?.score ?? 0;
-    final pressesWon1  = presses.skip(1).where((pr) => pr.leadingPlayerId == p1.id && pr.played > 0).length;
-    final pressesWon2  = presses.skip(1).where((pr) => pr.leadingPlayerId == p2.id && pr.played > 0).length;
-    final activePresses = presses.skip(1).length;
-
-    String matchLabel;
-    Color  matchColor;
-    if (matchScore == 0) {
-      matchLabel = 'AS';  matchColor = const Color(0xFF1565C0);
-    } else if (matchScore > 0) {
-      matchLabel = '$n1  ${matchScore}UP';  matchColor = t.profit;
-    } else {
-      matchLabel = '$n2  ${matchScore.abs()}UP';  matchColor = t.loss;
-    }
-
-    return GCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      // ── Cabecera ────────────────────────────────────────────────────────
-      Row(children: [
-        Icon(GolfIcons.duelo, size: GolfIcons.juntoAValor, color: t.sub),
-        const SizedBox(width: 8),
-        Expanded(child: Text('MATCH + PRESS', style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8))),
-        // Balance solo Match+Press
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: balColor.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: balColor.withValues(alpha: 0.4)),
-          ),
-          child: Text(
-            mpBal.abs() < 0.005 ? 'AS' : '${mpBal > 0 ? '+' : ''}\$${mpBal.abs().toStringAsFixed(0)}',
-            style: TextStyle(color: balColor, fontSize: 11, fontWeight: FontWeight.w800),
-          ),
-        ),
-      ]),
-      const SizedBox(height: 12),
-
-      // ── Estado del match ─────────────────────────────────────────────────
-      Row(children: [
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(matchLabel,
-                style: TextStyle(color: matchColor, fontSize: 18, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 2),
-            Text(
-              () {
-                final matchVal = (primary?.value ?? cfg.matchValue).toStringAsFixed(0);
-                if (activePresses == 0) return 'Match  •  \$$matchVal';
-                // Tomar el valor de presión de la primera presión activa (ya incluye carry)
-                final firstPressVal = presses.skip(1).isNotEmpty
-                    ? presses.skip(1).first.value.toStringAsFixed(0)
-                    : cfg.pressValue.toStringAsFixed(0);
-                return 'Match  •  \$$matchVal   +  $activePresses × \$$firstPressVal press';
-              }(),
-              style: TextStyle(color: t.sub, fontSize: 10),
-            ),
-          ]),
-        ),
-        if (activePresses > 0)
-          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text('$n1  $pressesWon1 – $pressesWon2  $n2',
-                style: TextStyle(color: t.sub, fontSize: 10, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 2),
-            Text('Presiones', style: TextStyle(color: t.sub, fontSize: 9)),
-          ]),
-      ]),
-      const SizedBox(height: 6),
-      // Trigger info
-      Row(children: [
-        Icon(Icons.info_outline, color: t.sub, size: 11),
-        const SizedBox(width: 4),
-        Text('Presión automática al llegar a ${cfg.pressTriggerValue} up',
-            style: TextStyle(color: t.sub, fontSize: 10)),
-      ]),
-
-      // ── Panel visual de presiones ────────────────────────────────────────
-      if (presses.length > 1) ...[
-        const SizedBox(height: 10),
-        Divider(height: 1, color: t.sub.withValues(alpha: 0.15)),
-        const SizedBox(height: 10),
-        // Título
-        Text('PRESIONES ACTIVAS', style: TextStyle(color: t.sub, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.7)),
-        const SizedBox(height: 8),
-        // Fila de pastillas — una por segmento (excluye el match principal)
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: presses.skip(1).map((pr) {
-            // Color según estado: azul=AS, verde=p1 gana, rojo=p2 gana, gris=no jugado
-            final Color bgBase;
-            final String scoreLabel;
-            final String leadLabel;
-            if (pr.played == 0) {
-              bgBase = t.sub;
-              scoreLabel = '–';
-              leadLabel = 'Abierta';
-            } else if (pr.score == 0) {
-              bgBase = const Color(0xFF1565C0);
-              scoreLabel = 'AS';
-              leadLabel = 'Empate';
-            } else if (pr.leadingPlayerId == p1.id) {
-              bgBase = t.profit;
-              scoreLabel = '${pr.score.abs()}UP';
-              leadLabel = n1;
-            } else {
-              bgBase = t.loss;
-              scoreLabel = '${pr.score.abs()}UP';
-              leadLabel = n2;
-            }
-
-            // Etiqueta del segmento — usa pressNumber del modelo (seq-1)
-            final segTag = 'PRESS ${pr.pressNumber}';
-            final holeRange = 'H${pr.startHole}–${pr.endHole}';
-
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-              decoration: BoxDecoration(
-                color: bgBase.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: bgBase.withValues(alpha: 0.35), width: 1),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Rango de hoyos + tag
-                  Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text(segTag, style: TextStyle(color: bgBase, fontSize: 8, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
-                    const SizedBox(width: 4),
-                    Text(holeRange, style: TextStyle(color: t.sub, fontSize: 8)),
-                  ]),
-                  const SizedBox(height: 3),
-                  // Score en grande
-                  Text(scoreLabel, style: TextStyle(color: bgBase, fontSize: 13, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 1),
-                  // Quién lidera + valor
-                  Text('$leadLabel  •  \$${pr.value.toStringAsFixed(0)}',
-                      style: TextStyle(color: t.sub, fontSize: 8)),
-                ],
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    ]));
-  }
-}
-
-// ── Panel Carry ──────────────────────────────────────────────────────────────
-//
-// ── El carry son DOS cosas, y este panel enseña la que toque ────────────────
-//
-// Al terminar la primera vuelta pasa una de dos, y son excluyentes:
-//
-//   · EL F9 QUEDÓ EMPATADO → carry NATURAL. Su dinero no tiene dueño y se pasa
-//     al B9, solo. No hay nada que pedir: se cuenta lo que pasó.
-//
-//   · EL F9 LO GANÓ ALGUIEN → el que perdió puede PEDIR carry. Lo que compra es
-//     una segunda apuesta sobre los mismos nueve, del mismo importe, en la que
-//     recibe un golpe más. Se juegan las dos.
-//
-// Antes el panel ofrecía un botón «Activar Carry ×2» en el primer caso y se
-// atenuaba en el segundo — exactamente al revés de las dos reglas.
-//
-// ── Y no es privado ─────────────────────────────────────────────────────────
-//
-// El camino real para llegar aquí pasa por la tarjeta de duelo, que pasa por la
-// pantalla, que pasa por Firestore: ningún test de widget llegaba, y el trozo
-// sin cubrir era justo el que decidía si el botón sale y para quién. Montarlo
-// suelto con una ronda cualquiera es barato, y es lo que convierte «el motor
-// funciona» en «la pantalla lo usa». Mismo precedente que la hoja del equipo.
 class CarryPanel extends StatefulWidget {
   final Round round;
   final Player p1, p2;
   final GolfTheme t;
   final List<BetModuleInstance> nassauModules;
-  final List<BetModuleInstance> matchPressModules;
 
   /// Lo pide el jugador que se pasa: el golpe extra es suyo.
   final void Function(String solicitante) onPedirCarry;
   const CarryPanel({
     required this.round, required this.p1, required this.p2, required this.t,
-    required this.nassauModules, required this.matchPressModules,
+    required this.nassauModules,
     required this.onPedirCarry,
   });
   @override State<CarryPanel> createState() => _CarryPanelState();
@@ -3853,8 +3624,24 @@ class _CarryPanelState extends State<CarryPanel> {
     final round = widget.round;
     final t = widget.t;
     if (round.totalHoles < 18) return const SizedBox.shrink();
-    // Match + Press ya no tiene carry: su apuesta paralela es la presión.
     if (!_hayNassauConCarry) return const SizedBox.shrink();
+
+    // ── Con los dos nueves a cero, el carry no existe — y se DICE ───────────
+    //
+    // La partida es un match sobre los 18: no hay primer nueve del que
+    // trasladar dinero, ni segundo sobre el que pedir una paralela. Apagarlo sin
+    // más dejaría un hueco donde el grupo cree que pactó algo.
+    if (widget.nassauModules.first.nassau.soloElMatch) {
+      return _tarjeta(
+        t: t,
+        color: t.divider,
+        icono: Icons.currency_exchange,
+        titulo: 'CARRY',
+        cuerpo: 'No aplica: esta partida es un match sobre los 18 hoyos, sin '
+            'F9 ni B9. No hay primer nueve del que trasladar dinero ni segundo '
+            'sobre el que pedir una apuesta aparte.',
+      );
+    }
     if (hoyosQueFaltanDelPrimerNueve(round, widget.p1.id, widget.p2.id)
         .isNotEmpty) {
       return const SizedBox.shrink();
@@ -4775,7 +4562,6 @@ class _FinancialBreakdown extends StatelessWidget {
     const orden = [
       BetModuleType.skins,
       BetModuleType.nassau,
-      BetModuleType.matchAutoPress,
       BetModuleType.medal,
       BetModuleType.putts,
       BetModuleType.oyeses,
@@ -4835,21 +4621,6 @@ class _FinancialBreakdown extends StatelessWidget {
     // Dos cuentas para lo mismo solo pueden convivir si una tiene su momento y
     // la otra el suyo.
     final enVivo = !round.isFinished;
-
-    // Match+Press: calcular balance desde live status (orden de pids no importa)
-    final mpMods = enVivo ? _modsOf(BetModuleType.matchAutoPress) : const [];
-    if (mpMods.isNotEmpty) {
-      double mpBal = 0.0;
-      for (final mod in mpMods) {
-        final presses = BetEngine.matchAutoPressLive(round, p1.id, p2.id, mod);
-        for (final pr in presses) {
-          if (pr.played == 0) continue;
-          if (pr.leadingPlayerId == p1.id) mpBal += pr.value;
-          if (pr.leadingPlayerId == p2.id) mpBal -= pr.value;
-        }
-      }
-      breakdown[BetModuleType.matchAutoPress] = mpBal;
-    }
 
     // Nassau (con o sin presiones): sobreescribir con balance en vivo.
     // computeAll solo liquida segmentos CERRADOS; durante la ronda en curso
@@ -5090,9 +4861,6 @@ class _FinancialBreakdown extends StatelessWidget {
               );
             }
           }
-
-          // Para Match+Press: sin sub-filas, solo encabezado
-          // (el detalle lo muestra el panel _MatchPressLivePanel)
 
           // La cabecera del segundo bloque va con su primera fila, para que la
           // separación exista sin partir el .map en dos listas.
@@ -5570,6 +5338,25 @@ class _AperturaPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     if (round.totalHoles < 18 || nassauModules.isEmpty) {
       return const SizedBox.shrink();
+    }
+    // Vale lo que el B9, y con el B9 a cero no es una apuesta. Se dice, igual
+    // que el carry: un bloque que desaparece sin motivo se lee como un fallo.
+    if (nassauModules.first.nassau.soloElMatch) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: GCard(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(GolfIcons.rapido, color: t.divider, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+                'La presión de la 2ª vuelta no aplica: esta partida es un match '
+                'sobre los 18 hoyos y el B9 no vale nada. Las presiones '
+                'automáticas sí siguen jugándose.',
+                style: TextStyle(color: t.sub, fontSize: 11, height: 1.35)),
+          ),
+        ])),
+      );
     }
     if (!_entrandoEnLaSegunda && !_yaAbierta) return const SizedBox.shrink();
 

@@ -20,7 +20,6 @@
 //      D2. Resultado correcto con best-ball net
 //   E. Auditoría de fuente de HCP
 //      E1. Ledger team (nassauTeam) y nassauLiveStatusTeam usan misma fuente
-//      E2. matchAutoPressLiveTeam y _matchAutoPressTeam coinciden
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:flutter_test/flutter_test.dart';
@@ -104,7 +103,10 @@ BetSide _side(String id, {String? name}) =>
 BetSide _sideMulti(String id, List<String> pids, {String? name}) =>
     BetSide(id: id, name: name ?? id, playerIds: pids);
 
-/// Módulo de match+press por defecto, valor 10, press 5, trigger 1.
+/// Un MATCH sobre los 18: Nassau con los dos nueves a cero.
+///
+/// Era `BetModuleType.matchAutoPress` con su propio motor. Se retiró porque era
+/// esto — la misma apuesta, dicha con los importes.
 BetModuleInstance _matchMod({
   required List<String> participantIds,
   List<BetSide>? sides,
@@ -115,14 +117,21 @@ BetModuleInstance _matchMod({
 }) {
   return BetModuleInstance(
     id: 'mod_match',
-    type: BetModuleType.matchAutoPress,
+    type: BetModuleType.nassau,
     name: 'Match Test',
     participantIds: participantIds,
     sides: sides,
-    matchAutoPressConfig: MatchAutoPressConfig(
-      matchValue: matchVal,
-      pressValue: pressVal,
-      pressTriggerValue: trigger,
+    nassauConfig: NassauConfig(
+      frontValue: 0,
+      backValue: 0,
+      totalValue: matchVal,
+      // Sin presiones: el motor de equipos NO las tiene, y encenderlas aquí
+      // haría que el duelo 1v1 y el 1v1-con-lados dieran distinto. Ver el test
+      // que lo deja escrito al final de C1.
+      pressEnabled: false,
+      frontPressValue: pressVal,
+      backPressValue: pressVal,
+      autoPressTrigger: trigger,
       maxPresses: 10,
       mode: net ? GrossNetMode.net : GrossNetMode.gross,
     ),
@@ -510,113 +519,50 @@ void _sectionC() {
       expect(totalTeam, equals(totalInd),
           reason: '1v1 sides debe dar el mismo resultado monetario que modo individual');
     });
-  });
 
-  group('C2. 2v2 press se abre en hoyo correcto', () {
-    // Diseño: sideA gana H1 con trigger=1 → llega 1UP → press abre en H2.
-    // El reason del press contiene 'Press 1' y empieza en H2 ('H2' en el label).
-    test('Press 1 nace tras trigger 1UP y arranca en H2', () {
-      // p1 y p2 (sideA) hacen birdie en todos los hoyos; p3 y p4 (sideB) hacen bogey
+    test('LO QUE SE PERDIÓ: el motor de equipos no tiene presiones', () {
+      // Match + Press por equipos SÍ las tenía, y al retirarlo se fueron con él:
+      // el Nassau de equipos nunca las ha liquidado.
+      //
+      // No se tapa. Un duelo 1v1 con presiones y el mismo duelo declarado con
+      // lados dan importes distintos, y esto lo deja escrito para que el día que
+      // alguien lo note encuentre el motivo en vez de un fallo.
       final gross = <String, Map<int, int>>{
-        'p1': {for (int i = 1; i <= 18; i++) i: 3},
-        'p2': {for (int i = 1; i <= 18; i++) i: 3},
-        'p3': {for (int i = 1; i <= 18; i++) i: 5},
-        'p4': {for (int i = 1; i <= 18; i++) i: 5},
+        'p1': _allScore(c, 3),
+        'p2': _allScore(c, 5),
       };
-      final round = _makeRound(
-        hcps: {'p1':0,'p2':0,'p3':0,'p4':0},
-        gross: gross, course: c,
-      );
-      final sA = _sideMulti('sA', ['p1','p2'], name: 'A');
-      final sB = _sideMulti('sB', ['p3','p4'], name: 'B');
-      final mod = _matchMod(
-        participantIds: ['p1','p2','p3','p4'],
-        sides: [sA, sB],
-        trigger: 1,
-      );
-      final group = BetGroup(
-        id: 'g', name: 'G',
-        format: PartidaFormat.groupVsGroup,
-        playerIds: ['p1','p2','p3','p4'],
-        modules: [mod],
-      );
+      final round = _makeRound(hcps: {'p1': 0, 'p2': 0}, gross: gross, course: c);
+      BetModuleInstance conPresiones({List<BetSide>? sides}) =>
+          _matchMod(participantIds: ['p1', 'p2'], sides: sides).copyWith(
+              nassauConfig: const NassauConfig(
+                  frontValue: 0,
+                  backValue: 0,
+                  totalValue: 10,
+                  pressEnabled: true,
+                  frontPressValue: 5,
+                  backPressValue: 5,
+                  autoPressTrigger: 1,
+                  mode: GrossNetMode.gross));
+      final g = BetGroup(
+          id: 'g',
+          name: 'G',
+          format: PartidaFormat.oneVsOne,
+          playerIds: ['p1', 'p2'],
+          modules: []);
+      double cobra(BetModuleInstance m) => BetEngine
+          .computeGroup(round, g.copyWith(modules: [m]))
+          .fold(0.0, (s, e) => s + (e.toPlayerId == 'p1' ? e.amount : 0));
 
-      final entries = BetEngine.computeGroup(round, group);
-
-      // Debe haber entradas para el match principal Y para el Press 1
-      final pressEntries = entries.where((e) => e.reason.contains('Press 1')).toList();
-      expect(pressEntries, isNotEmpty,
-          reason: 'Debe existir un Press 1 después del trigger 1UP en H1');
-
-      // Con trigger=1: A llega 1UP después de H1 → press abre en H2.
-      // El reason del press incluye 'H2' como hoyo de inicio (formato: "Press 1 H2–H18 ...")
-      final pressH2 = pressEntries.where((e) => e.reason.contains('H2')).toList();
-      expect(pressH2, isNotEmpty,
-          reason: 'Press 1 debe iniciar en H2 (siguiente al trigger en H1)');
+      final individual = cobra(conPresiones());
+      final porLados =
+          cobra(conPresiones(sides: [_side('p1'), _side('p2')]));
+      expect(individual, greaterThan(porLados),
+          reason: 'el individual cobra el match Y las presiones');
+      expect(porLados, 10, reason: 'el de equipos solo el match');
     });
   });
 
-  group('C3. Encadenamiento de presiones (press-sobre-press)', () {
-    // sideA domina toda la ronda:
-    //   H1: A gana (Match 1UP → press abre H2)
-    //   H2: A gana (Press llega 1UP → press2 abre H3)
-    test('Press 2 existe cuando press 1 alcanza trigger', () {
-      final gross = <String, Map<int, int>>{
-        'p1': {for (int i = 1; i <= 18; i++) i: 3},
-        'p2': {for (int i = 1; i <= 18; i++) i: 3},
-        'p3': {for (int i = 1; i <= 18; i++) i: 5},
-        'p4': {for (int i = 1; i <= 18; i++) i: 5},
-      };
-      final round = _makeRound(
-        hcps: {'p1':0,'p2':0,'p3':0,'p4':0},
-        gross: gross, course: c,
-      );
-      final sA = _sideMulti('sA', ['p1','p2']);
-      final sB = _sideMulti('sB', ['p3','p4']);
-      final mod = _matchMod(
-        participantIds: ['p1','p2','p3','p4'],
-        sides: [sA, sB], trigger: 1,
-      );
-      final group = BetGroup(
-        id: 'g', name: 'G',
-        format: PartidaFormat.groupVsGroup,
-        playerIds: ['p1','p2','p3','p4'],
-        modules: [mod],
-      );
 
-      final entries = BetEngine.computeGroup(round, group);
-      final press2 = entries.where((e) => e.reason.contains('Press 2')).toList();
-      expect(press2, isNotEmpty, reason: 'Encadenamiento: Press 2 debe existir');
-    });
-
-    test('matchAutoPressLiveTeam retorna múltiples matches con press chain', () {
-      final gross = <String, Map<int, int>>{
-        'p1': {for (int i = 1; i <= 18; i++) i: 3},
-        'p2': {for (int i = 1; i <= 18; i++) i: 3},
-        'p3': {for (int i = 1; i <= 18; i++) i: 5},
-        'p4': {for (int i = 1; i <= 18; i++) i: 5},
-      };
-      final round = _makeRound(
-        hcps: {'p1':0,'p2':0,'p3':0,'p4':0},
-        gross: gross, course: c,
-      );
-      final sA = _sideMulti('sA', ['p1','p2']);
-      final sB = _sideMulti('sB', ['p3','p4']);
-      final mod = _matchMod(
-        participantIds: ['p1','p2','p3','p4'],
-        sides: [sA, sB], trigger: 1,
-      );
-
-      final live = BetEngine.matchAutoPressLiveTeam(round, mod);
-      expect(live.length, greaterThan(1),
-          reason: 'Debe haber más de 1 match/press en el árbol');
-      // El match principal siempre es el primero
-      expect(live.first.isPrimaryMatch, isTrue);
-      // Al menos un press
-      final presses = live.where((s) => !s.isPrimaryMatch).toList();
-      expect(presses, isNotEmpty, reason: 'Debe haber al menos un press');
-    });
-  });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -823,85 +769,6 @@ void _sectionE() {
     });
   });
 
-  group('E2. matchAutoPressLiveTeam y ledger comparten el mismo árbol de matches', () {
-    // Si sideA gana todos los hoyos, tanto el ledger como el live deben
-    // mostrar al mismo número de matches/presses activos.
-    test('Conteo de matches en live == entradas únicas de reason en ledger', () {
-      final gross = <String, Map<int, int>>{
-        'p1': {for (int i = 1; i <= 18; i++) i: 3},
-        'p2': {for (int i = 1; i <= 18; i++) i: 3},
-        'p3': {for (int i = 1; i <= 18; i++) i: 5},
-        'p4': {for (int i = 1; i <= 18; i++) i: 5},
-      };
-      final round = _makeRound(
-        hcps: {'p1':0,'p2':0,'p3':0,'p4':0},
-        gross: gross, course: c,
-      );
-      final sA = _sideMulti('sA', ['p1','p2']);
-      final sB = _sideMulti('sB', ['p3','p4']);
-      final mod = _matchMod(
-        participantIds: ['p1','p2','p3','p4'],
-        sides: [sA, sB], trigger: 1,
-      );
-      final group = BetGroup(
-        id: 'g', name: 'G',
-        format: PartidaFormat.groupVsGroup,
-        playerIds: ['p1','p2','p3','p4'],
-        modules: [mod],
-      );
-
-      final entries = BetEngine.computeGroup(round, group);
-      final live    = BetEngine.matchAutoPressLiveTeam(round, mod);
-
-      // Live tiene N segmentos; ledger tiene entries para cada segmento ganado.
-      // En este caso A gana todo → cada segmento produce entries.
-      // Los reasons tienen el patrón "Match|Press N H..." deduplicados por segmento.
-      // Verificar que live tiene el match principal (isPrimary) con score > 0 (A gana)
-      final primaryLive = live.firstWhere((s) => s.isPrimaryMatch);
-      expect(primaryLive.score, greaterThan(0),
-          reason: 'A domina → match principal score > 0 en live');
-
-      // El ledger también tiene entries para el match principal
-      final matchEntries = entries.where((e) => e.reason.contains('Match')).toList();
-      expect(matchEntries, isNotEmpty, reason: 'Ledger debe tener entradas del match principal');
-
-      // Todos los entries van de sideB → sideA
-      for (final e in entries) {
-        expect(sA.playerIds.contains(e.toPlayerId), isTrue,
-            reason: 'Todos los pagos deben ir a A (A gana todo)');
-        expect(sB.playerIds.contains(e.fromPlayerId), isTrue,
-            reason: 'Todos los pagos salen de B');
-      }
-    });
-
-    test('sideB que gana: leadingPlayerId en live es el jugador representante de B', () {
-      final gross = <String, Map<int, int>>{
-        'p1': {for (int i = 1; i <= 18; i++) i: 5},
-        'p2': {for (int i = 1; i <= 18; i++) i: 5},
-        'p3': {for (int i = 1; i <= 18; i++) i: 3},
-        'p4': {for (int i = 1; i <= 18; i++) i: 3},
-      };
-      final round = _makeRound(
-        hcps: {'p1':0,'p2':0,'p3':0,'p4':0},
-        gross: gross, course: c,
-      );
-      final sA = _sideMulti('sA', ['p1','p2']);
-      final sB = _sideMulti('sB', ['p3','p4']);
-      final mod = _matchMod(
-        participantIds: ['p1','p2','p3','p4'],
-        sides: [sA, sB], trigger: 1,
-      );
-
-      final live = BetEngine.matchAutoPressLiveTeam(round, mod);
-      final primary = live.firstWhere((s) => s.isPrimaryMatch);
-
-      expect(primary.score, lessThan(0),
-          reason: 'B gana → score negativo en perspectiva A');
-      // El leadingPlayerId debe ser el primer jugador de sideB
-      expect(primary.leadingPlayerId, equals(sB.playerIds.first),
-          reason: 'leadingPlayerId debe apuntar al representante de sideB');
-    });
-  });
 
   group('E3. Rutas de HCP — mismo mapa para todas las funciones de equipo', () {
     // buildTeamHcpMap usa getHandicap() directamente (sin sliding).

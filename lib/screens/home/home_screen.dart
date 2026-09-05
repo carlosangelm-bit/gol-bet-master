@@ -1383,10 +1383,11 @@ class _BetInfo {
   /// DISPONIBLES" es una promesa que la app no cumple: el usuario lo ve, lo
   /// quiere y no lo encuentra en ningún selector.
   ///
-  /// El texto del tipo retirado se conserva —una ronda vieja que lo use sigue
-  /// siendo explicable— pero no se anuncia.
-  static List<_BetInfo> get visibles =>
-      all.where((i) => i.type.isCreatable).toList();
+  /// Hubo aquí un filtro para esconder el tipo retirado —Match + Press— sin
+  /// borrar su ficha. Se fue con él: no queda ningún tipo retirado, y un filtro
+  /// que no filtra es una bifurcación que hay que leer para descubrir que no
+  /// hace nada.
+  static List<_BetInfo> get visibles => all;
 
   static const List<_BetInfo> all = [
     // ── Nassau ────────────────────────────────────────────────────────────────
@@ -1421,36 +1422,6 @@ class _BetInfo {
           'Rafa gana Total → cobra \$100\n'
           'Rafa gana Press B9 → cobra \$25\n'
           'Resultado: Rafa +\$225',
-    ),
-    // ── Match + Press ─────────────────────────────────────────────────────────
-    _BetInfo(
-      type: BetModuleType.matchAutoPress,
-      icon: Icons.compare_arrows_rounded,
-      color: Color(0xFF1565C0),
-      tagline: 'Match play de 18 hoyos con presiones en cadena',
-      howItWorks:
-          'Match play puro de 18 hoyos. El jugador que va N-down activa '
-          'una presión que corre hasta el hoyo 18. Esa presión puede generar '
-          'a su vez nuevas presiones, creando una cadena activa durante la ronda. '
-          'Es el formato más dinámico y de mayor riesgo acumulado.',
-      rules: [
-        'El match principal corre los 18 hoyos completos',
-        'Press automático cuando el déficit alcanza el trigger (ej. 2-down)',
-        'Cada press corre desde su hoyo de inicio hasta el hoyo 18',
-        'Un press puede generar otro press (presiones anidadas en cadena)',
-        'Carry: si el match principal termina empatado, puede trasladarse',
-        'Se puede limitar el número máximo de presiones activas simultáneas',
-        'Compatible con handicap neto o score bruto',
-      ],
-      example:
-          'Match \$100 · Trigger 2-down · Press \$50\n'
-          '───────────────────────────────\n'
-          'H5: Carlos va 2-down → Press 1 (\$50) abre H6\n'
-          'H10: Carlos va 2-down en Press 1 → Press 2 (\$50) abre H11\n'
-          'Rafa gana el match → cobra \$100\n'
-          'Rafa gana Press 1 → cobra \$50\n'
-          'Carlos gana Press 2 → cobra \$50\n'
-          'Resultado: Rafa +\$100',
     ),
     // ── Skins ─────────────────────────────────────────────────────────────────
     _BetInfo(
@@ -2628,8 +2599,6 @@ class _ActiveRoundView extends StatelessWidget {
         return 'F\$${m.nassau.frontValue.toStringAsFixed(0)}'
                '·B\$${m.nassau.backValue.toStringAsFixed(0)}'
                '·T\$${m.nassau.totalValue.toStringAsFixed(0)}';
-      case BetModuleType.matchAutoPress:
-        return '\$${m.matchAutoPress.matchValue.toStringAsFixed(0)} match';
       case BetModuleType.nassauLowHigh:
         return '\$${m.lowHigh.segmentAmount.toStringAsFixed(0)}/seg';
       case BetModuleType.medal:
@@ -3044,7 +3013,6 @@ class _ActiveRoundView extends StatelessWidget {
                               formatMode:           cfg.formatMode,
                               skinsConfig:          effSkins,
                               nassauConfig:         cfg.nassauConfig,
-                              matchAutoPressConfig: cfg.matchAutoPressConfig,
                               medalConfig:          effMedal,
                               puttsConfig:          effPutts,
                               oyesesConfig:         effOyeses,

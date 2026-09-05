@@ -23,11 +23,11 @@ void main() {
     expect(NassauConfig.carryPairKey(a, b), NassauConfig.carryPairKey(b, a));
   });
 
-  test('usa el MISMO formato que MatchAutoPressConfig', () {
-    // Si difirieran, migrar un módulo de un tipo al otro exigiría traducir cada
-    // clave — y una traducción fallida no da error: la apuesta dejaría de
-    // aparecer en silencio.
-    expect(NassauConfig.carryPairKey(a, b), MatchAutoPressConfig.pairKey(a, b));
+  test('el formato de la clave es el de siempre: ids ordenados y un |', () {
+    // El mismo que `pairSliding`. Si difiriera, leer la ventaja de un par
+    // exigiría traducir cada clave — y una traducción fallida no da error: la
+    // apuesta dejaría de aparecer en silencio.
+    expect(NassauConfig.carryPairKey('z', 'a'), 'a|z');
   });
 
   test('CLAVE: el carry aplica solo a la pareja que lo pidió', () {
@@ -68,15 +68,12 @@ void main() {
       expect(j.containsKey('carryByPair'), isFalse);
     });
 
-    test('CONTRAPESO: MatchAutoPressConfig tampoco', () {
-      // Allí el carry multiplicaba el match ENTERO y todas sus presiones. Se
-      // retiró sin sustituto: Match + Press es una apuesta sobre los dieciocho,
-      // sin primer y segundo nueve, y la apuesta paralela que nace de ir por
-      // detrás ya existe con su nombre — es la presión.
-      final j = const MatchAutoPressConfig().toJson();
-      expect(j.containsKey('carryFactor'), isFalse);
-      expect(j.containsKey('carryApplied'), isFalse);
-      expect(j.containsKey('carryByPair'), isFalse);
+    test('CONTRAPESO: y no queda otro sitio donde pueda volver', () {
+      // El otro dueño del multiplicador era MatchAutoPressConfig. Se retiró el
+      // tipo entero: era un Nassau sin partición en vueltas, y mantener los dos
+      // costaba dos sitios por cada regla — este multiplicador entre ellas.
+      expect(BetModuleType.values.map((t) => t.name),
+          isNot(contains('matchAutoPress')));
     });
   });
 

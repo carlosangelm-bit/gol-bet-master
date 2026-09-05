@@ -94,12 +94,17 @@ Round _buildRound(List<BetGroup> groups) {
 }
 
 // ─── Helpers para crear módulos ───────────────────────────────────────────────
+/// El match sobre los 18 con presiones: Nassau con los dos nueves a cero.
 BetModuleInstance _matchMod(List<String> pids) =>
-    BetModuleInstance.defaultFor(BetModuleType.matchAutoPress, pids).copyWith(
-      matchAutoPressConfig: const MatchAutoPressConfig(
-        matchValue: 100,
-        pressValue: 50,
-        pressTriggerValue: 2,
+    BetModuleInstance.defaultFor(BetModuleType.nassau, pids).copyWith(
+      nassauConfig: const NassauConfig(
+        frontValue: 0,
+        backValue: 0,
+        totalValue: 100,
+        pressEnabled: true,
+        frontPressValue: 50,
+        backPressValue: 50,
+        autoPressTrigger: 2,
         mode: GrossNetMode.net,
       ),
     );
@@ -290,7 +295,7 @@ void main() {
       print('  MATCH + PRESIONES (Match \$100, Press \$50 cada 2 hoyos abajo)');
       print('══════════════════════════════════════════════════════════════════');
       
-      final matchEntries = allEntries.where((e) => e.betType == BetModuleType.matchAutoPress).toList();
+      final matchEntries = allEntries.where((e) => e.betType == BetModuleType.nassau).toList();
       
       // Agrupar por par
       for (final pair in _allPairs) {
@@ -355,7 +360,7 @@ void main() {
       print('  Lugar  Jugador     Balance    Match+Press   Medal');
       print('  ─────────────────────────────────────────────────');
       
-      final matchEntries = allEntries.where((e) => e.betType == BetModuleType.matchAutoPress).toList();
+      final matchEntries = allEntries.where((e) => e.betType == BetModuleType.nassau).toList();
       final medalEntries = allEntries.where((e) => e.betType == BetModuleType.medal).toList();
       
       int lugar = 1;
@@ -400,13 +405,17 @@ void main() {
       // Detalle break down de cada par
       print('\n  DETALLE MATCH+PRESS POR PAR:');
       print('  ──────────────────────────────────────────────');
-      final matchEntries = allEntries.where((e) => e.betType == BetModuleType.matchAutoPress).toList();
+      final matchEntries = allEntries.where((e) => e.betType == BetModuleType.nassau).toList();
       for (final pair in _allPairs) {
         final p1 = pair[0]; final p2 = pair[1];
-        final live = BetEngine.matchAutoPressLive(round, p1, p2,
-          BetModuleInstance.defaultFor(BetModuleType.matchAutoPress, pair).copyWith(
-            matchAutoPressConfig: const MatchAutoPressConfig(
-              matchValue: 100, pressValue: 50, pressTriggerValue: 2, mode: GrossNetMode.net,
+        // Era `matchAutoPressLive`. El match sobre 18 es ahora un Nassau con
+        // los dos nueves a cero, y su vista en vivo es la del Nassau.
+        final live = BetEngine.nassauPressLiveStatus(round, p1, p2,
+          BetModuleInstance.defaultFor(BetModuleType.nassau, pair).copyWith(
+            nassauConfig: const NassauConfig(
+              frontValue: 0, backValue: 0, totalValue: 100,
+              pressEnabled: true, frontPressValue: 50, backPressValue: 50,
+              autoPressTrigger: 2, mode: GrossNetMode.net,
             ),
           ),
         );

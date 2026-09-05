@@ -99,12 +99,12 @@ void main() {
       expect(enSecciones.toSet(), creatableBetTypes.toSet());
     });
 
-    test('nada retirado se ofrece', () {
-      for (final s in betTypeSections) {
-        for (final t in s.tipos) {
-          expect(t.isCreatable, isTrue, reason: t.label);
-        }
-      }
+    test('las secciones ofrecen el catálogo ENTERO', () {
+      // Hubo un filtro —`isCreatable`— para retirar Match + Press dejándolo
+      // vivo en el motor. Se fue con el tipo: ahora la única forma de que algo
+      // no se ofrezca es que no exista, y esto lo comprueba.
+      final ofrecidos = {for (final s in betTypeSections) ...s.tipos};
+      expect(ofrecidos, containsAll(BetModuleType.values));
     });
 
     test('no hay secciones vacías', () {

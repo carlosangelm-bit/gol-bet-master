@@ -485,8 +485,6 @@ class BetEngine {
     // ── Modo equipo: sides definidos y válidos ──────────────────────────────
     if (mod.hasTeamSides) {
       switch (mod.type) {
-        case BetModuleType.matchAutoPress:
-          return _matchAutoPressTeam(round, mod);
         case BetModuleType.nassau:
           return _nassauTeam(round, mod);
         case BetModuleType.skins:
@@ -520,9 +518,6 @@ class BetEngine {
         break;
       case BetModuleType.nassau:
         entries.addAll(_nassau(round, pids, mod));
-        break;
-      case BetModuleType.matchAutoPress:
-        entries.addAll(_matchAutoPress(round, pids, mod));
         break;
       case BetModuleType.medal:
         entries.addAll(_medal(round, pids, mod));
@@ -785,7 +780,12 @@ class BetEngine {
   }) {
     // Lo que se traslada es dinero SIN DUEÑO. Si el F9 tuvo ganador, ese dinero
     // ya está adjudicado y no hay nada que llevar.
-    final natural = cfg.carryEnabled && f9Completo && marcadorF9 == 0;
+    //
+    // Y con los dos nueves a cero no hay nada que trasladar en ningún caso: el
+    // F9 no vale nada. Se descarta aquí y no solo en la pantalla, para que el
+    // motor no dependa de que alguien se acuerde.
+    final natural =
+        cfg.carryEnabled && !cfg.soloElMatch && f9Completo && marcadorF9 == 0;
     return ValoresDelNassau(
       front: cfg.frontValue,
       back: natural ? cfg.backValue + cfg.frontValue : cfg.backValue,
@@ -816,15 +816,7 @@ class BetEngine {
     final st = nassauPressLiveStatus(round, p1Id, p2Id, mod);
     final seg = segmentsOf(round);
 
-    // ── La guarda de `pressEnabled` es del LLAMADOR ──────────────────────────
-    //
-    // `nassauPressLiveStatus` detecta presiones mire o no la configuración: los
-    // tres sitios que ya lo usaban preguntan `mod.pressEnabled` antes de
-    // llamarlo. Sin esta línea, un grupo que NO juega presiones vería aparecer
-    // números en su línea — apuestas que nadie abrió.
-    final presionesDe = mod.nassau.pressEnabled
-        ? (List<NassauPress> l) => l
-        : (List<NassauPress> _) => const <NassauPress>[];
+
 
     LineaDelDuelo? linea(
         String etiqueta, int marcador, int jugados, List<NassauPress> presiones) {
@@ -833,7 +825,7 @@ class BetEngine {
         etiqueta: etiqueta,
         // El segmento primero, y las presiones por orden de nacimiento: es el
         // orden en el que se cantan, y el que hace que la última sea la nueva.
-        numeros: [marcador, ...presionesDe(presiones).map((p) => p.score)],
+        numeros: [marcador, ...presiones.map((p) => p.score)],
         jugados: jugados,
       );
     }
@@ -873,7 +865,7 @@ class BetEngine {
   static String? quienPuedePedirCarry(
       Round round, String p1Id, String p2Id, BetModuleInstance mod) {
     final cfg = mod.nassau;
-    if (!cfg.carryEnabled) return null;
+    if (!cfg.carryEnabled || cfg.soloElMatch) return null;
     if (cfg.carryPedidoPor(p1Id, p2Id) != null) return null;
 
     final seg = segmentsOf(round);
@@ -978,6 +970,9 @@ class BetEngine {
       RoundSegments seg) {
     final quien = mod.nassau.carryPedidoPor(p1Id, p2Id);
     if (quien == null || seg.singleNine || seg.secondNine.isEmpty) return null;
+    // La apuesta del carry vale lo que el B9. Con el B9 a cero no es una
+    // apuesta.
+    if (mod.nassau.soloElMatch) return null;
 
     // La ventaja de p1 EN ESTA VUELTA, con signo. El segundo nueve nunca es la
     // vuelta de inicio, así que se lleva el `floor`.
@@ -1070,7 +1065,7 @@ class BetEngine {
     // B9, no requiere empate». Una segunda apuesta de $50 sobre el B9 se paga
     // igual que un B9 de $100 —mismos hoyos, mismo marcador— con la ventaja de
     // que en el desglose se ven las dos y no un número doblado sin explicación.
-    if (cfg.aperturaB9For(p1Id, p2Id) && !seg.singleNine) {
+    if (cfg.aperturaB9For(p1Id, p2Id) && !cfg.soloElMatch && !seg.singleNine) {
       _addNassauSegment(entries, p1Id, p2Id, back, cfg.backValue,
           'Apertura 2ª vuelta');
     }
@@ -1105,6 +1100,12 @@ class BetEngine {
     List<LedgerEntry> entries, String p1Id, String p2Id,
     int margin, double value, String label,
   ) {
+    // ── Una apuesta de \$0 no es una apuesta ────────────────────────────────
+    //
+    // Con «solo el match» —los dos nueves a cero— el F9 y el B9 producían un
+    // asiento de cero pesos cada uno: en el desglose salían dos líneas que no
+    // pagaban nada, y una línea que no paga se lee como algo que salió mal.
+    if (value == 0) return;
     if (margin > 0) {
       entries.add(LedgerEntry(fromPlayerId: p2Id, toPlayerId: p1Id, amount: value, betType: BetModuleType.nassau, reason: label));
     } else if (margin < 0) {
@@ -1192,6 +1193,7 @@ class BetEngine {
 
       // Liquidar segmento base
       void addEntry(int score, double val, String label) {
+        if (val == 0) return;   // ver _addNassauSegment
         if (score > 0) {
           entries.add(LedgerEntry(fromPlayerId: p2Id, toPlayerId: p1Id,
               amount: val, betType: BetModuleType.nassau, reason: label));
@@ -1268,7 +1270,7 @@ class BetEngine {
       // Mismos nueve hoyos y mismo importe que el B9, pero apuesta propia. Va
       // SIN presiones automáticas —pressValue 0— porque es una apuesta que se
       // pide entera; encadenarle presiones sería otra cosa y nadie la pactó.
-      if (cfg.aperturaB9For(p1Id, p2Id)) {
+      if (cfg.aperturaB9For(p1Id, p2Id) && !cfg.soloElMatch) {
         liquidateSegment(
           holes: seg.secondNine,
           segValue: cfg.backValue,
@@ -1675,111 +1677,6 @@ class BetEngine {
     return value / pairs;
   }
 
-  // ── Helper: deltas hoyo a hoyo entre dos lados (usa holeDeltaVs) ──────────
-  // Devuelve (holeOrder, deltas[1..n]) igual que _buildHoleDeltas.
-  // hcpMap: todos los jugadores de ambos lados, HCP de ronda directo.
-  // En modo gross puede pasarse un mapa vacío (todos 0.0).
-  static (List<int>, List<int>) _buildHoleDeltasTeam(
-      Round round, BetSide sideA, BetSide sideB, BetModuleInstance mod) {
-    final allPlayerIds = [...sideA.playerIds, ...sideB.playerIds];
-    final hcpMap = mod.useHandicap
-        ? GameEngine.buildTeamHcpMap(round, allPlayerIds, cfg: mod.teamHandicap)
-        : <String, double>{};
-
-    // Hoyos reales del curso en orden de juego (no un rango derivado de
-    // totalHoles, que se queda en 9 si la ronda se extiende a 18).
-    final holeOrder = segmentsOf(round).playOrder;
-
-    // deltas[0] no se usa; índice 1-based
-    final List<int> deltas = List.filled(holeOrder.length + 1, 0);
-
-    for (int pos = 0; pos < holeOrder.length; pos++) {
-      final h = holeOrder[pos];
-      final delta = GameEngine.holeDeltaVs(
-        round:        round,
-        sideA:        sideA,
-        sideB:        sideB,
-        holeNum:      h,
-        useHandicap:  mod.useHandicap,
-        hcpMap:       hcpMap,
-      );
-      // null → hoyo no completado → delta queda 0 (no jugado)
-      if (delta != null) deltas[pos + 1] = delta;
-    }
-    return (holeOrder, deltas);
-  }
-
-  // ── MATCH + AUTO PRESS (equipo) ───────────────────────────────────────────
-  static List<LedgerEntry> _matchAutoPressTeam(Round round, BetModuleInstance mod) {
-    final entries = <LedgerEntry>[];
-    final sideA = mod.sideA;
-    final sideB = mod.sideB;
-    final cfg   = mod.matchAutoPress;
-
-    // Carry factor: en equipo usamos valor de configuración directo (sin sliding bilateral)
-    final matchValue = cfg.matchValue;
-    final pressValue = cfg.pressValue;
-
-    final hd        = _buildHoleDeltasTeam(round, sideA, sideB, mod);
-    final holeOrder = hd.$1;
-    final deltas    = hd.$2;
-
-    final matches = _buildMatchTreeRoot(
-      holeOrder:  holeOrder,
-      deltas:     deltas,
-      trigger:    cfg.pressTriggerValue,
-      maxPresses: cfg.maxPresses ?? 99,
-      matchValue: matchValue,
-      pressValue: pressValue,
-    );
-
-    for (final m in matches) {
-      int score  = 0;
-      int played = 0;
-      for (int pos = m.startPos; pos <= m.endPos && pos <= holeOrder.length; pos++) {
-        score += deltas[pos];
-        // Contar como jugado si el delta fue calculado (hoyo completo en ambos lados)
-        if (deltas[pos] != 0) {
-          played++;
-        } else {
-          // También contar hoyos empatados (delta=0) que sí se jugaron.
-          // Basta con que CADA lado tenga al menos una bola anotada (best ball).
-          final h = holeOrder[pos - 1];
-          final aPlayed = sideA.playerIds.any((pid) => round.getScore(pid, h).hasScore);
-          final bPlayed = sideB.playerIds.any((pid) => round.getScore(pid, h).hasScore);
-          if (aPlayed && bPlayed) played++;
-        }
-      }
-      if (played == 0) continue;
-      // El match por equipos vale lo configurado en total (ver teamCrossAmount)
-      final amount = teamCrossAmount(
-          m.value, sideA.playerIds.length, sideB.playerIds.length);
-      final label = '${m.businessLabel} H${holeOrder[m.startPos - 1]}–H${holeOrder[m.endPos.clamp(1, holeOrder.length) - 1]} (${sideA.name} vs ${sideB.name})';
-      if (score > 0) {
-        // sideA gana: sideB paga a sideA (cada jugador de B paga a cada jugador de A)
-        for (final pA in sideA.playerIds) {
-          for (final pB in sideB.playerIds) {
-            entries.add(LedgerEntry(
-              fromPlayerId: pB, toPlayerId: pA,
-              amount: amount, betType: BetModuleType.matchAutoPress, reason: label,
-            ));
-          }
-        }
-      } else if (score < 0) {
-        // sideB gana
-        for (final pA in sideA.playerIds) {
-          for (final pB in sideB.playerIds) {
-            entries.add(LedgerEntry(
-              fromPlayerId: pA, toPlayerId: pB,
-              amount: amount, betType: BetModuleType.matchAutoPress, reason: label,
-            ));
-          }
-        }
-      }
-    }
-    return entries;
-  }
-
   // ── NASSAU (equipo) ───────────────────────────────────────────────────────
   static List<LedgerEntry> _nassauTeam(Round round, BetModuleInstance mod) {
     final entries = <LedgerEntry>[];
@@ -1814,7 +1711,7 @@ class BetEngine {
     final total = front + back;
 
     void addSegment(int margin, double value, String label) {
-      if (margin == 0) return;
+      if (margin == 0 || value == 0) return;   // ver _addNassauSegment
       // El duelo por equipos vale lo configurado EN TOTAL: el lado que gana se
       // lleva `value` repartido entre sus miembros, igual que si fuera un
       // jugador contra otro. Ver [teamCrossAmount].
@@ -2197,71 +2094,6 @@ class BetEngine {
   }
 
   // ── MATCH AUTO PRESS LIVE (equipo) ────────────────────────────────────────
-  static List<MatchPressLiveStatus> matchAutoPressLiveTeam(
-      Round round, BetModuleInstance mod) {
-    final sideA = mod.sideA;
-    final sideB = mod.sideB;
-    final cfg   = mod.matchAutoPress;
-
-    final hd        = _buildHoleDeltasTeam(round, sideA, sideB, mod);
-    final holeOrder = hd.$1;
-    final deltas    = hd.$2;
-
-    // Último hoyo jugado
-    int lastPlayedPos = 0;
-    for (int pos = 1; pos <= holeOrder.length; pos++) {
-      final h = holeOrder[pos - 1];
-      final allPlayed = [...sideA.playerIds, ...sideB.playerIds]
-          .every((pid) => round.getScore(pid, h).hasScore);
-      if (allPlayed && pos > lastPlayedPos) lastPlayedPos = pos;
-    }
-    final lastPlayedHole = lastPlayedPos > 0 ? holeOrder[lastPlayedPos - 1] : 0;
-
-    final matches = _buildMatchTreeRoot(
-      holeOrder:  holeOrder,
-      deltas:     deltas,
-      trigger:    cfg.pressTriggerValue,
-      maxPresses: cfg.maxPresses ?? 99,
-      matchValue: cfg.matchValue,
-      pressValue: cfg.pressValue,
-    );
-
-    final idA = sideA.playerIds.first;
-    final idB = sideB.playerIds.first;
-
-    final results = <MatchPressLiveStatus>[];
-    for (final m in matches) {
-      int score = 0, played = 0;
-      for (int pos = m.startPos; pos <= m.endPos && pos <= holeOrder.length; pos++) {
-        score += deltas[pos];
-        if (deltas[pos] != 0) {
-          played++;
-        } else {
-          final h = holeOrder[pos - 1];
-          final allPlayed = [...sideA.playerIds, ...sideB.playerIds]
-              .every((pid) => round.getScore(pid, h).hasScore);
-          if (allPlayed) played++;
-        }
-      }
-      final startHole = holeOrder[m.startPos - 1];
-      final endIdx    = (m.endPos - 1).clamp(0, holeOrder.length - 1);
-      final endHole   = holeOrder[endIdx];
-      results.add(MatchPressLiveStatus(
-        sequenceNumber: m.seq,
-        isPrimaryMatch: m.isPrimary,
-        startHole:      startHole,
-        endHole:        endHole,
-        score:          score,
-        played:         played,
-        value:          m.value,
-        leadingPlayerId: score > 0 ? idA : score < 0 ? idB : null,
-        lastHole:       lastPlayedHole,
-      ));
-    }
-    return results;
-  }
-
-  // ── NASSAU LIVE STATUS (equipo) ───────────────────────────────────────────
   static NassauLiveStatus nassauLiveStatusTeam(Round round, BetModuleInstance mod) {
     final sideA = mod.sideA;
     final sideB = mod.sideB;
@@ -2325,290 +2157,6 @@ class BetEngine {
       totalVal: v.total,
     );
   }
-
-  // ── MATCH + AUTO PRESS ────────────────────────────────────────────────────
-  // Spec: cada match activo (principal o presión) se sigue por separado.
-  // Cuando su marcador llega al trigger, abre UN press hijo que empieza
-  // en el SIGUIENTE hoyo. Las presiones son recursivas (press-sobre-press).
-  // Reglas:
-  //   R1  El match principal siempre existe.
-  //   R2  Un press solo nace cuando un match activo alcanza el trigger.
-  //   R3  El press empieza en el hoyo siguiente al trigger.
-  //   R4  Cada match activo abre solo un press hijo.
-  //   R5  Un press también es un match activo y puede abrir otro press.
-  //   R6  Las presiones dependen del marcador, no de bloques fijos.
-  //   R7  Si no hay hoyo siguiente, no se abre press.
-  //   R8  En Todos vs Todos cada duelo se calcula por separado.
-
-  static List<LedgerEntry> _matchAutoPress(
-      Round round, List<String> pids, BetModuleInstance mod) {
-    final entries = <LedgerEntry>[];
-    if (pids.length != 2) return entries;
-    final p1Id = pids[0];
-    final p2Id = pids[1];
-    final cfg  = mod.matchAutoPress;
-
-    // Deltas hoyo a hoyo en orden real de juego
-    final hd = _buildHoleDeltas(round, p1Id, p2Id, mod);
-    final holeOrder = hd.$1;
-    final deltas    = hd.$2;   // deltas[pos] (1-based), 0 = no jugado
-
-    // Construir el árbol de matches activos con la lógica recursiva
-    final matches = _buildMatchTreeRoot(
-      holeOrder:  holeOrder,
-      deltas:     deltas,
-      trigger:    cfg.pressTriggerValue,
-      maxPresses: cfg.maxPresses ?? 99,
-      matchValue: cfg.matchValue,
-      pressValue: cfg.pressValue,
-    );
-
-    // Liquidar cada match
-    for (final m in matches) {
-      int score = 0;
-      int played = 0;
-      for (int pos = m.startPos; pos <= m.endPos && pos <= holeOrder.length; pos++) {
-        score += deltas[pos];
-        // Contar como jugado si ambos tienen score (incluye hoyos empatados con delta=0)
-        final h  = holeOrder[pos - 1];
-        final s1 = round.getScore(p1Id, h);
-        final s2 = round.getScore(p2Id, h);
-        if (s1.hasScore && s2.hasScore) played++;
-      }
-      if (played == 0) continue;
-      final label = '${m.businessLabel} H${holeOrder[m.startPos - 1]}–H${holeOrder[m.endPos.clamp(1, holeOrder.length) - 1]}';
-      if (score > 0) {
-        entries.add(LedgerEntry(fromPlayerId: p2Id, toPlayerId: p1Id,
-            amount: m.value, betType: BetModuleType.matchAutoPress, reason: label));
-      } else if (score < 0) {
-        entries.add(LedgerEntry(fromPlayerId: p1Id, toPlayerId: p2Id,
-            amount: m.value, betType: BetModuleType.matchAutoPress, reason: label));
-      }
-    }
-    return entries;
-  }
-
-  // ── MATCH AUTO PRESS — ESTADO EN VIVO ────────────────────────────────────
-  static List<MatchPressLiveStatus> matchAutoPressLive(
-    Round round, String p1Id, String p2Id, BetModuleInstance mod,
-  ) {
-    final cfg = mod.matchAutoPress;
-
-    final hd = _buildHoleDeltas(round, p1Id, p2Id, mod);
-    final holeOrder = hd.$1;
-    final deltas    = hd.$2;
-
-    int lastPlayedPos = 0;
-    for (int pos = holeOrder.length; pos >= 1; pos--) {
-      if (deltas[pos] != 0) { lastPlayedPos = pos; break; }
-    }
-    // También detectar hoyos con score = 0 (par) que sí se jugaron
-    for (int pos = 1; pos <= holeOrder.length; pos++) {
-      final h = holeOrder[pos - 1];
-      final s1 = round.getScore(p1Id, h);
-      final s2 = round.getScore(p2Id, h);
-      if (s1.hasScore && s2.hasScore && pos > lastPlayedPos) lastPlayedPos = pos;
-    }
-    final lastPlayedHole = lastPlayedPos > 0 ? holeOrder[lastPlayedPos - 1] : 0;
-
-    final matches = _buildMatchTreeRoot(
-      holeOrder:  holeOrder,
-      deltas:     deltas,
-      trigger:    cfg.pressTriggerValue,
-      maxPresses: cfg.maxPresses ?? 99,
-      matchValue: cfg.matchValue,
-      pressValue: cfg.pressValue,
-    );
-
-    final results = <MatchPressLiveStatus>[];
-    for (final m in matches) {
-      int score = 0;
-      int played = 0;
-      for (int pos = m.startPos; pos <= m.endPos && pos <= holeOrder.length; pos++) {
-        score += deltas[pos];
-        // Contar como jugado si ambos tienen score
-        final h = holeOrder[pos - 1];
-        final s1 = round.getScore(p1Id, h);
-        final s2 = round.getScore(p2Id, h);
-        if (s1.hasScore && s2.hasScore) played++;
-      }
-      final startHole = holeOrder[m.startPos - 1];
-      final endIdx    = (m.endPos - 1).clamp(0, holeOrder.length - 1);
-      final endHole   = holeOrder[endIdx];
-      results.add(MatchPressLiveStatus(
-        sequenceNumber: m.seq,
-        isPrimaryMatch: m.isPrimary,
-        startHole: startHole,
-        endHole:   endHole,
-        score:     score,
-        played:    played,
-        value:     m.value,
-        leadingPlayerId: score > 0 ? p1Id : score < 0 ? p2Id : null,
-        lastHole:  lastPlayedHole,
-      ));
-    }
-    return results;
-  }
-
-  // ── Helper: calcular deltas hoyo a hoyo ──────────────────────────────────
-  // Devuelve (holeOrder, deltas) donde deltas[pos 1-based] = +1/-1/0.
-  // Para hoyos no jugados devuelve 0 pero NO los marca como jugados.
-  static (List<int>, List<int>) _buildHoleDeltas(
-      Round round, String p1Id, String p2Id, BetModuleInstance mod) {
-    final allHoles = round.course.holes;
-    // Usar _strokesP1ReceivesFromP2 que prioriza manualHandicaps sobre HCP.
-    final recv     = _strokesP1ReceivesFromP2(round, p1Id, p2Id);
-    final p1IsBase = recv <= 0;
-    final baseId   = p1IsBase ? p1Id : p2Id;
-    final receiverId = p1IsBase ? p2Id : p1Id;
-    final recvAbs  = recv.abs().round();
-
-    // Hoyos del CURSO en F9/B9 — distribución de SI correcta
-    final (courseF9match, courseB9match) =
-        _courseHolesF9B9(allHoles, round.startingNine);
-
-    final holeOrder = round.startingNine == StartingNine.back
-        ? [...allHoles.where((c) => c.hole >= 10).map((c) => c.hole).toList()..sort(),
-           ...allHoles.where((c) => c.hole <= 9).map((c) => c.hole).toList()..sort()]
-        : allHoles.map((c) => c.hole).toList()..sort();
-    final holeMap = { for (final ch in allHoles) ch.hole: ch };
-
-    // deltas[0] no se usa; índice 1-based
-    final List<int> deltas = List.filled(holeOrder.length + 1, 0);
-
-    for (int pos = 0; pos < holeOrder.length; pos++) {
-      final h  = holeOrder[pos];
-      final ch = holeMap[h] ?? allHoles.first;
-      final s1 = round.getScore(p1Id, h);
-      final s2 = round.getScore(p2Id, h);
-      if (!s1.hasScore || !s2.hasScore) continue;
-
-      final courseHolesForMatch = courseF9match.any((hh) => hh.hole == ch.hole)
-          ? courseF9match : courseB9match;
-      final strokesHere = mod.useHandicap && recvAbs > 0
-          ? GameEngine.strokesReceivedFromOfficial18Sliding(
-              diff18:              recvAbs,
-              ch:                  ch,
-              courseHolesInSameNine: courseHolesForMatch,
-              startingNine:        round.startingNine,
-              isNineHolesStartingNine: BetEngine.isNineStartingNine(ch: ch, courseF9: courseF9match, courseB9: courseB9match, startingNine: round.startingNine),
-            )
-          : 0;
-
-      final grossBase   = round.getScore(baseId,     h).grossScore!;
-      final netReceiver = round.getScore(receiverId, h).grossScore! - strokesHere;
-
-      final int delta;
-      if      (grossBase < netReceiver) {
-        delta = baseId == p1Id ?  1 : -1;
-      } else if (grossBase > netReceiver) delta = baseId == p1Id ? -1 :  1;
-      else                              delta = 0;
-
-      deltas[pos + 1] = delta;
-    }
-    return (holeOrder, deltas);
-  }
-
-  // ── Helper: construir árbol de matches activos recursivamente ────────────
-  // Spec:
-  //   R1  El match principal siempre existe (seq=1).
-  //   R2  Un press nace cuando un match activo alcanza el trigger.
-  //   R3  El press empieza en el hoyo SIGUIENTE al trigger.
-  //   R4  Cada match activo abre solo UN press hijo.
-  //   R5  Un press también es un match activo y puede abrir su propio press.
-  //   R6  Las presiones dependen del marcador, no de bloques fijos.
-  //   R7  Si no hay hoyo siguiente al trigger, no se crea press.
-  //   R8  En Todos vs Todos cada duelo se calcula por separado.
-  //
-  // Implementación: cada llamada representa UN match activo.
-  // Devuelve la lista plana de todos los matches abiertos (este + descendientes).
-  // El seq counter se pasa por referencia (List<int> de un elemento) para que
-  // cada nodo reciba un número único en el árbol completo.
-  static List<_MatchNode> _buildMatchTree({
-    required List<int> holeOrder,
-    required List<int> deltas,
-    required int trigger,
-    required int maxPresses,
-    required double matchValue,
-    required double pressValue,
-    required int startPos,
-    int seq = 1,
-    required List<int> seqCounter, // contador compartido [siguiente seq disponible]
-  }) {
-    final nodes = <_MatchNode>[];
-    if (startPos > holeOrder.length) return nodes;
-
-    // Registrar este match
-    final node = _MatchNode(
-      seq:       seq,
-      isPrimary: seq == 1,
-      startPos:  startPos,
-      endPos:    holeOrder.length,
-      value:     seq == 1 ? matchValue : pressValue,
-    );
-    nodes.add(node);
-
-    // Recorrer los hoyos de este match evaluando su propio marcador acumulado
-    int matchScore = 0;
-    bool pressOpened = false; // R4: solo un press hijo por match
-
-    for (int pos = startPos; pos <= holeOrder.length; pos++) {
-      matchScore += deltas[pos];
-
-      // R2 + R4: trigger alcanzado y aún no abrimos press hijo
-      if (!pressOpened && matchScore.abs() >= trigger) {
-        // R7: solo si hay hoyo siguiente
-        final nextPos = pos + 1;
-        if (nextPos <= holeOrder.length) {
-          // Verificar límite global de presses (maxPresses)
-          final totalPressesInTree = seqCounter[0] - 2; // -2 porque seq=1 es el match principal
-          if (totalPressesInTree < maxPresses) {
-            pressOpened = true;
-            final childSeq = seqCounter[0]++;
-            // R5: el press hijo también puede abrir su propio press
-            final children = _buildMatchTree(
-              holeOrder:  holeOrder,
-              deltas:     deltas,
-              trigger:    trigger,
-              maxPresses: maxPresses,
-              matchValue: matchValue,
-              pressValue: pressValue,
-              startPos:   nextPos,
-              seq:        childSeq,
-              seqCounter: seqCounter,
-            );
-            nodes.addAll(children);
-          }
-        }
-      }
-    }
-    return nodes;
-  }
-
-  // Wrapper público para _buildMatchTree (maneja el seqCounter compartido)
-  static List<_MatchNode> _buildMatchTreeRoot({
-    required List<int> holeOrder,
-    required List<int> deltas,
-    required int trigger,
-    required int maxPresses,
-    required double matchValue,
-    required double pressValue,
-  }) {
-    // seqCounter[0] empieza en 2 (seq=1 es el match principal)
-    final seqCounter = [2];
-    return _buildMatchTree(
-      holeOrder:  holeOrder,
-      deltas:     deltas,
-      trigger:    trigger,
-      maxPresses: maxPresses,
-      matchValue: matchValue,
-      pressValue: pressValue,
-      startPos:   1,
-      seq:        1,
-      seqCounter: seqCounter,
-    );
-  }
-
 
   /// Genera TODOS los entries de todos los grupos de la ronda.
   ///
@@ -2684,7 +2232,6 @@ class BetEngine {
   static const _conAncla = {
     BetModuleType.medal,
     BetModuleType.skins,
-    BetModuleType.matchAutoPress,
   };
 
   static List<String> pactosQueElPoteIgnora(Round round) {
@@ -3258,18 +2805,28 @@ class BetEngine {
     //   p1IsBase=false: delta=-1 si base(p2) gana, +1 si pierde  →  +1 = p1 arriba
     // Por tanto NO se normaliza: pasar frontHistory/backHistory directamente.
 
-    // Presiones del primer segmento (vuelta de inicio)
+    // ── La guarda de `pressEnabled`, DENTRO ─────────────────────────────────
+    //
+    // Este método detectaba presiones mirara o no la configuración, y confiaba
+    // en que cada llamador preguntara `mod.pressEnabled` antes. Los cuatro que
+    // había lo hacían; el quinto —la línea «5 3 1»— tuvo que aprenderlo, y el
+    // sexto habría enseñado a una partida sin presiones apuestas que nadie
+    // abrió.
+    //
+    // Una guarda que hay que repetir en cada llamador no es una guarda: es una
+    // costumbre. Ahora está donde no se puede olvidar.
     final List<NassauPress> frontPresses = [];
-    _detectPressesInSegment(frontPresses, frontHistory, seg.firstNine, frontPlayed,
-        p1Id, p2Id, cfg.autoPressTrigger,
-        variasPorSegmento: cfg.allowMultiplePresses,
-        maxPorSegmento: cfg.maxPresses);
-    // Presiones del segundo segmento
     final List<NassauPress> backPresses  = [];
-    _detectPressesInSegment(backPresses, backHistory, seg.secondNine, backPlayed,
-        p1Id, p2Id, cfg.autoPressTrigger,
-        variasPorSegmento: cfg.allowMultiplePresses,
-        maxPorSegmento: cfg.maxPresses);
+    if (cfg.pressEnabled) {
+      _detectPressesInSegment(frontPresses, frontHistory, seg.firstNine, frontPlayed,
+          p1Id, p2Id, cfg.autoPressTrigger,
+          variasPorSegmento: cfg.allowMultiplePresses,
+          maxPorSegmento: cfg.maxPresses);
+      _detectPressesInSegment(backPresses, backHistory, seg.secondNine, backPlayed,
+          p1Id, p2Id, cfg.autoPressTrigger,
+          variasPorSegmento: cfg.allowMultiplePresses,
+          maxPorSegmento: cfg.maxPresses);
+    }
 
     return NassauPressLiveStatus(
       front: front, back: back, total: front + back,
@@ -3693,25 +3250,6 @@ class RoundSegments {
   }
 }
 
-// ── _MatchNode: nodo interno para el árbol de matches activos ────────────────
-class _MatchNode {
-  final int    seq;
-  final bool   isPrimary;
-  final int    startPos;
-  final int    endPos;
-  final double value;
-  const _MatchNode({
-    required this.seq,
-    required this.isPrimary,
-    required this.startPos,
-    required this.endPos,
-    required this.value,
-  });
-
-  int?   get pressNumber   => isPrimary ? null : seq - 1;
-  String get businessLabel => isPrimary ? 'Match' : 'Press $pressNumber';
-}
-
 // ── Modelos de resultado en vivo ──────────────────────────────────────────────
 class SkinHoleResult {
   final int hole;
@@ -3830,42 +3368,6 @@ class NassauPress {
     required this.loser, required this.startHole, required this.endHole,
     required this.score, required this.isOpen,
   });
-}
-
-// ── MatchPressLiveStatus ──────────────────────────────────────────────────────
-// Estado en vivo de una presión individual dentro de un juego Match + Auto Press.
-class MatchPressLiveStatus {
-  final int    sequenceNumber;   // 1 = match principal
-  final bool   isPrimaryMatch;
-  final int    startHole;
-  final int    endHole;
-  final int    score;            // positivo = p1 va arriba, negativo = p2 va arriba
-  final int    played;           // hoyos jugados en esta presión
-  final double value;
-  final String? leadingPlayerId; // null si empatado
-  final int    lastHole;         // último hoyo jugado en la ronda
-
-  const MatchPressLiveStatus({
-    required this.sequenceNumber, required this.isPrimaryMatch,
-    required this.startHole, required this.endHole,
-    required this.score, required this.played, required this.value,
-    required this.lastHole,
-    this.leadingPlayerId,
-  });
-
-  /// Número de press para mostrar en UI (1, 2, 3…). Null si es el match principal.
-  int? get pressNumber => isPrimaryMatch ? null : sequenceNumber - 1;
-
-  /// Etiqueta de negocio: 'Match' o 'Press 1', 'Press 2', etc.
-  String get businessLabel => isPrimaryMatch ? 'Match' : 'Press $pressNumber';
-
-  bool get isAllSquare  => score == 0;
-  bool get isOpen       => lastHole < endHole;
-  int  get holesLeft    => endHole - lastHole;
-  String get scoreLabel {
-    if (score == 0) return 'AS';
-    return '${score.abs()}UP';
-  }
 }
 
 // ── NassauPressLiveStatus ─────────────────────────────────────────────────────

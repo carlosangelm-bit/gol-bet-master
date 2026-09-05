@@ -228,7 +228,6 @@ class _BettingGroupEditorScreenState
             formatMode:            m.formatMode,
             skinsConfig:           m.skinsConfig,
             nassauConfig:          m.nassauConfig,
-            matchAutoPressConfig:  m.matchAutoPressConfig,
             medalConfig:           m.medalConfig,
             puttsConfig:           m.puttsConfig,
             oyesesConfig:          m.oyesesConfig,

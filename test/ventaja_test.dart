@@ -127,10 +127,11 @@ void _modo() {
   group('conModo', () {
     const conModo = BetRecipe.conModo;
 
-    test('lo aplica en los cinco tipos que lo leen', () {
+    test('lo aplica en los cuatro tipos que lo leen', () {
+      // Eran cinco: Match + Press se retiró por ser un Nassau con los nueves a
+      // cero, y su rama en `conModo` se fue con él.
       for (final t in [BetModuleType.skins, BetModuleType.nassau,
-                       BetModuleType.medal, BetModuleType.nassauLowHigh,
-                       BetModuleType.matchAutoPress]) {
+                       BetModuleType.medal, BetModuleType.nassauLowHigh]) {
         final m = BetModuleInstance.defaultFor(t, const ['a', 'b'], id: 'x');
         expect(conModo(m, GrossNetMode.gross).useHandicap, isFalse,
             reason: '${t.label} en bruto');

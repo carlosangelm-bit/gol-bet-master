@@ -922,9 +922,6 @@ class _PresetConfigWidgets {
         return _skinsWidgets(cfg, t, setSt, update);
       case BetModuleType.nassau:
         return _nassauWidgets(cfg, t, setSt, update);
-      case BetModuleType.matchAutoPress:
-        return _matchPressWidgets(cfg, t, setSt, update);
-
       case BetModuleType.medal:
         return _medalWidgets(cfg, t, setSt, update);
       case BetModuleType.putts:
@@ -1125,33 +1122,6 @@ class _PresetConfigWidgets {
           }),
         ],
       ],
-    ];
-  }
-
-  // ── Match + Auto Press ─────────────────────────────────────────────────────
-  static List<Widget> _matchPressWidgets(BetModuleInstance cfg, GolfTheme t, StateSetter setSt, void Function(BetModuleInstance) update) {
-    final m = cfg.matchAutoPress;
-    final cMatch = TextEditingController(text: m.matchValue.toStringAsFixed(0));
-    final cPress = TextEditingController(text: m.pressValue.toStringAsFixed(0));
-    cMatch.addListener(() { final v = double.tryParse(cMatch.text); if (v != null) update(cfg.copyWith(matchAutoPressConfig: m.copyWith(matchValue: v))); });
-    cPress.addListener(() { final v = double.tryParse(cPress.text); if (v != null) update(cfg.copyWith(matchAutoPressConfig: m.copyWith(pressValue: v))); });
-    return [
-      ..._formatSelector(cfg, t, setSt, update),
-      _label('MATCH PRINCIPAL', t), const SizedBox(height: 8),
-      _amountField('Valor del match', cMatch, t),
-      const SizedBox(height: 16),
-      _label('PRESIONES', t), const SizedBox(height: 8),
-      _amountField('Valor por presión', cPress, t),
-      const SizedBox(height: 16),
-      _label('TRIGGER DE PRESIÓN', t), const SizedBox(height: 8),
-      _segmented(['1 up', '2 up', '3 up'], m.pressTriggerValue - 1, t, (i) {
-        setSt(() => update(cfg.copyWith(matchAutoPressConfig: m.copyWith(pressTriggerValue: i + 1))));
-      }),
-      const SizedBox(height: 16),
-      _label('HANDICAP', t), const SizedBox(height: 8),
-      _segmented(['Gross', 'Net'], m.mode == GrossNetMode.net ? 1 : 0, t, (i) {
-        setSt(() => update(cfg.copyWith(matchAutoPressConfig: m.copyWith(mode: i == 1 ? GrossNetMode.net : GrossNetMode.gross))));
-      }),
     ];
   }
 

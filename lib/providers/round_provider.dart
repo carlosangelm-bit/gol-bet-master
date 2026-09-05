@@ -1292,7 +1292,6 @@ class RoundProvider extends ChangeNotifier {
       formatMode:            mod.formatMode,
       nassauConfig:          nassauCfg,
       skinsConfig:           skinsCfg,
-      matchAutoPressConfig:  mod.matchAutoPressConfig,
       medalConfig:           medalCfg,
       puttsConfig:           puttsCfg,
       oyesesConfig:          mod.oyesesConfig,

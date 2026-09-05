@@ -106,20 +106,34 @@ void main() {
       );
     });
 
-    test('Match + Press Team', () {
+    test('Un MATCH sobre 18 por equipos', () {
+      // Era `BetModuleType.matchAutoPress`, retirado por ser un Nassau con los
+      // dos nueves a cero.
+      //
+      // ── Y esta ronda es de NUEVE hoyos ──────────────────────────────────
+      //
+      // «Los dos nueves a cero y el total con el importe» es la forma de un
+      // match sobre DIECIOCHO. En nueve no hay total: la vuelta única cobra por
+      // `frontValue`, y un 0/0/X ahí no pagaría nada.
+      //
+      // No es un caso que haya que resolver — un match a nueve es un Nassau de
+      // nueve, con su importe — pero se escribe aquí porque la forma no es la
+      // misma y confundirlas deja una apuesta muda.
+      //
+      // Sin presiones: el motor de equipos no las tiene, y eso está escrito en
+      // engine_team_test.
       final matchMod = BetModuleInstance(
         id: 'match_mod',
-        type: BetModuleType.matchAutoPress,
+        type: BetModuleType.nassau,
         name: 'Match Team 2v2',
         participantIds: ['p1', 'p2', 'p3', 'p4'],
         status: BetModuleStatus.active,
         sides: [sideA, sideB],
-        matchAutoPressConfig: const MatchAutoPressConfig(
-          matchValue: 10.0,
-          pressValue: 5.0,
-          pressTriggerValue: 2,
+        nassauConfig: const NassauConfig(
+          frontValue: 10.0,
+          backValue: 0,
+          totalValue: 0,
           mode: GrossNetMode.net,
-          allowMultiplePresses: true,
         ),
       );
 
@@ -150,7 +164,7 @@ void main() {
 
       final ledger = BetEngine.computeAll(round);
 
-      print('🏌️ Match + Press Team Results:');
+      print('Match por equipos:');
       for (final entry in ledger) {
         print('  ${entry.fromPlayerId} → ${entry.toPlayerId}: \$${entry.amount.toStringAsFixed(2)} (${entry.reason})');
       }

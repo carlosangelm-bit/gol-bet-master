@@ -889,3 +889,54 @@ el nueve termina, el que **se liquidó** —una presión cierra donde nace la
 siguiente—. Así que `+5 +3 +1` a mitad puede quedar en `+5 +1 +1` al cerrar. No
 son dos cuentas: son dos momentos, y el bloque de al lado dice exactamente lo
 mismo.
+
+---
+
+# Match + Press retirado
+
+**Match + Press es un Nassau sin partición en vueltas:**
+
+```
+Nassau   F9 $0 · B9 $0 · Total $100 · Presiones $50
+```
+
+**Mil doscientas líneas menos en `lib/`.** Y una regla nueva vuelve a ser un solo
+sitio.
+
+## Qué mirar
+
+1. **Crea una apuesta.** Match + Press **no está** en la lista. Ya no estaba
+   —se había retirado del catálogo dejándolo vivo en el motor— pero ahora no
+   existe.
+2. **Abre un Nassau.** Arriba hay **QUÉ SE JUEGA**: `F9 · B9 · 18` o
+   **`Solo el match (18)`**. El segundo pone los dos nueves a cero y esconde
+   sus campos.
+3. **Con «solo el match»**, el editor dice que **el carry y la presión de la 2ª
+   vuelta no aplican**, y por qué.
+4. **En la tarjeta del duelo**, el bloque del carry no desaparece: dice *«No
+   aplica: esta partida es un match sobre los 18 hoyos, sin F9 ni B9»*.
+5. **La línea «5 3 1» funciona igual** — se hereda, no hubo que escribirla dos
+   veces. Era una de las dos cosas que quedaban pendientes del otro motor.
+6. **El desglose no tiene líneas de $0.** El F9 y el B9 valen cero, así que no
+   producen asiento: antes salían dos filas que no pagaban nada.
+
+## Lo que NO es idéntico
+
+Está probado y escrito, porque no es un cambio de nombre:
+
+- **Las presiones.** En Match + Press cada presión corría **hasta el hoyo 18** y
+  todas convivían. En Nassau una presión vive dentro de **su nueve** y cierra
+  donde nace la siguiente.
+- **Por equipos no hay presiones.** El motor de equipos del Nassau nunca las ha
+  liquidado, y Match + Press por equipos sí. Un duelo 1v1 con presiones y el
+  mismo duelo declarado con lados dan importes distintos.
+- **En una ronda de nueve**, «los dos nueves a cero» no paga nada: la vuelta
+  única cobra por el importe del F9. Un match a nueve es un Nassau de nueve.
+
+**Nadie lo tenía configurado**, así que no le quita nada a nadie — pero si algo
+se comporta distinto, está aquí el motivo.
+
+## Sin migración
+
+Un módulo guardado con `type: matchAutoPress` **ya no se lee**. Se vuelve a
+crear como Nassau con los nueves en cero: dos toques.

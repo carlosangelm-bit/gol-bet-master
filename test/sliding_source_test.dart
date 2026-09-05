@@ -44,12 +44,14 @@ Round _round(List<BetModuleInstance> mods) {
   );
 }
 
+/// Un MATCH sobre los 18: Nassau con los dos nueves a cero.
+///
+/// Era `BetModuleType.matchAutoPress`, que se retiró por ser exactamente esto.
 BetModuleInstance _match(double valor) => BetModuleInstance(
-      id: 'm', type: BetModuleType.matchAutoPress, name: 'Match',
+      id: 'm', type: BetModuleType.nassau, name: 'Match',
       participantIds: const [p1, p2],
-      matchAutoPressConfig: MatchAutoPressConfig(
-          matchValue: valor, pressValue: 0, pressTriggerValue: 99,
-          allowMultiplePresses: false),
+      nassauConfig: NassauConfig(
+          frontValue: 0, backValue: 0, totalValue: valor),
     );
 
 BetModuleInstance _nassau(double valor) => BetModuleInstance(
@@ -73,16 +75,18 @@ DuelResult? _fuente(List<BetModuleInstance> mods) {
 
 void main() {
   group('manda el dinero, no el margen', () {
-    test('un Match caro gana a un Nassau barato', () {
-      // El caso reportado: el Match ponía $200 y el Nassau $60, pero la
-      // sugerencia salía de Nassau porque tenía más "margen".
-      final f = _fuente([_match(200), _nassau(20)])!;
-      expect(f.betType, BetModuleType.matchAutoPress);
+    test('un Nassau caro gana a unos Skins baratos', () {
+      // El caso reportado comparaba Match contra Nassau. Match + Press se
+      // retiró —era un Nassau sin partición en vueltas— así que la comparación
+      // entre tipos que queda es esta, y la regla es la misma: manda el dinero,
+      // no el margen.
+      final f = _fuente([_nassau(200), _skins(5)])!;
+      expect(f.betType, BetModuleType.nassau);
     });
 
-    test('y al revés: un Nassau caro gana a un Match barato', () {
-      final f = _fuente([_match(10), _nassau(100)])!;
-      expect(f.betType, BetModuleType.nassau);
+    test('y al revés: unos Skins caros ganan a un Nassau barato', () {
+      final f = _fuente([_nassau(5), _skins(200)])!;
+      expect(f.betType, BetModuleType.skins);
     });
 
     test('SKINS entra en la comparación', () {
@@ -94,23 +98,25 @@ void main() {
     });
 
     test('con los tres, gana el de más dinero', () {
-      final f = _fuente([_match(10), _nassau(5), _skins(300)])!;
+      final f = _fuente([_match(10), _skins(300)])!;
       expect(f.betType, BetModuleType.skins);
     });
   });
 
   group('desempate', () {
     test('a igualdad de dinero manda el orden declarado, no el del código', () {
-      // Match y Nassau con el mismo importe en juego: gana match play, por
-      // regla escrita y no porque su rama estuviera antes en el if.
-      final f = _fuente([_match(60), _nassau(20)])!;
+      // Nassau y Skins con el mismo importe: gana match play, por regla escrita
+      // y no porque su rama estuviera antes en el if.
+      // Los dos mueven $60: el match por su importe, los skins por seis hoyos
+      // a $10. Empatados en dinero, gana match play.
+      final f = _fuente([_match(60), _skins(10)])!;
       expect(f.netAmount, 60);
-      expect(f.betType, BetModuleType.matchAutoPress);
+      expect(f.betType, BetModuleType.nassau);
     });
 
     test('es determinista: mismo caso, misma fuente', () {
-      final a = _fuente([_match(60), _nassau(20)])!;
-      final b = _fuente([_nassau(20), _match(60)])!;
+      final a = _fuente([_match(60), _skins(10)])!;
+      final b = _fuente([_skins(10), _match(60)])!;
       expect(a.betType, b.betType,
           reason: 'el orden de los módulos no puede cambiar el resultado');
     });
@@ -123,10 +129,16 @@ void main() {
       // dejarlas fuera subestimaría el Match en la comparación que decide qué
       // apuesta representa el duelo.
       final conPress = BetModuleInstance(
-        id: 'm', type: BetModuleType.matchAutoPress, name: 'Match',
+        id: 'm', type: BetModuleType.nassau, name: 'Match',
         participantIds: const [p1, p2],
-        matchAutoPressConfig: const MatchAutoPressConfig(
-            matchValue: 100, pressValue: 50, pressTriggerValue: 2,
+        nassauConfig: const NassauConfig(
+            frontValue: 0,
+            backValue: 0,
+            totalValue: 100,
+            pressEnabled: true,
+            frontPressValue: 50,
+            backPressValue: 50,
+            autoPressTrigger: 2,
             maxPresses: 5),
       );
       final sinPress = _match(100);
@@ -146,11 +158,9 @@ void main() {
       expect(f.netAmount, 40);
     });
 
-    test('el Match ya no inventa una magnitud', () {
-      // margin es solo el signo: quién ganó. Cuánto, en unidades de match, no
-      // se puede saber desde el ledger y ya no se finge.
+    test('un match sobre 18 mueve su importe entero', () {
+      // Los dos nueves a cero: solo paga el total.
       final f = _fuente([_match(100)])!;
-      expect(f.margin.abs(), 1);
       expect(f.netAmount, 100);
     });
   });

@@ -55,8 +55,6 @@ BetModuleInstance _conLados(BetModuleType t) => BetModuleInstance(
       puttsConfig: t == BetModuleType.putts ? PuttsConfig.def : null,
       oyesesConfig: t == BetModuleType.oyeses ? OyesesConfig.def : null,
       unitsConfig: t == BetModuleType.units ? UnitsConfig.def : null,
-      matchAutoPressConfig:
-          t == BetModuleType.matchAutoPress ? MatchAutoPressConfig() : null,
       nassauLowHighConfig:
           t == BetModuleType.nassauLowHigh ? const NassauLowHighConfig() : null,
     );

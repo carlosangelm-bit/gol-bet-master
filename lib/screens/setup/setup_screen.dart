@@ -4397,8 +4397,6 @@ class _SetupScreenState extends State<SetupScreen> {
               _infoChip('Carry ON', t.accent, t),
             if (mod.type == BetModuleType.nassau && mod.nassau.pressEnabled)
               _infoChip('Press ON', t.accent, t),
-            if (mod.type == BetModuleType.matchAutoPress)
-              _infoChip('Auto Press', t.accent, t),
 
             _infoChip(mod.useHandicap ? 'Net' : 'Gross', t.primary, t),
           ]),
@@ -4636,8 +4634,7 @@ class _SetupScreenState extends State<SetupScreen> {
     final faltantes = _playersMissingFrom(family, g);
 
     // Color del acento según tipo
-    final isMatch  = template.type == BetModuleType.nassau ||
-                     template.type == BetModuleType.matchAutoPress;
+    final isMatch  = template.type == BetModuleType.nassau;
     final accent   = isMatch ? t.accent : t.primary;
 
     return Padding(
@@ -5157,7 +5154,6 @@ class _SetupScreenState extends State<SetupScreen> {
                                 formatMode:           cfg.formatMode,
                                 skinsConfig:          effectiveSkins,
                                 nassauConfig:         cfg.nassauConfig,
-                                matchAutoPressConfig: cfg.matchAutoPressConfig,
                                 medalConfig:          effectiveMedal,
                                 puttsConfig:          effectivePutts,
                                 oyesesConfig:         effectiveOyeses,
@@ -5666,8 +5662,6 @@ class _SetupScreenState extends State<SetupScreen> {
           ],
         ];
 
-      case BetModuleType.matchAutoPress:
-        return [...formatSelector, ..._matchAutoPressConfig(cfg, t, setSt, update)];
 
 
 
@@ -5937,64 +5931,6 @@ class _SetupScreenState extends State<SetupScreen> {
     }
   }
 
-  // ── Config Match + Auto Press ─────────────────────────────────────────────
-  // Este método devuelve los widgets de configuración para matchAutoPress
-  // y se llama desde _configWidgets (case matchAutoPress).
-  // Se mantiene separado para mantener el switch limpio.
-  List<Widget> _matchAutoPressConfig(BetModuleInstance cfg, GolfTheme t, StateSetter setSt, void Function(BetModuleInstance) update) {
-    final m = cfg.matchAutoPress;
-    final cMatch = _cfgCtrl('match.value', m.matchValue.toStringAsFixed(0));
-    final cPress = _cfgCtrl('match.press', m.pressValue.toStringAsFixed(0));
-    return [
-      _sectionLabel('MATCH PRINCIPAL', t),
-      const SizedBox(height: 8),
-      _amountField('Valor del match', cMatch, t, onChanged: (v) {
-        update(cfg.copyWith(matchAutoPressConfig: m.copyWith(matchValue: v)));
-      }),
-      const SizedBox(height: 16),
-      _sectionLabel('PRESIONES ADICIONALES', t),
-      const SizedBox(height: 8),
-      _amountField('Valor por presión', cPress, t, onChanged: (v) {
-        update(cfg.copyWith(matchAutoPressConfig: m.copyWith(pressValue: v)));
-      }),
-      const SizedBox(height: 16),
-      _sectionLabel('TRIGGER DE PRESIÓN', t),
-      const SizedBox(height: 6),
-      Text('Se abre una nueva presión cuando alguien llega a N hoyos arriba.',
-          style: TextStyle(color: t.sub, fontSize: 11)),
-      const SizedBox(height: 8),
-      _segmentedRow(['1 up', '2 up', '3 up'], m.pressTriggerValue - 1, t, (i) {
-        setSt(() => update(cfg.copyWith(matchAutoPressConfig: m.copyWith(pressTriggerValue: i + 1))));
-      }),
-      const SizedBox(height: 16),
-      _sectionLabel('HANDICAP', t),
-      const SizedBox(height: 8),
-      _segmentedRow(['Gross', 'Net'], m.mode == GrossNetMode.net ? 1 : 0, t, (i) {
-        setSt(() => update(cfg.copyWith(matchAutoPressConfig: m.copyWith(mode: i == 1 ? GrossNetMode.net : GrossNetMode.gross))));
-      }),
-      const SizedBox(height: 20),
-      // Vista previa del juego
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: t.accent.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: t.accent.withValues(alpha: 0.3)),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('CÓMO FUNCIONA ESTE JUEGO', style: TextStyle(color: t.accent, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.6)),
-          const SizedBox(height: 8),
-          _previewRow(GolfIcons.bandera, 'Match principal (Press #1)', '\$${m.matchValue.toStringAsFixed(0)}', t),
-          const SizedBox(height: 4),
-          _previewRow(GolfIcons.rapido, 'Cada presión adicional vale', '\$${m.pressValue.toStringAsFixed(0)}', t),
-          const SizedBox(height: 4),
-          _previewRow(GolfIcons.diana, 'Se abre cuando alguien llega a', '${m.pressTriggerValue} up', t),
-          const SizedBox(height: 4),
-          _previewRow(GolfIcons.grafico, 'Todas las presiones duran', 'hasta hoyo 18', t),
-        ]),
-      ),
-    ];
-  }
 
 
 

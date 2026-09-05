@@ -1100,17 +1100,6 @@ class _PlayerFaceToFace extends StatelessWidget {
                 final modPids = mod.effectivePids(gr.playerIds);
                 // Solo procesar el módulo si aplica a AMBOS jugadores del par
                 if (!modPids.contains(player.id) || !modPids.contains(opp.id)) continue;
-                // ── Match + Press live balance ─────────────────────────────
-                if (mod.type == BetModuleType.matchAutoPress) {
-                  double mpLiveBal = 0.0;
-                  final presses = BetEngine.matchAutoPressLive(round, player.id, opp.id, mod);
-                  for (final pr in presses) {
-                    if (pr.played == 0) continue;
-                    if (pr.leadingPlayerId == player.id) mpLiveBal += pr.value;
-                    if (pr.leadingPlayerId == opp.id) mpLiveBal -= pr.value;
-                  }
-                  breakdown[BetModuleType.matchAutoPress] = mpLiveBal;
-                }
                 // Nassau: sobreescribir con balance en vivo
                 if (mod.type == BetModuleType.nassau) {
                   double npLiveBal = 0.0;
@@ -1213,7 +1202,6 @@ class _DuelCard extends StatelessWidget {
     const preferidos = [
       BetModuleType.skins,
       BetModuleType.nassau,
-      BetModuleType.matchAutoPress,
       BetModuleType.medal,
       BetModuleType.putts,
       BetModuleType.oyeses,

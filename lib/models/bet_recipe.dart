@@ -599,7 +599,7 @@ class BetRecipe {
 
   /// Clave estable de un cruce. Ordenada, para que (a,b) y (b,a) sean el mismo.
   ///
-  /// El separador es '|', el mismo que MatchAutoPressConfig.pairKey y
+  /// El separador es '|', el mismo que `NassauConfig.carryPairKey` y
   /// round_provider._pairKeyOf. Esta sesión ya costó un bug por tener tres
   /// separadores distintos conviviendo —'|' y '__'— así que aquí no se inventa
   /// uno nuevo.
@@ -716,7 +716,6 @@ class BetRecipe {
       skinsConfig: previo.skinsConfig,
       nassauConfig: previo.nassauConfig,
       nassauLowHighConfig: previo.nassauLowHighConfig,
-      matchAutoPressConfig: previo.matchAutoPressConfig,
       medalConfig: previo.medalConfig,
       puttsConfig: previo.puttsConfig,
       oyesesConfig: previo.oyesesConfig,
@@ -799,7 +798,6 @@ class BetRecipe {
       skinsConfig: base.skinsConfig,
       nassauConfig: base.nassauConfig,
       nassauLowHighConfig: base.nassauLowHighConfig,
-      matchAutoPressConfig: base.matchAutoPressConfig,
       medalConfig: base.medalConfig,
       puttsConfig: base.puttsConfig,
       oyesesConfig: base.oyesesConfig,
@@ -837,8 +835,6 @@ class BetRecipe {
           m.copyWith(nassauLowHighConfig: m.lowHigh.copyWith(mode: modo)),
         BetModuleType.medal =>
           m.copyWith(medalConfig: m.medal.copyWith(mode: modo)),
-        BetModuleType.matchAutoPress => m.copyWith(
-            matchAutoPressConfig: m.matchAutoPress.copyWith(mode: modo)),
         _ => m,
       };
 }

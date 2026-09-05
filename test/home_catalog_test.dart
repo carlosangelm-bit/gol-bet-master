@@ -23,12 +23,16 @@ void main() {
       }
     });
 
-    test('no se anuncia nada retirado', () {
-      // Un tipo retirado bajo el título "APUESTAS DISPONIBLES" es una promesa
-      // que la app no cumple: el usuario lo ve, lo quiere y no lo encuentra.
+    test('no se anuncia nada que no exista', () {
+      // Una ficha bajo el título "APUESTAS DISPONIBLES" es una promesa: el
+      // usuario lo ve, lo quiere y tiene que encontrarlo.
+      //
+      // Hubo un filtro `isCreatable` para esconder Match + Press dejando su
+      // ficha escrita. Se fue con el tipo, así que ahora la promesa se comprueba
+      // contra el catálogo entero.
       for (final t in betCatalogTypes) {
-        expect(t.isCreatable, isTrue,
-            reason: '${t.label} está retirado y sigue anunciándose');
+        expect(BetModuleType.values, contains(t),
+            reason: '${t.label} se anuncia y no existe');
       }
     });
 

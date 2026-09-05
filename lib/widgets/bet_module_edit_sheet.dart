@@ -13,7 +13,6 @@ import 'format_config_fields.dart';
 // añadir un tipo con semántica de equipo hay que meterlo aquí o la sección
 // nunca aparece, los lados quedan sin configurar y el módulo no liquida nada.
 const _teamSupportedTypes = {
-  BetModuleType.matchAutoPress,
   BetModuleType.nassau,
   BetModuleType.skins,
   BetModuleType.nassauLowHigh,
@@ -86,7 +85,6 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
 
   late final TextEditingController _skinCtrl;
   late final TextEditingController _nassauF, _nassauB, _nassauT;
-  late final TextEditingController _matchM, _matchP;
   late final TextEditingController _npPF, _npPB;
   late final TextEditingController _medalCtrl;
   late final TextEditingController _puttsCtrl;
@@ -131,8 +129,6 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _nassauF    = TextEditingController(text: m.nassau.frontValue.toStringAsFixed(0));
     _nassauB    = TextEditingController(text: m.nassau.backValue.toStringAsFixed(0));
     _nassauT    = TextEditingController(text: m.nassau.totalValue.toStringAsFixed(0));
-    _matchM     = TextEditingController(text: m.matchAutoPress.matchValue.toStringAsFixed(0));
-    _matchP     = TextEditingController(text: m.matchAutoPress.pressValue.toStringAsFixed(0));
     _npPF       = TextEditingController(text: m.nassau.frontPressValue.toStringAsFixed(0));
     _npPB       = TextEditingController(text: m.nassau.backPressValue.toStringAsFixed(0));
     _medalCtrl  = TextEditingController(text: m.medal.value.toStringAsFixed(0));
@@ -202,7 +198,6 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   void dispose() {
     _skinCtrl.dispose();
     _nassauF.dispose(); _nassauB.dispose(); _nassauT.dispose();
-    _matchM.dispose(); _matchP.dispose();
     _npPF.dispose(); _npPB.dispose();
     _medalCtrl.dispose();
     _puttsCtrl.dispose();
@@ -429,8 +424,6 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     switch (_current.type) {
       case BetModuleType.skins:         return _skinsFields(t);
       case BetModuleType.nassau:        return _nassauFields(t);
-      case BetModuleType.matchAutoPress: return _matchFields(t);
-
       case BetModuleType.medal:         return _medalFields(t);
       case BetModuleType.putts:         return _puttsFields(t);
       case BetModuleType.oyeses:        return _oyesesFields(t);
@@ -1509,14 +1502,51 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         frontPressValue: pfv, backPressValue: pbv,
       )));
     }
+    // ── EL REPARTO: tres apuestas o una sola ────────────────────────────────
+    //
+    // «Solo el match» es lo que era Match + Press, que se retiró: un Nassau con
+    // los dos nueves a cero. Está aquí y no como un tipo aparte del catálogo
+    // porque un segundo nombre para lo mismo es exactamente lo que costaba dos
+    // sitios por cada regla nueva.
+    //
+    // Y está como BOTÓN porque nadie que quiera un match a 18 va a pensar en
+    // poner ceros: el atajo tiene que existir donde se busca.
+    void reparto(bool soloMatch) {
+      _nassauF.text = soloMatch ? '0' : '50';
+      _nassauB.text = soloMatch ? '0' : '50';
+      saveNassau();
+      setState(() {});
+    }
+
+    final solo = n.soloElMatch;
     return [
+      _label('QUÉ SE JUEGA', t),
+      _segmented(const ['F9 · B9 · 18', 'Solo el match (18)'], solo ? 1 : 0, t,
+          (i) => reparto(i == 1)),
+      const SizedBox(height: 4),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Text(
+          solo
+              ? 'Un solo match sobre los 18 hoyos. Las presiones automáticas '
+                  'siguen jugándose, y siguen naciendo y muriendo dentro de cada '
+                  'nueve.'
+              : 'Tres apuestas: la primera vuelta, la segunda y el total.',
+          style: TextStyle(color: t.sub, fontSize: 11, height: 1.35),
+        ),
+      ),
+      const SizedBox(height: 16),
+
       // ── Valores base ──────────────────────────────────────────────────────
       _label('VALORES', t),
-      _amountField('Front 9', _nassauF, t, onChanged: (_) => saveNassau()),
-      const SizedBox(height: 8),
-      _amountField('Back 9', _nassauB, t, onChanged: (_) => saveNassau()),
-      const SizedBox(height: 8),
-      _amountField('Total 18', _nassauT, t, onChanged: (_) => saveNassau()),
+      if (!solo) ...[
+        _amountField('Front 9', _nassauF, t, onChanged: (_) => saveNassau()),
+        const SizedBox(height: 8),
+        _amountField('Back 9', _nassauB, t, onChanged: (_) => saveNassau()),
+        const SizedBox(height: 8),
+      ],
+      _amountField(solo ? 'El match (18 hoyos)' : 'Total 18', _nassauT, t,
+          onChanged: (_) => saveNassau()),
       const SizedBox(height: 16),
 
       // ── Modo de juego ─────────────────────────────────────────────────────
@@ -1549,6 +1579,17 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       const SizedBox(height: 16),
 
       // ── Carry en Back 9 (independiente del press) ─────────────────────────
+      if (solo)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+          child: Text(
+            'El carry y la presión de la 2ª vuelta no aplican con un solo '
+            'match: no hay primer nueve del que trasladar ni segundo sobre el '
+            'que abrir una apuesta aparte.',
+            style: TextStyle(color: t.sub, fontSize: 11, height: 1.35),
+          ),
+        )
+      else
       _toggle(
         'Carry en Back 9',
         n.carryEnabled
@@ -1560,7 +1601,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
           _update(_current.copyWith(nassauConfig: n.copyWith(carryEnabled: v)));
         },
       ),
-      if (n.carryEnabled) ...[
+      if (!solo && n.carryEnabled) ...[
         const SizedBox(height: 8),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -1613,31 +1654,6 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
           }),
         ],
       ],
-    ];
-  }
-
-  // ── MATCH + PRESS ───────────────────────────────────────────────────────────
-  List<Widget> _matchFields(GolfTheme t) {
-    final m = _current.matchAutoPress;
-    return [
-      _label('VALORES', t),
-      _amountField('Valor del match', _matchM, t, onChanged: (v) {
-        _update(_current.copyWith(matchAutoPressConfig: m.copyWith(matchValue: v)));
-      }),
-      const SizedBox(height: 8),
-      _amountField('Valor por press/dígito', _matchP, t, onChanged: (v) {
-        _update(_current.copyWith(matchAutoPressConfig: m.copyWith(pressValue: v)));
-      }),
-      const SizedBox(height: 16),
-      _label('TRIGGER (hoyos de diferencia para nueva presión)', t),
-      _segmented(['1 up', '2 up', '3 up'], m.pressTriggerValue - 1, t, (i) {
-        _update(_current.copyWith(matchAutoPressConfig: m.copyWith(pressTriggerValue: i + 1)));
-      }),
-      const SizedBox(height: 16),
-      _label('JUEGO', t),
-      _segmented(['Gross', 'Net'], m.mode == GrossNetMode.net ? 1 : 0, t, (i) {
-        _update(_current.copyWith(matchAutoPressConfig: m.copyWith(mode: i == 1 ? GrossNetMode.net : GrossNetMode.gross)));
-      }),
     ];
   }
 

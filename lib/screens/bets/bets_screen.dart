@@ -2061,8 +2061,6 @@ class _BetRow extends StatelessWidget {
         final n = mod.nassau;
         final pressTag = n.pressEnabled ? ' + Press' : '';
         return '$label$pressTag · F\$${n.frontValue.toStringAsFixed(0)} B\$${n.backValue.toStringAsFixed(0)} T\$${n.totalValue.toStringAsFixed(0)}';
-      case BetModuleType.matchAutoPress:
-        return '$label · \$${mod.matchAutoPress.matchValue.toStringAsFixed(0)}';
       case BetModuleType.medal:
         return '$label · \$${mod.medal.value.toStringAsFixed(0)}';
       case BetModuleType.putts:
@@ -2088,8 +2086,6 @@ class _BetRow extends StatelessWidget {
         return mod.skins.mode == GrossNetMode.gross ? 'Gross' : 'Net';
       case BetModuleType.nassau:
         return mod.nassau.mode == GrossNetMode.gross ? 'Gross' : 'Net';
-      case BetModuleType.matchAutoPress:
-        return mod.matchAutoPress.mode == GrossNetMode.gross ? 'Gross' : 'Net';
       case BetModuleType.medal:
         return mod.medal.mode == GrossNetMode.gross ? 'Gross' : 'Net';
       case BetModuleType.nassauLowHigh:
@@ -2258,7 +2254,6 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
       case BetModuleType.stableford:   return mod.stableford.value;
       case BetModuleType.skins:        return mod.skins.valuePerSkin;
       case BetModuleType.nassau:       return mod.nassau.frontValue;
-      case BetModuleType.matchAutoPress: return mod.matchAutoPress.matchValue;
       case BetModuleType.medal:        return mod.medal.value;
       case BetModuleType.putts:        return mod.putts.value;
       case BetModuleType.oyeses:       return mod.oyeses.value;
@@ -2277,7 +2272,6 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
       case BetModuleType.stableford:   return {'stablefordValue': newVal};
       case BetModuleType.skins:        return {'valuePerSkin': newVal};
       case BetModuleType.nassau:       return {'nassauFront': newVal, 'nassauBack': newVal, 'nassauTotal': newVal * 2};
-      case BetModuleType.matchAutoPress: return {'matchValue': newVal};
       case BetModuleType.medal:        return {'valuePerStroke': newVal};
       case BetModuleType.putts:        return {'valuePerPutt': newVal};
       case BetModuleType.oyeses:       return {'value': newVal};

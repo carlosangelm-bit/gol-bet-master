@@ -134,13 +134,18 @@ void main() {
       expect(LedgerEngine.playerBalances(r)['A0'], 90.0);
     });
 
-    test('P6 – Match+Press equipo escala igual que Nassau', () {
+    test('P6 – un MATCH sobre 18 escala igual que el Nassau de tres', () {
+      // Era el módulo Match + Press, que se retiró: es un Nassau con los dos
+      // nueves a cero. El reparto por tamaño de equipo tiene que seguir siendo
+      // el mismo — es lo que esta prueba protege.
       final a2 = ['A0', 'A1'], b2 = ['B0', 'B1'];
       final a3 = ['A0', 'A1', 'A2'], b3 = ['B0', 'B1', 'B2'];
       BetModuleInstance mk(List<String> a, List<String> b) =>
-          BetModuleInstance.defaultFor(
-                  BetModuleType.matchAutoPress, [...a, ...b])
-              .copyWith(sides: _sides(a, b));
+          BetModuleInstance.defaultFor(BetModuleType.nassau, [...a, ...b])
+              .copyWith(
+                  sides: _sides(a, b),
+                  nassauConfig: const NassauConfig(
+                      frontValue: 0, backValue: 0, totalValue: 100));
 
       final t2 = _totalMovido(_round(a: a2, b: b2, mod: mk(a2, b2)));
       final t3 = _totalMovido(_round(a: a3, b: b3, mod: mk(a3, b3)));

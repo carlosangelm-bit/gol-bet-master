@@ -27,7 +27,7 @@ DateTime _parseDate(dynamic value) {
 }
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
-enum BetModuleType { skins, nassau, matchAutoPress, medal, putts, oyeses, units, nassauLowHigh, snake, rabbit, wolf, stableford, sixes }
+enum BetModuleType { skins, nassau, medal, putts, oyeses, units, nassauLowHigh, snake, rabbit, wolf, stableford, sixes }
 
 /// Qué hacer cuando una categoría (bola baja o alta) queda empatada en un hoyo.
 enum LowHighTieRule {
@@ -343,15 +343,6 @@ extension BetModuleTypeRules on BetModuleType {
             sinMontoPorPareja: 'El dueño paga lo mismo a todos: es el precio de '
                 'la serpiente, no un duelo con cada uno.',
           ),
-        // Retirado del catálogo, pero las rondas guardadas lo siguen usando.
-        BetModuleType.matchAutoPress => const BetTypeRules(
-            teams: true,
-            sinSegmentos: 'El match corre los 18 hoyos; las presiones abren '
-                'sus propios tramos.',
-            sinMontoPorPareja:
-                'Tiene dos importes —match y presión— y un ajuste por pareja '
-                'solo puede llevar uno.',
-          ),
       };
 }
 
@@ -401,7 +392,6 @@ extension BetModuleFamilyOf on BetModuleType {
   /// declararse y lo que impide que quede inalcanzable en las tres hojas.
   BetFamily get family => switch (this) {
         BetModuleType.nassau ||
-        BetModuleType.matchAutoPress ||
         BetModuleType.nassauLowHigh =>
           BetFamily.matchPlay,
         BetModuleType.skins ||
@@ -475,30 +465,19 @@ List<({BetFamily familia, List<BetModuleType> tipos})> get betTypeSections {
   ];
 }
 
-/// Tipos que se pueden crear hoy. **Toda hoja de selección debe usar esto.**
+/// Los tipos del catálogo. **Toda hoja de selección debe usar esto.**
 ///
-/// Un tipo retirado sigue existiendo en el enum, en la deserialización, en el
-/// motor y en las pantallas que lo pintan: las rondas guardadas que lo usan
-/// tienen que abrir y liquidar exactamente igual que antes. Lo único que
-/// desaparece es la posibilidad de crear uno nuevo.
+/// Es una sola lista a propósito. Costó tres bugs descubrir que el catálogo
+/// vivía duplicado en cinco pantallas: al añadir Bola Baja / Bola Alta quedó
+/// fuera del selector de Setup y de la sección de equipos, y en los dos casos el
+/// fallo fue silencioso.
 ///
-/// Es una sola lista a propósito. Esta misma sesión costó tres bugs descubrir
-/// que el catálogo de tipos vivía duplicado en cinco pantallas: al añadir Bola
-/// Baja / Bola Alta quedó fuera del selector de Setup y de la sección de
-/// equipos, y en ambos casos el fallo fue silencioso.
-List<BetModuleType> get creatableBetTypes =>
-    BetModuleType.values.where((t) => t.isCreatable).toList();
-
-extension BetModuleAvailability on BetModuleType {
-  /// false = retirado. Ver [creatableBetTypes].
-  ///
-  /// matchAutoPress es redundante: NassauConfig ya trae todo el aparato de
-  /// presiones, así que un match a 18 con presses es un Nassau con
-  /// frontValue = 0, backValue = 0, totalValue = X y presiones activas.
-  /// Mantener dos motores para lo mismo obligaba además a elegir cuál
-  /// representa el duelo al ajustar ventajas — ver sliding_adjustment_engine.
-  bool get isCreatable => this != BetModuleType.matchAutoPress;
-}
+/// Hubo aquí un filtro —`isCreatable`— para retirar Match + Press del catálogo
+/// dejándolo vivo en el motor. Se fue con él: un filtro que no filtra nada es
+/// una bifurcación que hay que leer y entender cada vez para descubrir que no
+/// hace nada. El día que haya otro tipo que retirar, se vuelve a poner en una
+/// línea.
+List<BetModuleType> get creatableBetTypes => BetModuleType.values;
 
 extension BetModuleTeamRules on BetModuleType {
   /// true si el formato no tiene definición sin dos equipos enfrentados.
@@ -823,7 +802,6 @@ extension BetModuleLabel on BetModuleType {
   String get label => switch (this) {
         BetModuleType.skins => 'Skins',
         BetModuleType.nassau => 'Nassau', // con o sin press (pressEnabled)
-        BetModuleType.matchAutoPress => 'Match + Press',
         BetModuleType.medal => 'Medal',
         BetModuleType.putts => 'Putts',
         BetModuleType.oyeses => 'Oyes',
@@ -856,7 +834,6 @@ extension BetModuleLabel on BetModuleType {
   IconData get icono => switch (this) {
         BetModuleType.skins => GolfIcons.diana,
         BetModuleType.nassau => GolfIcons.golpe,
-        BetModuleType.matchAutoPress => GolfIcons.duelo,
         BetModuleType.medal => GolfIcons.medalla,
         BetModuleType.putts => GolfIcons.bandera,
         BetModuleType.oyeses => GolfIcons.destello,
@@ -890,8 +867,6 @@ extension BetModuleLabel on BetModuleType {
         BetModuleType.nassau =>
           'Una sola apuesta sobre los nueve hoyos. No hay ida, vuelta y total: '
               'no hay dos vueltas que separar.',
-        BetModuleType.matchAutoPress =>
-          'Un solo segmento de nueve hoyos, con sus presiones dentro.',
         BetModuleType.putts =>
           'Un solo segmento: los putts de los nueve hoyos.',
         _ => null,
@@ -902,8 +877,6 @@ extension BetModuleLabel on BetModuleType {
         BetModuleType.nassau =>
           'Front 9, Back 9 y Total 18. En una ronda de 9 hoyos es UNA sola '
               'apuesta. Activa presiones automáticas opcionalmente.',
-        BetModuleType.matchAutoPress =>
-          'Match principal + presiones automáticas al llegar a X up.',
         BetModuleType.medal => 'Score neto total más bajo gana.',
         BetModuleType.putts => 'Menor cantidad de putts por segmento.',
         BetModuleType.oyeses => 'Ranking en par 3s. El más cercano cobra.',
@@ -1262,7 +1235,6 @@ class SkinsConfig {
   static const def = SkinsConfig();
 }
 
-// ── MatchAutoPressConfig ─────────────────────────────────────────────────────
 // ── Bola Baja / Bola Alta ─────────────────────────────────────────────────────
 //
 // Formato 2 vs 2. Cada hoyo reparte hasta DOS puntos:
@@ -1433,95 +1405,14 @@ class NassauLowHighConfig {
       );
 }
 
-// Configuración para el juego Match + Press Automático.
-// Un match principal (Press #1) más presiones que se abren dinámicamente
-// cuando el score del match principal alcanza abs(score) == pressTriggerValue.
-class MatchAutoPressConfig {
-  final double matchValue;        // valor del match principal (Press #1)
-  final double pressValue;        // valor de cada presión adicional
-  final int pressTriggerValue;    // cuántos hoyos de diferencia disparan una nueva presión
-  final GrossNetMode mode;        // gross o net
-  final TieRule tieRule;          // push por defecto
-  final bool allowMultiplePresses;// permite más de una presión simultánea
-  final int? maxPresses;          // máximo de presiones (null = ilimitado)
-  // ── El carry NO vive aquí ────────────────────────────────────────────────────
-  //
-  // Había `carryApplied`, `carryFactor` y `carryByPair`: pedir carry multiplicaba
-  // el match y todas sus presiones. Los tres se RETIRARON, y el motivo es que el
-  // carry no multiplica nada.
-  //
-  // Lo que el grupo juega —dicho por Carlos revisando una ronda real— es que el
-  // que va perdiendo pide una apuesta APARTE, del mismo importe, con un golpe
-  // más de ventaja. Eso no es un factor sobre lo que ya hay: es una segunda
-  // apuesta, y vive en [NassauConfig.carryPedidoByPair], que guarda QUIÉN la
-  // pidió, porque el golpe extra es de una persona y no del par.
-  //
-  // Aquí no se sustituye por nada. Match + Press es UNA apuesta sobre los
-  // dieciocho, sin primer y segundo nueve: no hay segmento anterior del que
-  // trasladar dinero, ni un «entrar en la 2ª vuelta» donde pedir la paralela.
-  // Y la apuesta paralela que nace de ir por detrás ya existe aquí con su
-  // nombre: es la PRESIÓN.
-
-  const MatchAutoPressConfig({
-    this.matchValue = 100,
-    this.pressValue = 50,
-    this.pressTriggerValue = 2,
-    this.mode = GrossNetMode.net,
-    this.tieRule = TieRule.push,
-    this.allowMultiplePresses = true,
-    this.maxPresses,
-  });
-
-  // Helper: clave canónica del par (IDs ordenados, separados por '|')
-  static String pairKey(String id1, String id2) {
-    final sorted = [id1, id2]..sort();
-    return '${sorted[0]}|${sorted[1]}';
-  }
-
-  MatchAutoPressConfig copyWith({
-    double? matchValue, double? pressValue, int? pressTriggerValue,
-    GrossNetMode? mode, TieRule? tieRule,
-    bool? allowMultiplePresses, int? maxPresses,
-  }) => MatchAutoPressConfig(
-    matchValue:          matchValue         ?? this.matchValue,
-    pressValue:          pressValue         ?? this.pressValue,
-    pressTriggerValue:   pressTriggerValue  ?? this.pressTriggerValue,
-    mode:                mode               ?? this.mode,
-    tieRule:             tieRule            ?? this.tieRule,
-    allowMultiplePresses:allowMultiplePresses ?? this.allowMultiplePresses,
-    maxPresses:          maxPresses         ?? this.maxPresses,
-  );
-
-  Map<String, dynamic> toJson() => {
-    'matchValue':          matchValue,
-    'pressValue':          pressValue,
-    'pressTriggerValue':   pressTriggerValue,
-    'mode':                mode.name,
-    'tieRule':             tieRule.name,
-    'allowMultiplePresses':allowMultiplePresses,
-    if (maxPresses != null) 'maxPresses': maxPresses,
-  };
-
-  factory MatchAutoPressConfig.fromJson(Map<String, dynamic> j) {
-    return MatchAutoPressConfig(
-      matchValue:          (j['matchValue']        as num?)?.toDouble() ?? 100,
-      pressValue:          (j['pressValue']        as num?)?.toDouble() ?? 50,
-      pressTriggerValue:   (j['pressTriggerValue'] as int?)              ?? 2,
-      mode: GrossNetMode.values.firstWhere(
-        (e) => e.name == (j['mode'] ?? 'net'), orElse: () => GrossNetMode.net),
-      tieRule: TieRule.values.firstWhere(
-        (e) => e.name == (j['tieRule'] ?? 'push'), orElse: () => TieRule.push),
-      allowMultiplePresses: j['allowMultiplePresses'] as bool? ?? true,
-      maxPresses:           j['maxPresses'] as int?,
-    );
-  }
-
-  static const def = MatchAutoPressConfig();
-}
-
 // ── PressInstance ─────────────────────────────────────────────────────────────
-// Una presión individual dentro de un juego Match + Auto Press.
-// Press #1 (sequenceNumber=1) = match principal, isPrimaryMatch=true.
+// Una presión individual. Press #1 (sequenceNumber=1) = match principal.
+//
+// Encabezaba esto una descripción de Match + Press que había quedado suelta al
+// mover su configuración a otro sitio. Es la segunda vez que un banner mal
+// puesto en este fichero engaña a quien corta por él: el de
+// «MatchAutoPressConfig» encabezaba en realidad la sección de Bola Baja / Bola
+// Alta, y retirarlo se llevó por delante una clase que no tenía nada que ver.
 enum PressStatus { open, closed }
 
 class PressInstance {
@@ -1630,9 +1521,9 @@ class NassauConfig {
   /// el id porque la apuesta del carry se juega con la ventaja de ESE jugador
   /// aumentada en un golpe, y con la clave sola no se sabría de quién.
   ///
-  /// Usa el separador '|' a propósito, el mismo que MatchAutoPressConfig y que
-  /// [aperturaB9ByPair]: las tres claves son intercambiables sin traducir, y una
-  /// traducción fallida no da error — la apuesta simplemente no aparecería.
+  /// Usa el separador '|' a propósito, el mismo que [aperturaB9ByPair] y que
+  /// `pairSliding`: las claves son intercambiables sin traducir, y una traducción
+  /// fallida no da error — la apuesta simplemente no aparecería.
   final Map<String, String> carryPedidoByPair;
   // ── Presiones ────────────────────────────────────────────────────────────────
   // pressEnabled=false → Nassau clásico sin presiones
@@ -1691,11 +1582,37 @@ class NassauConfig {
     this.carryPedidoByPair = const {},
   });
 
-  /// Clave canónica del par. Mismo formato que [MatchAutoPressConfig.pairKey].
+  /// Clave canónica del par. Mismo formato que `pairSliding`.
   static String carryPairKey(String id1, String id2) {
     final sorted = [id1, id2]..sort();
     return '${sorted[0]}|${sorted[1]}';
   }
+
+  /// La partida es un MATCH sobre 18, sin partición en vueltas.
+  ///
+  /// ── Esto es lo que era Match + Press ──────────────────────────────────────
+  ///
+  /// Era un tipo aparte con su propio motor, su propia configuración y su propia
+  /// pantalla. Y era un Nassau con los dos nueves a cero:
+  ///
+  ///     Nassau  F9 \$0 · B9 \$0 · Total \$100 · Presiones \$50
+  ///
+  /// Mantener los dos costaba dos sitios por cada regla nueva —el multiplicador
+  /// hubo que retirarlo de las dos configuraciones, y la línea «5 3 1» habría
+  /// que escribirla dos veces—, así que se retiró el tipo y se quedó esto.
+  ///
+  /// Se DEDUCE de los importes y no se guarda como una bandera: dos formas de
+  /// decir lo mismo acaban discrepando, y la que manda al liquidar es siempre el
+  /// importe.
+  ///
+  /// ── Y no es idéntico, conviene saberlo ────────────────────────────────────
+  ///
+  /// En Match + Press cada presión corría hasta el hoyo 18 y todas convivían.
+  /// Aquí una presión vive dentro de SU nueve y cierra donde nace la siguiente.
+  /// La configuración era la misma; el reloj de las presiones no. Nadie lo tenía
+  /// configurado, así que el cambio no le quita nada a nadie — pero está escrito
+  /// porque no es un cambio de nombre.
+  bool get soloElMatch => frontValue == 0 && backValue == 0;
 
   /// Quién pidió el carry en esta pareja, o null si nadie.
   String? carryPedidoPor(String id1, String id2) =>
@@ -2625,7 +2542,6 @@ class BetModuleInstance {
   final SkinsConfig?          skinsConfig;
   final NassauConfig?         nassauConfig;
   final NassauLowHighConfig?  nassauLowHighConfig;
-  final MatchAutoPressConfig? matchAutoPressConfig;
   final MedalConfig?          medalConfig;
   final PuttsConfig?          puttsConfig;
   final OyesesConfig?         oyesesConfig;
@@ -2700,7 +2616,6 @@ class BetModuleInstance {
     this.skinsConfig,
     this.nassauConfig,
     this.nassauLowHighConfig,
-    this.matchAutoPressConfig,
     this.medalConfig,
     this.puttsConfig,
     this.oyesesConfig,
@@ -2747,7 +2662,6 @@ class BetModuleInstance {
   SkinsConfig          get skins          => skinsConfig          ?? SkinsConfig.def;
   NassauConfig         get nassau         => nassauConfig         ?? NassauConfig.def;
   NassauLowHighConfig  get lowHigh        => nassauLowHighConfig  ?? const NassauLowHighConfig();
-  MatchAutoPressConfig get matchAutoPress => matchAutoPressConfig ?? MatchAutoPressConfig.def;
   MedalConfig          get medal          => medalConfig          ?? MedalConfig.def;
   PuttsConfig          get putts          => puttsConfig          ?? PuttsConfig.def;
   OyesesConfig         get oyeses         => oyesesConfig         ?? OyesesConfig.def;
@@ -2767,7 +2681,6 @@ class BetModuleInstance {
     BetModuleType.stableford    => stableford.value,
     BetModuleType.skins         => skins.valuePerSkin,
     BetModuleType.nassau        => nassau.frontValue,
-    BetModuleType.matchAutoPress=> matchAutoPress.matchValue,
     BetModuleType.medal         => medal.value,
     BetModuleType.putts         => putts.value,
     BetModuleType.oyeses        => oyeses.value,
@@ -2781,7 +2694,6 @@ class BetModuleInstance {
     BetModuleType.skins         => skins.mode == GrossNetMode.net,
     BetModuleType.nassau        => nassau.mode == GrossNetMode.net,
     BetModuleType.nassauLowHigh => lowHigh.mode == GrossNetMode.net,
-    BetModuleType.matchAutoPress=> matchAutoPress.mode == GrossNetMode.net,
     BetModuleType.medal         => medal.mode == GrossNetMode.net,
     // Sin esta rama Stableford calcularía BRUTO en silencio: el default del
     // switch es false. Es la trampa que el encargo pedía comprobar.
@@ -2821,10 +2733,6 @@ class BetModuleInstance {
                             ' T\$${nassau.totalValue.toStringAsFixed(0)}'
                             '${nassau.pressEnabled ? ' · Press' : ''}'
                             '${nassau.carryEnabled ? ' · Carry' : ''}',
-    BetModuleType.matchAutoPress =>
-                            'Match \$${matchAutoPress.matchValue.toStringAsFixed(0)}'
-                            ' · Press \$${matchAutoPress.pressValue.toStringAsFixed(0)}'
-                            ' · trigger ${matchAutoPress.pressTriggerValue}up',
     BetModuleType.medal  => '\$${medal.value.toStringAsFixed(0)}'
                             ' · ${medal.holes}H'
                             ' · ${medal.mode == GrossNetMode.net ? 'Net' : 'Gross'}',
@@ -2861,7 +2769,6 @@ class BetModuleInstance {
     SkinsConfig?          skinsConfig,
     NassauConfig?         nassauConfig,
     NassauLowHighConfig?  nassauLowHighConfig,
-    MatchAutoPressConfig? matchAutoPressConfig,
     MedalConfig?          medalConfig,
     PuttsConfig?          puttsConfig,
     OyesesConfig?         oyesesConfig,
@@ -2895,7 +2802,6 @@ class BetModuleInstance {
     skinsConfig:          skinsConfig          ?? this.skinsConfig,
     nassauConfig:         nassauConfig         ?? this.nassauConfig,
     nassauLowHighConfig:  nassauLowHighConfig  ?? this.nassauLowHighConfig,
-    matchAutoPressConfig: matchAutoPressConfig ?? this.matchAutoPressConfig,
     medalConfig:          medalConfig          ?? this.medalConfig,
     puttsConfig:          puttsConfig          ?? this.puttsConfig,
     oyesesConfig:         oyesesConfig         ?? this.oyesesConfig,
@@ -2952,7 +2858,6 @@ class BetModuleInstance {
     if (skinsConfig          != null) 'skinsConfig':          skinsConfig!.toJson(),
     if (nassauConfig         != null) 'nassauConfig':         nassauConfig!.toJson(),
     if (nassauLowHighConfig  != null) 'nassauLowHighConfig':  nassauLowHighConfig!.toJson(),
-    if (matchAutoPressConfig != null) 'matchAutoPressConfig': matchAutoPressConfig!.toJson(),
     if (medalConfig          != null) 'medalConfig':          medalConfig!.toJson(),
     if (puttsConfig          != null) 'puttsConfig':          puttsConfig!.toJson(),
     if (oyesesConfig         != null) 'oyesesConfig':         oyesesConfig!.toJson(),
@@ -3023,7 +2928,6 @@ class BetModuleInstance {
         }
         return j['nassauConfig'] != null ? NassauConfig.fromJson(asMap(j['nassauConfig'])) : null;
       }(),
-      matchAutoPressConfig: j['matchAutoPressConfig'] != null ? MatchAutoPressConfig.fromJson(asMap(j['matchAutoPressConfig'])) : null,
       medalConfig:          j['medalConfig']          != null ? MedalConfig.fromJson(asMap(j['medalConfig']))          : null,
       puttsConfig:          j['puttsConfig']          != null ? PuttsConfig.fromJson(asMap(j['puttsConfig']))          : null,
       oyesesConfig:         j['oyesesConfig']         != null ? OyesesConfig.fromJson(asMap(j['oyesesConfig']))        : null,
@@ -3099,7 +3003,6 @@ class BetModuleInstance {
         skinsConfig:           skinsConfig,
         nassauConfig:          nassauConfig,
         nassauLowHighConfig:   nassauLowHighConfig,
-        matchAutoPressConfig:  matchAutoPressConfig,
         medalConfig:           medalConfig,
         puttsConfig:           puttsConfig,
         oyesesConfig:          oyesesConfig,
@@ -3136,7 +3039,6 @@ class BetModuleInstance {
       BetModuleType.stableford     => stableford.toJson(),
       BetModuleType.skins          => skins.toJson(),
       BetModuleType.nassau         => nassau.toJson(),
-      BetModuleType.matchAutoPress => matchAutoPress.toJson(),
       BetModuleType.medal          => medal.toJson(),
       BetModuleType.putts          => putts.toJson(),
       BetModuleType.oyeses         => oyeses.toJson(),
@@ -3304,7 +3206,6 @@ class BetModuleInstance {
       skinsConfig:          type == BetModuleType.skins         ? SkinsConfig.def          : null,
       nassauConfig:         type == BetModuleType.nassau        ? NassauConfig.def         : null,
       nassauLowHighConfig:  type == BetModuleType.nassauLowHigh ? const NassauLowHighConfig() : null,
-      matchAutoPressConfig: type == BetModuleType.matchAutoPress? MatchAutoPressConfig.def : null,
       medalConfig:          type == BetModuleType.medal         ? MedalConfig.def          : null,
       puttsConfig:          type == BetModuleType.putts         ? PuttsConfig.def          : null,
       oyesesConfig:         type == BetModuleType.oyeses        ? OyesesConfig.def         : null,
@@ -3345,7 +3246,6 @@ class BetModuleInstance {
     SkinsConfig?          skinsConfig,
     NassauConfig?         nassauConfig,
     NassauLowHighConfig?  nassauLowHighConfig,
-    MatchAutoPressConfig? matchAutoPressConfig,
     MedalConfig?          medalConfig,
     PuttsConfig?          puttsConfig,
     OyesesConfig?         oyesesConfig,
@@ -3373,7 +3273,6 @@ class BetModuleInstance {
         skinsConfig:          skinsConfig          ?? (type == BetModuleType.skins         ? SkinsConfig.def          : null),
         nassauConfig:         nassauConfig         ?? (type == BetModuleType.nassau        ? NassauConfig.def         : null),
         nassauLowHighConfig:  nassauLowHighConfig  ?? (type == BetModuleType.nassauLowHigh ? const NassauLowHighConfig() : null),
-        matchAutoPressConfig: matchAutoPressConfig ?? (type == BetModuleType.matchAutoPress? MatchAutoPressConfig.def : null),
         medalConfig:          medalConfig          ?? (type == BetModuleType.medal         ? MedalConfig.def          : null),
         puttsConfig:          puttsConfig          ?? (type == BetModuleType.putts         ? PuttsConfig.def          : null),
         oyesesConfig:         oyesesConfig         ?? (type == BetModuleType.oyeses        ? OyesesConfig.def         : null),
@@ -3398,7 +3297,6 @@ class BetModuleInstance {
         skinsConfig:          skinsConfig          ?? (type == BetModuleType.skins         ? SkinsConfig.def          : null),
         nassauConfig:         nassauConfig         ?? (type == BetModuleType.nassau        ? NassauConfig.def         : null),
         nassauLowHighConfig:  nassauLowHighConfig  ?? (type == BetModuleType.nassauLowHigh ? const NassauLowHighConfig() : null),
-        matchAutoPressConfig: matchAutoPressConfig ?? (type == BetModuleType.matchAutoPress? MatchAutoPressConfig.def : null),
         medalConfig:          medalConfig          ?? (type == BetModuleType.medal         ? MedalConfig.def          : null),
         puttsConfig:          puttsConfig          ?? (type == BetModuleType.putts         ? PuttsConfig.def          : null),
         oyesesConfig:         oyesesConfig         ?? (type == BetModuleType.oyeses        ? OyesesConfig.def         : null),
@@ -4547,7 +4445,6 @@ class BetModuleTemplate {
   final BetFormatMode            formatMode;
   final SkinsConfig?             skinsConfig;
   final NassauConfig?            nassauConfig;
-  final MatchAutoPressConfig?    matchAutoPressConfig;
   final MedalConfig?             medalConfig;
   final PuttsConfig?             puttsConfig;
   final OyesesConfig?            oyesesConfig;
@@ -4564,7 +4461,6 @@ class BetModuleTemplate {
     this.formatMode  = BetFormatMode.allVsAll,
     this.skinsConfig,
     this.nassauConfig,
-    this.matchAutoPressConfig,
     this.medalConfig,
     this.puttsConfig,
     this.oyesesConfig,
@@ -4611,8 +4507,6 @@ class BetModuleTemplate {
         return 'F\$${n.frontValue.toStringAsFixed(0)}·'
                'B\$${n.backValue.toStringAsFixed(0)}·'
                'T\$${n.totalValue.toStringAsFixed(0)}';
-      case BetModuleType.matchAutoPress:
-        return '\$…/hoyo';
       case BetModuleType.medal:
         return '\$${medal.value.toStringAsFixed(0)}';
       case BetModuleType.putts:
@@ -4631,7 +4525,6 @@ class BetModuleTemplate {
     type:                  t,
     skinsConfig:          t == BetModuleType.skins         ? SkinsConfig.def          : null,
     nassauConfig:         t == BetModuleType.nassau        ? NassauConfig.def         : null,
-    matchAutoPressConfig: t == BetModuleType.matchAutoPress? MatchAutoPressConfig()   : null,
     medalConfig:          t == BetModuleType.medal         ? MedalConfig.def          : null,
     puttsConfig:          t == BetModuleType.putts         ? PuttsConfig.def          : null,
     oyesesConfig:         t == BetModuleType.oyeses        ? OyesesConfig.def         : null,
@@ -4658,7 +4551,6 @@ class BetModuleTemplate {
     formatMode:           formatMode,
     skinsConfig:          skinsConfig,
     nassauConfig:         nassauConfig,
-    matchAutoPressConfig: matchAutoPressConfig,
     medalConfig:          medalConfig,
     puttsConfig:          puttsConfig,
     oyesesConfig:         oyesesConfig,
@@ -4677,7 +4569,6 @@ class BetModuleTemplate {
     BetFormatMode?         formatMode,
     SkinsConfig?           skinsConfig,
     NassauConfig?          nassauConfig,
-    MatchAutoPressConfig?  matchAutoPressConfig,
     MedalConfig?           medalConfig,
     PuttsConfig?           puttsConfig,
     OyesesConfig?          oyesesConfig,
@@ -4692,7 +4583,6 @@ class BetModuleTemplate {
     formatMode:            formatMode           ?? this.formatMode,
     skinsConfig:           skinsConfig          ?? this.skinsConfig,
     nassauConfig:          nassauConfig         ?? this.nassauConfig,
-    matchAutoPressConfig:  matchAutoPressConfig ?? this.matchAutoPressConfig,
     medalConfig:           medalConfig          ?? this.medalConfig,
     puttsConfig:           puttsConfig          ?? this.puttsConfig,
     oyesesConfig:          oyesesConfig         ?? this.oyesesConfig,
@@ -4709,7 +4599,6 @@ class BetModuleTemplate {
     'formatMode':            formatMode.name,
     if (skinsConfig          != null) 'skinsConfig':          skinsConfig!.toJson(),
     if (nassauConfig         != null) 'nassauConfig':         nassauConfig!.toJson(),
-    if (matchAutoPressConfig != null) 'matchAutoPressConfig': matchAutoPressConfig!.toJson(),
     if (medalConfig          != null) 'medalConfig':          medalConfig!.toJson(),
     if (puttsConfig          != null) 'puttsConfig':          puttsConfig!.toJson(),
     if (oyesesConfig         != null) 'oyesesConfig':         oyesesConfig!.toJson(),
@@ -4733,8 +4622,6 @@ class BetModuleTemplate {
           ? SkinsConfig.fromJson(Map<String, dynamic>.from(j['skinsConfig'] as Map)) : null,
       nassauConfig: j['nassauConfig'] != null
           ? NassauConfig.fromJson(Map<String, dynamic>.from(j['nassauConfig'] as Map)) : null,
-      matchAutoPressConfig: j['matchAutoPressConfig'] != null
-          ? MatchAutoPressConfig.fromJson(Map<String, dynamic>.from(j['matchAutoPressConfig'] as Map)) : null,
       medalConfig: j['medalConfig'] != null
           ? MedalConfig.fromJson(Map<String, dynamic>.from(j['medalConfig'] as Map)) : null,
       puttsConfig: j['puttsConfig'] != null
@@ -4762,7 +4649,6 @@ class BetModuleTemplate {
         formatMode:            inst.formatMode,
         skinsConfig:           inst.skinsConfig,
         nassauConfig:          inst.nassauConfig,
-        matchAutoPressConfig:  inst.matchAutoPressConfig,
         medalConfig:           inst.medalConfig,
         puttsConfig:           inst.puttsConfig,
         oyesesConfig:          inst.oyesesConfig,

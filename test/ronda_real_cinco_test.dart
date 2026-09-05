@@ -142,16 +142,21 @@ void main() {
   // ───────────────────────────────────────────────────────────────────────────
   group('3 · el desglose por jugador lista TODO el catálogo', () {
     test('CLAVE: el orden se deriva, no se escribe a mano', () {
-      // Había siete tipos escritos y el catálogo tiene trece. Los seis que
+      // Había siete tipos escritos y el catálogo tenía trece. Los seis que
       // faltaban cobraban en el neto y no salían en el desglose — y ya había
       // pasado con Snake.
+      //
+      // Son doce desde que Match + Press se retiró: era un Nassau sin partición
+      // en vueltas. El número es la mitad débil de esta prueba —lo que importa
+      // es que la lista se DERIVE— pero se mantiene porque caza el regreso a una
+      // lista cerrada.
       final codigo =
           File('lib/screens/results/results_screen.dart').readAsStringSync();
       expect(codigo, contains('BetModuleType.values.where'),
           reason: 'la lista sale del catálogo');
       // La comprobación que importa: si alguien vuelve a una lista cerrada,
-      // esto falla. Trece tipos, y ninguno puede quedarse fuera por olvido.
-      expect(BetModuleType.values.length, greaterThanOrEqualTo(13));
+      // esto falla. Ninguno puede quedarse fuera por olvido.
+      expect(BetModuleType.values.length, greaterThanOrEqualTo(12));
     });
 
     test('CONTRAPESO: los preferidos siguen yendo primero', () {
