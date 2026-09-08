@@ -111,6 +111,7 @@ CarryPanel _carry(Round r) => CarryPanel(
       t: GolfTheme.dark,
       nassauModules: r.betGroups.first.modules,
       onPedirCarry: (_) {},
+      onPedirPresion: () {},
     );
 
 void main() {

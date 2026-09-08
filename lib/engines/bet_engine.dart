@@ -891,6 +891,27 @@ class BetEngine {
             // como un fallo.
             nota: 'un golpe más de ventaja'));
       }
+
+      // ── Y las PRESIONES PEDIDAS sobre ellas ───────────────────────────────
+      for (final apuesta in const [
+        NassauConfig.claveCarry,
+        NassauConfig.claveApertura
+      ]) {
+        final madre =
+            apuesta == NassauConfig.claveCarry ? 'Carry' : 'Apertura';
+        for (final p
+            in presionesPedidasSobre(round, p1Id, p2Id, mod, seg, apuesta)) {
+          out.add(ApuestaVivaDelNassau(
+              etiqueta: 'H${p.hoyo}',
+              clase: ClaseDeApuesta.pedida,
+              margen: p.margen,
+              valor: cfg.backPressValue,
+              jugados: p.jugados,
+              deCuantos: seg.secondNine.where((h) => h >= p.hoyo).length,
+              delPrimerNueve: false,
+              nota: 'presión pedida sobre $madre, desde el hoyo ${p.hoyo}'));
+        }
+      }
     }
     return out;
   }
@@ -1064,85 +1085,265 @@ class BetEngine {
     return out;
   }
 
-  /// El margen de la apuesta del CARRY PEDIDO sobre el segundo nueve, o null si
-  /// nadie lo pidió en esta pareja.
+  /// El hoyo de un nueve donde cae el golpe número [rango] por stroke index.
   ///
-  /// Es una apuesta PARALELA: los mismos nueve hoyos que el B9, el mismo
-  /// importe, y lo único que cambia es que el solicitante recibe un golpe más.
-  /// Las dos se liquidan, y por eso son dos asientos.
-  ///
-  /// ── El golpe extra cae DENTRO de esos nueve, y eso no es un detalle ───────
-  ///
-  /// La ventaja de un par se guarda como un número de DIECIOCHO hoyos y se
-  /// reparte entre las dos vueltas: la de inicio se lleva `ceil(d/2)` y la otra
-  /// `floor(d/2)`. Así que sumar uno a la ventaja de dieciocho **no** da un golpe
-  /// más en esta apuesta: con una ventaja de 1, ese golpe cae en el SI 1 del
-  /// campo, que está en la PRIMERA vuelta — donde esta apuesta no se juega.
-  ///
-  /// Carlos lo dijo en los términos correctos: «si en el B9 le tocaban 3 golpes
-  /// de ventaja, con el carry le tocarían 4». Tres y cuatro EN ESA VUELTA. Así
-  /// que el uno se suma al reparto de la vuelta, no al número de dieciocho, y
-  /// cae en el hoyo más difícil de los nueve que aún no tuviera golpe.
-  ///
-  /// ── Y responde solo lo que Carlos preguntó ────────────────────────────────
-  ///
-  /// «¿Y si el que pide carry no tiene ventaja?» Se suma sobre la ventaja CON
-  /// SIGNO, así que quien recibía 0 pasa a recibir 1 —y de paso deja de ser el
-  /// que da golpes—, y quien daba 2 pasa a dar 1. Una sola línea cubre los tres
-  /// casos.
-  static int? _margenDelCarryPedido(
-      Round round, String p1Id, String p2Id, BetModuleInstance mod,
-      RoundSegments seg) {
-    final quien = mod.nassau.carryPedidoPor(p1Id, p2Id);
-    if (quien == null || seg.singleNine || seg.secondNine.isEmpty) return null;
-    // La apuesta del carry vale lo que el B9. Con el B9 a cero no es una
-    // apuesta.
-    if (mod.nassau.soloElMatch) return null;
+  /// [rango] es 1-based: 1 es el hoyo más difícil de esos nueve. Devuelve null
+  /// si el nueve no tiene tantos hoyos.
+  static int? hoyoPorDificultad(
+      Round round, List<int> hoyosDelNueve, int rango) {
+    if (rango < 1) return null;
+    final orden = [
+      for (final ch in round.course.holes)
+        if (hoyosDelNueve.contains(ch.hole)) ch
+    ]..sort((a, b) => a.strokeIndex.compareTo(b.strokeIndex));
+    return rango <= orden.length ? orden[rango - 1].hole : null;
+  }
 
-    // La ventaja de p1 EN ESTA VUELTA, con signo. El segundo nueve nunca es la
-    // vuelta de inicio, así que se lleva el `floor`.
+  /// El marcador de una apuesta sobre [hoyos], con [ventaja] golpes para p1.
+  ///
+  /// ── Una sola cuenta para cuatro apuestas ──────────────────────────────────
+  ///
+  /// La usan el carry pedido, la apertura, el B9 con el ajuste y las presiones
+  /// pedidas. Las cuatro son «un puñado de hoyos con una ventaja propia», y
+  /// tenerlas cada una con su bucle es como se pierde dinero en este proyecto.
+  ///
+  /// [ventaja] es de ESA VUELTA —no un número de dieciocho que haya que
+  /// partir— y va con signo: positiva la recibe p1. Puede llevar medio golpe.
+  ///
+  /// ── EL MEDIO GOLPE ────────────────────────────────────────────────────────
+  ///
+  ///     «Si quedara una diferencia de 2.5, el .5 se utiliza como desempate en
+  ///      caso de empate en el hoyo donde corresponda la ventaja.»
+  ///
+  /// Los enteros van a los hoyos más difíciles del nueve, como siempre. El medio
+  /// va al SIGUIENTE por stroke index —el que habría recibido el golpe si
+  /// hubiera sido entero— y allí solo rompe empates: si ese hoyo queda igualado
+  /// en neto, lo gana quien recibe.
+  ///
+  /// Se eligió el siguiente y no el último de los enteros porque en un hoyo que
+  /// ya lleva golpe el desempate casi nunca se usa: sería medio golpe regalado
+  /// sin efecto. Así el medio hace algo en el hoyo donde de verdad puede
+  /// decidir.
+  ///
+  /// [hoyosDelNueve] son los nueve COMPLETOS del curso: el reparto por stroke
+  /// index los necesita todos, o una ronda a medias concentraría los golpes en
+  /// los primeros hoyos jugados.
+  static ({int margen, int jugados}) marcadorConVentajaDeNueve(
+    Round round,
+    String p1Id,
+    String p2Id,
+    BetModuleInstance mod, {
+    required List<int> hoyos,
+    required List<int> hoyosDelNueve,
+    required double ventaja,
+  }) {
+    final d = deltasConVentajaDeNueve(round, p1Id, p2Id, mod,
+        hoyosDelNueve: hoyosDelNueve, ventaja: ventaja);
+    var margen = 0, jugados = 0;
+    for (final h in hoyos) {
+      if (!d.containsKey(h)) continue;
+      jugados++;
+      margen += d[h]!;
+    }
+    return (margen: margen, jugados: jugados);
+  }
+
+  /// Los deltas hoyo a hoyo de un nueve con una ventaja propia.
+  ///
+  /// Misma cuenta que [marcadorConVentajaDeNueve] —de hecho es la que usa— pero
+  /// devuelve el mapa, que es lo que la liquidación por segmentos necesita para
+  /// repartir presiones.
+  static Map<int, int> deltasConVentajaDeNueve(
+    Round round,
+    String p1Id,
+    String p2Id,
+    BetModuleInstance mod, {
+    required List<int> hoyosDelNueve,
+    required double ventaja,
+  }) {
+    final p1Recibe = ventaja > 0;
+    final receiverId = p1Recibe ? p1Id : p2Id;
+    final baseId = p1Recibe ? p2Id : p1Id;
+    final enteros = ventaja.abs().floor();
+    final hayMedio = (ventaja.abs() - enteros) > 0.4;
+    final hoyoDelMedio = hayMedio
+        ? hoyoPorDificultad(round, hoyosDelNueve, enteros + 1)
+        : null;
+
+    final delNueve = [
+      for (final ch in round.course.holes)
+        if (hoyosDelNueve.contains(ch.hole)) ch
+    ];
+
+    final out = <int, int>{};
+    for (final ch in delNueve) {
+      final sBase = round.getScore(baseId, ch.hole);
+      final sRecv = round.getScore(receiverId, ch.hole);
+      if (!sBase.hasScore || !sRecv.hasScore) continue;
+      final golpes = mod.useHandicap
+          ? GameEngine.strokesReceivedInPlayedHoles(
+              diff: enteros, ch: ch, playedHoles: delNueve)
+          : 0;
+      final neto = sRecv.grossScore! - golpes;
+      final base = sBase.grossScore!;
+      if (base < neto) {
+        out[ch.hole] = p1Recibe ? -1 : 1;
+      } else if (base > neto) {
+        out[ch.hole] = p1Recibe ? 1 : -1;
+      } else if (mod.useHandicap && ch.hole == hoyoDelMedio) {
+        // El medio golpe: empate en NETO en su hoyo → lo gana quien recibe.
+        out[ch.hole] = p1Recibe ? 1 : -1;
+      } else {
+        out[ch.hole] = 0;
+      }
+    }
+    return out;
+  }
+
+  /// La ventaja de p1 sobre el segundo nueve, SIN el ajuste.
+  ///
+  /// Es la mitad que le toca del número de dieciocho: el segundo nueve nunca es
+  /// la vuelta de inicio, así que se lleva el `floor`.
+  static double _ventajaBaseDelSegundoNueve(
+      Round round, String p1Id, String p2Id) {
     final recv = _strokesP1ReceivesFromP2(round, p1Id, p2Id);
     final share = GameEngine.slidingShareForNine(
       diff18: recv.abs().round(),
       startingNine: round.startingNine,
       targetIsStartingNine: false,
     );
-    var ventaja = recv >= 0 ? share : -share;
+    return recv >= 0 ? share.toDouble() : -share.toDouble();
+  }
 
-    // El golpe del carry.
-    ventaja += quien == p1Id ? 1 : -1;
+  /// La ventaja de p1 sobre el SEGUNDO NUEVE, con el ajuste si está activado.
+  ///
+  /// Devuelve también el margen del F9 del que sale, para poder explicarlo en
+  /// pantalla, y el hoyo donde cae el medio golpe.
+  ///
+  /// Null si el ajuste está apagado, si no hay segundo nueve, o si el primero no
+  /// ha terminado: hasta entonces no hay diferencia que medir, y anunciar una a
+  /// medias sería anunciar un número que va a cambiar.
+  static ({double ventaja, int margenF9, int? hoyoDelMedio})? ajusteDelB9(
+      Round round, String p1Id, String p2Id, BetModuleInstance mod) {
+    final cfg = mod.nassau;
+    if (!cfg.ajusteEnB9) return null;
+    final seg = segmentsOf(round);
+    if (seg.singleNine || seg.secondNine.isEmpty) return null;
 
-    final p1Recibe = ventaja > 0;
-    final receiverId = p1Recibe ? p1Id : p2Id;
-    final baseId = p1Recibe ? p2Id : p1Id;
-    final golpesEnLaVuelta = ventaja.abs();
-
-    // Los hoyos DEL CURSO de esta vuelta: el reparto por SI necesita los nueve
-    // completos, no solo los jugados, o una ronda a medias concentraría los
-    // golpes en los primeros hoyos.
-    final delNueve = [
-      for (final ch in round.course.holes)
-        if (seg.secondNine.contains(ch.hole)) ch
-    ];
-
+    final deltas = _deltasDelDuelo(round, p1Id, p2Id, mod);
     var margen = 0, jugados = 0;
-    for (final ch in delNueve) {
-      final sBase = round.getScore(baseId, ch.hole);
-      final sRecv = round.getScore(receiverId, ch.hole);
-      if (!sBase.hasScore || !sRecv.hasScore) continue;
+    for (final h in seg.firstNine) {
+      if (!deltas.containsKey(h)) continue;
       jugados++;
-      final golpes = mod.useHandicap
-          ? GameEngine.strokesReceivedInPlayedHoles(
-              diff: golpesEnLaVuelta, ch: ch, playedHoles: delNueve)
-          : 0;
-      final neto = sRecv.grossScore! - golpes;
-      if (sBase.grossScore! < neto) {
-        margen += p1Recibe ? -1 : 1;
-      } else if (sBase.grossScore! > neto) {
-        margen += p1Recibe ? 1 : -1;
-      }
+      margen += deltas[h]!;
     }
-    return jugados == 0 ? null : margen;
+    if (jugados != seg.firstNine.length) return null;
+
+    // «La diferencia de hoyos en la primera vuelta, al 50%», y para el QUE
+    // PERDIÓ: si p1 ganó el F9 por 5, p1 DA 2.5 en el segundo.
+    final ventaja = -margen * 0.5;
+    final enteros = ventaja.abs().floor();
+    final hayMedio = (ventaja.abs() - enteros) > 0.4;
+    return (
+      ventaja: ventaja,
+      margenF9: margen,
+      hoyoDelMedio: hayMedio
+          ? hoyoPorDificultad(round, seg.secondNine, enteros + 1)
+          : null,
+    );
+  }
+
+  /// La ventaja que rige el SEGUNDO NUEVE: la ajustada si la hay, o la base.
+  static double ventajaDelSegundoNueve(
+          Round round, String p1Id, String p2Id, BetModuleInstance mod) =>
+      ajusteDelB9(round, p1Id, p2Id, mod)?.ventaja ??
+      _ventajaBaseDelSegundoNueve(round, p1Id, p2Id);
+
+  /// Las PRESIONES PEDIDAS sobre una apuesta pedida del segundo nueve.
+  ///
+  /// ── Por defecto no, pero se pueden pedir ──────────────────────────────────
+  ///
+  ///     «Por defecto no trae presiones, pero se pueden pedir.»
+  ///
+  /// El carry y la apertura siguen naciendo SIN presiones automáticas: son
+  /// apuestas que se piden enteras, y encadenarles presiones solas sería otra
+  /// cosa que nadie pactó. Lo que faltaba es poder pedir una.
+  ///
+  /// ── Y la apertura sigue la misma regla ────────────────────────────────────
+  ///
+  /// «Determina si la apertura de 2ª vuelta sigue la misma regla.» Sí, y es el
+  /// mismo caso literal: una apuesta PEDIDA sobre el segundo nueve con su propio
+  /// marcador. Lo que decide aquí no es qué apuesta es, sino cómo nació — y las
+  /// dos nacieron porque alguien las pidió.
+  ///
+  /// Cada presión cubre lo que queda de su apuesta madre desde su hoyo, y hereda
+  /// su ventaja: la del carry lleva el golpe extra, la de la apertura no.
+  static List<({int hoyo, int margen, int jugados})> presionesPedidasSobre(
+      Round round,
+      String p1Id,
+      String p2Id,
+      BetModuleInstance mod,
+      RoundSegments seg,
+      String apuesta) {
+    final cfg = mod.nassau;
+    final hoyos = cfg.presionesPedidasDe(p1Id, p2Id, apuesta);
+    if (hoyos.isEmpty || seg.singleNine || seg.secondNine.isEmpty) {
+      return const [];
+    }
+    // La ventaja de la MADRE.
+    var ventaja = ventajaDelSegundoNueve(round, p1Id, p2Id, mod);
+    if (apuesta == NassauConfig.claveCarry) {
+      final quien = cfg.carryPedidoPor(p1Id, p2Id);
+      if (quien == null) return const [];
+      ventaja += quien == p1Id ? 1 : -1;
+    } else if (!cfg.aperturaB9For(p1Id, p2Id)) {
+      return const [];
+    }
+
+    final out = <({int hoyo, int margen, int jugados})>[];
+    for (final desde in hoyos.toSet().toList()..sort()) {
+      final tramo = seg.secondNine.where((h) => h >= desde).toList();
+      if (tramo.isEmpty) continue;
+      final r = marcadorConVentajaDeNueve(round, p1Id, p2Id, mod,
+          hoyos: tramo, hoyosDelNueve: seg.secondNine, ventaja: ventaja);
+      if (r.jugados == 0) continue;
+      out.add((hoyo: desde, margen: r.margen, jugados: r.jugados));
+    }
+    return out;
+  }
+
+  /// El margen de la apuesta del CARRY PEDIDO sobre el segundo nueve, o null si
+  /// nadie lo pidió en esta pareja.
+  ///
+  /// Es una apuesta PARALELA: los mismos nueve hoyos que el B9, el mismo
+  /// importe, y lo único que cambia es que el solicitante recibe un golpe más.
+  ///
+  /// ── El golpe extra cae DENTRO de esos nueve ───────────────────────────────
+  ///
+  /// La ventaja de un par se guarda como un número de DIECIOCHO y se reparte
+  /// entre las dos vueltas. Sumar uno ahí no da un golpe más en esta apuesta:
+  /// con ventaja 1, ese golpe cae en el SI 1 del campo, que está en la PRIMERA
+  /// vuelta — donde esta apuesta no se juega. Así que el uno se suma al reparto
+  /// de la VUELTA, que es como Carlos lo dijo: «si en el B9 le tocaban 3, con el
+  /// carry le tocarían 4».
+  ///
+  /// Y sale de [ventajaDelSegundoNueve], así que si el ajuste al B9 está
+  /// encendido el carry se mide sobre la ventaja YA ajustada. Es lo coherente:
+  /// el carry siempre fue «la ventaja del B9 más uno».
+  static int? _margenDelCarryPedido(
+      Round round, String p1Id, String p2Id, BetModuleInstance mod,
+      RoundSegments seg) {
+    final quien = mod.nassau.carryPedidoPor(p1Id, p2Id);
+    if (quien == null || seg.singleNine || seg.secondNine.isEmpty) return null;
+    if (mod.nassau.soloElMatch) return null;
+
+    final ventaja = ventajaDelSegundoNueve(round, p1Id, p2Id, mod) +
+        (quien == p1Id ? 1 : -1);
+    final r = marcadorConVentajaDeNueve(round, p1Id, p2Id, mod,
+        hoyos: seg.secondNine,
+        hoyosDelNueve: seg.secondNine,
+        ventaja: ventaja);
+    return r.jugados == 0 ? null : r.margen;
   }
 
   static List<LedgerEntry> _nassauPair(Round round, String p1Id, String p2Id, BetModuleInstance mod) {
@@ -1169,11 +1370,31 @@ class BetEngine {
         back += e.value;
       }
     }
+    // El TOTAL sale de los deltas originales en los dieciocho, siempre. Ver el
+    // ajuste más abajo: no lo toca.
     final total = front + back;
 
     final v = valoresDelNassau(cfg,
         f9Completo: seg.firstNine.isNotEmpty && f9Jugados == seg.firstNine.length,
         marcadorF9: front);
+
+    // ── El ajuste al entrar en el B9 ────────────────────────────────────────
+    //
+    // Si está encendido, la segunda vuelta se juega con la ventaja que reveló la
+    // primera. Los deltas de ese nueve son OTROS, y solo los usan el B9, sus
+    // presiones y las apuestas pedidas — no el total de 18.
+    final ajuste = ajusteDelB9(round, p1Id, p2Id, mod);
+    final deltasDelB9 = ajuste == null
+        ? null
+        : deltasConVentajaDeNueve(round, p1Id, p2Id, mod,
+            hoyosDelNueve: seg.secondNine, ventaja: ajuste.ventaja);
+    // El marcador del B9 con la ventaja que lo rige.
+    if (deltasDelB9 != null) {
+      back = 0;
+      for (final h in seg.secondNine) {
+        back += deltasDelB9[h] ?? 0;
+      }
+    }
 
     // ── La PRESIÓN DE APERTURA de la vuelta trasera ────────────────────────
     //
@@ -1207,6 +1428,19 @@ class BetEngine {
           'Carry · un golpe más');
     }
 
+    // ── Las PRESIONES PEDIDAS sobre las apuestas pedidas ─────────────────
+    for (final apuesta in const [
+      NassauConfig.claveCarry,
+      NassauConfig.claveApertura
+    ]) {
+      for (final p
+          in presionesPedidasSobre(round, p1Id, p2Id, mod, seg, apuesta)) {
+        _addNassauSegment(entries, p1Id, p2Id, p.margen, v.backPress,
+            'Presión pedida H${p.hoyo} '
+            '(${apuesta == NassauConfig.claveCarry ? 'Carry' : 'Apertura'})');
+      }
+    }
+
     if (seg.singleNine) {
       _addNassauSegment(entries, p1Id, p2Id, front, v.front, 'Nassau 9 hoyos');
     } else {
@@ -1214,8 +1448,14 @@ class BetEngine {
       // RoundSegments.etiqueta. Saliendo por el 1 dice Front 9 como siempre.
       _addNassauSegment(entries, p1Id, p2Id, front, v.front,
           'Nassau ${seg.etiqueta(true, round.startingNine)}');
-      _addNassauSegment(entries, p1Id, p2Id, back, v.back,
-          'Nassau ${seg.etiqueta(false, round.startingNine)}');
+      _addNassauSegment(
+          entries,
+          p1Id,
+          p2Id,
+          back,
+          v.back,
+          'Nassau ${seg.etiqueta(false, round.startingNine)}'
+              '${ajuste != null ? ' (ajustado)' : ''}');
       _addNassauSegment(entries, p1Id, p2Id, total, v.total, 'Nassau Total 18');
     }
     return entries;
@@ -1266,6 +1506,16 @@ class BetEngine {
         f9Completo: seg.firstNine.isNotEmpty && f9Jugados == seg.firstNine.length,
         marcadorF9: front);
 
+    // ── El ajuste al entrar en el B9 ────────────────────────────────────────
+    //
+    // Los deltas de ese nueve son OTROS, y solo los usan el B9, sus presiones y
+    // las apuestas pedidas. El total de 18 sigue con los originales.
+    final ajuste = ajusteDelB9(round, p1Id, p2Id, mod);
+    final deltasDelB9 = ajuste == null
+        ? null
+        : deltasConVentajaDeNueve(round, p1Id, p2Id, mod,
+            hoyosDelNueve: seg.secondNine, ventaja: ajuste.ventaja);
+
     // ── Liquidar segmento con presiones ─────────────────────────────────────
     // [holes] son los hoyos REALES del segmento en orden de juego (no un rango
     // numérico), para que funcione con campos de 9 hoyos y numeración invertida.
@@ -1274,15 +1524,23 @@ class BetEngine {
       required double segValue,
       required double pressValue,
       required String segLabel,
+      /// Los deltas de ESTE segmento, si no son los de la ronda.
+      ///
+      /// Con el ajuste al B9 encendido, el segundo nueve se juega con otra
+      /// ventaja: los mismos hoyos dan otro marcador para el B9 que para el
+      /// total de 18. No es un caso raro, es la regla — y por eso el mapa de
+      /// deltas entra por parámetro en vez de ser el de la ronda a secas.
+      Map<int, int>? deltas,
     }) {
       if (holes.isEmpty) return;
+      final d = deltas ?? deltaByHole;
       final holeTo = holes.last;
 
       // Score acumulado hoyo a hoyo dentro del segmento
       final List<int> history = [];
       for (final h in holes) {
         final prev = history.isEmpty ? 0 : history.last;
-        history.add(prev + (deltaByHole[h] ?? 0));
+        history.add(prev + (d[h] ?? 0));
       }
       if (history.isEmpty) return;
 
@@ -1388,7 +1646,13 @@ class BetEngine {
         segValue:   v.back,
         pressValue: v.backPress,
         segLabel: 'Nassau ${seg.etiqueta(false, round.startingNine)}'
-            '${v.carryNatural ? ' (+F9)' : ''}',
+            '${v.carryNatural ? ' (+F9)' : ''}'
+            '${ajuste != null ? ' (ajustado)' : ''}',
+        // Con el ajuste, este nueve se juega con OTRA ventaja. El total de 18
+        // sigue con la original: es una apuesta sobre los dieciocho y cambiarle
+        // la ventaja a mitad dejaría su primer nueve con una regla y el segundo
+        // con otra.
+        deltas: deltasDelB9,
       );
       // ── La PRESIÓN DE APERTURA, también con presiones activadas ──────────
       //
@@ -1401,6 +1665,9 @@ class BetEngine {
           segValue: cfg.backValue,
           pressValue: 0,
           segLabel: 'Apertura 2ª vuelta',
+          // «La 2ª vuelta otra vez, desde cero»: la misma ventaja que el B9,
+          // ajustada si lo está.
+          deltas: deltasDelB9,
         );
       }
 
@@ -1418,6 +1685,19 @@ class BetEngine {
       if (mCarry != null) {
         _addNassauSegment(entries, p1Id, p2Id, mCarry, cfg.backValue,
             'Carry · un golpe más');
+      }
+
+      // ── Las PRESIONES PEDIDAS sobre las apuestas pedidas ─────────────────
+      for (final apuesta in const [
+        NassauConfig.claveCarry,
+        NassauConfig.claveApertura
+      ]) {
+        for (final p in presionesPedidasSobre(
+            round, p1Id, p2Id, mod, seg, apuesta)) {
+          _addNassauSegment(entries, p1Id, p2Id, p.margen, v.backPress,
+              'Presión pedida H${p.hoyo} '
+              '(${apuesta == NassauConfig.claveCarry ? 'Carry' : 'Apertura'})');
+        }
       }
 
       // Total 18: suma todos los deltas disponibles

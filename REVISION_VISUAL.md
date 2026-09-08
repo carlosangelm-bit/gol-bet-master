@@ -1043,3 +1043,67 @@ Montar la tarjeta en una prueba por primera vez destapó **3 px de contenido
 recortado** en el recuadro de segmento y otros **3 px** en el chip de presión.
 No se veían —el recorte los tapa— y ninguna prueba llegaba: la tarjeta era
 privada. Las dos cajas pasan de 90 a 94 px.
+
+---
+
+# Dos reglas: presiones en las pedidas, y el ajuste al B9
+
+## 1 · Por defecto no, pero se pueden pedir
+
+El carry y la apertura **siguen naciendo sin presiones automáticas** —se piden
+enteras— y eso no cambia. Lo que faltaba es poder pedirle una.
+
+**Y la apertura sigue la misma regla.** Lo que decide no es qué apuesta es, sino
+**cómo nació**: las dos nacieron porque alguien las pidió.
+
+### Qué mirar
+
+1. **Pide el carry.** Su bloque dice ahora *«No trae presiones automáticas. Se le
+   puede pedir una.»* y tiene el botón **Pedir presión sobre el carry**.
+2. **Púlsalo.** Arranca en el hoyo en curso —el siguiente sin las dos tarjetas—
+   igual que una automática arranca en el siguiente al que la disparó.
+3. **Aparece su recuadro** en `PEDIDAS · 2ª VUELTA`, con la nota *«presión pedida
+   sobre Carry, desde el hoyo 12»*.
+4. **La del carry hereda su golpe extra**; la de la apertura no. Sobre los mismos
+   hoyos dan marcadores distintos.
+
+## 2 · El ajuste de ventaja al entrar en el B9
+
+**No es el sliding.** El sliding ajusta lo pactado de una ronda a la siguiente;
+esto ajusta **una apuesta a mitad de la ronda**, con un dato de esa misma ronda.
+
+```
+F9: CAM gana por 5
+  → B9: CAV recibe 2.5 golpes
+        2 enteros en los hoyos 10 y 11 (los más difíciles de esa vuelta)
+        + MEDIO GOLPE en el 12
+```
+
+### Las tres determinaciones
+
+- **La opción vive en el módulo del Nassau**, no en el paso 7. El paso 7 pacta lo
+  que dos personas se dan —vale para todas sus apuestas y para la próxima
+  ronda—; esto es una regla de **esta** apuesta, medida con el F9 de **esta**
+  ronda. Dos jugadores pueden tener un Nassau con el ajuste y otro sin él.
+- **El medio golpe cae en el siguiente hoyo por stroke index** —el que habría
+  recibido el golpe si hubiera sido entero— y allí **solo rompe empates**: si
+  ese hoyo queda igualado en neto, lo gana quien recibe. No se eligió el último
+  de los enteros porque en un hoyo que ya lleva golpe el desempate casi nunca se
+  usa: sería medio golpe sin efecto.
+- **El F9 y el Total 18 no se tocan.** El F9 «ya quedó como quedó». El total es
+  **una** apuesta sobre los dieciocho: cambiarle la ventaja a mitad dejaría su
+  primer nueve con una regla y el segundo con otra. Mismo criterio que el carry
+  natural.
+
+**Y sustituye la ventaja del B9, no se suma a ella**, porque es una *medición* de
+esta ronda y no la corrección de un acuerdo.
+
+### Qué mirar
+
+1. **En el editor del Nassau**: `Ajustar la ventaja en el B9`, con la regla
+   escrita entera, medio golpe incluido.
+2. **En la tarjeta del duelo**, al terminar el F9: un bloque
+   **VENTAJA AJUSTADA EN EL B9** que dice por cuánto se decidió el F9, cuántos
+   golpes recibe quién, **en qué hoyo cae el medio y qué hace ahí**.
+3. **El B9 dice `(ajustado)`** en el desglose; el F9 y el Total 18 no.
+4. **Con diferencia par** no promete un medio golpe que no existe.

@@ -1617,6 +1617,45 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
       ],
       const SizedBox(height: 16),
 
+      // ── EL AJUSTE AL ENTRAR EN EL B9 ──────────────────────────────────────
+      //
+      // «Determina si es una ventaja más en el paso 7, o un ajuste aparte.»
+      //
+      // Aquí, en el módulo, y no en el paso de VENTAJAS. El paso 7 pacta lo que
+      // dos personas se dan —vale para todas sus apuestas y para la próxima
+      // ronda—; esto es una regla de ESTA apuesta, medida con el primer nueve de
+      // ESTA ronda. Dos jugadores pueden tener un Nassau con el ajuste y otro
+      // sin él, y no habría forma de decirlo desde el paso 7.
+      if (!solo) ...[
+        _toggle(
+          'Ajustar la ventaja en el B9',
+          n.ajusteEnB9
+              ? 'La diferencia del F9, al 50%, para el que perdió'
+              : 'La ventaja no cambia al entrar en la 2ª vuelta',
+          n.ajusteEnB9,
+          t,
+          (v) => _update(
+              _current.copyWith(nassauConfig: n.copyWith(ajusteEnB9: v))),
+        ),
+        if (n.ajusteEnB9) ...[
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Text(
+              'Para jugar con alguien sin handicap pactado: la primera vuelta '
+              'sirve para medirse. Si el F9 se gana por 5, el otro recibe 2.5 '
+              'golpes en el B9 — dos enteros en los hoyos más difíciles de esa '
+              'vuelta, y el MEDIO GOLPE en el siguiente por stroke index, donde '
+              'sirve de desempate: si ese hoyo queda igualado, lo gana quien '
+              'recibe.\n\n'
+              'El F9 se paga con la ventaja original, y el Total 18 también.',
+              style: TextStyle(color: t.sub, fontSize: 11, height: 1.35),
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+      ],
+
       // ── Press automático ──────────────────────────────────────────────────
       _toggle(
         'Activar Press automático',

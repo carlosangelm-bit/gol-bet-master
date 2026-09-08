@@ -169,6 +169,7 @@ void main() {
                 t: GolfTheme.dark,
                 nassauModules: r.betGroups.first.modules,
                 onPedirCarry: (quien) => _pedirCarry(p, quien),
+                onPedirPresion: () {},
               ),
             );
           }),

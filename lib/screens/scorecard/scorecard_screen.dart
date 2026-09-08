@@ -1350,6 +1350,8 @@ class _OneVOneViewState extends State<_OneVOneView> {
                     _pedirCarry(ctx, effP1.id, effP2.id, solicitante, nassauMods),
                 onAbrirApertura: (ctx, nassauMods) =>
                     _abrirApertura(ctx, effP1.id, effP2.id, nassauMods),
+                onPedirPresion: (ctx, apuesta, nassauMods) => _pedirPresion(
+                    ctx, effP1.id, effP2.id, apuesta, nassauMods),
               ),
             );
           }),
@@ -1464,6 +1466,49 @@ class _OneVOneViewState extends State<_OneVOneView> {
       // Es la quinta vez que este proyecto pierde un campo así, y la primera en
       // la que se pierde al PEDIR una apuesta.
       return g.copyWith(modules: mods);
+    }).toList();
+    prov.updateBetGroups(newGroups);
+  }
+
+  /// Pide una PRESIÓN sobre una apuesta pedida —el carry o la apertura—.
+  ///
+  /// ── Por defecto no, pero se pueden pedir ─────────────────────────────────
+  ///
+  /// Las apuestas pedidas no traen presiones automáticas, y no van a traerlas:
+  /// se piden enteras. Esto es el «pero se pueden pedir», y arranca en el hoyo
+  /// siguiente al último capturado — igual que una automática arranca en el
+  /// siguiente al que la disparó.
+  void _pedirPresion(BuildContext context, String p1Id, String p2Id,
+      String apuesta, List<BetModuleInstance> nassauMods) {
+    final prov = context.read<RoundProvider>();
+    final round = prov.round;
+    if (round == null) return;
+    final seg = BetEngine.segmentsOf(round);
+    // El primer hoyo del segundo nueve que aún no tenga las dos tarjetas.
+    final desde = seg.secondNine.firstWhere(
+        (h) =>
+            !round.getScore(p1Id, h).hasScore ||
+            !round.getScore(p2Id, h).hasScore,
+        orElse: () => -1);
+    if (desde < 0) return;   // el nueve ya está jugado: no hay tramo que cubrir
+
+    final clave = NassauConfig.carryPairKey(p1Id, p2Id);
+    final newGroups = round.betGroups.map((g) {
+      final mods = g.modules.map((m) {
+        if (m.type != BetModuleType.nassau) return m;
+        if (!nassauMods.any((nm) => nm.id == m.id)) return m;
+        final porPareja = {
+          for (final e in m.nassau.presionesPedidasByPair.entries)
+            e.key: {for (final x in e.value.entries) x.key: [...x.value]}
+        };
+        final delPar = porPareja.putIfAbsent(clave, () => {});
+        final hoyos = delPar.putIfAbsent(apuesta, () => []);
+        if (!hoyos.contains(desde)) hoyos.add(desde);
+        return m.copyWith(
+            nassauConfig:
+                m.nassau.copyWith(presionesPedidasByPair: porPareja));
+      }).toList();
+      return g.copyWith(modules: mods);   // ver _abrirApertura
     }).toList();
     prov.updateBetGroups(newGroups);
   }
@@ -1811,11 +1856,16 @@ class _MatchDuelCard extends StatefulWidget {
   final void Function(BuildContext, List<BetModuleInstance> nassauMods)
       onAbrirApertura;
 
+  /// Pedir una presión sobre una apuesta pedida: el carry o la apertura.
+  final void Function(BuildContext, String apuesta,
+      List<BetModuleInstance> nassauMods) onPedirPresion;
+
   const _MatchDuelCard({
     required this.round, required this.p1, required this.p2,
     required this.t, required this.expanded,
     required this.onPedirCarry,
     required this.onAbrirApertura,
+    required this.onPedirPresion,
     this.myPlayerId,
   });
 
@@ -1962,6 +2012,8 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
               nassauModules:     nassauModules,
               onPedirCarry: (solicitante) =>
                   widget.onPedirCarry(context, solicitante, nassauModules),
+              onPedirPresion: () => widget.onPedirPresion(
+                  context, NassauConfig.claveCarry, nassauModules),
             ),
 
             // ── La presión de apertura, en SU PROPIO bloque ─────────────────
@@ -1985,6 +2037,8 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
                 nassauModules: nassauModules,
                 onAbrir: () =>
                     widget.onAbrirApertura(context, nassauModules),
+                onPedirPresion: () => widget.onPedirPresion(
+                    context, NassauConfig.claveApertura, nassauModules),
               ),
 
             // Desglose financiero por duelo
@@ -3383,6 +3437,64 @@ class NassauLivePanel extends StatelessWidget {
             ),
           ],
 
+          // ── EL AJUSTE AL B9, dicho donde se juega ────────────────────────
+          //
+          // «Medio golpe es lo que nadie sabe explicar en el tee», así que se
+          // explica aquí: cuántos golpes, en qué hoyos caen los enteros, en cuál
+          // el medio y qué hace ese medio.
+          if (BetEngine.ajusteDelB9(round, p1.id, p2.id, mod) case final aj?)
+            () {
+              final recibe = aj.ventaja > 0 ? n1 : n2;
+              final enteros = aj.ventaja.abs().floor();
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: t.primary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(8),
+                    border:
+                        Border.all(color: t.primary.withValues(alpha: 0.28)),
+                  ),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('VENTAJA AJUSTADA EN EL B9',
+                            style: TextStyle(
+                                color: t.primary,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.6)),
+                        const SizedBox(height: 4),
+                        Text(
+                            'El F9 se decidió por ${aj.margenF9.abs()} '
+                            'hoyo${aj.margenF9.abs() == 1 ? '' : 's'}, así que '
+                            '$recibe recibe '
+                            '${aj.ventaja.abs().toStringAsFixed(1)} golpes en '
+                            'esta vuelta.',
+                            style: TextStyle(
+                                color: t.text, fontSize: 11, height: 1.3)),
+                        if (aj.hoyoDelMedio case final hoyo?) ...[
+                          const SizedBox(height: 3),
+                          // Lo que nadie sabe explicar en el tee.
+                          Text(
+                              '$enteros entero${enteros == 1 ? '' : 's'} en los '
+                              'hoyos más difíciles, y MEDIO GOLPE en el H$hoyo: '
+                              'allí no da golpe, rompe el empate. Si el H$hoyo '
+                              'queda igualado, lo gana $recibe.',
+                              style: TextStyle(
+                                  color: t.sub, fontSize: 10.5, height: 1.3)),
+                        ],
+                        const SizedBox(height: 3),
+                        Text('El F9 y el Total 18 se pagan con la ventaja '
+                            'original.',
+                            style: TextStyle(
+                                color: t.sub, fontSize: 10, height: 1.25)),
+                      ]),
+                ),
+              );
+            }(),
+
           // ── LAS PEDIDAS: su propio bloque ────────────────────────────────
           //
           // «Determina dónde caen dos apuestas que viven en el B9 pero no son
@@ -3647,10 +3759,16 @@ class CarryPanel extends StatefulWidget {
 
   /// Lo pide el jugador que se pasa: el golpe extra es suyo.
   final void Function(String solicitante) onPedirCarry;
+
+  /// Pedir una presión SOBRE el carry. Requerido para que nadie olvide
+  /// cablearlo: el carry no trae presiones solas, y sin este botón la regla
+  /// «pero se pueden pedir» no existiría en la pantalla.
+  final VoidCallback onPedirPresion;
   const CarryPanel({
     required this.round, required this.p1, required this.p2, required this.t,
     required this.nassauModules,
     required this.onPedirCarry,
+    required this.onPedirPresion,
   });
   @override State<CarryPanel> createState() => _CarryPanelState();
 }
@@ -3761,19 +3879,63 @@ class _CarryPanelState extends State<CarryPanel> {
     final margen = _marcadorF9;
     final quien = _solicitante;
 
-    // ── Ya se pidió: se cuenta lo que hay en juego ───────────────────────────
+    // ── Ya se pidió: se cuenta lo que hay en juego ──────────────────────────
     if (quien != null) {
       final nombre = quien == widget.p1.id ? n1 : n2;
-      return _tarjeta(
-        t: t,
-        color: t.accent,
-        icono: GolfIcons.duelo,
-        titulo: 'CARRY PEDIDO',
-        // Los dos números que hacen falta para saber qué se juega: cuántas
-        // apuestas y con qué ventaja cada una.
-        cuerpo: 'Se juegan DOS apuestas sobre la 2ª vuelta, de '
-            '\$${cfg.backValue.toStringAsFixed(0)} cada una: la normal, y la '
-            'del carry con un golpe más de ventaja para $nombre.',
+      final presiones = widget.nassauModules.first.nassau.presionesPedidasDe(
+          widget.p1.id, widget.p2.id, NassauConfig.claveCarry);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: GCard(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Row(children: [
+                Icon(GolfIcons.duelo, color: t.accent, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text('CARRY PEDIDO',
+                        style: TextStyle(
+                            color: t.accent,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 10,
+                            letterSpacing: 0.8))),
+              ]),
+              const SizedBox(height: 3),
+              // Los dos números que hacen falta para saber qué se juega:
+              // cuántas apuestas y con qué ventaja cada una.
+              Text(
+                  'Se juegan DOS apuestas sobre la 2ª vuelta, de '
+                  '\$${cfg.backValue.toStringAsFixed(0)} cada una: la normal, y '
+                  'la del carry con un golpe más de ventaja para $nombre.',
+                  style: TextStyle(color: t.sub, fontSize: 11, height: 1.35)),
+              const SizedBox(height: 6),
+              // ── «Por defecto no trae presiones, pero se pueden pedir» ─────
+              Text(
+                  presiones.isEmpty
+                      ? 'No trae presiones automáticas. Se le puede pedir una.'
+                      : 'Presión pedida desde '
+                          '${presiones.map((h) => 'H$h').join(' · ')}.',
+                  style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: Icon(GolfIcons.rapido, size: GolfIcons.juntoAValor),
+                  label: const Text('Pedir presión sobre el carry',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 12.5)),
+                  onPressed: widget.onPedirPresion,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: t.accent,
+                    side: BorderSide(color: t.accent.withValues(alpha: 0.5)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ])),
       );
     }
 
@@ -5441,6 +5603,10 @@ class _AperturaPanel extends StatelessWidget {
   final GolfTheme t;
   final List<BetModuleInstance> nassauModules;
   final VoidCallback onAbrir;
+
+  /// Pedir una presión sobre ella. Misma regla que el carry: no las trae, se
+  /// piden.
+  final VoidCallback onPedirPresion;
   const _AperturaPanel({
     required this.round,
     required this.p1,
@@ -5448,6 +5614,7 @@ class _AperturaPanel extends StatelessWidget {
     required this.t,
     required this.nassauModules,
     required this.onAbrir,
+    required this.onPedirPresion,
   });
 
   /// Ya abierta con cualquiera de los módulos de esta pareja.
@@ -5493,29 +5660,61 @@ class _AperturaPanel extends StatelessWidget {
     final n2 = p2.shortName;
 
     if (_yaAbierta) {
+      final presiones = nassauModules.first.nassau
+          .presionesPedidasDe(p1.id, p2.id, NassauConfig.claveApertura);
       return Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: GCard(
-            child: Row(children: [
-          Icon(Icons.add_circle_outline, color: t.primary, size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                Text('APERTURA 2ª VUELTA',
-                    style: TextStyle(
-                        color: t.primary,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 11,
-                        letterSpacing: 0.8)),
-                const SizedBox(height: 2),
-                Text(
-                    'Apuesta aparte sobre los nueve traseros, desde cero · '
-                    '\$${valor.toStringAsFixed(0)}',
-                    style: TextStyle(color: t.sub, fontSize: 11)),
-              ])),
-        ])),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Row(children: [
+                Icon(Icons.add_circle_outline, color: t.primary, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Text('APERTURA 2ª VUELTA',
+                          style: TextStyle(
+                              color: t.primary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11,
+                              letterSpacing: 0.8)),
+                      const SizedBox(height: 2),
+                      Text(
+                          'Apuesta aparte sobre los nueve traseros, desde cero '
+                          '· \$${valor.toStringAsFixed(0)}',
+                          style: TextStyle(color: t.sub, fontSize: 11)),
+                    ])),
+              ]),
+              const SizedBox(height: 6),
+              // Misma regla que el carry: no trae presiones, se le piden.
+              Text(
+                  presiones.isEmpty
+                      ? 'No trae presiones automáticas. Se le puede pedir una.'
+                      : 'Presión pedida desde '
+                          '${presiones.map((h) => 'H$h').join(' · ')}.',
+                  style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: Icon(GolfIcons.rapido, size: GolfIcons.juntoAValor),
+                  label: const Text('Pedir presión sobre la apertura',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 12.5)),
+                  onPressed: onPedirPresion,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: t.primary,
+                    side: BorderSide(color: t.primary.withValues(alpha: 0.5)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ])),
       );
     }
 

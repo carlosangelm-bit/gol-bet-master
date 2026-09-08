@@ -1580,6 +1580,8 @@ class NassauConfig {
     this.maxPresses,
     this.aperturaB9ByPair = const {},
     this.carryPedidoByPair = const {},
+    this.ajusteEnB9 = false,
+    this.presionesPedidasByPair = const {},
   });
 
   /// Clave canónica del par. Mismo formato que `pairSliding`.
@@ -1587,6 +1589,69 @@ class NassauConfig {
     final sorted = [id1, id2]..sort();
     return '${sorted[0]}|${sorted[1]}';
   }
+
+  /// Al entrar en el B9, la ventaja se recalcula desde el F9.
+  ///
+  /// ── Qué es, y por qué NO es el sliding ────────────────────────────────────
+  ///
+  ///     «El sliding no hace nada de eso. Este es un mecanismo adicional que se
+  ///      utiliza típicamente entre jugadores que nunca han jugado antes.»
+  ///
+  /// El sliding ajusta la ventaja PACTADA entre dos personas de una ronda a la
+  /// siguiente. Esto ajusta la ventaja de UNA APUESTA a mitad de la ronda, y con
+  /// un dato de esa misma ronda: la diferencia de hoyos del primer nueve.
+  ///
+  ///     F9: CAM gana por 5 hoyos
+  ///       → B9: el otro recibe 2.5 golpes
+  ///             2 enteros, en los hoyos que toquen por stroke index
+  ///             + medio golpe de desempate en el siguiente
+  ///
+  /// Sirve para dos que no se conocen y empiezan sin handicap pactado: la
+  /// primera vuelta les sirve para medirse y la segunda se juega con lo que esa
+  /// medición reveló.
+  ///
+  /// ── SUSTITUYE la ventaja del B9, no se suma a ella ────────────────────────
+  ///
+  /// Porque es una MEDICIÓN de esta ronda, no una corrección de un acuerdo. Dos
+  /// que ya tienen handicap pactado no necesitan esto; quien lo enciende está
+  /// diciendo «no sabemos cuánto darnos, que lo diga el primer nueve».
+  ///
+  /// ── Y el F9 y el total NO se tocan ────────────────────────────────────────
+  ///
+  /// «La primera vuelta ya quedó como quedó.» El F9 liquidó con la ventaja
+  /// original y no se recalcula. El total de 18 tampoco: es UNA apuesta sobre
+  /// los dieciocho, y cambiarle la ventaja a mitad dejaría su primer nueve
+  /// jugado con una regla y el segundo con otra. Es el mismo criterio que el
+  /// carry natural, que tampoco toca el total.
+  final bool ajusteEnB9;
+
+  /// Presiones PEDIDAS sobre las apuestas pedidas: pareja → apuesta → hoyos.
+  ///
+  /// ── Por defecto no, pero se pueden pedir ──────────────────────────────────
+  ///
+  /// El carry y la apertura nacen SIN presiones automáticas —son apuestas que se
+  /// piden enteras— y esa sigue siendo la regla. Lo que faltaba es que se les
+  /// pueda pedir una:
+  ///
+  ///     «Por defecto no trae presiones, pero se pueden pedir.»
+  ///
+  /// Una presión pedida es lo mismo que una automática salvo el disparador: en
+  /// vez de nacer de ir N abajo, nace porque alguien la pide. Cubre los hoyos
+  /// que quedan de su apuesta madre desde el hoyo apuntado, y hereda su ventaja
+  /// —la del carry lleva su golpe extra—.
+  ///
+  /// Las claves de la apuesta madre son [carry] y [apertura]. Van por nombre y
+  /// no por índice porque un índice se desplaza si algún día hay una tercera, y
+  /// un desplazamiento silencioso movería una presión de una apuesta a otra.
+  final Map<String, Map<String, List<int>>> presionesPedidasByPair;
+
+  /// Nombres de las apuestas pedidas, para [presionesPedidasByPair].
+  static const claveCarry = 'carry';
+  static const claveApertura = 'apertura';
+
+  /// Los hoyos donde esta pareja pidió presión sobre [apuesta].
+  List<int> presionesPedidasDe(String id1, String id2, String apuesta) =>
+      presionesPedidasByPair[carryPairKey(id1, id2)]?[apuesta] ?? const [];
 
   /// La partida es un MATCH sobre 18, sin partición en vueltas.
   ///
@@ -1626,6 +1691,8 @@ class NassauConfig {
     double? frontValue, double? backValue, double? totalValue,
     GrossNetMode? mode, TieRule? tieRule,
     bool? carryEnabled, Map<String, String>? carryPedidoByPair,
+    bool? ajusteEnB9,
+    Map<String, Map<String, List<int>>>? presionesPedidasByPair,
     bool? pressEnabled, int? autoPressTrigger,
     double? frontPressValue, double? backPressValue,
     bool? allowMultiplePresses, int? maxPresses,
@@ -1638,6 +1705,9 @@ class NassauConfig {
     tieRule:              tieRule              ?? this.tieRule,
     carryEnabled:         carryEnabled         ?? this.carryEnabled,
     carryPedidoByPair:    carryPedidoByPair    ?? this.carryPedidoByPair,
+    ajusteEnB9:           ajusteEnB9           ?? this.ajusteEnB9,
+    presionesPedidasByPair:
+        presionesPedidasByPair ?? this.presionesPedidasByPair,
     pressEnabled:         pressEnabled         ?? this.pressEnabled,
     autoPressTrigger:     autoPressTrigger     ?? this.autoPressTrigger,
     frontPressValue:      frontPressValue      ?? this.frontPressValue,
@@ -1669,6 +1739,9 @@ class NassauConfig {
     'tieRule':              tieRule.name,
     'carryEnabled':         carryEnabled,
     if (carryPedidoByPair.isNotEmpty) 'carryPedidoByPair': carryPedidoByPair,
+    if (ajusteEnB9) 'ajusteEnB9': true,
+    if (presionesPedidasByPair.isNotEmpty)
+      'presionesPedidasByPair': presionesPedidasByPair,
     'pressEnabled':         pressEnabled,
     'autoPressTrigger':     autoPressTrigger,
     'frontPressValue':      frontPressValue,
@@ -1693,6 +1766,16 @@ class NassauConfig {
       // de la limpieza, y es de dos toques.
       carryPedidoByPair: (j['carryPedidoByPair'] as Map?)
               ?.map((k, v) => MapEntry(k.toString(), v.toString())) ??
+          const {},
+      ajusteEnB9: j['ajusteEnB9'] as bool? ?? false,
+      presionesPedidasByPair: (j['presionesPedidasByPair'] as Map?)?.map(
+            (pareja, porApuesta) => MapEntry(
+              pareja.toString(),
+              (porApuesta as Map).map((apuesta, hoyos) => MapEntry(
+                  apuesta.toString(),
+                  (hoyos as List).map((h) => (h as num).toInt()).toList())),
+            ),
+          ) ??
           const {},
       pressEnabled:         j['pressEnabled']         as bool? ?? false,
       // retrocompat: autoPressTrigger también puede venir como pressTriggerValue

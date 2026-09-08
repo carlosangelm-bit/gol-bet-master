@@ -249,7 +249,7 @@ void main() {
     test('CLAVE: los dos paneles tienen estado de YA PEDIDO', () {
       final codigo = File('lib/screens/scorecard/scorecard_screen.dart')
           .readAsStringSync();
-      expect(codigo, contains("titulo: 'CARRY PEDIDO'"));
+      expect(codigo, contains("Text('CARRY PEDIDO'"));
       expect(codigo, contains('if (_yaAbierta)'));
     });
 
