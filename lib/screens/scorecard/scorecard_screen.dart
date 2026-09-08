@@ -1934,7 +1934,7 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
             // Paneles Nassau
             ...nassauModules.map((mod) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _NassauLivePanel(round: round, p1: p1, p2: p2, mod: mod, t: t),
+              child: NassauLivePanel(round: round, p1: p1, p2: p2, mod: mod, t: t),
             )),
 
             // Hoyo a hoyo
@@ -2166,9 +2166,20 @@ class MatchStatusCard extends StatelessWidget {
     // `st.presses` viene ya en el orden F9 y luego B9, el mismo en el que la
     // línea coloca sus números.
     final nacimientos = [for (final p in st.presses) 'H${p.startHole}'];
-    if (nacimientos.isNotEmpty) {
-      subLabel = 'Presiones desde ${nacimientos.join(' · ')}';
-    }
+    // ── Y cuántas apuestas PEDIDAS hay, que la línea no lleva ──────────────
+    //
+    // El carry y la apertura no entran en la línea —ver `lineasDelDuelo`: sus
+    // números no están en la misma escala— pero callarlas aquí sería dejar
+    // creer que la línea es el inventario. Se cuentan, y la tarjeta de abajo
+    // las enseña una por una.
+    final pedidas = BetEngine.apuestasVivasDelNassau(round, p1.id, p2.id, mod)
+        .where((a) => a.clase == ClaseDeApuesta.pedida)
+        .length;
+    final trozos = [
+      if (nacimientos.isNotEmpty) 'Presiones desde ${nacimientos.join(' · ')}',
+      if (pedidas > 0) '$pedidas pedida${pedidas == 1 ? '' : 's'} más',
+    ];
+    if (trozos.isNotEmpty) subLabel = trozos.join('  ·  ');
 
     return _PremiumResultBadge(
       p1: p1, p2: p2, t: t,
@@ -3005,12 +3016,17 @@ class _BalanceRow extends StatelessWidget {
 // \u2500\u2500 NASSAU QUICK-GLANCE PANEL \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 // Tres sub-cards (F9 / B9 / Total) cada una con su propia banda de color.
 // Presiones como fila compacta debajo sin secci\u00f3n separada.
-class _NassauLivePanel extends StatelessWidget {
+/// La tarjeta del Nassau: los segmentos, las presiones y las pedidas.
+///
+/// No es privada por el mismo motivo que las otras tres de este fichero: aquí
+/// faltaban dos recuadros mientras el desglose listaba cinco apuestas, y ninguna
+/// prueba de widget llegaba a contarlos.
+class NassauLivePanel extends StatelessWidget {
   final Round round;
   final Player p1, p2;
   final BetModuleInstance mod;
   final GolfTheme t;
-  const _NassauLivePanel({
+  const NassauLivePanel({
     required this.round, required this.p1, required this.p2,
     required this.mod, required this.t,
   });
@@ -3045,6 +3061,13 @@ class _NassauLivePanel extends StatelessWidget {
     final double backPressVal  = pressStatus?.backPressVal  ?? mod.nassau.backPressValue;
     final bool carryActive     = pressStatus?.carryActive   ?? false;
 
+    // Las apuestas PEDIDAS salen del inventario del motor, no de una lista
+    // escrita aquí: eso es lo que hizo que faltaran dos recuadros mientras el
+    // desglose listaba cinco apuestas.
+    final pedidas = BetEngine.apuestasVivasDelNassau(round, p1.id, p2.id, mod)
+        .where((a) => a.clase == ClaseDeApuesta.pedida)
+        .toList();
+
     final openCount      = frontPresses.where((p) => p.isOpen).length
                          + backPresses.where((p) => p.isOpen).length;
     final totalPressCount = frontPresses.length + backPresses.length;
@@ -3055,7 +3078,7 @@ class _NassauLivePanel extends StatelessWidget {
       // positivo = p1 arriba (p1 gana la press), negativo = p2 arriba (p2 gana).
       final rawScore = press.score;
 
-      // Misma paleta de gradientes que _NassauSegment
+      // Misma paleta de gradientes que NassauSegment
       final List<Color> grad;
       final Color baseColor;
       final String bigLabel;
@@ -3080,7 +3103,11 @@ class _NassauLivePanel extends StatelessWidget {
 
       return Container(
         width: 72,
-        height: 90,
+        // 94 por lo mismo que NassauSegment: su contenido pedía 3 px más de los
+        // que tenía y el recorte lo tapaba. Es el segundo desbordamiento
+        // preexistente de esta tarjeta, y los dos salieron al montarla en una
+        // prueba por primera vez.
+        height: 94,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
           gradient: LinearGradient(
@@ -3285,19 +3312,19 @@ class _NassauLivePanel extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
             child: Row(children: [
-              Expanded(child: _NassauSegment(
+              Expanded(child: NassauSegment(
                 label: 'F9', played: frontPlayed, total: 9,
                 score: frontScore, value: frontVal,
                 p1Name: n1, p2Name: n2, t: t,
               )),
               const SizedBox(width: 6),
-              Expanded(child: _NassauSegment(
+              Expanded(child: NassauSegment(
                 label: 'B9', played: backPlayed, total: 9,
                 score: backScore, value: backVal,
                 p1Name: n1, p2Name: n2, t: t,
               )),
               const SizedBox(width: 6),
-              Expanded(child: _NassauSegment(
+              Expanded(child: NassauSegment(
                 label: '18', played: totalPlayed, total: 18,
                 score: totalScore, value: totalVal,
                 p1Name: n1, p2Name: n2, t: t,
@@ -3355,6 +3382,65 @@ class _NassauLivePanel extends StatelessWidget {
               ),
             ),
           ],
+
+          // ── LAS PEDIDAS: su propio bloque ────────────────────────────────
+          //
+          // «Determina dónde caen dos apuestas que viven en el B9 pero no son
+          // presiones.»
+          //
+          // Aparte, y no en la fila de arriba ni con las presiones. La fila de
+          // arriba son los TRES segmentos que se pactan al empezar: meter un
+          // cuarto recuadro rompe esa lectura. Y una presión NACE del marcador
+          // —nadie la pide— mientras estas dos se PIDEN. Es la diferencia que
+          // decide quién las tiene y por qué, así que merece el título.
+          //
+          // Cada una lleva su nota, porque comparten hoyos e importe con el B9
+          // y sin ella dos recuadros iguales con marcadores distintos se leen
+          // como un fallo de la app.
+          if (pedidas.isNotEmpty) ...[
+            Divider(color: t.divider.withValues(alpha: 0.5), height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('PEDIDAS  ·  2ª VUELTA',
+                      style: TextStyle(color: t.sub, fontSize: 9,
+                          fontWeight: FontWeight.w700, letterSpacing: 0.6)),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    for (final a in pedidas) ...[
+                      Expanded(
+                        child: NassauSegment(
+                          label: a.etiqueta,
+                          played: a.jugados,
+                          total: a.deCuantos,
+                          score: a.margen,
+                          value: a.valor,
+                          p1Name: n1,
+                          p2Name: n2,
+                          t: t,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    // Un tercer hueco para que dos recuadros no se estiren al
+                    // doble del ancho de los de arriba.
+                    if (pedidas.length < 3)
+                      Expanded(flex: 3 - pedidas.length, child: const SizedBox()),
+                  ]),
+                  const SizedBox(height: 6),
+                  for (final a in pedidas)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text('${a.etiqueta} · ${a.nota}',
+                          style: TextStyle(
+                              color: t.sub, fontSize: 9.5, height: 1.25)),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ]),
       ),
     );
@@ -3362,14 +3448,17 @@ class _NassauLivePanel extends StatelessWidget {
 }
 
 // \u2500\u2500 Sub-card de segmento Nassau: banda de color + dato principal \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-class _NassauSegment extends StatelessWidget {
+/// Un recuadro de apuesta de la tarjeta del Nassau. Público solo para poder
+/// CONTARLOS en una prueba: que la tarjeta enseñe tantas apuestas como el
+/// desglose es lo que aquí falló.
+class NassauSegment extends StatelessWidget {
   final String label;
   final int played, total, score;
   final double value;
   final String p1Name, p2Name;
   final GolfTheme t;
 
-  const _NassauSegment({
+  const NassauSegment({
     required this.label, required this.played, required this.total,
     required this.score, required this.value,
     required this.p1Name, required this.p2Name, required this.t,
@@ -3407,9 +3496,14 @@ class _NassauSegment extends StatelessWidget {
 
     final isDone = played >= total;
 
-    // Altura fija para que las 3 cajas sean siempre iguales
+    // Altura fija para que las cajas sean siempre iguales.
+    //
+    // 94 y no 90: con 90, el centro pedía 37 px y tenía 34 —el número grande a
+    // 22, dos de hueco y el nombre a 9— y desbordaba por 3. No se veía, porque
+    // el recorte lo tapa, y ninguna prueba llegaba aquí: la tarjeta era privada.
+    // Lo cazó de paso la que cuenta los recuadros.
     return SizedBox(
-      height: 90,
+      height: 94,
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
@@ -3430,9 +3524,14 @@ class _NassauSegment extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // ── Etiqueta del segmento (F9 / B9 / 18) ──────────────────────
+            // ── Etiqueta de la apuesta (F9 / B9 / 18 / Carry / Apertura) ──
+            //
+            // La píldora se ADAPTA al texto y el texto no se parte: la caja
+            // mide 90 px fijos para que las tres de arriba queden iguales, y
+            // «Apertura» —dos caracteres más largo que cualquier segmento—
+            // desbordaba por 3 px. Lo cazó la prueba que cuenta los recuadros.
             Padding(
-              padding: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.only(top: 8, left: 4, right: 4),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
@@ -3441,6 +3540,8 @@ class _NassauSegment extends StatelessWidget {
                 ),
                 child: Text(
                   label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.85),
                     fontSize: 9,
@@ -3451,8 +3552,16 @@ class _NassauSegment extends StatelessWidget {
               ),
             ),
 
-            // ── Centro: número grande + nombre (altura fija) ───────────────
-            Column(
+            // ── Centro: número grande + nombre ─────────────────────────────
+            //
+            // `Flexible` y no un Column suelto: los tres bloques sumaban 93 px
+            // dentro de una caja de 90 y desbordaban por 3. No se veía —el
+            // recorte lo tapa— y ninguna prueba llegaba aquí porque la tarjeta
+            // era privada; la que cuenta los recuadros lo cazó de paso.
+            //
+            // Cede el centro y no el pie: el pie lleva el IMPORTE.
+            Flexible(
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
@@ -3479,7 +3588,7 @@ class _NassauSegment extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
               ],
-            ),
+            )),
 
             // ── Pie: progreso + valor (altura fija) ───────────────────────
             Column(

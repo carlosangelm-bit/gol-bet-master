@@ -795,6 +795,106 @@ class BetEngine {
     );
   }
 
+  /// Todas las apuestas vivas del Nassau en este duelo, para pintarlas.
+  ///
+  /// Ver [ApuestaVivaDelNassau]. El orden es el de la pantalla: los segmentos,
+  /// las presiones y al final las pedidas.
+  static List<ApuestaVivaDelNassau> apuestasVivasDelNassau(
+      Round round, String p1Id, String p2Id, BetModuleInstance mod) {
+    final cfg = mod.nassau;
+    final seg = segmentsOf(round);
+    final st = nassauPressLiveStatus(round, p1Id, p2Id, mod);
+    final out = <ApuestaVivaDelNassau>[];
+
+    // ── Los segmentos ───────────────────────────────────────────────────────
+    void segmento(String etiqueta, int margen, double valor, int jugados,
+        int deCuantos, bool primero) {
+      // Un segmento de \$0 no es una apuesta: es lo que pasa con «solo el
+      // match». Mismo criterio que el ledger, que tampoco emite su asiento.
+      if (valor == 0) return;
+      out.add(ApuestaVivaDelNassau(
+          etiqueta: etiqueta,
+          clase: ClaseDeApuesta.segmento,
+          margen: margen,
+          valor: valor,
+          jugados: jugados,
+          deCuantos: deCuantos,
+          delPrimerNueve: primero));
+    }
+
+    if (seg.singleNine) {
+      segmento('9H', st.front, st.frontVal, st.frontPlayed,
+          seg.firstNine.length, true);
+    } else {
+      segmento('F9', st.front, st.frontVal, st.frontPlayed,
+          seg.firstNine.length, true);
+      segmento('B9', st.back, st.backVal, st.backPlayed,
+          seg.secondNine.length, false);
+      segmento('18', st.total, st.totalVal, st.frontPlayed + st.backPlayed,
+          seg.firstNine.length + seg.secondNine.length, false);
+    }
+
+    // ── Las presiones ───────────────────────────────────────────────────────
+    for (final (primero, lista, valor) in [
+      (true, st.frontPresses, st.frontPressVal),
+      (false, st.backPresses, st.backPressVal),
+    ]) {
+      for (final p in lista) {
+        final hoyos = (primero ? seg.firstNine : seg.secondNine)
+            .where((h) => h >= p.startHole)
+            .toList();
+        out.add(ApuestaVivaDelNassau(
+            etiqueta: 'H${p.startHole}',
+            clase: ClaseDeApuesta.presion,
+            margen: p.score,
+            valor: valor,
+            jugados: hoyos.where((h) => round.getScore(p1Id, h).hasScore &&
+                    round.getScore(p2Id, h).hasScore).length,
+            deCuantos: hoyos.length,
+            delPrimerNueve: primero,
+            nota: 'desde el hoyo ${p.startHole}'));
+      }
+    }
+
+    // ── Las PEDIDAS: viven en el segundo nueve y no son presiones ───────────
+    //
+    // Aquí estaba el hueco. Las dos cubren los mismos nueve hoyos que el B9 y
+    // valen lo mismo que él, así que la nota no es decoración: es lo único que
+    // las distingue de la apuesta de al lado.
+    if (!seg.singleNine && cfg.backValue > 0) {
+      if (cfg.aperturaB9For(p1Id, p2Id)) {
+        // Mismo marcador que el B9 —mismos hoyos, mismos golpes— y apuesta
+        // propia. Se pide entera y va sin presiones.
+        out.add(ApuestaVivaDelNassau(
+            etiqueta: 'Apertura',
+            clase: ClaseDeApuesta.pedida,
+            margen: st.back,
+            valor: cfg.backValue,
+            jugados: st.backPlayed,
+            deCuantos: seg.secondNine.length,
+            delPrimerNueve: false,
+            nota: 'la 2ª vuelta otra vez, desde cero'));
+      }
+      final quien = cfg.carryPedidoPor(p1Id, p2Id);
+      final mCarry = _margenDelCarryPedido(round, p1Id, p2Id, mod, seg);
+      if (quien != null && mCarry != null) {
+        out.add(ApuestaVivaDelNassau(
+            etiqueta: 'Carry',
+            clase: ClaseDeApuesta.pedida,
+            margen: mCarry,
+            valor: cfg.backValue,
+            jugados: st.backPlayed,
+            deCuantos: seg.secondNine.length,
+            delPrimerNueve: false,
+            // Lo que la separa de las demás: OTRA ventaja. Sin decirlo, dos
+            // recuadros con el mismo importe y marcadores distintos se leen
+            // como un fallo.
+            nota: 'un golpe más de ventaja'));
+      }
+    }
+    return out;
+  }
+
   /// Las líneas del duelo, una por nueve jugado. Ver [LineaDelDuelo].
   ///
   /// ── Por segmento, y no una sola de toda la vuelta ─────────────────────────
@@ -806,11 +906,36 @@ class BetEngine {
   /// vueltas en una línea mezclaría apuestas que ni siquiera coinciden en el
   /// tiempo.
   ///
-  /// ── Y el Total 18 no entra ────────────────────────────────────────────────
+  /// ── QUÉ ENTRA EN LA LÍNEA, y la regla que lo decide ───────────────────────
   ///
-  /// Es una apuesta viva, sí, pero no tiene cadena de presiones: nunca añadiría
-  /// un número ni lo quitaría, y metida en la línea la haría ilegible sin decir
-  /// nada que la línea no diga ya. Se queda en su bloque, que no cambia.
+  /// Una sola: **la línea es UN marcador leído desde varios hoyos de salida**.
+  /// De ahí salen sus tres lecturas, y las tres dependen de eso:
+  ///
+  ///   · los números son comparables entre sí porque miden lo mismo,
+  ///   · el primero es el segmento y los demás nacen de él,
+  ///   · y por eso la LONGITUD cuenta presiones y no otra cosa.
+  ///
+  /// Con esa regla, tres apuestas quedan fuera, y cada una por su motivo:
+  ///
+  ///   · EL TOTAL DE 18 cubre otros hoyos. No es este marcador.
+  ///
+  ///   · LA APERTURA DE 2ª VUELTA es el MISMO nueve con los MISMOS golpes, así
+  ///     que su número es siempre una COPIA del primero. Añadirla no diría
+  ///     nada y haría creer que se abrió una presión más.
+  ///
+  ///   · EL CARRY PEDIDO es el mismo nueve con OTRA VENTAJA —un golpe más para
+  ///     quien lo pidió—. Su número no está en la misma escala que el resto, y
+  ///     puesto al lado invita a una comparación que no vale: «+4 +2 +3» donde
+  ///     el 3 se mide con un handicap distinto es un dato que miente por estar
+  ///     donde está.
+  ///
+  /// Las tres SÍ son apuestas vivas y las tres tienen que verse: se ven en la
+  /// tarjeta, cada una en su recuadro y con la nota que la distingue, y en el
+  /// desglose con su importe. Ver [apuestasVivasDelNassau].
+  ///
+  /// Lo que la línea no puede hacer es callarse que existen. Por eso el
+  /// subrótulo de la cabecera dice cuántas hay pedidas: la línea sigue siendo la
+  /// cadena, y nadie cree que sea el inventario.
   static List<LineaDelDuelo> lineasDelDuelo(
       Round round, String p1Id, String p2Id, BetModuleInstance mod) {
     final st = nassauPressLiveStatus(round, p1Id, p2Id, mod);
@@ -3290,6 +3415,69 @@ class NassauLiveStatus {
     this.holesWonP1 = 0,
     this.holesWonP2 = 0,
   });
+}
+
+/// De qué clase es una apuesta del Nassau. Ver [ApuestaVivaDelNassau].
+enum ClaseDeApuesta {
+  /// F9, B9 o el total de 18: las tres que se pactan al empezar.
+  segmento,
+
+  /// Nace del marcador, dentro de un nueve, sin que nadie la pida.
+  presion,
+
+  /// La pide alguien durante la ronda: el carry, la apertura de 2ª vuelta.
+  pedida,
+}
+
+/// Una apuesta VIVA del Nassau en un duelo.
+///
+/// ── Por qué esto existe ─────────────────────────────────────────────────────
+///
+/// La tarjeta del Nassau enseñaba cuatro recuadros —F9, B9, 18 y una presión—
+/// cuando el desglose listaba CINCO apuestas: faltaban el carry pedido y la
+/// apertura de 2ª vuelta. Y no era una cuenta mal hecha: los importes los leía
+/// del motor. Lo que tenía escrito a mano era el INVENTARIO — «tres segmentos y
+/// las presiones»— así que una apuesta nueva no aparecía por no estar en la
+/// lista.
+///
+/// Es la misma familia que la cuenta paralela del desglose, un piso más arriba:
+/// allí se recalculaba el dinero, aquí se decidía qué existe.
+///
+/// El ledger no sirve para esto: solo emite asiento cuando hay ganador, y un
+/// segmento empatado tiene que verse igual —«F9 AS \$50»—. Por eso se enumera
+/// aparte, y hay una prueba que ata las dos listas.
+class ApuestaVivaDelNassau {
+  /// Corta, para el recuadro: 'F9', 'B9', '18', 'H15', 'Carry', 'Apertura'.
+  final String etiqueta;
+
+  final ClaseDeApuesta clase;
+
+  /// El marcador, en perspectiva de p1. Positivo = p1 arriba.
+  final int margen;
+
+  final double valor;
+
+  /// Hoyos jugados de los que cubre esta apuesta, y de cuántos.
+  final int jugados, deCuantos;
+
+  /// Está en el primer nueve jugado. Para agrupar en pantalla.
+  final bool delPrimerNueve;
+
+  /// Lo que la distingue de la de al lado, cuando comparten hoyos e importe.
+  final String? nota;
+
+  const ApuestaVivaDelNassau({
+    required this.etiqueta,
+    required this.clase,
+    required this.margen,
+    required this.valor,
+    required this.jugados,
+    required this.deCuantos,
+    required this.delPrimerNueve,
+    this.nota,
+  });
+
+  bool get empatada => margen == 0;
 }
 
 /// La línea del argot: «quedamos 5 3 1».

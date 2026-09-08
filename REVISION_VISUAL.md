@@ -993,3 +993,53 @@ se escapó del barrido.
 cinco de sus seis campos**: `savedGroupId` —el grupo guardado del que salió la
 partida— se iba a `null` al pedir una apuesta. **Quinta vez** que este proyecto
 pierde un campo así, y la primera en que se pierde al *pedir*.
+
+---
+
+# La tarjeta del Nassau enseñaba cuatro de seis
+
+El desglose listaba cinco apuestas y la tarjeta cuatro recuadros. **Y no era una
+cuenta mal hecha:** los importes los leía del motor. Lo que tenía escrito a mano
+era el **inventario** —«tres segmentos y las presiones»— así que una apuesta
+nueva no aparecía por no estar en la lista.
+
+Misma familia que la cuenta paralela del desglose, un piso más arriba: allí se
+recalculaba el dinero, aquí se decidía **qué existe**.
+
+## Seis recuadros, cinco asientos — y las dos cifras son correctas
+
+El F9 quedó **empatado**: tiene recuadro (`F9 AS $50`) y no tiene asiento. Por
+eso el inventario no puede salir del ledger, y hay una prueba que **ata las dos
+listas** en los dos sentidos.
+
+## Qué mirar
+
+1. **Abre el duelo del 7 Sep.** Debajo de las presiones hay un bloque nuevo
+   **PEDIDAS · 2ª VUELTA** con dos recuadros: `Carry` y `Apertura`.
+2. **Cada uno lleva su nota**: *«Carry · un golpe más de ventaja»* y
+   *«Apertura · la 2ª vuelta otra vez, desde cero»*. Comparten hoyos e importe
+   con el B9; sin la nota, dos recuadros iguales con marcadores distintos se
+   leen como un fallo.
+3. **El carry marca `+3` donde el B9 marca `+4`** — mismos hoyos, un golpe más
+   para CAV.
+4. **La cabecera dice `Presiones desde H15 · 2 pedidas más`.** La línea sigue
+   siendo la cadena; lo que no puede es callar que existen.
+
+## Por qué NO entran en la línea
+
+Una regla, y de ella salen sus tres lecturas: **la línea es un marcador leído
+desde varios hoyos de salida.**
+
+- **El Total 18** cubre otros hoyos. No es este marcador.
+- **La apertura** es el mismo nueve con los mismos golpes: su número es
+  **siempre una copia** del primero, y añadirlo haría creer que se abrió otra
+  presión.
+- **El carry** es el mismo nueve con **otra ventaja**. `+4 +2 +3` con el tres
+  medido a otro handicap es un dato que miente **por estar donde está**.
+
+## Dos desbordamientos que nadie había visto
+
+Montar la tarjeta en una prueba por primera vez destapó **3 px de contenido
+recortado** en el recuadro de segmento y otros **3 px** en el chip de presión.
+No se veían —el recorte los tapa— y ninguna prueba llegaba: la tarjeta era
+privada. Las dos cajas pasan de 90 a 94 px.
