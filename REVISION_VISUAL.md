@@ -940,3 +940,56 @@ se comporta distinto, está aquí el motivo.
 
 Un módulo guardado con `type: matchAutoPress` **ya no se lee**. Se vuelve a
 crear como Nassau con los nueves en cero: dos toques.
+
+---
+
+# El carry pedido y la apertura no llegaban al desglose
+
+**Ronda del 7 Sep, CAM vs CAV.** Carlos pulsó los dos botones, el desglose dijo
+`Nassau +$250`, y **faltaban $100**.
+
+## Determinado: se guardaban Y se liquidaban
+
+Las dos preguntas eran *«¿no se guardan?»* o *«¿se guardan y no se leen?»*. Se
+midió:
+
+| | |
+|---|---|
+| Ida y vuelta a JSON | conserva las dos peticiones ✅ |
+| El motor | emite sus **cinco** asientos ✅ |
+| `breakdownBetween` | **$350**, cerrada y sin cerrar ✅ |
+| La tarjeta del desglose | **$250** ❌ |
+
+**Fallaba la capa siguiente.** La tarjeta **sobreescribía** el balance del Nassau
+con una cuenta propia mientras la ronda estaba en curso: sumaba a mano el F9, el
+B9, el total y las presiones cerradas, y no sabía nada del carry pedido ni de la
+apertura.
+
+Su motivo escrito era **falso**: *«computeAll solo liquida segmentos CERRADOS,
+así que a mitad del F9 el desglose saldría en $0»*. Medido: da **$200**.
+
+**Era la sexta cuenta paralela del Nassau.** Las otras cinco se unificaron en
+`valoresDelNassau`; esta calculaba el *balance* en vez de los *valores*, así que
+se escapó del barrido.
+
+## Qué mirar
+
+1. **Abre el desglose de un duelo con presiones.** Debajo de `Nassau` salen
+   ahora **las apuestas una por una** con su importe: `Nassau Back 9 +$100 ·
+   Press H15 +$50 · Carry · un golpe más +$50 · Apertura 2ª vuelta +$50 ·
+   Nassau Total 18 +$100`.
+2. **Pulsa «pedir carry»**: el panel pasa a `CARRY PEDIDO` y el desglose **sube
+   $50 en el momento**.
+3. **Pulsa «abrir apuesta de la 2ª vuelta»**: el panel se queda como
+   `APERTURA 2ª VUELTA` sin botón, y el desglose sube otros $50.
+4. **A mitad del primer nueve** el desglose ya enseña dinero — no espera a
+   cerrar el segmento.
+5. **En vivo y al cerrar dicen lo mismo.** Antes la tarjeta llevaba su propia
+   cuenta mientras se jugaba y cambiaba de número al cerrar.
+
+## Y un campo que se perdía en silencio
+
+`_pedirCarry` y `_abrirApertura` reconstruían el `BetGroup` **campo a campo con
+cinco de sus seis campos**: `savedGroupId` —el grupo guardado del que salió la
+partida— se iba a `null` al pedir una apuesta. **Quinta vez** que este proyecto
+pierde un campo así, y la primera en que se pierde al *pedir*.

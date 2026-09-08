@@ -1459,12 +1459,11 @@ class _OneVOneViewState extends State<_OneVOneView> {
         return m.copyWith(
             nassauConfig: m.nassau.copyWith(aperturaB9ByPair: mapa));
       }).toList();
-      return BetGroup(
-          id: g.id,
-          name: g.name,
-          format: g.format,
-          playerIds: g.playerIds,
-          modules: mods);
+      // `copyWith` y no un BetGroup nuevo: reconstruirlo campo a campo perdía
+      // `savedGroupId` —el grupo guardado del que salió la partida— en silencio.
+      // Es la quinta vez que este proyecto pierde un campo así, y la primera en
+      // la que se pierde al PEDIR una apuesta.
+      return g.copyWith(modules: mods);
     }).toList();
     prov.updateBetGroups(newGroups);
   }
@@ -1498,7 +1497,7 @@ class _OneVOneViewState extends State<_OneVOneView> {
         return m.copyWith(
             nassauConfig: m.nassau.copyWith(carryPedidoByPair: mapa));
       }).toList();
-      return BetGroup(id: g.id, name: g.name, format: g.format, playerIds: g.playerIds, modules: newModules);
+      return g.copyWith(modules: newModules);   // ver _abrirApertura
     }).toList();
     prov.updateBetGroups(newGroups);
   }
@@ -1989,7 +1988,7 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
               ),
 
             // Desglose financiero por duelo
-            _FinancialBreakdown(round: round, p1: p1, p2: p2, t: t),
+            FinancialBreakdown(round: round, p1: p1, p2: p2, t: t),
           ]),
         ),
       ),
@@ -4513,13 +4512,18 @@ Widget desgloseParaTest(
         required Player p1,
         required Player p2,
         required GolfTheme t}) =>
-    _FinancialBreakdown(round: round, p1: p1, p2: p2, t: t);
+    FinancialBreakdown(round: round, p1: p1, p2: p2, t: t);
 
-class _FinancialBreakdown extends StatelessWidget {
+/// El desglose de dinero entre dos jugadores.
+///
+/// No es privado por el mismo motivo que [CarryPanel] y [MatchStatusCard]: aquí
+/// vivió una cuenta paralela que perdió $100 de una ronda real, y el camino para
+/// llegar pasa por la pantalla y por Firestore. Montarlo suelto es barato.
+class FinancialBreakdown extends StatelessWidget {
   final Round round;
   final Player p1, p2;
   final GolfTheme t;
-  const _FinancialBreakdown({required this.round, required this.p1, required this.p2, required this.t});
+  const FinancialBreakdown({required this.round, required this.p1, required this.p2, required this.t});
 
   // Obtiene los módulos de un tipo dado que incluyen a p1 y p2.
   // IMPORTANTE: si el módulo tiene participantIds propios, ambos jugadores deben aparecer
@@ -4584,6 +4588,36 @@ class _FinancialBreakdown extends StatelessWidget {
           !LedgerEngine.breakdownBetween(round, p1.id, p2.id).containsKey(x))
       .toList();
 
+  /// Las apuestas de [tipo] entre este par, una por una, tal como el ledger las
+  /// liquidó. Vacío si hay una sola: entonces la fila ya la dice.
+  ///
+  /// ── Por qué hace falta, y por qué sale del LEDGER ────────────────────────
+  ///
+  /// La fila del desglose es POR TIPO: «Nassau +\$350». Y un Nassau con
+  /// presiones, carry pedido y apertura de 2ª vuelta son CINCO apuestas dentro
+  /// de ese número.
+  ///
+  /// Cuando Carlos pidió el carry y abrió la apertura, la app las liquidó y el
+  /// desglose siguió enseñando un solo número — y hubo que sumar los importes a
+  /// mano para descubrir que faltaban. Prometer «se juegan DOS apuestas» y
+  /// enseñar una cifra sola es la misma familia que las seis apuestas que no
+  /// salían en el detalle por jugador.
+  ///
+  /// Sale del ledger y no de un recuento propio por el motivo de siempre: es el
+  /// que reparte, así que es el único que no puede discrepar de lo que se cobra.
+  /// Aquí ya se perdió dinero una vez por tener una cuenta paralela.
+  List<({String motivo, double monto})> _apuestasDe(BetModuleType tipo) {
+    final out = <({String motivo, double monto})>[];
+    for (final e in LedgerEngine.entriesOf(round)) {
+      if (e.betType != tipo) continue;
+      final mio = e.toPlayerId == p1.id && e.fromPlayerId == p2.id;
+      final suyo = e.toPlayerId == p2.id && e.fromPlayerId == p1.id;
+      if (!mio && !suyo) continue;
+      out.add((motivo: e.reason, monto: mio ? e.amount : -e.amount));
+    }
+    return out.length > 1 ? out : const [];
+  }
+
   /// Quién se lleva el pote de [tipo], si ese módulo liquida en pote.
   ///
   /// Se lee de los asientos, no se recalcula: el ledger es el que reparte, así
@@ -4606,75 +4640,32 @@ class _FinancialBreakdown extends StatelessWidget {
     context.watch<RoundProvider>(); // rebuilda al cambiar la ronda
     final breakdown = LedgerEngine.breakdownBetween(round, p1.id, p2.id);
 
-    // ── El estado EN VIVO solo manda mientras se juega ─────────────────────
+    // ── EL DESGLOSE LEE EL LEDGER. Y punto ──────────────────────────────────
     //
-    // Lo de abajo sobreescribe el breakdown del ledger con un cálculo propio,
-    // y hace falta durante la ronda: computeAll solo liquida segmentos
-    // CERRADOS, así que a mitad del F9 el desglose saldría en $0 aunque alguien
-    // vaya 3UP.
+    // Aquí había una cuenta PROPIA que sobreescribía el balance del Nassau
+    // mientras la ronda estaba en curso, con este motivo escrito:
     //
-    // Pero con la ronda TERMINADA el ledger es la verdad: es el que cierra en
-    // cero y el que se usa para cobrar. Sin esta condición la tarjeta seguía
-    // enseñando su propia cuenta para siempre — $150 de Nassau donde el ledger
-    // dice −$100, medido en la ronda del 28 de agosto.
+    //     «computeAll solo liquida segmentos CERRADOS, así que a mitad del F9
+    //      el desglose saldría en \$0 aunque alguien vaya 3UP.»
     //
-    // Dos cuentas para lo mismo solo pueden convivir si una tiene su momento y
-    // la otra el suyo.
-    final enVivo = !round.isFinished;
-
-    // Nassau (con o sin presiones): sobreescribir con balance en vivo.
-    // computeAll solo liquida segmentos CERRADOS; durante la ronda en curso
-    // el breakdown quedaría en $0 aunque alguien lleve ventaja.
-    // nassauLiveStatus / nassauPressLiveStatus calculan el estado real en cada hoyo.
-    final nassauMods = enVivo ? _modsOf(BetModuleType.nassau) : const [];
-    if (nassauMods.isNotEmpty) {
-      double npBal = 0.0;
-      for (final mod in nassauMods) {
-        if (mod.pressEnabled) {
-          // Con presiones: usar nassauPressLiveStatus para frontPresses/backPresses
-          final st = BetEngine.nassauPressLiveStatus(round, p1.id, p2.id, mod);
-          final isBack   = round.startingNine == StartingNine.back;
-          final seg1From = isBack ? 10 : 1;
-          final seg1To   = isBack ? 18 : 9;
-          if (st.frontPlayed > 0) {
-            if (st.front > 0) npBal += st.frontVal;
-            if (st.front < 0) npBal -= st.frontVal;
-          }
-          if (st.backPlayed > 0) {
-            if (st.back > 0) npBal += st.backVal;
-            if (st.back < 0) npBal -= st.backVal;
-          }
-          if (st.frontPlayed + st.backPlayed > 0) {
-            if (st.total > 0) npBal += st.totalVal;
-            if (st.total < 0) npBal -= st.totalVal;
-          }
-          for (final p in [...st.frontPresses, ...st.backPresses]) {
-            // Solo liquidar presses CERRADAS; las abiertas son apuestas pendientes
-            if (p.isOpen) continue;
-            final inSeg1   = p.startHole >= seg1From && p.startHole <= seg1To;
-            final pressVal = inSeg1 ? mod.nassau.frontPressValue : mod.nassau.backPressValue;
-            if (p.score > 0) npBal += pressVal;
-            if (p.score < 0) npBal -= pressVal;
-          }
-        } else {
-          // Sin presiones: usar nassauLiveStatus estándar
-          final st = BetEngine.nassauLiveStatus(round, p1.id, p2.id, mod);
-          if (st.frontPlayed > 0) {
-            if (st.front > 0) npBal += st.frontVal;
-            if (st.front < 0) npBal -= st.frontVal;
-          }
-          if (st.backPlayed > 0) {
-            if (st.back > 0) npBal += st.backVal;
-            if (st.back < 0) npBal -= st.backVal;
-          }
-          if (st.frontPlayed + st.backPlayed > 0) {
-            if (st.total > 0) npBal += st.totalVal;
-            if (st.total < 0) npBal -= st.totalVal;
-          }
-        }
-      }
-      breakdown[BetModuleType.nassau] = npBal;
-    }
+    // Y era FALSO. Medido: a mitad del primer nueve con 3UP el ledger da \$200
+    // —el F9 en curso, su presión y el total—. Nunca dio cero.
+    //
+    // Lo que sí hacía era perder dinero. Sumaba a mano el F9, el B9, el total y
+    // las presiones cerradas, y no sabía nada del CARRY PEDIDO ni de la
+    // APERTURA DE 2ª VUELTA: en la ronda del 7 de septiembre Carlos pidió las
+    // dos, el motor las liquidó, y el desglose enseñó \$250 en vez de \$350.
+    // Hubo que sumar los importes a mano para descubrirlo.
+    //
+    // Era además incoherente consigo misma: contaba un SEGMENTO abierto por su
+    // marcador de ese momento y descartaba una PRESIÓN abierta por estar
+    // pendiente. Ahora todo va por su marcador de ese momento, que es lo que un
+    // balance en vivo significa, y en vivo y al cerrar dicen lo mismo por
+    // construcción.
+    //
+    // Era la sexta cuenta paralela del Nassau. Las otras cinco se unificaron en
+    // `valoresDelNassau`; esta calculaba el BALANCE en vez de los valores, así
+    // que se escapó del barrido.
 
     // Obtener todos los tipos de módulo configurados para este par
     // Primero lo que se cruza entre estos dos, después lo de la partida.
@@ -4922,6 +4913,34 @@ class _FinancialBreakdown extends StatelessWidget {
                   padding: const EdgeInsets.only(left: 22),
                   child: oyesesSubtitle,
                 ),
+              // ── Las apuestas de dentro, una por línea ──────────────────
+              //
+              // Solo cuando hay más de una: con una sola, la fila de arriba ya
+              // la dice y repetirla sería ruido.
+              ...(() {
+                final dentro = _apuestasDe(betType);
+                if (dentro.isEmpty) return const <Widget>[];
+                return [
+                  for (final a in dentro)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 22, top: 2),
+                      child: Row(children: [
+                        Expanded(
+                          child: Text(a.motivo,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: t.sub, fontSize: 10)),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                            '${a.monto > 0 ? '+' : '−'}'
+                            '\$${a.monto.abs().toStringAsFixed(0)}',
+                            style: GolfType.label(
+                                a.monto > 0 ? t.profit : t.loss)),
+                      ]),
+                    ),
+                ];
+              })(),
             ]),
           );
         }),
