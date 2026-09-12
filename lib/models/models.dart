@@ -4431,38 +4431,198 @@ class Round {
       roundPlayers.firstWhere((rp) => rp.playerId == playerId,
           orElse: () => RoundPlayer(playerId: playerId, handicapEnRonda: 0)).handicapEnRonda;
 
-  /// Devuelve (strokesP1, strokesP2): cuántos strokes extra recibe cada jugador.
-  /// Prioridad (idéntica a BetEngine._strokesP1ReceivesFromP2):
-  ///   1. pairSliding (fuente canónica)
-  ///   2. manualHandicaps legacy
-  ///   3. HCP diff fallback
-  (int, int) strokesVs(String p1Id, String p2Id) {
-    // 1. pairSliding — fuente canónica
-    final psKey = p1Id.compareTo(p2Id) <= 0 ? '$p1Id|$p2Id' : '$p2Id|$p1Id';
-    final psStored = pairSliding[psKey];
-    if (psStored != null) {
-      final lowId = p1Id.compareTo(p2Id) <= 0 ? p1Id : p2Id;
-      final recv = ((p1Id == lowId) ? psStored : -psStored).round();
-      return recv >= 0 ? (recv, 0) : (0, -recv);
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LA VENTAJA ENTRE DOS JUGADORES — una sola fuente
+  //
+  // «Al crear la ronda aparece uno, pero ya iniciada, en Inicio, aparece otro.»
+  //
+  // Y era cierto: NUEVE sitios resolvían esta cadena, tres de ellos entera y
+  // seis a medias. El barrido por estructura —buscando los PASOS de la cadena,
+  // no la palabra «sliding»— los enumeró:
+  //
+  //   1 · Round.ventajaDe                      ← esta. La única.
+  //   2 · BetEngine._strokesP1ReceivesFromP2   copia completa
+  //   3 · GameEngine.matchPlayStatus           copia completa, en línea
+  //   4 · Inicio, lista de ventajas            se saltaba pairSliding
+  //   5 · Inicio, hoja de edición              solo la resta de handicaps
+  //   6 · bets_screen                          se saltaba pairSliding
+  //   7 · Asistente, `_slidingDe`              leía su estado local
+  //   8 · Asistente, paso de ventajas          se saltaba pairSliding
+  //   9 · sliding_adjustment_engine            solo el legacy
+  //
+  // ── Y VIVE AQUÍ, en el modelo, a propósito ─────────────────────────────────
+  //
+  // `models` no importa los motores, así que un resolvedor en `BetEngine` no lo
+  // pueden llamar ni el modelo ni las pantallas que no dependen del motor — y
+  // esa es exactamente la razón de que cada una escribiera la suya. La ventaja
+  // es un dato de la RONDA; ponerla donde vive el dato es lo que hace que no
+  // haya excusa para copiarla.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Cuántos golpes recibe [p1Id] de [p2Id] en esta ronda.
+  ///
+  ///   > 0 → p1 recibe esa cantidad
+  ///   = 0 → acuerdo par a par: sin ventaja
+  ///   < 0 → p2 recibe |valor|
+  ///
+  /// La prioridad, y el porqué de cada paso:
+  ///
+  ///   1 · [pairSliding] — el ACUERDO de esta ronda. Es la fuente canónica: lo
+  ///       que dos personas pactaron, se escriba desde el asistente o desde el
+  ///       editor de la tarjeta.
+  ///   2 · `manualHandicaps` — el mismo acuerdo en su formato viejo. Se conserva
+  ///       para las rondas guardadas antes de [pairSliding].
+  ///   3 · La diferencia de handicaps. **Solo si no hay acuerdo de ninguna
+  ///       clase**: un acuerdo de 0 es un acuerdo —jugar a la par— y no cae aquí.
+  ///
+  /// Con [estricto], una inconsistencia bilateral del legacy lanza en vez de
+  /// elegir un lado. Lo usa la liquidación: mejor fallar que cobrar mal.
+  double ventajaDe(String p1Id, String p2Id, {bool estricto = false}) {
+    if (p1Id == p2Id) return 0;
+
+    // ── 1 · pairSliding, la fuente canónica ─────────────────────────────────
+    //
+    // El valor guardado es lo que recibe el id MENOR del par; leerlo desde el
+    // otro lado invierte el signo.
+    final key = p1Id.compareTo(p2Id) <= 0 ? '$p1Id|$p2Id' : '$p2Id|$p1Id';
+    final guardado = pairSliding[key];
+    if (guardado != null) {
+      return (p1Id.compareTo(p2Id) <= 0) ? guardado : -guardado;
     }
 
-    // 2. Legacy manualHandicaps
+    // ── 2 · manualHandicaps, el formato viejo ───────────────────────────────
     final rp1 = roundPlayers.firstWhere((r) => r.playerId == p1Id,
-        orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: 0));
-    if (rp1.manualHandicaps.containsKey(p2Id)) {
-      final diff = rp1.manualHandicaps[p2Id]!.round();
-      return diff >= 0 ? (diff, 0) : (0, -diff);
-    }
+        orElse: () =>
+            RoundPlayer(playerId: p1Id, handicapEnRonda: getHandicap(p1Id)));
     final rp2 = roundPlayers.firstWhere((r) => r.playerId == p2Id,
-        orElse: () => RoundPlayer(playerId: p2Id, handicapEnRonda: 0));
-    if (rp2.manualHandicaps.containsKey(p1Id)) {
-      final diff = -(rp2.manualHandicaps[p1Id]!.round());
-      return diff >= 0 ? (diff, 0) : (0, -diff);
+        orElse: () =>
+            RoundPlayer(playerId: p2Id, handicapEnRonda: getHandicap(p2Id)));
+    final m1 = rp1.manualHandicaps[p2Id];
+    final m2 = rp2.manualHandicaps[p1Id];
+
+    if (m1 != null && m2 != null) {
+      // Los dos lados tienen que ser espejo. Si no, los datos están rotos.
+      if ((m1 + m2).abs() > 0.01) {
+        if (estricto) {
+          throw StateError(
+            'Inconsistencia bilateral de acuerdo manual entre $p1Id y $p2Id: '
+            'manual[$p1Id][$p2Id]=$m1 pero manual[$p2Id][$p1Id]=$m2 '
+            '(se esperaba $m1 == ${-m2}). '
+            'Corrige los acuerdos antes de calcular la apuesta.',
+          );
+        }
+        // Sin estricto —una pantalla— se enseña la perspectiva de p1 en vez de
+        // reventar: la liquidación es la que no puede seguir.
+      }
+      return m1;
+    }
+    if (m1 != null) return m1;
+    if (m2 != null) return -m2;
+
+    // ── 3 · La diferencia de handicaps ──────────────────────────────────────
+    return getHandicap(p1Id) - getHandicap(p2Id);
+  }
+
+  /// Si entre [p1Id] y [p2Id] hay un ACUERDO explícito, del tipo que sea.
+  ///
+  /// Distingue «acordaron jugar parejo» (un 0 pactado) de «no hay acuerdo y da
+  /// 0 por casualidad», que son cosas distintas y se pintan distinto.
+  bool hayAcuerdoDeVentaja(String p1Id, String p2Id) {
+    final key = p1Id.compareTo(p2Id) <= 0 ? '$p1Id|$p2Id' : '$p2Id|$p1Id';
+    if (pairSliding.containsKey(key)) return true;
+    for (final (a, b) in [(p1Id, p2Id), (p2Id, p1Id)]) {
+      final rp = roundPlayers.where((r) => r.playerId == a).firstOrNull;
+      if (rp != null && rp.manualHandicaps.containsKey(b)) return true;
+    }
+    return false;
+  }
+
+  /// La clave canónica del par: ids en orden, unidos con '|'.
+  static String _clavePar(String a, String b) =>
+      a.compareTo(b) <= 0 ? '$a|$b' : '$b|$a';
+
+  /// El acuerdo de [pairSliding] entre los dos, o null si no lo hay.
+  ///
+  /// Distinto de [ventajaDe], que siempre devuelve un número: esto dice si el
+  /// PRIMER paso de la cadena tiene entrada.
+  double? acuerdoDeVentaja(String p1Id, String p2Id) {
+    if (p1Id == p2Id) return 0.0;
+    final guardado = pairSliding[_clavePar(p1Id, p2Id)];
+    if (guardado == null) return null;
+    return (p1Id.compareTo(p2Id) <= 0) ? guardado : -guardado;
+  }
+
+  /// Valida la coherencia del campo [pairSliding] y detecta conflictos con
+  /// los legacy [manualHandicaps] de [RoundPlayer].
+  ///
+  /// Retorna una lista de mensajes de error descriptivos (vacía si todo está ok).
+  List<String> erroresDeVentaja() {
+    final errors = <String>[];
+
+    for (final entry in pairSliding.entries) {
+      final key = entry.key;
+      final val = entry.value;
+
+      // 1. Formato de clave válido
+      final parts = key.split('|');
+      if (parts.length != 2 || parts[0].isEmpty || parts[1].isEmpty) {
+        errors.add('pairSliding: clave "$key" mal formada (se esperaba "id1|id2").');
+        continue;
+      }
+
+      // 2. Los dos ids del par no pueden ser el mismo jugador
+      if (parts[0] == parts[1]) {
+        errors.add('pairSliding: clave "$key" tiene el mismo jugador en ambos lados.');
+        continue;
+      }
+
+      // 3. Ids deben estar en orden lexicográfico (la clave siempre debe ser canónica)
+      if (parts[0].compareTo(parts[1]) > 0) {
+        errors.add('pairSliding: clave "$key" no está en orden canónico '
+            '(se esperaba "${parts[1]}|${parts[0]}").');
+      }
+
+      // 4. El valor no puede ser NaN o infinito
+      if (val.isNaN || val.isInfinite) {
+        errors.add('pairSliding: clave "$key" tiene valor inválido ($val).');
+      }
+
+      // 5. Verificar conflicto con legacy manualHandicaps si ambos existen
+      final lowId  = parts[0];
+      final highId = parts[1];
+
+      final rpLow  = roundPlayers.where((r) => r.playerId == lowId).firstOrNull;
+      final rpHigh = roundPlayers.where((r) => r.playerId == highId).firstOrNull;
+
+      final mLowHigh  = rpLow?.manualHandicaps[highId];   // lo que lowId dice que recibe de highId
+      final mHighLow  = rpHigh?.manualHandicaps[lowId];   // lo que highId dice que recibe de lowId
+
+      // El pairSliding dice que lowId recibe `val` de highId.
+      // El legacy manual[lowId][highId] también debería ser `val`.
+      if (mLowHigh != null && (mLowHigh - val).abs() > 0.01) {
+        errors.add('pairSliding: conflicto entre pairSliding["$key"]=$val y '
+            'manualHandicaps[$lowId][$highId]=$mLowHigh. '
+            'Si ambos existen deben coincidir.');
+      }
+
+      // El legacy manual[highId][lowId] debería ser -val (highId da `val` a lowId).
+      if (mHighLow != null && (mHighLow + val).abs() > 0.01) {
+        errors.add('pairSliding: conflicto entre pairSliding["$key"]=$val y '
+            'manualHandicaps[$highId][$lowId]=$mHighLow '
+            '(se esperaba ${-val}). '
+            'Si ambos existen deben ser opuestos.');
+      }
     }
 
-    // 3. Fallback HCP diff
-    final diff = (rp1.handicapEnRonda - rp2.handicapEnRonda).round();
-    return diff >= 0 ? (diff, 0) : (0, -diff);
+    return errors;
+  }
+  /// Devuelve (strokesP1, strokesP2): cuántos golpes extra recibe cada uno.
+  ///
+  /// Es [ventajaDe] repartido en dos no-negativos, que es como lo quiere la
+  /// tarjeta de puntuación.
+  (int, int) strokesVs(String p1Id, String p2Id) {
+    final v = ventajaDe(p1Id, p2Id).round();
+    return v >= 0 ? (v, 0) : (0, -v);
   }
 
   Round copyWith({

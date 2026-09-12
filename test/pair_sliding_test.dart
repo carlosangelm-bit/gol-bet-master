@@ -7,6 +7,8 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/models.dart';
 import 'package:golf_bet_master/engines/bet_engine.dart';
+import 'package:golf_bet_master/providers/round_provider.dart'
+    show pairSlidingDesdeLegacy;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -684,7 +686,7 @@ void main() {
       );
 
       final errors = <String>[];
-      final migrated = BetEngine.buildPairSlidingFromLegacy(r, errors: errors);
+      final migrated = pairSlidingDesdeLegacy(r, errors: errors);
 
       print('  Migrado: $migrated');
       print('  Errores: $errors');
@@ -710,7 +712,7 @@ void main() {
       );
 
       final errors = <String>[];
-      final migrated = BetEngine.buildPairSlidingFromLegacy(r, errors: errors);
+      final migrated = pairSlidingDesdeLegacy(r, errors: errors);
 
       print('  Migrado: $migrated  (esperado: vacío, par omitido)');
       print('  Errores: $errors');

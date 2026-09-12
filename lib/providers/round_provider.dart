@@ -224,6 +224,65 @@ Round roundFromJson(Map<String, dynamic> j) {
   );
 }
 
+/// Construye un mapa pairSliding a partir de los `manualHandicaps` legacy.
+///
+/// Vive aquí, con las demás migraciones, y no en el motor: leer los dos
+/// almacenes es propio de una migración y ajeno a resolver una ventaja.
+///
+/// Reglas:
+///   - Si existen ambos lados y son consistentes (a+b≈0) → migra.
+///   - Si existe solo uno → migra ese valor como fuente de verdad.
+///   - Si existen ambos y son inconsistentes → añade error a [errors] y omite ese par.
+Map<String, double> pairSlidingDesdeLegacy(
+  Round round, {
+  List<String>? errors,
+}) {
+    final result = <String, double>{};
+    final processed = <String>{};
+
+    for (final rp in round.roundPlayers) {
+      for (final entry in rp.manualHandicaps.entries) {
+        final otherId = entry.key;
+        final key = _pairKeyOf(rp.playerId, otherId);
+        if (processed.contains(key)) continue;
+        processed.add(key);
+
+        // Valor directo: rp recibe `entry.value` de otherId
+        final mDirect = entry.value; // recv(rp.playerId, otherId)
+
+        // Buscar el inverso en el otro RoundPlayer
+        final rpOther = round.roundPlayers
+            .where((r) => r.playerId == otherId)
+            .firstOrNull;
+        final mInverse = rpOther?.manualHandicaps[rp.playerId]; // recv(otherId, rp.playerId)
+
+        // El valor canónico en pairSliding es: recv(lowId, highId)
+        final lowId = rp.playerId.compareTo(otherId) <= 0 ? rp.playerId : otherId;
+        final isRpLow = rp.playerId == lowId;
+
+        if (mInverse != null) {
+          // Ambos lados existen: verificar consistencia (deben sumar 0)
+          if ((mDirect + mInverse).abs() > 0.01) {
+            errors?.add(
+              'Legacy inconsistente para el par "$key": '
+              'manual[${rp.playerId}][$otherId]=$mDirect y '
+              'manual[$otherId][${rp.playerId}]=$mInverse '
+              'no son opuestos. Par ignorado en la migración.',
+            );
+            continue; // No migrar un par inconsistente
+          }
+          // Consistentes: usar el valor desde la perspectiva del lowId
+          result[key] = isRpLow ? mDirect : -mDirect;
+        } else {
+          // Solo un lado definido: ese es la fuente de verdad
+          result[key] = isRpLow ? mDirect : -mDirect;
+        }
+      }
+    }
+
+    return result;
+  }
+
 /// Construye el mapa pairSliding canónico a partir del JSON deserializado.
 ///
 /// Prioridad:

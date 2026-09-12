@@ -386,31 +386,17 @@ List<_DuelInfo> _buildDuels(Round round) {
       final key = BetModuleInstance.pairKey(pA.id, pB.id);
       if (companeros.contains(key)) continue;
 
-      // MISMA prioridad que BetEngine._strokesP1ReceivesFromP2:
-      //   1. pairSliding (fuente canónica)
-      //   2. manualHandicaps legacy (directo, luego invertido)
-      // Si se leyera el legacy primero, la UI mostraría un número distinto del
-      // que el ledger cobra en cuanto ambos existan y difieran.
-      double? manual = BetEngine.canonicalSlidingBetween(round, pA.id, pB.id);
-
-      if (manual == null) {
-        final rpA = round.roundPlayers.firstWhere(
-          (r) => r.playerId == pA.id,
-          orElse: () => RoundPlayer(playerId: pA.id, handicapEnRonda: 0),
-        );
-        final rpB = round.roundPlayers.firstWhere(
-          (r) => r.playerId == pB.id,
-          orElse: () => RoundPlayer(playerId: pB.id, handicapEnRonda: 0),
-        );
-        if (rpA.manualHandicaps.containsKey(pB.id)) {
-          manual = rpA.manualHandicaps[pB.id];
-        } else if (rpB.manualHandicaps.containsKey(pA.id)) {
-          manual = -(rpB.manualHandicaps[pA.id]!);
-        }
-      }
-
+      // La ventaja sale de `Round.ventajaDe`, LA fuente.
+      //
+      // Aquí había una copia FIEL de la cadena —pairSliding y luego el legacy en
+      // los dos sentidos— con su comentario explicando que el orden importaba.
+      // Que estuviera bien escrita es justo el problema: nadie la habría tocado
+      // al cambiar la regla, y habría empezado a discrepar en silencio.
       final hcpA = round.getHandicap(pA.id);
       final hcpB = round.getHandicap(pB.id);
+      final double? manual = round.hayAcuerdoDeVentaja(pA.id, pB.id)
+          ? round.ventajaDe(pA.id, pB.id)
+          : null;
 
       duels[key] = _DuelInfo(
         p1: pA, p2: pB, modules: [],

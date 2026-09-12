@@ -2152,17 +2152,20 @@ class _ActiveRoundView extends StatelessWidget {
             for (int j = i + 1; j < players.length; j++) {
               final pA = players[i];
               final pB = players[j];
-              final hcpA = round.getHandicap(pA.id);
-              final hcpB = round.getHandicap(pB.id);
-              final rpA = round.roundPlayers.firstWhere(
-                (r) => r.playerId == pA.id,
-                orElse: () => RoundPlayer(playerId: pA.id, handicapEnRonda: hcpA, tee: TeeInfo.standard),
-              );
-              final isManual = rpA.manualHandicaps.containsKey(pB.id);
-              // Usar manualHandicap si existe, si no la diferencia de HCPs
-              final int diff = isManual
-                  ? rpA.manualHandicaps[pB.id]!.round()
-                  : (hcpA - hcpB).round();
+              // ── AQUÍ ESTABA LA DISCREPANCIA ─────────────────────────────
+              //
+              // Esta lista leía `manualHandicaps` y, si no lo había, la resta de
+              // handicaps. Nunca leía `pairSliding` — que es el PRIMER paso de
+              // la cadena y lo que el asistente escribe al editar el sliding.
+              //
+              // Resultado: se pactaba una ventaja en el paso 7, la ronda
+              // liquidaba con ella, y esta pantalla enseñaba la diferencia de
+              // handicaps. «Al crear la ronda aparece uno, en Inicio aparece
+              // otro.»
+              final int diff = round.ventajaDe(pA.id, pB.id).round();
+              // Y un acuerdo de 0 es un acuerdo —jugar a la par—, distinto de
+              // «no hay acuerdo y la resta da 0».
+              final isManual = round.hayAcuerdoDeVentaja(pA.id, pB.id);
               final String label = diff > 0
                   ? '${pA.name.split(' ').first} recibe $diff de ${pB.name.split(' ').first}'
                   : diff < 0
@@ -2310,10 +2313,29 @@ class _ActiveRoundView extends StatelessWidget {
   void _openHandicapEdit(BuildContext context, RoundProvider prov, GolfTheme t) {
     final round   = prov.round!;
     final players = round.players;
-    // Copia mutable de los manualHandicaps actuales: playerId → { otroId → strokes }
+
+    // ── La semilla sale de TODOS los acuerdos, no solo del legacy ───────────
+    //
+    // Copiaba `manualHandicaps` y nada más. Y al guardar, el provider
+    // reconstruye `pairSliding` como ESPEJO EXACTO de `manualHandicaps`: todo
+    // acuerdo que solo viviera en `pairSliding` —que es lo que escribe el paso
+    // de ventajas del asistente— se BORRABA al pulsar «Guardar», sin haberlo
+    // tocado.
+    //
+    // Sembrando desde `ventajaDe`, la copia arranca completa y el espejo vuelve
+    // a escribir lo mismo que había. Guardar sin cambiar nada deja de tener
+    // efecto, que es lo único que un botón de guardar puede prometer.
     final manuals = <String, Map<String, double>>{};
     for (final rp in round.roundPlayers) {
       manuals[rp.playerId] = Map<String, double>.from(rp.manualHandicaps);
+    }
+    for (final a in players) {
+      for (final b in players) {
+        if (a.id == b.id) continue;
+        if (!round.hayAcuerdoDeVentaja(a.id, b.id)) continue;
+        final m = manuals.putIfAbsent(a.id, () => {});
+        m.putIfAbsent(b.id, () => round.ventajaDe(a.id, b.id));
+      }
     }
 
     showModalBottomSheet(
@@ -2359,6 +2381,8 @@ class _ActiveRoundView extends StatelessWidget {
                     for (int j = i + 1; j < players.length; j++) {
                       final pA = players[i];
                       final pB = players[j];
+                      // Sin acuerdo, la referencia es la diferencia de
+                      // handicaps — el tercer paso de la cadena.
                       final autoVal = (playingHcp(pA) - playingHcp(pB)).round();
                       final manualVal = manuals[pA.id]?[pB.id];
                       final isManual  = manualVal != null;

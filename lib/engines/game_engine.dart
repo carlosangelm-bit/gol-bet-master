@@ -348,44 +348,10 @@ class GameEngine {
   static int matchPlayStatus(Round round, String p1Id, String p2Id, bool useHandicap, {int throughHole = 18}) {
     int status = 0;
 
-    // ── Calcular recv bilateral una sola vez ──────────────────────────────────
-    // Misma prioridad que BetEngine._strokesP1ReceivesFromP2:
-    //   1. pairSliding (fuente canónica)
-    //   2. manualHandicaps (legacy)
-    //   3. HCP diff (fallback)
-    double recv = 0;
-    if (useHandicap) {
-      // 1. pairSliding — fuente canónica, idéntica lógica que BetEngine
-      final psKey = p1Id.compareTo(p2Id) <= 0 ? '$p1Id|$p2Id' : '$p2Id|$p1Id';
-      final psStored = round.pairSliding[psKey];
-      if (psStored != null) {
-        // El valor almacenado corresponde al lowId; invertir si p1 es el highId
-        final lowId = p1Id.compareTo(p2Id) <= 0 ? p1Id : p2Id;
-        recv = (p1Id == lowId) ? psStored : -psStored;
-      } else {
-        // 2. Legacy manualHandicaps
-        final rp1 = round.roundPlayers.firstWhere(
-          (r) => r.playerId == p1Id,
-          orElse: () => RoundPlayer(playerId: p1Id, handicapEnRonda: round.getHandicap(p1Id)),
-        );
-        final m1 = rp1.manualHandicaps[p2Id];
-        if (m1 != null) {
-          recv = m1; // directo, 0 es acuerdo explícito
-        } else {
-          final rp2 = round.roundPlayers.firstWhere(
-            (r) => r.playerId == p2Id,
-            orElse: () => RoundPlayer(playerId: p2Id, handicapEnRonda: round.getHandicap(p2Id)),
-          );
-          final m2 = rp2.manualHandicaps[p1Id];
-          if (m2 != null) {
-            recv = -m2; // inverso
-          } else {
-            // 3. Fallback HCP diff
-            recv = round.getHandicap(p1Id) - round.getHandicap(p2Id);
-          }
-        }
-      }
-    }
+    // La ventaja del par sale de [Round.ventajaDe], que es LA fuente. Aquí
+    // había una copia de la cadena entera —pairSliding, el legacy y la resta de
+    // handicaps— escrita en línea, y era una de nueve.
+    final double recv = useHandicap ? round.ventajaDe(p1Id, p2Id) : 0;
 
     // recv > 0 → p1 recibe (p2=base, p1=receptor)
     // recv < 0 → p1 da     (p1=base, p2=receptor)

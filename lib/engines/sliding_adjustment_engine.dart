@@ -245,11 +245,6 @@ class SlidingAdjustmentEngine {
     // Computar todos los entries de la ronda una sola vez
     final allEntries = BetEngine.computeAll(round);
 
-    // RoundPlayer de mi jugador para leer manualHandicaps reales de la ronda
-    final myRoundPlayer = round.roundPlayers
-        .where((rp) => rp.playerId == myPlayer.id)
-        .firstOrNull;
-
     final suggestions = <SlidingAdjustmentSuggestion>[];
 
     for (final player in round.players) {
@@ -272,14 +267,21 @@ class SlidingAdjustmentEngine {
       // Si no existe, fallback a manualHandicaps legacy (rondas antiguas).
       // Nunca usar playerLinks como baseline (depende de quién abre la ronda).
       //
-      // Prioridad:
-      //   1. round.pairSliding canónico → BetEngine.canonicalSlidingBetween
-      //   2. manualHandicaps legacy     → myRoundPlayer.manualHandicaps[opponent]
-      //   3. playerLinks fallback       → solo si ninguno de los dos existe
-      final link         = playerLinks[player.id];
-      final canonicalAdj = BetEngine.canonicalSlidingBetween(round, myPlayer.id, player.id);
-      final legacyAdj    = myRoundPlayer?.manualHandicaps[player.id];
-      final currentAdj   = canonicalAdj ?? legacyAdj ?? link?.defaultSlidingAdjustment ?? 0.0;
+      // ── Esta cadena tiene un paso PROPIO, y se queda ─────────────────────
+      //
+      //   1-2 · el acuerdo de la ronda → [Round.ventajaDe], la fuente única.
+      //   3   · `playerLinks.defaultSlidingAdjustment` — el acuerdo GUARDADO
+      //         entre esas dos personas, de rondas anteriores.
+      //
+      // Y NO cae a la diferencia de handicaps, a diferencia de la cadena de la
+      // ronda. Es deliberado: aquí se contesta «qué tenían pactado», no «qué
+      // ventaja aplica hoy». Un handicap no es un pacto, y proponer un ajuste
+      // sobre él sería proponer mover algo que nadie acordó.
+      final link       = playerLinks[player.id];
+      final hayAcuerdo = round.hayAcuerdoDeVentaja(myPlayer.id, player.id);
+      final currentAdj = hayAcuerdo
+          ? round.ventajaDe(myPlayer.id, player.id)
+          : (link?.defaultSlidingAdjustment ?? 0.0);
 
       final int delta;
       if (duel.isTie) {
@@ -290,19 +292,10 @@ class SlidingAdjustmentEngine {
         delta = 1;
       }
 
-      // Sliding del oponente hacia mí (perspectiva inversa de la ronda).
-      // manualHandicaps[myPlayer][opponent] = +X → yo recibo X de oponente
-      // → oponente da X a mí → oponente.manualHandicap[mí] = -X
-      // Si no está en la ronda, intentamos inferirlo del manualHandicap inverso.
-      final opponentRoundPlayer = round.roundPlayers
-          .where((rp) => rp.playerId == player.id)
-          .firstOrNull;
-      // La perspectiva del oponente es el simétrico del mío (convención bilateral).
-      // Prioridad: pairSliding canónico (invertido) → legacy manualHandicaps → inferido.
-      final opponentCanonicalAdj = canonicalAdj != null ? -canonicalAdj : null;
-      final opponentLegacyAdj    = opponentRoundPlayer?.manualHandicaps[myPlayer.id];
-      final opponentCurrentAdj   = opponentCanonicalAdj ?? opponentLegacyAdj
-          ?? (legacyAdj != null ? -legacyAdj : null);
+      // La perspectiva del oponente es el simétrico de la mía: es una
+      // convención BILATERAL, así que derivarla es más seguro que volver a
+      // resolverla —tres líneas que podían dar otro número—.
+      final opponentCurrentAdj = hayAcuerdo ? -currentAdj : null;
 
       suggestions.add(SlidingAdjustmentSuggestion(
         playerId:                   myPlayer.id,

@@ -1162,3 +1162,58 @@ excepción — Birdie único vale `$100` contra uno y `$25` contra otro.
 5. Los importes salen de `BetEngine.importesDeUnidad`, **la misma regla que la
    liquidación** — y hay una prueba que compara el rango contra lo que el ledger
    cobra.
+
+---
+
+# El sliding: nueve cuentas, una fuente
+
+## El barrido, por estructura
+
+No se buscó la palabra «sliding»: se buscaron **los pasos de la cadena** —leer
+`pairSliding`, leer `manualHandicaps`, restar handicaps— porque la sexta cuenta
+del Nassau se escapó por llamarse de otra manera.
+
+**Nueve sitios** resolvían la misma pregunta:
+
+| | Sitio | Qué hacía |
+|---|---|---|
+| 1 | `Round.ventajaDe` | ← **la única que queda** |
+| 2 | `BetEngine._strokesP1ReceivesFromP2` | copia completa |
+| 3 | `GameEngine.matchPlayStatus` | copia completa, en línea |
+| 4 | **Inicio, lista de ventajas** | **se saltaba `pairSliding`** |
+| 5 | Inicio, hoja de edición | solo la resta de handicaps |
+| 6 | `bets_screen` | copia **fiel**, con su comentario |
+| 7 | Asistente, panel de sliding | su estado local |
+| 8 | Asistente, matriz de handicap | **se saltaba el acumulado** |
+| 9 | `sliding_adjustment_engine` | el legacy a mano |
+
+Y la guarda encontró **dos más** al escribirla: `canonicalSlidingBetween` y
+`hasExplicitAgreement`.
+
+## Los tres fallos, y el tercero no estaba reportado
+
+1. **Inicio no leía `pairSliding`** — el primer paso de la cadena, y lo que el
+   asistente escribe. Se pactaba una ventaja, la ronda liquidaba con ella, y
+   esta pantalla enseñaba la resta de handicaps. *Ese es el síntoma.*
+2. **La matriz del asistente tampoco leía el acumulado** — así que con sistema
+   «handicap» y un acuerdo previo, la otra mitad de la discrepancia.
+3. **Y «Guardar ventajas» BORRABA el acuerdo.** El provider reconstruye
+   `pairSliding` como espejo exacto de `manualHandicaps`; la hoja se sembraba
+   solo del legacy, así que un sliding pactado en el asistente **se perdía al
+   pulsar Guardar sin tocar nada**.
+
+## Qué mirar
+
+1. **Crea una ronda con sliding editado en el paso de ventajas.** Entra, ve a
+   Inicio → *Ventajas*: **la misma cifra**.
+2. **Pulsa «Guardar ventajas» sin cambiar nada.** La ventaja **sigue ahí**.
+3. **Con sistema «handicap» y un acuerdo acumulado**, la matriz del asistente
+   enseña el acuerdo, no la resta.
+4. **En Apuestas**, el duelo dice lo mismo que Inicio y que la liquidación.
+
+## Qué es el sliding, dicho
+
+Es **el acuerdo de golpes entre dos personas para esta ronda**, un número de 18
+hoyos. Se guarda en `pairSliding`; `manualHandicaps` es su gemelo viejo. La
+diferencia de handicaps **no es el sliding**: es lo que se aplica *cuando no hay
+acuerdo*. Un acuerdo de **cero** es un acuerdo —jugar a la par— y no cae ahí.

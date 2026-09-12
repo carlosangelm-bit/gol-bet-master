@@ -1221,6 +1221,7 @@ class _SetupScreenState extends State<SetupScreen> {
               ),
               const SizedBox(height: 10),
               _HandicapMatrix(
+                acumulado: _pairSliding,
                 players: _players,
                 playerTees: _playerTees,
                 manualHandicaps: _manualHandicaps,
@@ -6893,6 +6894,7 @@ class _SetupScreenState extends State<SetupScreen> {
           ]),
           const SizedBox(height: 6),
           _HandicapMatrix(
+            acumulado: _pairSliding,
             players: _players,
             playerTees: _playerTees,
             manualHandicaps: _manualHandicaps,
@@ -7849,6 +7851,14 @@ class _HandicapMatrix extends StatelessWidget {
   final List<Player> players;
   final Map<String, TeeInfo> playerTees;
   final Map<String, Map<String, double>> manualHandicaps;
+
+  /// El acuerdo ACUMULADO del grupo, por clave de par.
+  ///
+  /// Faltaba, y esa era la otra mitad de «al crear la ronda aparece uno y en
+  /// Inicio otro»: esta matriz enseñaba la diferencia de handicaps mientras la
+  /// ronda aplicaba el acuerdo acumulado, que entra en `pairSliding` aunque el
+  /// sistema elegido sea handicap —ver `slidingDeRonda`—.
+  final Map<String, double> acumulado;
   final double Function(Player) playingHcp;
   final void Function(String p1, String p2, double? val) onEdit;
   final GolfTheme t;
@@ -7857,6 +7867,7 @@ class _HandicapMatrix extends StatelessWidget {
     required this.players,
     required this.playerTees,
     required this.manualHandicaps,
+    required this.acumulado,
     required this.playingHcp,
     required this.onEdit,
     required this.t,
@@ -7878,12 +7889,22 @@ class _HandicapMatrix extends StatelessWidget {
       children: pairs.map((pair) {
         final pA = players[pair.$1];
         final pB = players[pair.$2];
+        // La MISMA cadena que `Round.ventajaDe`, que es la que la ronda va a
+        // aplicar: el acuerdo primero —acumulado o manual— y la diferencia de
+        // handicaps solo si no hay ninguno.
+        //
+        // Aquí no se puede llamar a `Round.ventajaDe` porque la ronda todavía no
+        // existe; lo que sí se puede es no inventar otro orden.
+        final clave = BetEngine.pairKey(pA.id, pB.id);
+        final acum = acumulado[clave];
+        final acumDesdeA =
+            acum == null ? null : (pA.id.compareTo(pB.id) <= 0 ? acum : -acum);
         // Ventaja auto (convención unificada con manualHandicaps):
         //   positivo → pA RECIBE de pB (pA tiene mayor HCP)
         //   negativo → pA DA a pB      (pB tiene mayor HCP)
         final autoVal = (playingHcp(pA) - playingHcp(pB)).round();
         // Ventaja manual guardada (desde perspectiva pA→pB)
-        final manualVal = manualHandicaps[pA.id]?[pB.id];
+        final manualVal = manualHandicaps[pA.id]?[pB.id] ?? acumDesdeA;
         final isManual  = manualVal != null;
         final current   = isManual ? manualVal.round() : autoVal;
 
