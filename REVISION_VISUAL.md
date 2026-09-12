@@ -1107,3 +1107,58 @@ esta ronda y no la corrección de un acuerdo.
    golpes recibe quién, **en qué hoyo cae el medio y qué hace ahí**.
 3. **El B9 dice `(ajustado)`** en el desglose; el F9 y el Total 18 no.
 4. **Con diferencia par** no promete un medio golpe que no existe.
+
+---
+
+# Código en un botón, y el valor de unidades al anotar
+
+## 1 · Tres cadenas enseñaban su propio código
+
+El botón de avanzar de hoyo decía, en verde y a dos líneas:
+
+```
+${startingNine == StartingNine.back ? "Front 9 →" : "Back 9 →"}
+```
+
+El `$` estaba **escapado**. El barrido encontró **dos más**, y las tres tienen la
+misma forma: eran **la segunda rama de un ternario cuya primera rama estaba
+bien**.
+
+```dart
+avisos.length == 1
+    ? 'Una ventaja pactada no aplica...'     ← bien
+    : '\${avisos.length} ventajas...'        ← escapado
+```
+
+No se escribieron mal: **se copiaron mal**, y nadie las vio pintadas porque son
+la rama que sale solo cuando hay más de uno. Por eso el barrido quedó como
+prueba.
+
+### Qué mirar
+
+1. **Hoyo 9 con salida por el 1** → el botón dice `Back 9 →`.
+2. **Con dos o más ventajas que no aplican**, el aviso de Resultados dice *«3
+   ventajas pactadas no aplican en este formato»*.
+3. **Marca un campo como favorito** → *«Los Encinos guardado como favorito»*.
+
+## 2 · El $25 no venía de la apuesta: venía del código
+
+`_values` era un **mapa fijo** —todos los tipos de unidad a `25.0`— que nunca
+leyó la apuesta. La frase *«se configura en la apuesta»* señalaba precisamente
+al sitio donde decía `$100`.
+
+**Y el arreglo no es leer bien el número: es que no hay un número.** Una unidad
+se acredita contra todos los rivales a la vez y cada duelo puede llevar su
+excepción — Birdie único vale `$100` contra uno y `$25` contra otro.
+
+### Qué mirar
+
+1. **Con un solo importe** la fila lo dice a secas: `$100`. Ese sí es cierto.
+2. **Con dos duelos de importes distintos**: `$25–$100`, y debajo *«Cada duelo
+   tiene su importe: se cobra al liquidar, contra cada rival por separado»*.
+3. **Los chips del botón de Units** ya no llevan cifra — solo el rótulo. El chip
+   dice **qué** pasó.
+4. **Ya no existe** la fila `Valor: $25 · se configura en la apuesta`.
+5. Los importes salen de `BetEngine.importesDeUnidad`, **la misma regla que la
+   liquidación** — y hay una prueba que compara el rango contra lo que el ledger
+   cobra.

@@ -1085,6 +1085,42 @@ class BetEngine {
     return out;
   }
 
+  /// Lo que vale una unidad de tipo [tipo] para [pid], duelo por duelo.
+  ///
+  /// Devuelve los importes DISTINTOS que hay en juego, ordenados. Vacío si esa
+  /// persona no juega unidades.
+  ///
+  /// ── Por qué esto no es un número ──────────────────────────────────────────
+  ///
+  /// La pantalla de anotar enseñaba «Valor: \$25 · se configura en la apuesta»
+  /// con un 25 FIJO en el código —un mapa con todos los tipos a 25 que nunca
+  /// leyó la apuesta— mientras la apuesta decía \$100. Pero el arreglo no es
+  /// leer bien el número: **es que no hay UN número**.
+  ///
+  /// Una unidad se acredita contra todos los rivales a la vez, y cada duelo
+  /// puede llevar su propia excepción (`pairConfigOverrides`). Birdie único
+  /// puede valer \$100 contra uno y \$25 contra otro, así que cualquier cifra
+  /// sola que se enseñe ahí va a ser mentira para alguien.
+  ///
+  /// La regla de resolución es la del motor, literal: con excepción de pareja
+  /// manda esa —y en unidades la excepción fija un valor único para TODOS los
+  /// tipos de evento—; sin excepción, el valor configurado para ese tipo.
+  static List<double> importesDeUnidad(
+      Round round, String pid, UnitEventType tipo) {
+    final vistos = <double>{};
+    for (final g in round.betGroups) {
+      for (final mod in g.modules) {
+        if (mod.type != BetModuleType.units) continue;
+        final pids = mod.effectivePids(g.playerIds);
+        if (!pids.contains(pid)) continue;
+        for (final otro in pids.where((p) => p != pid)) {
+          vistos.add(mod.overrideForPair(pid, otro) ?? mod.units.valueFor(tipo));
+        }
+      }
+    }
+    return vistos.toList()..sort();
+  }
+
   /// El hoyo de un nueve donde cae el golpe número [rango] por stroke index.
   ///
   /// [rango] es 1-based: 1 es el hoyo más difícil de esos nueve. Devuelve null

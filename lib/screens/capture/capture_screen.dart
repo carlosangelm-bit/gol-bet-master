@@ -1285,10 +1285,14 @@ class _ActivePlayerZone extends StatefulWidget {
 }
 
 class _ActivePlayerZoneState extends State<_ActivePlayerZone> {
-  static const _quickValues = [10.0, 25.0, 50.0, 100.0];
-  final Map<UnitEventType, double> _values = {
-    for (final e in UnitEventType.values) e: 25.0,
-  };
+  // Aquí vivía un mapa con TODOS los tipos de unidad a \$25 y una lista de
+  // «valores rápidos». Nunca leyó la apuesta: era el 25 que la pantalla de
+  // anotar enseñaba mientras la apuesta decía \$100.
+  //
+  // No se arregló leyendo bien el número, porque no hay UN número: una unidad
+  // se acredita contra todos los rivales a la vez y cada duelo puede llevar su
+  // excepción. Lo que vale sale ahora de `BetEngine.importesDeUnidad`, que
+  // aplica la misma regla que la liquidación.
 
   @override
   Widget build(BuildContext context) {
@@ -1435,8 +1439,6 @@ class _ActivePlayerZoneState extends State<_ActivePlayerZone> {
             player: player,
             hole: widget.hole,
             t: t,
-            values: _values,
-            quickValues: _quickValues,
             activeCount: activeUnits,
           )),
         ]),
@@ -1452,13 +1454,11 @@ class _UnitsButton extends StatefulWidget {
   final Player player;
   final int hole;
   final GolfTheme t;
-  final Map<UnitEventType, double> values;
-  final List<double> quickValues;
   final int activeCount;
 
   const _UnitsButton({
     required this.player, required this.hole, required this.t,
-    required this.values, required this.quickValues, required this.activeCount,
+    required this.activeCount,
   });
 
   @override
@@ -1466,12 +1466,10 @@ class _UnitsButton extends StatefulWidget {
 }
 
 class _UnitsButtonState extends State<_UnitsButton> {
-  late final Map<UnitEventType, double> _values;
 
   @override
   void initState() {
     super.initState();
-    _values = Map<UnitEventType, double>.from(widget.values);
   }
 
   @override
@@ -1488,7 +1486,6 @@ class _UnitsButtonState extends State<_UnitsButton> {
         child: active.isEmpty
             ? Text('Sin units', style: TextStyle(color: t.sub, fontSize: 12))
             : Wrap(spacing: 4, runSpacing: 4, children: active.map((e) {
-                final v = _values[e]!;
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(
@@ -1496,8 +1493,10 @@ class _UnitsButtonState extends State<_UnitsButton> {
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: t.accent.withValues(alpha: 0.4)),
                   ),
+                  // Solo el rótulo: el chip dice QUÉ pasó. Llevaba el mismo
+                  // \$25 fijo, y aquí ni siquiera cabría el rango.
                   child: Text(
-                    '${e.label}  \$${v.toStringAsFixed(0)}',
+                    e.label,
                     style: TextStyle(color: t.accent, fontSize: 11, fontWeight: FontWeight.w700),
                   ),
                 );
@@ -1550,9 +1549,6 @@ class _UnitsButtonState extends State<_UnitsButton> {
           playerName:  widget.player.name,
           hole:        widget.hole,
           t:           t,
-          values:      _values,
-          quickValues: widget.quickValues,
-          onValueChange: (evt, v) => setState(() => _values[evt] = v),
         ),
       ),
     );
@@ -1722,14 +1718,10 @@ class _UnitsSheetContent extends StatefulWidget {
   final String playerName;
   final int hole;
   final GolfTheme t;
-  final Map<UnitEventType, double> values;
-  final List<double> quickValues;
-  final void Function(UnitEventType, double) onValueChange;
 
   const _UnitsSheetContent({
     required this.playerId, required this.playerName, required this.hole,
-    required this.t, required this.values, required this.quickValues,
-    required this.onValueChange,
+    required this.t,
   });
 
   @override
@@ -1799,11 +1791,13 @@ class _UnitsSheetContentState extends State<_UnitsSheetContent> {
                 itemBuilder: (_, i) {
                   final evt     = UnitEventType.values[i];
                   final isActive = prov.hasEvent(widget.playerId, widget.hole, evt);
-                  // El monto viene de la apuesta y se MUESTRA, no se edita.
-                  final selVal = widget.values[evt] ?? 25.0;
+                  // Lo que esa unidad vale EN CADA DUELO, del motor. Puede ser
+                  // más de un importe: ver `importesDeUnidad`.
+                  final importes = BetEngine.importesDeUnidad(
+                      prov.round!, widget.playerId, evt);
 
-                  return _UnitRow(
-                    evt: evt, isActive: isActive, selVal: selVal, t: t,
+                  return UnitRow(
+                    evt: evt, isActive: isActive, importes: importes, t: t,
                     onToggle: () {
                       context.read<RoundProvider>().toggleEvent(
                           widget.playerId, widget.hole, evt);
@@ -1827,17 +1821,38 @@ class _UnitsSheetContentState extends State<_UnitsSheetContent> {
 // ─────────────────────────────────────────────────────────────────────────────
 // UNIT ROW (igual que antes)
 // ─────────────────────────────────────────────────────────────────────────────
-class _UnitRow extends StatelessWidget {
+/// Una fila de la hoja de unidades.
+///
+/// No es privada porque aquí vivía una cifra fija de \$25 que nadie pintó nunca
+/// en una prueba, y la forma de que no vuelva es contar lo que enseña.
+class UnitRow extends StatelessWidget {
   final UnitEventType evt;
   final bool isActive;
-  final double selVal;
+  /// Los importes DISTINTOS que esa unidad tiene en juego, ordenados.
+  ///
+  /// Aquí había un `selVal` —un número— y ese era el problema: una unidad se
+  /// acredita contra todos los rivales a la vez y cada duelo puede llevar su
+  /// excepción, así que una cifra sola miente para alguien.
+  final List<double> importes;
   final GolfTheme t;
   final VoidCallback onToggle;
 
-  const _UnitRow({
-    required this.evt, required this.isActive, required this.selVal,
+  const UnitRow({
+    required this.evt, required this.isActive, required this.importes,
     required this.t, required this.onToggle,
   });
+
+  /// El importe, o el rango si los duelos no coinciden.
+  ///
+  /// Nunca una cifra sola cuando hay varias: esa es la promesa que no se puede
+  /// cumplir desde aquí.
+  String get _importe {
+    if (importes.isEmpty) return '—';
+    final min = importes.first, max = importes.last;
+    return min == max
+        ? '\$${min.toStringAsFixed(0)}'
+        : '\$${min.toStringAsFixed(0)}–\$${max.toStringAsFixed(0)}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1884,27 +1899,31 @@ class _UnitRow extends StatelessWidget {
                     color: t.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text('\$${selVal.toStringAsFixed(0)}',
+                  child: Text(_importe,
                       style: TextStyle(color: t.primary, fontWeight: FontWeight.w800, fontSize: 13)),
                 ),
             ]),
           ),
         ),
-        if (isActive) ...[
+        // ── Lo que se dice cuando el importe NO es uno solo ─────────────────
+        //
+        // «Determina si conviene mostrar algo en su lugar —un rango— o nada.»
+        //
+        // Un rango, y solo cuando hace falta: si todos los duelos pagan lo
+        // mismo, ese número ES cierto y se enseña a secas. Si no, el rango lo
+        // es y la cifra sola no lo sería.
+        //
+        // Lo que se fue es «Valor: \$25 · se configura en la apuesta»: un 25
+        // fijo en el código, que nunca leyó la apuesta, rematado con una frase
+        // que señalaba precisamente al sitio donde decía otra cosa.
+        if (isActive && importes.length > 1) ...[
           Divider(color: t.divider.withValues(alpha: 0.6), height: 1, indent: 12, endIndent: 12),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-            child: Row(children: [
-              Text('Valor:', style: TextStyle(color: t.sub, fontSize: 11, fontWeight: FontWeight.w600)),
-              const SizedBox(width: 8),
-              // Se MUESTRA, no se edita: editarlo aquí creaba una segunda fuente
-              // de verdad que ganaba sobre lo pactado en la apuesta.
-              Text('\$${selVal.toStringAsFixed(0)}',
-                  style: TextStyle(color: t.text, fontSize: 13, fontWeight: FontWeight.w800)),
-              const Spacer(),
-              Text('se configura en la apuesta',
-                  style: TextStyle(color: t.sub, fontSize: 10)),
-            ]),
+            child: Text(
+                'Cada duelo tiene su importe: se cobra al liquidar, contra '
+                'cada rival por separado.',
+                style: TextStyle(color: t.sub, fontSize: 10.5, height: 1.3)),
           ),
         ],
       ]),
@@ -1968,7 +1987,12 @@ class _HoleNavButtons extends StatelessWidget {
     if (isVeryLast) {
       nextLabel = 'Terminar';
     } else if (isLastOfFirstSegment) {
-      nextLabel = '\${startingNine == StartingNine.back ? "Front 9 →" : "Back 9 →"}';
+      // El `\$` estaba ESCAPADO, así que el botón enseñaba su propio código en
+      // verde y a dos líneas. La misma etiqueta se escribe bien doce líneas más
+      // arriba, en la rama de nueve hoyos: el fallo fue copiarla mal, no
+      // escribirla mal.
+      nextLabel =
+          '${startingNine == StartingNine.back ? "Front 9" : "Back 9"} →';
     } else {
       nextLabel = nextHole != null ? 'Hoyo $nextHole →' : '→';
     }

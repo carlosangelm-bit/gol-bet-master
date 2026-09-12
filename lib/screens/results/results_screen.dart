@@ -2444,7 +2444,7 @@ class _AvisoVentajaNoAplicada extends StatelessWidget {
               child: Text(
                   avisos.length == 1
                       ? 'Una ventaja pactada no aplica en este formato'
-                      : '\${avisos.length} ventajas pactadas no aplican en este formato',
+                      : '${avisos.length} ventajas pactadas no aplican en este formato',
                   style: TextStyle(
                       color: t.text, fontSize: 13, fontWeight: FontWeight.w800)),
             ),
