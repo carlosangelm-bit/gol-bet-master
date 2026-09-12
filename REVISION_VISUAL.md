@@ -1217,3 +1217,23 @@ Es **el acuerdo de golpes entre dos personas para esta ronda**, un número de 18
 hoyos. Se guarda en `pairSliding`; `manualHandicaps` es su gemelo viejo. La
 diferencia de handicaps **no es el sliding**: es lo que se aplica *cuando no hay
 acuerdo*. Un acuerdo de **cero** es un acuerdo —jugar a la par— y no cae ahí.
+
+### Inicio, montado
+
+La pantalla del síntoma es ahora la única de las cinco que tiene prueba **con la
+hoja abierta y el botón pulsado**. Nueve pruebas, y las cuatro que importan
+devuelven en rojo los cuatro fallos:
+
+| Fallo devuelto | Lo caza |
+|---|---|
+| Inicio lee la resta de handicaps | ✅ *el síntoma reportado* |
+| Un acuerdo de cero se lee como coincidencia | ✅ por la **marca**, no por el texto |
+| La hoja se siembra solo del formato viejo | ✅ **«Guardar» borraba el acuerdo** |
+| La hoja abre con la resta en vez del acuerdo | ✅ |
+
+El tercero **no lo podía cazar ningún test de motor**: solo se ve montando la
+hoja y pulsando «Guardar ventajas».
+
+Y el de la marca tampoco se veía en el texto: con un acuerdo de cero las dos
+filas dicen *«igualdad»*, así que lo único que distingue «lo pactaron» de
+«coincide» es el fondo.

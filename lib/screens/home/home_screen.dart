@@ -85,7 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             Expanded(
               child: prov.hasRound
-                  ? _ActiveRoundView(prov: prov, t: t)
+                  ? ActiveRoundView(prov: prov, t: t)
                   : _EmptyView(t: t),
             ),
           ],
@@ -2037,10 +2037,26 @@ class _DetailSection extends StatelessWidget {
 }
 
 // ── Vista con ronda activa ────────────────────────────────────────────────────
-class _ActiveRoundView extends StatelessWidget {
+/// La pantalla de Inicio con una ronda en curso.
+///
+/// ── Por qué deja de ser privada ────────────────────────────────────────────
+///
+/// Aquí vivió una cuenta paralela de la ventaja —leía `manualHandicaps` o la
+/// resta de handicaps, nunca el acuerdo— y era el síntoma que se reportó: «al
+/// crear la ronda aparece uno y en Inicio aparece otro».
+///
+/// Y había un tercer fallo que NINGÚN test de motor podía cazar: la hoja de
+/// «Ventajas» se sembraba solo del formato viejo, y al guardar el provider
+/// reconstruye el acuerdo como espejo exacto de ese formato. Pulsar «Guardar
+/// ventajas» sin tocar nada BORRABA el acuerdo pactado en el asistente. Eso solo
+/// se ve montando la hoja y pulsando el botón.
+///
+/// Que costara montarla es justamente lo que dejó vivir aquí la cuenta paralela
+/// sin que nadie la viera.
+class ActiveRoundView extends StatelessWidget {
   final RoundProvider prov;
   final GolfTheme t;
-  const _ActiveRoundView({required this.prov, required this.t});
+  const ActiveRoundView({required this.prov, required this.t});
 
   @override
   Widget build(BuildContext context) {
