@@ -11,6 +11,7 @@ import '../../providers/betting_group_provider.dart';
 import '../setup/setup_screen.dart';
 import '../setup/quick_start_screen.dart';
 import '../setup/setup_flow.dart';
+import '../betting_groups/betting_group_editor_screen.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/common_widgets.dart';
 import '../betting_groups/betting_group_card_menu.dart';
@@ -28,6 +29,24 @@ class TemplatesScreen extends StatelessWidget {
         elevation: 0,
         title: Text('Mis Plantillas', style: TextStyle(color: t.text, fontWeight: FontWeight.w800)),
         iconTheme: IconThemeData(color: t.text),
+        actions: [
+          // ── El botón que faltaba ────────────────────────────────────────
+          //
+          // «En la sección "Lo de siempre" no hay botón para agregar.»
+          //
+          // Y era cierto: la única forma de tener algo aquí era crear una
+          // ronda entera y guardarla. El camino al revés del que se espera,
+          // en uno de los tres botones principales de Inicio.
+          //
+          // Lo que se crea es un GRUPO DE APUESTA, no una plantilla de ronda:
+          // es lo que Carlos describe —las apuestas de siempre, sin campo ni
+          // fecha— y su editor ya existía; lo único que faltaba era llegar.
+          IconButton(
+            icon: Icon(Icons.add, color: t.primary),
+            tooltip: 'Crear lo de siempre',
+            onPressed: () => _crear(context),
+          ),
+        ],
       ),
       // ── Dos clases de punto de partida, COUBICADAS ─────────────────────
       //
@@ -83,6 +102,26 @@ class TemplatesScreen extends StatelessWidget {
   }
 }
 
+/// Abre el editor para armar un punto de partida desde cero.
+///
+/// Un GRUPO DE APUESTA, y no una plantilla de ronda, por lo que cada uno puede
+/// guardar:
+///
+///   · el grupo guarda jugadores habituales, apuestas de partida y REGLAS POR
+///     DUELO —`PairBetRule` lleva sus propias apuestas por pareja—. Como sabe
+///     quién juega, un importe por duelo es reutilizable ahí.
+///   · la plantilla de ronda guarda la ronda entera, campo incluido, y sus
+///     importes por duelo van atados a los ids de AQUELLA ronda: no se pueden
+///     reutilizar con otra gente.
+///
+/// Por eso «armar la configuración una vez y usarla desde el principio» es un
+/// grupo. La plantilla sigue siendo lo que era: la foto de una ronda concreta.
+void _crear(BuildContext context) {
+  Navigator.of(context).push(MaterialPageRoute(
+    builder: (_) => const BettingGroupEditorScreen(),
+  ));
+}
+
 // ── Pantalla vacía ────────────────────────────────────────────────────────────
 class _EmptyTemplates extends StatelessWidget {
   final GolfTheme t;
@@ -104,6 +143,38 @@ class _EmptyTemplates extends StatelessWidget {
         ),
       ),
       const SizedBox(height: 24),
+      // ── Lo primero es CREAR, no guardar desde una ronda ──────────────────
+      //
+      // El estado vacío solo explicaba el camino de ida y vuelta: crear una
+      // ronda, guardarla, y tenerla para la próxima. Ahora la vía directa va
+      // primera y la otra se queda como lo que es — un atajo desde una ronda
+      // que ya existe.
+      SizedBox(
+        width: 240,
+        child: ElevatedButton.icon(
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Crear lo de siempre',
+              style: TextStyle(fontWeight: FontWeight.w700)),
+          onPressed: () => _crear(context),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: t.primary,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Text(
+            'Los jugadores de siempre y sus apuestas, sin campo ni fecha. El '
+            'campo se elige al empezar la ronda.',
+            style: TextStyle(color: t.sub, fontSize: 11.5, height: 1.35),
+            textAlign: TextAlign.center),
+      ),
+      const SizedBox(height: 20),
       // ── El ⋮ no solo no pintaba: mandaba a un sitio que no existe ─────────
       //
       // Decía «Ve a Inicio → ⋮ → Guardar como plantilla», y en Inicio no hay
@@ -216,8 +287,17 @@ class _TemplateCard extends StatelessWidget {
     return types.toList();
   }
 
+  /// Abre el asistente con las apuestas de la plantilla puestas.
+  ///
+  /// Antes hacía `Navigator.pop(template)`, y los tres sitios que abren esta
+  /// pantalla —Inicio, Ajustes y el shell— la empujan SIN esperar el resultado:
+  /// el botón cerraba la pantalla y no pasaba nada más.
   void _useTemplate(BuildContext context) {
-    Navigator.of(context).pop(template);
+    Navigator.of(context).pushReplacement(MaterialPageRoute(
+      builder: (_) => SetupScreen(
+        apuestasDePlantilla: template.toBetGroups(),
+      ),
+    ));
   }
 
   void _onAction(BuildContext context, String action) {

@@ -77,6 +77,18 @@ class SetupScreen extends StatefulWidget {
   /// responde y se puede retroceder a cambiar cualquier cosa.
   final BettingGroup? grupoInicial;
 
+  /// Las apuestas de una PLANTILLA DE RONDA, ya serializadas.
+  ///
+  /// «Usar plantilla» hacía `Navigator.pop(template)` y los tres sitios que
+  /// abren la pantalla la empujan SIN esperar el resultado: el botón cerraba y
+  /// no pasaba nada más.
+  ///
+  /// Entran como grupos de apuesta ya formados —no como plantillas de módulo—
+  /// porque una plantilla de ronda guarda la ronda ENTERA, con sus jugadores
+  /// dentro. Lo que no puede traer son los ids de esta gente, así que el
+  /// asistente aterriza en Jugadores.
+  final List<BetGroup>? apuestasDePlantilla;
+
   /// El partido del cuadro con el que se entra, si se viene de un torneo de
   /// eliminación.
   ///
@@ -114,6 +126,7 @@ class SetupScreen extends StatefulWidget {
     this.partidoInicial,
     this.torneoInicial,
     this.grupoInicial,
+    this.apuestasDePlantilla,
     this.nominaInicial,
     this.jugadoresNuevos,
     this.campoInicial,
@@ -629,6 +642,18 @@ class _SetupScreenState extends State<SetupScreen> {
       final bg = widget.grupoInicial;
       if (bg != null && mounted) _precargarDesdeGrupo(bg);
 
+      // Las apuestas de una plantilla de ronda: entran tal cual y el asistente
+      // se queda en Jugadores, que es lo único que la plantilla no sabe.
+      final dePlantilla = widget.apuestasDePlantilla;
+      if (dePlantilla != null && dePlantilla.isNotEmpty && mounted) {
+        setState(() {
+          _groups
+            ..clear()
+            ..addAll(dePlantilla);
+          _current = SetupStep.jugadores;
+        });
+      }
+
       // ── La nómina, VENGA O NO DE UN GRUPO ───────────────────────────────
       //
       // Aquí se perdía quien se añadía del padrón. nominaInicial solo se leía
@@ -770,11 +795,24 @@ class _SetupScreenState extends State<SetupScreen> {
     // otro". El grupo guardado no se toca.
     final nomina = widget.nominaInicial ?? bg.playerIds;
     setState(() => _agregarDelDirectorio(nomina));
-    if (_players.length < 2) {
+
+    // ── Sin jugadores NO es un fallo: es un punto de partida a medias ───────
+    //
+    // Aquí se avisaba «los jugadores del grupo ya no están en tu directorio» y
+    // se salía SIN precargar las apuestas. Pero un grupo puede no tener
+    // jugadores por dos motivos muy distintos:
+    //
+    //   · los tenía y ya no están en el directorio  → el aviso es correcto
+    //   · nunca los tuvo, porque se armó desde cero con las apuestas de
+    //     siempre y la gente cambia    → no hay nada que avisar
+    //
+    // El segundo caso lo acaba de crear el botón «Crear lo de siempre». En los
+    // dos, las apuestas SÍ se pueden precargar: son lo que el grupo guarda con
+    // independencia de quién juegue.
+    if (nomina.isNotEmpty && _players.length < 2) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Los jugadores del grupo ya no están en tu directorio'),
       ));
-      return;
     }
     _applyBettingGroup(bg);
     // Dónde queda el wizard.

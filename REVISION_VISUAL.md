@@ -1280,3 +1280,42 @@ lista escrita a mano la que dejó seis apuestas fuera del desglose. Las pruebas
 **recorren `BetModuleType.values`**: añadir un tipo hace que lo cubran solas.
 Y cuentan cuántos tipos alcanzaron, porque un recorrido que filtra todo pasa
 sin comprobar nada.
+
+---
+
+# «Lo de siempre» ya deja crear
+
+## Las tres determinaciones
+
+**1 · No hace falta el asistente: la pantalla ya existía.** «Lo de siempre»
+enseña **dos** clases de punto de partida, y una —el **grupo de apuesta**— es
+exactamente lo que se pedía: los jugadores de siempre y sus apuestas, sin campo
+ni fecha. Su editor ya estaba hecho. **Faltaba el botón, no la pantalla.**
+
+Reutilizar el asistente habría sido peor: de sus pasos —campo, jugadores, tees,
+ventaja, hoyos, montos— casi ninguno aplica.
+
+**2 · Un grupo SÍ puede llevar importes por duelo**, al revés de lo previsto:
+`PairBetRule` guarda apuestas **por pareja** y el grupo conoce a sus jugadores
+habituales. La que **no** puede es la *plantilla de ronda*: sus overrides van
+atados a los ids de aquella ronda.
+
+**3 · Una pantalla, tres entradas.** Ya se llegaba desde Inicio, Ajustes y el
+shell; el botón va **dentro**.
+
+## Y un defecto que no estaba reportado
+
+**«Usar plantilla» no hacía nada.** Hacía `Navigator.pop(template)` y los tres
+sitios que abren la pantalla la empujan **sin esperar el resultado**: el botón
+cerraba y se acabó.
+
+## Qué mirar
+
+1. **Inicio → «Lo de siempre»**: hay un **+** en la barra. Con la pantalla
+   vacía, además, un botón grande **«Crear lo de siempre»** — y va **antes** que
+   el texto de guardar desde una ronda.
+2. **Ajustes → Plantillas**: la misma pantalla, el mismo botón.
+3. **Crea uno sin jugadores habituales** —solo las apuestas— y úsalo: el
+   asistente ya **no se rinde**; precarga las apuestas y te deja elegir gente.
+4. **«Usar plantilla»** abre el asistente con las apuestas puestas, aterrizando
+   en Jugadores — lo único que una plantilla de ronda no puede traer.
