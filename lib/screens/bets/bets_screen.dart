@@ -2031,7 +2031,7 @@ class _BetRow extends StatelessWidget {
     final label = mod.type.label;
     switch (mod.type) {
       case BetModuleType.stableford:
-        return '$label · \$${mod.stableford.value.toStringAsFixed(0)}';
+        return '$label · \$${mod.baseValue.toStringAsFixed(0)}';
       case BetModuleType.wolf:
         return '$label · \$${mod.wolf.value.toStringAsFixed(0)}/hoyo';
       case BetModuleType.sixes:

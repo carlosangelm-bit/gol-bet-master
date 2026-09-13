@@ -2632,7 +2632,10 @@ class ActiveRoundView extends StatelessWidget {
       case BetModuleType.wolf:
       case BetModuleType.sixes:
       case BetModuleType.stableford:
-        return '\$${m.value.toStringAsFixed(0)}';
+        // `baseValue`, no `m.value`: para Stableford el importe vive en SU
+        // config, y esta pantalla pintaba el campo genérico mientras la de
+        // Apuestas pintaba el bueno. Dos cifras del mismo dato.
+        return '\$${m.baseValue.toStringAsFixed(0)}';
       case BetModuleType.skins:
         return '\$${m.skins.valuePerSkin.toStringAsFixed(0)}/skin';
       case BetModuleType.nassau:

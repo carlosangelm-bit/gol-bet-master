@@ -1237,3 +1237,46 @@ hoja y pulsando «Guardar ventajas».
 Y el de la marca tampoco se veía en el texto: con un acuerdo de cero las dos
 filas dicen *«igualdad»*, así que lo único que distingue «lo pactaron» de
 «coincide» es el fondo.
+
+---
+
+# Auditoría: lo del duelo es lo que se cobra
+
+## El número, antes de tocar nada
+
+**12 tipos** en el catálogo. **6 anuncian importe por duelo** —skins, medal,
+putts, oyeses, units, stableford— y **solo 3 lo aplicaban**.
+
+**Tres lo ofrecían, lo guardaban y nada lo leía: medal, putts y stableford.**
+
+## Por qué derivaron: seis listas para un hecho
+
+«Este tipo tiene importe, vive aquí, y admite uno por duelo» estaba escrito seis
+veces a mano —la tabla de reglas, `supportsPlayerOverride`, `overrideForPair`,
+`pairOverrideKey`, `baseValue`, `withBaseValue`—. Un test ataba dos. Las otras
+cuatro derivaron solas.
+
+Ahora es **un `switch` exhaustivo sin `_`**: añadir un tipo al catálogo **no
+compila** hasta decir dónde vive su importe. Eso es lo que una lista escrita a
+mano nunca pudo hacer.
+
+## Y un séptimo defecto, del otro lado
+
+**La app ofrecía importe por duelo en un POTE**, donde nunca se aplica — «el
+pozo es único, sin excepciones» ya estaba decidido y probado en el motor. Lo que
+faltaba era dejar de ofrecerlo.
+
+## Qué mirar
+
+1. **Configura un importe por duelo en Medal, Putts o Stableford** con dos
+   parejas: cada una liquida con el suyo.
+2. **En un módulo de POTE**, la opción de importe por duelo ya no se ofrece.
+3. **El chip de Inicio y la etiqueta de Apuestas** leen el mismo sitio.
+
+## La guarda: recorre el enum, no una lista
+
+Con doce tipos, una prueba por tipo escrita a mano envejece mal — y ya fue una
+lista escrita a mano la que dejó seis apuestas fuera del desglose. Las pruebas
+**recorren `BetModuleType.values`**: añadir un tipo hace que lo cubran solas.
+Y cuentan cuántos tipos alcanzaron, porque un recorrido que filtra todo pasa
+sin comprobar nada.

@@ -447,7 +447,9 @@ class BetEngine {
     // Ej: n=3, valuePerSkin=10, sin carry → cada perdedor paga 10 al ganador.
     // Con carry de 3 hoyos → cada perdedor paga 30 al ganador.
     final cfg = mod.skins;
-    // pot = lo que cada perdedor debe pagar por skin acumulado
+    // El pote es ÚNICO: no lleva importes por duelo, y esa decisión ya estaba
+    // tomada con su prueba —«el pozo es único, sin excepciones»—. Lo que no
+    // estaba es que la app dejara de OFRECERLOS aquí: ver `supportsPlayerOverride`.
     double potPerLoser = cfg.valuePerSkin;
 
     // Iterar en el orden correcto de la ronda (respeta startingNine)
@@ -1614,7 +1616,6 @@ class BetEngine {
   //            y cada jugador calcula su net respecto al ancla.
   static List<LedgerEntry> _medal(Round round, List<String> pids, BetModuleInstance mod) {
     final entries = <LedgerEntry>[];  
-    final cfg     = mod.medal;
     final allHoles = round.course.holes;
 
     // Net de pA respecto a pB: gross(pA) - strokes_que_pA_recibe_de_pB por hoyo.
@@ -1668,9 +1669,9 @@ class BetEngine {
           final netI = netVs(pids[i], pids[j]);
           final netJ = netVs(pids[j], pids[i]);
           if (netI < netJ) {
-            entries.add(LedgerEntry(fromPlayerId: pids[j], toPlayerId: pids[i], amount: cfg.value, betType: BetModuleType.medal, reason: 'Medal'));
+            entries.add(LedgerEntry(fromPlayerId: pids[j], toPlayerId: pids[i], amount: mod.effectiveValueForDuel(pids[i], pids[j]).$1, betType: BetModuleType.medal, reason: 'Medal'));
           } else if (netJ < netI) {
-            entries.add(LedgerEntry(fromPlayerId: pids[i], toPlayerId: pids[j], amount: cfg.value, betType: BetModuleType.medal, reason: 'Medal'));
+            entries.add(LedgerEntry(fromPlayerId: pids[i], toPlayerId: pids[j], amount: mod.effectiveValueForDuel(pids[i], pids[j]).$1, betType: BetModuleType.medal, reason: 'Medal'));
           }
         }
       }
@@ -1685,7 +1686,7 @@ class BetEngine {
       if (nets[sorted[0]] == nets[sorted[1]]) return entries; // empate
       final winner = sorted.first;
       for (final pid in sorted.skip(1)) {
-        entries.add(LedgerEntry(fromPlayerId: pid, toPlayerId: winner, amount: cfg.value, betType: BetModuleType.medal, reason: 'Medal'));
+        entries.add(LedgerEntry(fromPlayerId: pid, toPlayerId: winner, amount: mod.medal.value, betType: BetModuleType.medal, reason: 'Medal'));
       }
       return entries;
     }
@@ -1711,7 +1712,7 @@ class BetEngine {
     if ((nets[sorted[0]] ?? 999) == (nets[sorted[1]] ?? 999)) return entries; // empate
     final winner = sorted.first;
     for (final pid in sorted.skip(1)) {
-      entries.add(LedgerEntry(fromPlayerId: pid, toPlayerId: winner, amount: cfg.value, betType: BetModuleType.medal, reason: 'Medal'));
+      entries.add(LedgerEntry(fromPlayerId: pid, toPlayerId: winner, amount: mod.medal.value, betType: BetModuleType.medal, reason: 'Medal'));
     }
     return entries;
   }
@@ -1753,9 +1754,9 @@ class BetEngine {
             final t1 = GameEngine.totalPutts(round, pids[i], from: from, to: to);
             final t2 = GameEngine.totalPutts(round, pids[j], from: from, to: to);
             if (t1 < t2) {
-              entries.add(LedgerEntry(fromPlayerId: pids[j], toPlayerId: pids[i], amount: cfg.value, betType: BetModuleType.putts, reason: label));
+              entries.add(LedgerEntry(fromPlayerId: pids[j], toPlayerId: pids[i], amount: mod.effectiveValueForDuel(pids[i], pids[j]).$1, betType: BetModuleType.putts, reason: label));
             } else if (t2 < t1) {
-              entries.add(LedgerEntry(fromPlayerId: pids[i], toPlayerId: pids[j], amount: cfg.value, betType: BetModuleType.putts, reason: label));
+              entries.add(LedgerEntry(fromPlayerId: pids[i], toPlayerId: pids[j], amount: mod.effectiveValueForDuel(pids[i], pids[j]).$1, betType: BetModuleType.putts, reason: label));
             }
             // empate → no se añade entrada
           }
@@ -1774,7 +1775,7 @@ class BetEngine {
       if (totals[sorted[0]] == totals[sorted[1]]) continue; // empate
       final winner = sorted.first;
       for (final pid in sorted.skip(1)) {
-        entries.add(LedgerEntry(fromPlayerId: pid, toPlayerId: winner, amount: cfg.value, betType: BetModuleType.putts, reason: label));
+        entries.add(LedgerEntry(fromPlayerId: pid, toPlayerId: winner, amount: mod.putts.value, betType: BetModuleType.putts, reason: label));
       }
     }
     return entries;

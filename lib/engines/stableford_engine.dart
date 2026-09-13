@@ -93,7 +93,9 @@ class StablefordEngine {
           entries.add(LedgerEntry(
             fromPlayerId: pierde,
             toPlayerId: gana,
-            amount: cfg.value,
+            // El importe del DUELO: cada pareja puede llevar el suyo, y la
+            // app lo ofrecía sin que nada lo aplicara.
+            amount: mod.effectiveValueForDuel(a, b).$1,
             betType: BetModuleType.stableford,
             reason: 'Stableford ${pts[gana]}-${pts[pierde]}',
           ));
@@ -111,7 +113,8 @@ class StablefordEngine {
       entries.add(LedgerEntry(
         fromPlayerId: pid,
         toPlayerId: ganador,
-        amount: cfg.value,
+        // onePot: el pozo es único, sin importes por duelo.
+        amount: mod.stableford.value,
         betType: BetModuleType.stableford,
         reason: 'Stableford ${pts[ganador]} pts',
       ));

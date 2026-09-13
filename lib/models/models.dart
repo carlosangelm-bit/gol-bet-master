@@ -3155,20 +3155,12 @@ class BetModuleInstance {
   /// Clave dependiente del tipo:
   ///   Skins/Oyeses/Putts/Medal → 'value'    Units → 'allEvents'
   double? overrideForPair(String pidA, String pidB) {
+    final clave = pairOverrideKey;
+    if (clave == null) return null;
     final ov = pairConfigOverrides?[pairKey(pidA, pidB)];
-    if (ov == null) return null;
-    switch (type) {
-      case BetModuleType.skins:
-      case BetModuleType.oyeses:
-      case BetModuleType.putts:
-      case BetModuleType.medal:
-        return (ov['value'] as num?)?.toDouble();
-      case BetModuleType.units:
-        return (ov['allEvents'] as num?)?.toDouble();
-      default:
-        return null;
-    }
+    return (ov?[clave] as num?)?.toDouble();
   }
+
 
   /// Devuelve el valor de override LEGACY por jugador individual, o null.
   /// Solo se usa para leer datos viejos; las nuevas ediciones usan [overrideForPair].
@@ -3212,15 +3204,104 @@ class BetModuleInstance {
 
   /// Valor base del módulo según su tipo (sin overrides).
   /// Público para que la UI pueda usarlo como hint/placeholder.
-  double get baseValue => switch (type) {
-    BetModuleType.skins  => skins.valuePerSkin,
-    BetModuleType.oyeses => oyeses.value,
-    // Units: valor representativo (uniforme si todos iguales, birdie si heterogéneo).
-    BetModuleType.units  => units.representativeValue,
-    BetModuleType.putts  => putts.value,
-    BetModuleType.medal  => medal.value,
-    _                    => value,
-  };
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EL IMPORTE DE CADA TIPO — una tabla, no seis listas
+  //
+  // «¿Podemos revisar que tengamos certeza de que lo que aparece configurado en
+  //  los duelos sea lo que se refleja en la apuesta?»
+  //
+  // El hecho «este tipo tiene importe, vive aquí, y admite uno por duelo» estaba
+  // escrito SEIS VECES, cada una con su lista a mano:
+  //
+  //   1 · BetTypeRules.perPairAmount     4 · pairOverrideKey      `_ => null`
+  //   2 · supportsPlayerOverride         5 · baseValue            `_ => value`
+  //   3 · overrideForPair  `default:`    6 · withBaseValue        `_ => null`
+  //
+  // Un test ataba la 1 con la 2. Las otras cuatro derivaron solas, y por ahí se
+  // colaron TRES tipos que OFRECEN importe por duelo y no lo aplican: medal,
+  // putts y stableford. Se configuraba, se guardaba, y el motor cobraba el base.
+  //
+  // Hay una SÉPTIMA lista, `value`, que no se pliega aquí: es el importe de
+  // titular que usan las pantallas y tiene su propio switch por tipo. Coincide
+  // con `baseValue` en los doce, y hay una prueba que lo fija — porque coincidir
+  // hoy no es garantía, y ese es justo el modo en que nacen estas divergencias.
+  //
+  // Ahora es UN switch exhaustivo, sin `_`: añadir un tipo al catálogo **no
+  // compila** hasta decir dónde vive su importe. Eso es lo que una lista escrita
+  // a mano nunca pudo hacer.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Dónde vive el importe de [t] y si admite uno por duelo.
+  ///
+  ///   · [leer]     — el importe base, del sitio que le corresponde.
+  ///   · [escribir] — fija ese importe. null cuando el tipo tiene VARIOS y
+  ///                  «el importe» no lo describe: Nassau lleva front, back,
+  ///                  total y presiones, y escribir uno dejando los otros sin
+  ///                  tocar sería mentir.
+  ///   · [clavePorDuelo] — con qué clave guarda `pairConfigOverrides` su
+  ///                  importe. null = este tipo NO admite importe por duelo, y
+  ///                  entonces la app tampoco debe ofrecerlo.
+  static ({
+    double Function(BetModuleInstance) leer,
+    BetModuleInstance Function(BetModuleInstance, double)? escribir,
+    String? clavePorDuelo,
+  }) importeDelTipo(BetModuleType t) => switch (t) {
+        BetModuleType.skins => (
+            leer: (m) => m.skins.valuePerSkin,
+            escribir: (m, v) =>
+                m.copyWith(skinsConfig: m.skins.copyWith(valuePerSkin: v)),
+            clavePorDuelo: 'value',
+          ),
+        BetModuleType.oyeses => (
+            leer: (m) => m.oyeses.value,
+            escribir: (m, v) =>
+                m.copyWith(oyesesConfig: m.oyeses.copyWith(value: v)),
+            clavePorDuelo: 'value',
+          ),
+        BetModuleType.putts => (
+            leer: (m) => m.putts.value,
+            escribir: (m, v) =>
+                m.copyWith(puttsConfig: m.putts.copyWith(value: v)),
+            clavePorDuelo: 'value',
+          ),
+        BetModuleType.medal => (
+            leer: (m) => m.medal.value,
+            escribir: (m, v) =>
+                m.copyWith(medalConfig: m.medal.copyWith(value: v)),
+            clavePorDuelo: 'value',
+          ),
+        BetModuleType.stableford => (
+            // LEE de su propia config, que es donde `escribir` lo pone. Antes
+            // leía del campo genérico `value` y el viaje de ida y vuelta se
+            // perdía.
+            leer: (m) => m.stableford.value,
+            escribir: (m, v) =>
+                m.copyWith(stablefordConfig: m.stableford.copyWith(value: v)),
+            clavePorDuelo: 'value',
+          ),
+        BetModuleType.units => (
+            // Los eventos pueden valer distinto entre sí; el representativo es
+            // el uniforme si todos coinciden, y el birdie si no.
+            leer: (m) => m.units.representativeValue,
+            escribir: (m, v) =>
+                m.copyWith(unitsConfig: m.units.withAllEventsValue(v)),
+            // La excepción de pareja fija UN valor para todos los eventos.
+            clavePorDuelo: 'allEvents',
+          ),
+        // ── Los que llevan VARIOS importes, o ninguno por duelo ─────────────
+        BetModuleType.nassau ||
+        BetModuleType.nassauLowHigh =>
+          (leer: (m) => m.value, escribir: null, clavePorDuelo: null),
+        BetModuleType.snake ||
+        BetModuleType.rabbit ||
+        BetModuleType.wolf ||
+        BetModuleType.sixes =>
+          (leer: (m) => m.value, escribir: null, clavePorDuelo: null),
+      };
+
+  /// El importe base de este módulo. Sale de [importeDelTipo].
+  double get baseValue => importeDelTipo(type).leer(this);
+
 
   // Alias privado para uso interno (retrocompat de llamadas internas).
   double get _baseValue => baseValue;
@@ -3236,43 +3317,24 @@ class BetModuleInstance {
   /// si `a.withBaseValue(b.baseValue)` tiene la misma [configSignature] que
   /// `b`, entonces el importe era la única diferencia. Eso decide si el caso
   /// se puede expresar con [pairConfigOverrides], que solo lleva el monto.
-  BetModuleInstance? withBaseValue(double v) => switch (type) {
-        BetModuleType.skins =>
-          copyWith(skinsConfig: skins.copyWith(valuePerSkin: v)),
-        BetModuleType.oyeses =>
-          copyWith(oyesesConfig: oyeses.copyWith(value: v)),
-        BetModuleType.putts =>
-          copyWith(puttsConfig: putts.copyWith(value: v)),
-        BetModuleType.medal =>
-          copyWith(medalConfig: medal.copyWith(value: v)),
-        BetModuleType.stableford =>
-          copyWith(stablefordConfig: stableford.copyWith(value: v)),
-        BetModuleType.units =>
-          copyWith(unitsConfig: units.withAllEventsValue(v)),
-        _ => null,
-      };
+  BetModuleInstance? withBaseValue(double v) =>
+      importeDelTipo(type).escribir?.call(this, v);
 
   /// Clave con la que [pairConfigOverrides] guarda el importe de este tipo.
   /// null si el tipo no admite override por pareja.
-  String? get pairOverrideKey => switch (type) {
-        BetModuleType.units => 'allEvents',
-        BetModuleType.skins ||
-        BetModuleType.oyeses ||
-        BetModuleType.putts ||
-        BetModuleType.medal ||
-        BetModuleType.stableford =>
-          'value',
-        _ => null,
-      };
+  String? get pairOverrideKey => importeDelTipo(type).clavePorDuelo;
 
-  /// true si este tipo de módulo soporta override de valor por duelo.
-  bool get supportsPlayerOverride =>
-      type == BetModuleType.skins   ||
-      type == BetModuleType.oyeses  ||
-      type == BetModuleType.units   ||
-      type == BetModuleType.putts   ||
-      type == BetModuleType.medal   ||
-      type == BetModuleType.stableford;
+  /// true si ESTE módulo admite importe por duelo.
+  ///
+  /// Dos condiciones, y las dos por el mismo motivo —no ofrecer lo que no se
+  /// aplica—:
+  ///
+  ///   · que el TIPO tenga clave donde guardarlo. Ofrecerlo sin clave era el
+  ///     defecto de Stableford: se configuraba, se guardaba y nada lo leía.
+  ///   · que el módulo NO sea un pote. «El pozo es único, sin excepciones» ya
+  ///     estaba decidido y probado en el motor; lo que faltaba era dejar de
+  ///     ofrecer en la pantalla una excepción que el pote nunca iba a aplicar.
+  bool get supportsPlayerOverride => pairOverrideKey != null && isAllVsAll;
 
   // ── Factory helpers para crear instancias por defecto ─────────────────────
   static BetModuleInstance defaultFor(

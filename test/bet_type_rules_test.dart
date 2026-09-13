@@ -61,13 +61,29 @@ BetModuleInstance _conLados(BetModuleType t) => BetModuleInstance(
 
 void main() {
   group('la tabla no se desvía del motor', () {
-    test('perPairAmount coincide con supportsPlayerOverride', () {
+    test('perPairAmount coincide con la clave donde se guarda', () {
+      // Se compara contra `pairOverrideKey`, que es el hecho del TIPO: tener
+      // dónde guardar un importe por duelo.
+      //
+      // Antes se comparaba con `supportsPlayerOverride`, y eso dejó de ser una
+      // propiedad del tipo: un módulo en POTE no admite importes por duelo
+      // aunque su tipo sí —«el pozo es único, sin excepciones»—. Son dos
+      // preguntas y ahora se leen distinto.
       for (final t in BetModuleType.values) {
         final mod = BetModuleInstance(
             id: 'x', type: t, name: t.label, participantIds: const []);
-        expect(t.rules.perPairAmount, mod.supportsPlayerOverride,
+        expect(t.rules.perPairAmount, mod.pairOverrideKey != null,
             reason: '$t: la tabla dice ${t.rules.perPairAmount} y el modelo '
-                '${mod.supportsPlayerOverride}');
+                '${mod.pairOverrideKey}');
+      }
+    });
+
+    test('y un módulo en POTE no lo admite, aunque su tipo sí', () {
+      for (final t in BetModuleType.values) {
+        final pote = BetModuleInstance(
+                id: 'x', type: t, name: t.label, participantIds: const [])
+            .copyWith(formatMode: BetFormatMode.onePot);
+        expect(pote.supportsPlayerOverride, isFalse, reason: '$t');
       }
     });
 
