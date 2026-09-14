@@ -1482,6 +1482,77 @@ class PressInstance {
 // Configuración unificada para Nassau (con o sin presiones automáticas).
 // Cuando pressEnabled=true se activan los campos de press; las presiones
 // se calculan por segmento (F9/B9) y terminan al finalizar el segmento.
+/// El precio que valdrán las presiones de un nueve, pactado en el turn.
+///
+/// ── QUÉ ES «PRESIONAR», Y POR QUÉ NO ABRE UNA APUESTA ─────────────────────
+///
+///     «Solo al terminar el F9, un jugador puede modificar el valor de la
+///      presión para el B9, en este caso a 100. Eso no modifica el valor de las
+///      presiones generadas en los F9.»
+///     «Las presiones del F9 quedan en 50. Las del B9 que se abran, ahora
+///      valdrán 100.»
+///
+/// No nace una apuesta nueva: cambia el PRECIO de las presiones que ese nueve
+/// vaya a generar. Lo que se construyó como «apertura de 2ª vuelta» es otra
+/// cosa —una apuesta paralela sobre los nueve traseros— y sigue en pie.
+///
+/// De aquí sale que un Nassau tenga CUATRO cifras y no tres: F9, B9, total, y
+/// lo que vale una presión.
+///
+/// ── HACE FALTA ACUERDO, Y NO ES POR PRUDENCIA ─────────────────────────────
+///
+/// Las dos cosas que en esta app pide UN jugador solo —el carry y la apertura—
+/// las paga quien las pide: el carry le da un golpe de más en una apuesta que
+/// él propuso, y la apertura abre nueve hoyos al precio que ya estaba pactado.
+/// El otro no queda expuesto a nada que no hubiera aceptado.
+///
+/// Subir el precio de la presión es de otra clase. Las presiones saltan SOLAS
+/// —al ir dos abajo— y ninguno de los dos elige cuándo. Quien va perdiendo al
+/// terminar el F9 podría poner 500 y arrastrar al otro a una apuesta que no
+/// pidió, al precio que él decida. Por eso se guarda quién lo propone y quién
+/// lo acepta, y hasta que no está aceptado no vale: es la misma forma que
+/// `pairSliding`, la otra cifra por pareja que obliga a los dos.
+///
+/// ── Y PRESIONAR DOS VECES NO LLEVA A \$200 ─────────────────────────────────
+///
+/// Lo que se fija es un PRECIO, no un multiplicador. Puesto dos veces, vale el
+/// segundo. Se llega a 200 escribiendo 200, no presionando dos veces. Y de
+/// todas formas la ventana se abre una sola vez: al terminar el F9.
+class PrecioDePresion {
+  /// Lo que valdrá cada presión de ese nueve.
+  final double valor;
+
+  /// Quién lo propuso. Se guarda para poder decir «X propone \$100».
+  final String propuestoPor;
+
+  /// Quién lo aceptó, o null mientras está propuesto y sin contestar.
+  final String? aceptadoPor;
+
+  const PrecioDePresion({
+    required this.valor,
+    required this.propuestoPor,
+    this.aceptadoPor,
+  });
+
+  /// El precio está en pie: los dos lo pactaron y las presiones valen esto.
+  bool get enPie => aceptadoPor != null;
+
+  PrecioDePresion aceptadoPor_(String pid) => PrecioDePresion(
+      valor: valor, propuestoPor: propuestoPor, aceptadoPor: pid);
+
+  Map<String, dynamic> toJson() => {
+        'valor': valor,
+        'propuestoPor': propuestoPor,
+        if (aceptadoPor != null) 'aceptadoPor': aceptadoPor,
+      };
+
+  factory PrecioDePresion.fromJson(Map<String, dynamic> j) => PrecioDePresion(
+        valor: (j['valor'] as num).toDouble(),
+        propuestoPor: j['propuestoPor'] as String,
+        aceptadoPor: j['aceptadoPor'] as String?,
+      );
+}
+
 class NassauConfig {
   // ── Valores base ─────────────────────────────────────────────────────────────
   final double frontValue;
@@ -1533,6 +1604,16 @@ class NassauConfig {
   final double frontPressValue;     // valor de cada press en el F9
   final double backPressValue;      // valor de cada press en el B9
   final bool allowMultiplePresses;  // permite más de un press por segmento
+
+  /// Lo que valdrán las presiones del B9 en cada pareja, si se pactó otro
+  /// precio al terminar el F9. Ver [PrecioDePresion].
+  ///
+  /// Clave: [carryPairKey], la misma que el carry y la apertura. En un grupo de
+  /// cuatro, A puede pactar 100 con B y seguir a 50 con C.
+  ///
+  /// Solo el B9. El precio del F9 es el que se configuró al crear la apuesta:
+  /// la ventana para cambiarlo es el turn, y del F9 ya no hay turn.
+  final Map<String, PrecioDePresion> precioPresionB9ByPair;
   final int? maxPresses;            // max por segmento (null = ilimitado)
 
   /// La PRESIÓN DE APERTURA de la vuelta trasera, por pareja.
@@ -1577,6 +1658,7 @@ class NassauConfig {
     // El respaldo de fromJson se queda en true: las rondas guardadas se leen
     // como se jugaron. Esto decide lo que se crea de cero.
     this.allowMultiplePresses = false,
+    this.precioPresionB9ByPair = const {},
     this.maxPresses,
     this.aperturaB9ByPair = const {},
     this.carryPedidoByPair = const {},
@@ -1687,6 +1769,14 @@ class NassauConfig {
   bool aperturaB9For(String id1, String id2) =>
       aperturaB9ByPair[carryPairKey(id1, id2)] == true;
 
+  /// El precio pactado para las presiones del B9 en esta pareja, o null.
+  ///
+  /// Devuelve el pacto ENTERO —con quién lo propuso y si está aceptado— y no
+  /// solo la cifra: la pantalla tiene que poder decir «CAM propone \$100» antes
+  /// de que valga nada, y el motor tiene que poder ignorarlo hasta entonces.
+  PrecioDePresion? precioPresionB9Para(String id1, String id2) =>
+      precioPresionB9ByPair[carryPairKey(id1, id2)];
+
   NassauConfig copyWith({
     double? frontValue, double? backValue, double? totalValue,
     GrossNetMode? mode, TieRule? tieRule,
@@ -1694,6 +1784,7 @@ class NassauConfig {
     bool? ajusteEnB9,
     Map<String, Map<String, List<int>>>? presionesPedidasByPair,
     bool? pressEnabled, int? autoPressTrigger,
+    Map<String, PrecioDePresion>? precioPresionB9ByPair,
     double? frontPressValue, double? backPressValue,
     bool? allowMultiplePresses, int? maxPresses,
     Map<String, bool>? aperturaB9ByPair,
@@ -1709,6 +1800,7 @@ class NassauConfig {
     presionesPedidasByPair:
         presionesPedidasByPair ?? this.presionesPedidasByPair,
     pressEnabled:         pressEnabled         ?? this.pressEnabled,
+    precioPresionB9ByPair: precioPresionB9ByPair ?? this.precioPresionB9ByPair,
     autoPressTrigger:     autoPressTrigger     ?? this.autoPressTrigger,
     frontPressValue:      frontPressValue      ?? this.frontPressValue,
     backPressValue:       backPressValue       ?? this.backPressValue,
@@ -1743,6 +1835,9 @@ class NassauConfig {
     if (presionesPedidasByPair.isNotEmpty)
       'presionesPedidasByPair': presionesPedidasByPair,
     'pressEnabled':         pressEnabled,
+    if (precioPresionB9ByPair.isNotEmpty)
+      'precioPresionB9ByPair':
+          precioPresionB9ByPair.map((k, v) => MapEntry(k, v.toJson())),
     'autoPressTrigger':     autoPressTrigger,
     'frontPressValue':      frontPressValue,
     'backPressValue':       backPressValue,
@@ -1778,6 +1873,10 @@ class NassauConfig {
           ) ??
           const {},
       pressEnabled:         j['pressEnabled']         as bool? ?? false,
+      precioPresionB9ByPair: ((j['precioPresionB9ByPair'] as Map?) ?? {}).map(
+          (k, v) => MapEntry(
+              k as String,
+              PrecioDePresion.fromJson(Map<String, dynamic>.from(v as Map)))),
       // retrocompat: autoPressTrigger también puede venir como pressTriggerValue
       autoPressTrigger:     (j['autoPressTrigger']    as int?)
                          ?? (j['pressTriggerValue']   as int?) ?? 2,

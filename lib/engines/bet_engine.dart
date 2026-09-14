@@ -622,6 +622,8 @@ class BetEngine {
     NassauConfig cfg, {
     required bool f9Completo,
     required int marcadorF9,
+    String? p1Id,
+    String? p2Id,
   }) {
     // Lo que se traslada es dinero SIN DUEÑO. Si el F9 tuvo ganador, ese dinero
     // ya está adjudicado y no hay nada que llevar.
@@ -631,11 +633,32 @@ class BetEngine {
     // motor no dependa de que alguien se acuerde.
     final natural =
         cfg.carryEnabled && !cfg.soloElMatch && f9Completo && marcadorF9 == 0;
+
+    // Solo cuenta el pacto ACEPTADO. Propuesto y sin contestar no vale: ver
+    // `PrecioDePresion`.
+    final pacto = (p1Id == null || p2Id == null)
+        ? null
+        : cfg.precioPresionB9Para(p1Id, p2Id);
+    final precioB9 = pacto != null && pacto.enPie ? pacto.valor : null;
     return ValoresDelNassau(
       front: cfg.frontValue,
       back: natural ? cfg.backValue + cfg.frontValue : cfg.backValue,
       total: cfg.totalValue,
-      backPress: cfg.backPressValue,
+      // ── LO QUE VALE UNA PRESIÓN DEL B9 ──────────────────────────────────
+      //
+      // Si los dos pactaron otro precio al terminar el F9, es ese. Sale de
+      // AQUÍ y no de cada llamador porque este método es el único sitio donde
+      // el Nassau dice cuánto valen sus apuestas: el panel en vivo, el desglose
+      // y la liquidación lo leen los tres, y así no pueden discrepar.
+      //
+      // Las del F9 no se tocan: se liquidan con `cfg.frontPressValue`, que este
+      // pacto no mira. Es literalmente la condición de Carlos —«eso no modifica
+      // el valor de las presiones generadas en los F9»— y sale sola de que sean
+      // dos campos distintos.
+      //
+      // Sin pareja —los módulos por equipos, que no tienen duelo— vale el
+      // precio del módulo.
+      backPress: precioB9 ?? cfg.backPressValue,
       carryNatural: natural,
     );
   }
@@ -872,6 +895,43 @@ class BetEngine {
     if (jugados != seg.firstNine.length) return null;
     if (margen == 0) return null;
     return margen > 0 ? p2Id : p1Id;
+  }
+
+  /// Si se puede pactar AHORA el precio de las presiones del B9, y por qué no.
+  ///
+  /// ── LA VENTANA ES EL TURN, Y ES UNA SOLA ──────────────────────────────────
+  ///
+  ///     «Solo al terminar el F9, un jugador puede modificar el valor de la
+  ///      presión para el B9.»
+  ///
+  /// Ni antes —el F9 aún se juega y no hay turn— ni después —una presión del B9
+  /// ya abierta no puede cambiar de precio a mitad—. Así que la condición es:
+  /// el F9 completo y el B9 sin empezar.
+  ///
+  /// Devolver un motivo y no un booleano es lo que permite que la pantalla diga
+  /// por qué el botón no está, en vez de esconderlo sin explicación. Es lo
+  /// mismo que hace `sePuedeBorrar` con las rondas.
+  ///
+  /// La guarda vive AQUÍ, en el momento de pactar, y no en la liquidación: un
+  /// pacto no se deshace porque luego se corrija un score del F9. Mismo criterio
+  /// que [quienPuedePedirCarry].
+  static PorQueNoSePuedePactar ventanaDelPrecioDePresion(
+      Round round, String p1Id, String p2Id, BetModuleInstance mod) {
+    final cfg = mod.nassau;
+    if (!cfg.pressEnabled) return PorQueNoSePuedePactar.sinPresiones;
+
+    final seg = segmentsOf(round);
+    if (seg.singleNine || seg.secondNine.isEmpty) {
+      return PorQueNoSePuedePactar.noHayB9;
+    }
+
+    final deltas = _deltasDelDuelo(round, p1Id, p2Id, mod);
+    final f9 = seg.firstNine.where(deltas.containsKey).length;
+    if (f9 != seg.firstNine.length) return PorQueNoSePuedePactar.f9SinTerminar;
+    if (seg.secondNine.any(deltas.containsKey)) {
+      return PorQueNoSePuedePactar.b9Empezado;
+    }
+    return PorQueNoSePuedePactar.siSePuede;
   }
 
   /// Los deltas hoyo a hoyo del duelo, en perspectiva de [p1Id].
@@ -1257,7 +1317,9 @@ class BetEngine {
 
     final v = valoresDelNassau(cfg,
         f9Completo: seg.firstNine.isNotEmpty && f9Jugados == seg.firstNine.length,
-        marcadorF9: front);
+        marcadorF9: front,
+        p1Id: p1Id,
+        p2Id: p2Id);
 
     // ── El ajuste al entrar en el B9 ────────────────────────────────────────
     //
@@ -1385,7 +1447,9 @@ class BetEngine {
     }
     final v = valoresDelNassau(cfg,
         f9Completo: seg.firstNine.isNotEmpty && f9Jugados == seg.firstNine.length,
-        marcadorF9: front);
+        marcadorF9: front,
+        p1Id: p1Id,
+        p2Id: p2Id);
 
     // ── El ajuste al entrar en el B9 ────────────────────────────────────────
     //
@@ -2417,6 +2481,9 @@ class BetEngine {
     // El MISMO cálculo que la liquidación. Antes la pantalla usaba los getters
     // `effective*` y el motor multiplicaba a mano: dos cuentas distintas, y la
     // pantalla podía anunciar un número que la liquidación no pagaba.
+    //
+    // Sin pareja: esto es equipo contra equipo, y el precio de la presión se
+    // pacta entre dos personas. Vale el del módulo.
     final v = valoresDelNassau(cfg,
         f9Completo: seg.firstNine.isNotEmpty && frontPlayed == seg.firstNine.length,
         marcadorF9: front);
@@ -2993,7 +3060,9 @@ class BetEngine {
     final List<NassauPress> presses = [];
     final v = valoresDelNassau(cfg,
         f9Completo: seg.firstNine.isNotEmpty && frontPlayed == seg.firstNine.length,
-        marcadorF9: front);
+        marcadorF9: front,
+        p1Id: p1Id,
+        p2Id: p2Id);
 
     if (cfg.pressEnabled) {
       _detectPressesInSegment(presses, frontHistory, seg.firstNine, frontPlayed,
@@ -3083,7 +3152,9 @@ class BetEngine {
     // se paga al cerrar, el fallo se descubre cobrando.
     final v = valoresDelNassau(cfg,
         f9Completo: seg.firstNine.isNotEmpty && frontPlayed == seg.firstNine.length,
-        marcadorF9: front);
+        marcadorF9: front,
+        p1Id: p1Id,
+        p2Id: p2Id);
 
     // El delta ya está calculado en perspectiva de p1 (positivo = p1 arriba):
     //   p1IsBase=true : delta= 1 si base(p1) gana, -1 si pierde
@@ -3449,6 +3520,37 @@ class ValoresDelNassau {
     required this.backPress,
     required this.carryNatural,
   });
+}
+
+/// Por qué no se puede pactar ahora el precio de las presiones del B9.
+///
+/// Ver [BetEngine.ventanaDelPrecioDePresion].
+enum PorQueNoSePuedePactar {
+  siSePuede,
+
+  /// La apuesta no juega presiones: no hay precio que pactar.
+  sinPresiones,
+
+  /// Ronda de nueve, o sin segundo nueve: no hay B9 que presionar.
+  noHayB9,
+
+  /// Aún se juega el F9. El turn no ha llegado.
+  f9SinTerminar,
+
+  /// El B9 ya empezó. Cambiar el precio ahora movería una presión ya abierta.
+  b9Empezado;
+
+  bool get si => this == siSePuede;
+
+  /// Lo que se le dice al jugador. Vacío cuando sí se puede.
+  String get motivo => switch (this) {
+        siSePuede => '',
+        sinPresiones => 'Esta apuesta no juega presiones.',
+        noHayB9 => 'No hay segunda vuelta que presionar.',
+        f9SinTerminar => 'Al terminar el F9.',
+        b9Empezado => 'El B9 ya empezó: las presiones abiertas no cambian de '
+            'precio.',
+      };
 }
 
 class RoundSegments {

@@ -1355,6 +1355,7 @@ class _OneVOneViewState extends State<_OneVOneView> {
                     _pedirCarry(ctx, effP1.id, effP2.id, solicitante, nassauMods),
                 onAbrirApertura: (ctx, nassauMods) =>
                     _abrirApertura(ctx, effP1.id, effP2.id, nassauMods),
+                onPactarPrecioDePresion: _pactarPrecioDePresion,
                 onPedirPresion: (ctx, apuesta, nassauMods) => _pedirPresion(
                     ctx, effP1.id, effP2.id, apuesta, nassauMods),
               ),
@@ -1470,6 +1471,37 @@ class _OneVOneViewState extends State<_OneVOneView> {
       // `savedGroupId` —el grupo guardado del que salió la partida— en silencio.
       // Es la quinta vez que este proyecto pierde un campo así, y la primera en
       // la que se pierde al PEDIR una apuesta.
+      return g.copyWith(modules: mods);
+    }).toList();
+    prov.updateBetGroups(newGroups);
+  }
+
+  /// Guarda el precio de las presiones del B9 para esta pareja.
+  ///
+  /// Recibe el pacto ARMADO y solo lo guarda. Quién propone y si está aceptado
+  /// lo decide el panel: aquí no hay ninguna regla que se pueda cablear mal.
+  void _pactarPrecioDePresion(
+    BuildContext context,
+    String p1Id,
+    String p2Id,
+    List<BetModuleInstance> nassauMods,
+    PrecioDePresion pacto,
+  ) {
+    final prov = context.read<RoundProvider>();
+    final round = prov.round;
+    if (round == null) return;
+    final clave = NassauConfig.carryPairKey(p1Id, p2Id);
+    final newGroups = round.betGroups.map((g) {
+      final mods = g.modules.map((m) {
+        if (!nassauMods.any((nm) => nm.id == m.id)) return m;
+        final mapa =
+            Map<String, PrecioDePresion>.from(m.nassau.precioPresionB9ByPair)
+              ..[clave] = pacto;
+        return m.copyWith(
+            nassauConfig: m.nassau.copyWith(precioPresionB9ByPair: mapa));
+      }).toList();
+      // `copyWith` y no un BetGroup nuevo: ver `_abrirApertura`. Es la misma
+      // trampa que ha perdido `savedGroupId` cinco veces.
       return g.copyWith(modules: mods);
     }).toList();
     prov.updateBetGroups(newGroups);
@@ -1861,6 +1893,16 @@ class _MatchDuelCard extends StatefulWidget {
   final void Function(BuildContext, List<BetModuleInstance> nassauMods)
       onAbrirApertura;
 
+  /// Guarda o acepta el precio de las presiones del B9. Ver
+  /// `_pactarPrecioDePresion`.
+  final void Function(
+    BuildContext ctx,
+    String p1Id,
+    String p2Id,
+    List<BetModuleInstance> nassauMods,
+    PrecioDePresion pacto,
+  ) onPactarPrecioDePresion;
+
   /// Pedir una presión sobre una apuesta pedida: el carry o la apertura.
   final void Function(BuildContext, String apuesta,
       List<BetModuleInstance> nassauMods) onPedirPresion;
@@ -1870,6 +1912,7 @@ class _MatchDuelCard extends StatefulWidget {
     required this.t, required this.expanded,
     required this.onPedirCarry,
     required this.onAbrirApertura,
+    required this.onPactarPrecioDePresion,
     required this.onPedirPresion,
     this.myPlayerId,
   });
@@ -2044,6 +2087,27 @@ class _MatchDuelCardState extends State<_MatchDuelCard>
                     widget.onAbrirApertura(context, nassauModules),
                 onPedirPresion: () => widget.onPedirPresion(
                     context, NassauConfig.claveApertura, nassauModules),
+              ),
+
+            // ── Y «presionar», que NO es abrir una apuesta ────────────────
+            //
+            // Sube el precio de las presiones que el B9 genere. Bloque aparte
+            // por lo mismo que la apertura lo es del carry: comparten el turn
+            // y nada más. Meterlo dentro de la apertura sería decir que
+            // presionar abre algo, que es justo lo que no hace.
+            if (nassauModules.isNotEmpty)
+              PrecioPresionPanel(
+                // La clave incluye la pareja: sin esto, el campo del importe
+                // conserva lo escrito para el duelo anterior al cambiar de
+                // duelo, porque Flutter reusa el State.
+                key: ValueKey('precio-presion-${p1.id}-${p2.id}'),
+                round: round,
+                p1: p1,
+                p2: p2,
+                t: t,
+                nassauModules: nassauModules,
+                onPactar: (pacto) => widget.onPactarPrecioDePresion(
+                    context, p1.id, p2.id, nassauModules, pacto),
               ),
 
             // Desglose financiero por duelo
@@ -3754,6 +3818,232 @@ class NassauSegment extends StatelessWidget {
       ),
     );
   }
+}
+
+/// «Presionar»: subir lo que valdrán las presiones del B9.
+///
+/// ── NO ABRE UNA APUESTA, CAMBIA UN PRECIO ─────────────────────────────────
+///
+///     «Solo al terminar el F9, un jugador puede modificar el valor de la
+///      presión para el B9, en este caso a 100. Eso no modifica el valor de las
+///      presiones generadas en los F9.»
+///
+/// Por eso es su propio bloque y no un botón dentro de [_AperturaPanel]: la
+/// apertura abre nueve hoyos nuevos, esto no abre nada. Comparten el momento
+/// —el turn— y nada más, igual que el carry.
+///
+/// ── Y SE PACTA ENTRE LOS DOS ──────────────────────────────────────────────
+///
+/// Una propuesta sola no vale: ver [PrecioDePresion]. El bloque tiene dos
+/// caras, y la segunda es la que faltaría si esto fuera un botón: uno propone,
+/// el otro acepta.
+class PrecioPresionPanel extends StatefulWidget {
+  final Round round;
+  final Player p1, p2;
+  final GolfTheme t;
+  final List<BetModuleInstance> nassauModules;
+
+  /// El pacto ya armado, para guardarlo tal cual.
+  ///
+  /// Un solo callback, y con el objeto hecho, a propósito: con un `onProponer`
+  /// y un `onAceptar` separados, quien los cablea decide si la propuesta nace
+  /// aceptada — y eso es la regla, no un detalle de conexión. Cablearlo mal
+  /// saltaba el pacto entero sin que ninguna prueba lo notara, porque la prueba
+  /// tenía su propia copia del cableado. Aquí no hay nada que cablear mal.
+  final void Function(PrecioDePresion pacto) onPactar;
+
+  const PrecioPresionPanel({
+    super.key,
+    required this.round,
+    required this.p1,
+    required this.p2,
+    required this.t,
+    required this.nassauModules,
+    required this.onPactar,
+  });
+
+  @override
+  State<PrecioPresionPanel> createState() => _PrecioPresionPanelState();
+}
+
+class _PrecioPresionPanelState extends State<PrecioPresionPanel> {
+  late final TextEditingController _ctrl;
+
+  NassauConfig get _cfg => widget.nassauModules.first.nassau;
+
+  @override
+  void initState() {
+    super.initState();
+    // Arranca en lo que vale hoy. Un campo vacío obliga a recordar el precio
+    // actual para saber si lo estás subiendo.
+    _ctrl = TextEditingController(
+        text: _cfg.backPressValue.toStringAsFixed(0));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.nassauModules.isEmpty) return const SizedBox.shrink();
+    final t = widget.t;
+    final n1 = widget.p1.name.split(' ').first;
+    final n2 = widget.p2.name.split(' ').first;
+    final pacto = _cfg.precioPresionB9Para(widget.p1.id, widget.p2.id);
+
+    // ── Ya está pactado: se dice lo que vale y se acabó ────────────────────
+    if (pacto != null && pacto.enPie) {
+      return _marco(t, 'PRESIÓN DEL B9',
+          'Pactado: cada presión del B9 vale '
+          '\$${pacto.valor.toStringAsFixed(0)}. Las del F9 siguen en '
+          '\$${_cfg.frontPressValue.toStringAsFixed(0)}.',
+          const SizedBox.shrink());
+    }
+
+    // ── Propuesta en pie: le toca al otro ──────────────────────────────────
+    if (pacto != null) {
+      final quienPropuso = pacto.propuestoPor == widget.p1.id ? n1 : n2;
+      final elOtroId =
+          pacto.propuestoPor == widget.p1.id ? widget.p2.id : widget.p1.id;
+      final elOtro = pacto.propuestoPor == widget.p1.id ? n2 : n1;
+      return _marco(
+        t,
+        'PRESIÓN DEL B9',
+        '$quienPropuso propone que cada presión del B9 valga '
+            '\$${pacto.valor.toStringAsFixed(0)}. Hasta que $elOtro acepte, '
+            'valen \$${_cfg.backPressValue.toStringAsFixed(0)}.',
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: () => widget.onPactar(pacto.aceptadoPor_(elOtroId)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: t.accent,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 11),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text('$elOtro acepta',
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 13)),
+          ),
+        ),
+      );
+    }
+
+    // ── Sin pacto: ¿se puede proponer ahora? ───────────────────────────────
+    //
+    // Del motor. La regla de CUÁNDO se decide en un solo sitio y se prueba
+    // allí; aquí solo se enseña lo que contesta, incluido el porqué cuando
+    // dice que no. Un bloque que desaparece sin explicación es lo que obligó a
+    // escribir `_FaltanScoresDelPrimerNueve`.
+    final ventana = BetEngine.ventanaDelPrecioDePresion(
+        widget.round, widget.p1.id, widget.p2.id, widget.nassauModules.first);
+    if (ventana == PorQueNoSePuedePactar.sinPresiones ||
+        ventana == PorQueNoSePuedePactar.noHayB9) {
+      // No es que aún no toque: es que esta apuesta no tiene esto. Sin bloque.
+      return const SizedBox.shrink();
+    }
+    if (!ventana.si) {
+      return _marco(t, 'PRESIÓN DEL B9', ventana.motivo,
+          const SizedBox.shrink());
+    }
+
+    return _marco(
+      t,
+      'PRESIÓN DEL B9',
+      'Cada presión del B9 vale hoy '
+          '\$${_cfg.backPressValue.toStringAsFixed(0)}. Lo pueden subir para '
+          'las que se abran de aquí en adelante; las del F9 no cambian.',
+      Column(children: [
+        Row(children: [
+          SizedBox(
+            width: 96,
+            child: TextField(
+              controller: _ctrl,
+              keyboardType: TextInputType.number,
+              style: TextStyle(color: t.text, fontSize: 14),
+              decoration: InputDecoration(
+                prefixText: '\$',
+                prefixStyle: TextStyle(color: t.sub, fontSize: 14),
+                isDense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('por presión del B9',
+                style: TextStyle(color: t.sub, fontSize: 11)),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        // Los DOS botones, porque cualquiera de los dos puede proponerlo. Quien
+        // propone queda guardado: el otro tiene que poder ver de quién viene.
+        Row(children: [
+          for (final (id, nombre) in [
+            (widget.p1.id, n1),
+            (widget.p2.id, n2),
+          ]) ...[
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () {
+                  final v = double.tryParse(_ctrl.text);
+                  if (v == null || v <= 0) return;
+                  // Sin `aceptadoPor`: nace PROPUESTO. Lo decide el panel, que
+                  // es donde vive la regla.
+                  widget.onPactar(
+                      PrecioDePresion(valor: v, propuestoPor: id));
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: t.accent,
+                  side: BorderSide(color: t.accent.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                child: Text('$nombre propone',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 12)),
+              ),
+            ),
+            if (id == widget.p1.id) const SizedBox(width: 8),
+          ],
+        ]),
+      ]),
+    );
+  }
+
+  Widget _marco(GolfTheme t, String titulo, String cuerpo, Widget accion) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: GCard(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(GolfIcons.duelo, color: t.accent, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Text(titulo,
+                    style: TextStyle(
+                        color: t.sub,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 10,
+                        letterSpacing: 0.8))),
+          ]),
+          const SizedBox(height: 10),
+          Text(cuerpo,
+              style: TextStyle(color: t.sub, fontSize: 11, height: 1.35)),
+          const SizedBox(height: 10),
+          accion,
+        ])),
+      );
 }
 
 class CarryPanel extends StatefulWidget {
