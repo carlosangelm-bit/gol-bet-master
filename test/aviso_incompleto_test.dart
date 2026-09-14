@@ -114,81 +114,64 @@ void main() {
   });
 
   // ───────────────────────────────────────────────────────────────────────────
-  group('2 · CRITERIO 2: la causa común se dice una vez', () {
-    // Se lee del código porque el widget vive dentro de una pantalla que
-    // necesita media app montada, y lo que hay que fijar es la DECISIÓN: una
-    // línea por causa, no por apuesta.
-    final codigo =
-        File('lib/screens/results/results_screen.dart').readAsStringSync();
-
-    test('CLAVE: hay una línea de causa común, con los dos números', () {
-      // «18 hoyos en juego y 9 sin anotar» explica de golpe una ronda que se
-      // creó de dieciocho. Es el dato que convierte el aviso en diagnóstico.
-      expect(codigo, contains('hoyos en juego y'));
-      expect(codigo, contains('sin anotar'));
-    });
-
-    test('CLAVE: y las apuestas cuya única falta son esos hoyos se callan', () {
-      // Era seis veces el mismo ruido. Si a una apuesta solo le faltan los
-      // hoyos que nadie anotó, su motivo es el de la ronda.
-      expect(
-          codigo,
-          contains(
-              'if (completos + hoyosVacios.length >= enJuego.length) continue;'),
-          reason: 'sin esto, seis apuestas repiten una causa');
-    });
-
-    test('CONTRAPESO: pero si le falta a ALGUIEN en concreto, se nombra', () {
-      // Es el caso para el que este aviso se escribió, y no puede perderse:
-      // uno de los tres sin anotar un hoyo que los otros dos sí anotaron.
-      expect(codigo, contains(r"falta ${e.value.faltan.join(', ')}"));
-    });
-  });
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // 3 · CRITERIO 3: LA GUARDA, con las TRES formas de contar
+  // 2 · LA GUARDA QUE NO MORDIÓ, Y POR QUÉ
   //
-  // El barrido anterior enumeraba dos. La tercera —contar jugadores— no es
-  // errónea: es la pregunta correcta para otro caso. Lo que hay que fijar es
-  // que cada una se use donde toca.
+  // Aquí había dos grupos más. Comprobaban el TEXTO FUENTE de
+  // `results_screen.dart`: que contuviera «hoyos en juego y», que la línea del
+  // `continue` estuviera escrita, que existiera `_rango`. Todos en verde
+  // mientras el aviso volvía por cuarta vez.
+  //
+  // No es mala suerte: una prueba que lee el código no puede contradecirlo.
+  // Comprueba que una decisión está ESCRITA, no que sea CIERTA — y la cuarta
+  // vuelta no fue una decisión que se borrara, fue un caso que ninguna de ellas
+  // cubría (un score suelto en el hoyo 10). Se escribieron así porque la cuenta
+  // vivía dentro de un `build()` y no había forma de llamarla.
+  //
+  // Ya la hay: `avisosDeScoreIncompleto`. Lo que decían estos dos grupos está
+  // ahora en `aviso_score_incompleto_test.dart` y `aviso_en_pantalla_test.dart`,
+  // ejecutando la cuenta en vez de leerla.
+  //
+  // Queda una sola comprobación estructural, y es la que sí puede ganar algo:
+  // que no nazca OTRA superficie contando los dieciocho del campo. Eso no es
+  // una decisión que se pueda ejecutar — es la ausencia de código.
   // ───────────────────────────────────────────────────────────────────────────
-  group('3 · las tres formas de contar, y cuál va dónde', () {
-    List<String> vivas(String ruta, String aguja) => File(ruta)
-        .readAsLinesSync()
-        .where((l) => !l.trimLeft().startsWith('//'))
-        .where((l) => l.contains(aguja))
-        .toList();
-
-    test('CLAVE: 1 · cuántos HOYOS juega la ronda → hoyosEnJuego', () {
-      // Nunca `course.holes`, que son los del campo. Las dos primeras vueltas
-      // de este aviso fueron exactamente eso.
-      const ruta = 'lib/screens/results/results_screen.dart';
-      expect(vivas(ruta, 'segmentsOf(round).hoyosEnJuego'), isNotEmpty);
-      expect(vivas(ruta, 'round.course.holes.length'), isEmpty,
-          reason: 'los dieciocho del campo no son los de la ronda');
-    });
-
-    test('CLAVE: 2 · qué HOYOS no anotó nadie → el hoyo es lo que falta', () {
-      const ruta = 'lib/screens/results/results_screen.dart';
-      expect(vivas(ruta, 'hoyosVacios'), isNotEmpty,
-          reason: 'la tercera forma, y la que faltaba distinguir');
-    });
-
-    test('CLAVE: 3 · a qué JUGADOR le falta → solo cuando no es a todos', () {
-      // La forma que ya estaba, y que se estaba usando para contestar la
-      // pregunta de los hoyos. Sigue, pero acotada.
-      const ruta = 'lib/screens/results/results_screen.dart';
-      expect(vivas(ruta, 'faltan.add(_nombreCorto(pid))'), isNotEmpty);
-    });
-
-    test('CONTRAPESO: y el rango se escribe como rango', () {
-      // Nueve números seguidos no se leen. Es una consecuencia de decir los
-      // hoyos en vez de los nombres, y merece su propia comprobación.
-      final codigo =
-          File('lib/screens/results/results_screen.dart').readAsStringSync();
-      expect(codigo, contains('static String _rango(Set<int> hoyos)'));
-      expect(codigo, contains("'\$desde–\$previo'"),
-          reason: '10–18, no 10, 11, 12…');
+  group('2 · que no nazca otra cuenta de cobertura', () {
+    test('CLAVE: nadie mide cobertura con los hoyos del CAMPO', () {
+      // Lo que se busca es ESTRECHO a propósito: `course.holes.length` usado
+      // como denominador de algo que mira scores. «9 de 18» en una ronda de
+      // nueve es exactamente lo que trajo el aviso las dos primeras veces, y
+      // se acaba de encontrar otra vez en el volcado de diagnóstico.
+      //
+      // No se busca `course.holes` a secas. Recorrer los hoyos del campo
+      // saltándose los que no tienen score da el mismo resultado se jueguen
+      // nueve o dieciocho, y ensanchar esto para cazarlos llena la lista de
+      // casos correctos —se probó: siete, y solo uno era un fallo—. Un barrido
+      // que grita siempre se termina ignorando.
+      final sospechosas = <String>[];
+      var vistos = 0;
+      for (final f in Directory('lib')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.dart'))) {
+        vistos++;
+        final lineas = f.readAsLinesSync();
+        for (var i = 0; i < lineas.length; i++) {
+          if (!lineas[i].contains('hasScore')) continue;
+          if (lineas[i].trimLeft().startsWith('//')) continue;
+          final desde = i - 5 < 0 ? 0 : i - 5;
+          final hasta = i + 5 >= lineas.length ? lineas.length - 1 : i + 5;
+          for (var j = desde; j <= hasta; j++) {
+            if (lineas[j].trimLeft().startsWith('//')) continue;
+            if (lineas[j].contains('course.holes.length')) {
+              sospechosas.add('${f.path}:${j + 1}  ${lineas[j].trim()}');
+            }
+          }
+        }
+      }
+      expect(vistos, greaterThan(50),
+          reason: 'si el barrido deja de ver ficheros, deja de valer');
+      expect(sospechosas, isEmpty,
+          reason: 'los dieciocho del campo no son los que juega la ronda');
     });
   });
 }

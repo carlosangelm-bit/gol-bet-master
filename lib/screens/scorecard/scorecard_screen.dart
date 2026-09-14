@@ -569,17 +569,22 @@ class _ScorecardGrid extends StatelessWidget {
       // Para BB virtual: sumar el mejor score bruto/neto por hoyo del equipo
       int total = 0;
       if (isBBVirtual(p)) {
-        for (final h in round.course.holes.where((h) => h.hole <= round.totalHoles)) {
-          final sc = getBestScore(round, p, h.hole);
+        // Los hoyos que la ronda juega. Ponía `h.hole <= round.totalHoles`,
+        // que en una ronda de nueve SALIENDO POR EL 10 se queda con los hoyos
+        // 1 al 9 —los que no se jugaron— y deja el total del equipo virtual en
+        // cero. Es la misma cuenta paralela del aviso de score incompleto, en
+        // otra superficie.
+        for (final h in BetEngine.segmentsOf(round).hoyosEnJuego) {
+          final sc = getBestScore(round, p, h);
           if (!sc.hasScore) continue;
           if (useNet) {
             // Neto: usar el mejor jugador del equipo con sus strokes aplicados
             // Buscamos el miembro con mejor neto
             int? bestNet;
             for (final memberId in p.teamMemberIds) {
-              final msc = round.getScore(memberId, h.hole);
+              final msc = round.getScore(memberId, h);
               if (!msc.hasScore) continue;
-              final ctx = GameEngine.contextForHole(round, memberId, h.hole, true);
+              final ctx = GameEngine.contextForHole(round, memberId, h, true);
               if (ctx?.netScore != null) {
                 if (bestNet == null || (ctx?.netScore ?? 999) < bestNet) bestNet = ctx?.netScore;
               }

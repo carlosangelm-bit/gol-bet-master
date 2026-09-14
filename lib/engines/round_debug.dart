@@ -288,11 +288,16 @@ class RoundDebug {
     final allPids = round.roundPlayers.map((r) => r.playerId).toList();
     if (allPids.isNotEmpty) {
       buf.writeln('  ── Scores (hoyos jugados) ──────────────────────');
+      // Sobre los hoyos que la ronda JUEGA, no los del campo.
+      //
+      // Aquí decía `n/18` en una ronda de nueve. Es la misma cuenta paralela
+      // que ha traído el aviso de score incompleto cuatro veces, y en un volcado
+      // de diagnóstico es peor: se mira justo cuando algo no cuadra.
+      final enJuego = BetEngine.segmentsOf(round).hoyosEnJuego;
       for (final pid in allPids) {
-        final holesPlayed = round.course.holes
-            .where((ch) => round.getScore(pid, ch.hole).hasScore)
-            .length;
-        buf.writeln('  $pid: $holesPlayed/${round.course.holes.length} hoyos');
+        final holesPlayed =
+            enJuego.where((h) => round.getScore(pid, h).hasScore).length;
+        buf.writeln('  $pid: $holesPlayed/${enJuego.length} hoyos');
       }
     }
 

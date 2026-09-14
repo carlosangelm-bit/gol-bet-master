@@ -24,6 +24,7 @@
 // El arreglo entró sin romper una sola de las 2521 pruebas. No porque fuera
 // inocuo: porque no había ninguna que metiera un nueve en `calculateIndex`.
 // ─────────────────────────────────────────────────────────────────────────────
+import 'package:uuid/uuid.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/models.dart';
 import 'package:golf_bet_master/services/handicap_service.dart';
@@ -374,6 +375,46 @@ void main() {
       final combinado = HandicapService.combinarNueves(n, n);
       expect(combinado.differential, closeTo(d.differential, 0.15));
       expect(combinado.holesPlayed, 18);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 6 · LA OTRA MITAD: LA LISTA DE DIFERENCIALES
+  //
+  // El motor ya emparejaba y combinaba —los grupos de arriba lo prueban—, pero
+  // la pantalla de Ajustes marcaba con un check los que el índice usa
+  // COMPARANDO IDS. Un diferencial combinado lleva el id de las DOS rondas, así
+  // que ninguno de los dos nueves casaba: los que SÍ contaban se enseñaban como
+  // que no, y quien sumara a mano vería ocho checks sobre los diferenciales
+  // equivocados.
+  //
+  // Es otra vez «la lógica existe, la capa siguiente no la lee».
+  // ───────────────────────────────────────────────────────────────────────────
+  group('6 · un nueve que SÍ cuenta se enseña como que cuenta', () {
+    test('CLAVE: el id combinado se resuelve a las dos rondas que lo forman',
+        () {
+      final a = _d(id: 'r-mañana', dia: 28, diff: 8.5, hoyos: 9);
+      final b = _d(id: 'r-tarde', dia: 29, diff: 8.5, hoyos: 9);
+      final c = HandicapService.combinarNueves(a, b);
+
+      expect(HandicapService.rondasDe(c), ['r-mañana', 'r-tarde']);
+      // Comparar ids a pelo —lo que hacía la pantalla— falla en los dos.
+      expect(c.roundId == a.roundId, isFalse);
+      expect(c.roundId == b.roundId, isFalse);
+    });
+
+    test('CLAVE: y un diferencial de dieciocho se resuelve a sí mismo', () {
+      // La misma llamada tiene que servir para los dos casos, o la pantalla
+      // acaba con un `if` y dos caminos que pueden discrepar.
+      final d = _d(id: 'r-18', dia: 30, diff: 12.0);
+      expect(HandicapService.rondasDe(d), ['r-18']);
+    });
+
+    test('CONTRAPESO: el separador no puede aparecer en un id de ronda', () {
+      // Los ids son uuid. Si alguna vez dejan de serlo, esto lo dice antes de
+      // que un id con «+» parta un diferencial por la mitad.
+      expect(HandicapService.unionDeNueves, '+');
+      expect(const Uuid().v4(), isNot(contains(HandicapService.unionDeNueves)));
     });
   });
 }

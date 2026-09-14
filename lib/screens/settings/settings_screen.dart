@@ -492,7 +492,7 @@ class _HandicapIndexCard extends StatelessWidget {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => ChangeNotifierProvider.value(
         value: prov,
-        child: _HandicapTrackerSheet(t: t),
+        child: HandicapTrackerSheet(t: t),
       ),
     );
   }
@@ -501,9 +501,14 @@ class _HandicapIndexCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // SHEET TRACKER DE HANDICAP
 // ─────────────────────────────────────────────────────────────────────────────
-class _HandicapTrackerSheet extends StatelessWidget {
+/// La hoja que lista los diferenciales, con el check de los que cuentan.
+///
+/// Pública para poder montarla en una prueba. Es la superficie donde el índice
+/// se explica, y la que enseñaba como «no cuenta» los nueves que sí contaban:
+/// comparaba ids, y un diferencial combinado lleva el id de las DOS rondas.
+class HandicapTrackerSheet extends StatelessWidget {
   final GolfTheme t;
-  const _HandicapTrackerSheet({required this.t});
+  const HandicapTrackerSheet({required this.t, super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -643,8 +648,29 @@ class _HandicapTrackerSheet extends StatelessWidget {
                   itemCount: diffs.length,
                   itemBuilder: (ctx, i) {
                     final d = diffs[i];
-                    final isUsed = result.usedDifferentials
-                        .any((u) => u.roundId == d.roundId);
+                    // Un nueve cuenta COMBINADO con otro, y entonces el
+                    // diferencial usado lleva los dos ids. Comparar el id a
+                    // secas dejaba sin check a los nueves que sí contaban.
+                    final usadoEn = result.usedDifferentials
+                        .where((u) =>
+                            HandicapService.rondasDe(u).contains(d.roundId))
+                        .firstOrNull;
+                    final isUsed = usadoEn != null;
+                    // El OTRO nueve, cuando esta ronda cuenta combinada. Se
+                    // resuelve al diferencial entero y no solo a su nombre: la
+                    // fila enseña la suma, y un uuid en una frase no explica
+                    // nada.
+                    final pareja = usadoEn == null
+                        ? null
+                        : () {
+                            final otroId = HandicapService.rondasDe(usadoEn)
+                                .where((id) => id != d.roundId)
+                                .firstOrNull;
+                            if (otroId == null) return null;
+                            return result.allDifferentials
+                                .where((x) => x.roundId == otroId)
+                                .firstOrNull;
+                          }();
                     // Los torneos para los que cuenta esta ronda salen del
                     // RoundResult, que es donde vive la marca. Sin él no se
                     // puede decidir, así que se trata como no borrable.
@@ -663,6 +689,11 @@ class _HandicapTrackerSheet extends StatelessWidget {
                       // otro, y lo que lo distingue es no tener pareja.
                       esperaPareja:
                           result.nueveSinPareja?.roundId == d.roundId,
+                      // Con qué otro nueve cuenta, cuando cuenta combinado.
+                      // Sin esto, el check aparece sobre un 8.5 y el índice
+                      // usa 17.0: dos cifras sin relación visible.
+                      combinadoCon: pareja?.roundName,
+                      diffDeLaPareja: pareja?.differential,
                       rank: i + 1,
                       t: t,
                       borrado: rr.isEmpty && d.esImposible
@@ -873,6 +904,12 @@ class _DiffRow extends StatelessWidget {
 
   /// Este nueve está guardado y aún no cuenta: le falta su pareja.
   final bool esperaPareja;
+
+  /// El nombre de la ronda con la que este nueve cuenta, si cuenta combinado.
+  ///
+  /// Con el check puesto sobre un 8.5 y el índice usando 17.0, las dos cifras
+  /// no tenían relación visible. Decir con cuál va la explica.
+  final String? combinadoCon;
   final int rank;
   final GolfTheme t;
 
@@ -884,19 +921,25 @@ class _DiffRow extends StatelessWidget {
     required this.diff,
     required this.isUsed,
     this.esperaPareja = false,
+    this.combinadoCon,
+    this.diffDeLaPareja,
     required this.rank,
     required this.t,
     required this.borrado,
     required this.onBorrar,
   });
 
-  /// Por qué esta ronda no cuenta. Vacío si cuenta.
+  /// Qué pasa con esta ronda: por qué no cuenta, o con qué cuenta.
   ///
-  /// Dos motivos, y son distintos: uno es un dato roto y el otro es que WHS
-  /// pide dos nueves para hacer un diferencial. El segundo se arregla jugando
-  /// otros nueve, así que la frase lo dice — «no cuenta» a secas mandaría a
-  /// buscar un fallo que no existe.
-  String get _porQueNoCuenta {
+  /// Los dos primeros motivos son de «no cuenta», y son distintos entre sí: uno
+  /// es un dato roto y el otro es que WHS pide dos nueves para hacer un
+  /// diferencial. El segundo se arregla jugando otros nueve, así que la frase
+  /// lo dice — «no cuenta» a secas mandaría a buscar un fallo que no existe.
+  ///
+  /// El tercero es lo contrario: la ronda SÍ cuenta, combinada con otra. Va en
+  /// el mismo sitio porque responde la misma pregunta —«¿y esta qué?»— y se
+  /// pinta en otro color, que para eso está [_esBuenaNoticia].
+  String get _motivo {
     if (diff.esImposible) {
       return 'No cuenta: el diferencial es imposible. Suele ser una ronda que '
           'se cerró con pocos hoyos capturados.';
@@ -906,8 +949,29 @@ class _DiffRow extends StatelessWidget {
           'diferencial de dieciocho. Cuando juegues otros nueve, las dos '
           'entrarán juntas.';
     }
+    if (combinadoCon != null) {
+      return 'Cuenta junto a «$combinadoCon»: WHS suma los dos nueves en un '
+          'diferencial de dieciocho, y ese es el que entra en el índice.';
+    }
     return '';
   }
+
+  /// El motivo dice que la ronda SÍ entra, no que falle algo.
+  ///
+  /// Sin esto «Cuenta junto a…» salía en rojo, con la misma pinta que «el
+  /// diferencial es imposible». Un nueve que cuenta leído como una avería.
+  bool get _esBuenaNoticia => !diff.esImposible && !esperaPareja;
+
+  /// El diferencial de dieciocho que forman los dos nueves.
+  ///
+  /// Se calcula sumando, que es lo que WHS hace, en vez de pasarlo hecho: la
+  /// fila enseña «8.5 + «29 Jul» = 17.0» y el número de la derecha es el que
+  /// sale de esa suma, no otro que pudiera discrepar.
+  double? get _combinado =>
+      diffDeLaPareja == null ? null : diff.differential + diffDeLaPareja!;
+
+  /// El diferencial del otro nueve, cuando esta ronda cuenta combinada.
+  final double? diffDeLaPareja;
 
   Future<void> _menu(BuildContext context) async {
     await showModalBottomSheet(
@@ -974,13 +1038,16 @@ class _DiffRow extends StatelessWidget {
                   t: t),
             ]),
           ),
-          if (_porQueNoCuenta.isNotEmpty) ...[
+          if (_motivo.isNotEmpty) ...[
             const SizedBox(height: 12),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(_porQueNoCuenta,
+              child: Text(_motivo,
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: t.danger, fontSize: 12, height: 1.35)),
+                  style: TextStyle(
+                      color: _esBuenaNoticia ? t.primary : t.danger,
+                      fontSize: 12,
+                      height: 1.35)),
             ),
           ],
           const SizedBox(height: 16),
@@ -1097,6 +1164,21 @@ class _DiffRow extends StatelessWidget {
                       letterSpacing: fuera ? 0.5 : 0),
                   maxLines: 1, overflow: TextOverflow.ellipsis),
             ]),
+            // ── CON QUÉ NUEVE CUENTA, EN LA FILA ──────────────────────────
+            //
+            // Estaba solo dentro del menú que se abre al tocar la fila. Pero la
+            // pregunta nace MIRANDO la lista: un check sobre un 8.5 mientras
+            // arriba pone que el índice usa 17.0. Si hay que tocar para
+            // entenderlo, no se entiende.
+            if (combinadoCon != null) ...[
+              const SizedBox(height: 2),
+              Text('+ «$combinadoCon» = ${_combinado?.toStringAsFixed(1)}',
+                  style: TextStyle(
+                      color: t.primary,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
           ])),
           // Diferencial + indicador
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [

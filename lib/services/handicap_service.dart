@@ -315,6 +315,26 @@ class HandicapService {
   //
   // Un nueve SIN PAREJA no se usa. Se guarda y se dice, que es el criterio 2.
 
+  /// Los ids de ronda que componen [usado], sea uno solo o dos nueves.
+  ///
+  /// ── Por qué hace falta ────────────────────────────────────────────────────
+  ///
+  /// La lista de diferenciales marca con un check los que el índice usa, y lo
+  /// hacía comparando ids. Un diferencial COMBINADO lleva el id de las dos
+  /// rondas —`r1+r2`— así que ninguno de los dos nueves casaba: los que SÍ
+  /// contaban se enseñaban como que no.
+  ///
+  /// Es la mitad de superficie del arreglo de los nueves: el índice ya era
+  /// correcto, y la pantalla decía lo contrario.
+  static List<String> rondasDe(ScoreDifferential usado) =>
+      usado.roundId.split(unionDeNueves);
+
+  /// El separador del id de un diferencial COMBINADO.
+  ///
+  /// Los ids de ronda son uuid, que nunca lo llevan: partir por él no puede
+  /// romper un id de verdad.
+  static const unionDeNueves = '+';
+
   /// Combina dos diferenciales de nueve hoyos en uno de dieciocho.
   ///
   /// Se fecha con la ronda MÁS RECIENTE de las dos: el diferencial de dieciocho
@@ -328,7 +348,7 @@ class HandicapService {
       // El id lleva los dos: un diferencial combinado tiene que poder decir de
       // qué dos rondas salió, o se lee como una ronda de dieciocho que nadie
       // jugó.
-      roundId: '${primera.roundId}+${segunda.roundId}',
+      roundId: '${primera.roundId}$unionDeNueves${segunda.roundId}',
       roundName: '${primera.roundName} + ${segunda.roundName}',
       playedAt: segunda.playedAt,
       differential:
