@@ -260,6 +260,82 @@ extension BetCountLabel on BetCount {
   String? get soloDeGrupo => tipoCon(null).motivoSinDuelo;
 }
 
+/// Qué apuestas juega un cruce entre ellos, y por qué no las demás.
+///
+/// ── LA MISMA INFORMACIÓN, LEÍDA DESDE EL DUELO ────────────────────────────
+///
+///     «Sigue siendo un problema configurar diferentes apuestas entre
+///      diferentes jugadores. El armado está hecho para que todos jueguen lo
+///      mismo, cuando ese no es el caso.»
+///
+/// El paso de participantes se lee por APUESTA: quién entra en Skins, y qué
+/// cruces de Skins quedan fuera. La otra lectura —qué juega CAM contra KAWA— es
+/// la transposición de los mismos dos mapas, no un modelo nuevo.
+///
+/// Vive aquí y no en la pantalla para que las dos vistas no puedan discrepar:
+/// la de apuesta pinta el interruptor de cada cruce con esta misma respuesta.
+/// Es la guarda que pedían los barridos anteriores, puesta antes de que haga
+/// falta.
+List<EstadoDelCruce> apuestasDelCruce(
+  String a,
+  String b, {
+  required Iterable<BetCount> conteos,
+  required List<String> Function(BetCount) participantesDe,
+  required Set<String> Function(BetCount) crucesFuera,
+}) =>
+    [
+      for (final c in conteos)
+        if (!c.esDeGrupo)
+          () {
+            final dentro = participantesDe(c);
+            // Uno de los dos no juega esa apuesta en absoluto. Se dice, y no se
+            // deja tocar desde aquí: meterlo lo metería contra TODOS, que es
+            // una decisión de otro alcance y tiene su sitio en la otra vista.
+            final falta = [
+              if (!dentro.contains(a)) a,
+              if (!dentro.contains(b)) b,
+            ];
+            if (falta.isNotEmpty) {
+              return EstadoDelCruce(
+                  cuenta: c, juega: false, fueraDeLaApuesta: falta);
+            }
+            return EstadoDelCruce(
+                cuenta: c,
+                juega: !crucesFuera(c).contains(BetRecipe.cruceKey(a, b)),
+                fueraDeLaApuesta: const []);
+          }(),
+    ];
+
+/// Una apuesta vista desde un cruce concreto.
+class EstadoDelCruce {
+  final BetCount cuenta;
+
+  /// Estos dos la juegan entre ellos.
+  final bool juega;
+
+  /// Quién de los dos no está en la apuesta. Vacío si los dos están.
+  ///
+  /// Con alguien aquí el interruptor no se puede tocar desde la vista del
+  /// duelo, y esta lista es lo que permite DECIR por qué en vez de enseñar un
+  /// control muerto.
+  final List<String> fueraDeLaApuesta;
+
+  const EstadoDelCruce({
+    required this.cuenta,
+    required this.juega,
+    required this.fueraDeLaApuesta,
+  });
+
+  bool get editable => fueraDeLaApuesta.isEmpty;
+}
+
+/// Las apuestas que son de la partida entera, de las elegidas.
+///
+/// Salen de la marca del catálogo —[BetCount.esDeGrupo]— y no de una lista: ya
+/// costó siete superficies una vez.
+List<BetCount> apuestasDeLaPartida(Iterable<BetCount> conteos) =>
+    conteos.where((c) => c.esDeGrupo).toList();
+
 /// Importe pactado en una celda `enfrentamiento × apuesta × segmento`.
 ///
 /// Una apuesta sin partición tiene UN segmento y la celda es un número. Una
@@ -871,6 +947,23 @@ enum SistemaDeVentaja { handicap, sliding, ninguna }
 ///
 /// Se filtra al final por [participantIds]: un par cuyo rival no juega hoy no
 /// tiene ventaja que aplicar.
+/// La ventaja que un cruce va a jugar, leída del mapa que [slidingDeRonda] da.
+///
+/// Devuelve los golpes que recibe [a] de [b], o null si ese cruce no tiene
+/// acuerdo y por tanto manda la diferencia de handicaps.
+///
+/// Existe para que la PANTALLA no tenga que reproducir la precedencia. El paso
+/// de Ventaja lista todos los cruces y la hoja del duelo tiene su propia
+/// ventaja; las dos acaban aquí, donde `duelosConVentajaPropia` va la última y
+/// gana. Sin esta función, el paso enseñaba el número que tecleaste y la ronda
+/// jugaba el del duelo, sin aviso.
+double? ventajaDelCruce(String a, String b, Map<String, double> sliding) {
+  final v = sliding[BetRecipe.cruceKey(a, b)];
+  if (v == null) return null;
+  // El mapa guarda lo que recibe el id MENOR del par.
+  return a.compareTo(b) <= 0 ? v : -v;
+}
+
 Map<String, double> slidingDeRonda({
   required SistemaDeVentaja ventaja,
   required Map<String, double> acumuladoDelGrupo,

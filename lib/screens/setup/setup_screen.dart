@@ -280,6 +280,14 @@ class _SetupScreenState extends State<SetupScreen> {
   // pasos normales.
   final List<_DueloPactado> _duelos = [];
 
+  /// El paso de participantes, leído desde el DUELO en vez de desde la apuesta.
+  ///
+  /// La misma información transpuesta —ver `apuestasDelCruce`—. No es una
+  /// preferencia de estilo: el armado pregunta qué se juega y después quién, y
+  /// esta vista es donde «cada duelo juega lo suyo» se puede leer de un vistazo
+  /// sin reordenar el asistente.
+  bool _porDuelo = false;
+
   /// Los dos lados de esta ronda, de donde estén definidos.
   ///
   /// _teamA y _teamB solo se llenan al pasar por el paso Compiten. Pero los
@@ -1261,7 +1269,7 @@ class _SetupScreenState extends State<SetupScreen> {
               HandicapMatrix(
                 ventaja: _ventaja,
                 acumuladoDelGrupo: _pairSliding,
-                editadoEnElPaso: _slidingDe,
+                editadoEnElPaso: _slidingCrudo,
                 duelosConVentajaPropia: _duelos
                     .where((d) => d.ventajaPropia)
                     .map((d) => (a: d.a, b: d.b, delta: d.delta)),
@@ -2841,7 +2849,12 @@ class _SetupScreenState extends State<SetupScreen> {
                     children: [
                   Text('${_playerName(a)} vs ${_playerName(b)}',
                       style: GolfType.body(t.text)),
-                  Text(_etiquetaAcumulado(a, b),
+                  Text(
+                      _dueloConVentaja(a, b) != null
+                          // Que el número viene de otro sitio hay que decirlo:
+                          // se edita aquí y se guarda allí.
+                          ? 'pactado en el duelo de estos dos'
+                          : _etiquetaAcumulado(a, b),
                       style: GolfType.label(t.sub)),
                 ])),
             // El teclado numérico de iOS no trae tecla de menos ni con
@@ -2849,9 +2862,8 @@ class _SetupScreenState extends State<SetupScreen> {
             // teclea, y aquí se toca: las dos formas escriben lo mismo.
             GestureDetector(
               onTap: () => setState(() {
-                final k = BetEngine.pairKey(a, b);
-                _slidingRonda[k] = -_slidingDe(a, b);
-                _cfgCtrls.remove('monto_sli_$k');
+                _escribirSliding(a, b, -_slidingDe(a, b));
+                _cfgCtrls.remove('monto_sli_${BetEngine.pairKey(a, b)}');
               }),
               child: Container(
                 width: 34,
@@ -2884,9 +2896,8 @@ class _SetupScreenState extends State<SetupScreen> {
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(9)),
                 ),
-                onChanged: (v) => setState(() =>
-                    _slidingRonda[BetEngine.pairKey(a, b)] =
-                        double.tryParse(v) ?? 0),
+                onChanged: (v) => setState(
+                    () => _escribirSliding(a, b, double.tryParse(v) ?? 0)),
               ),
             ),
           ]),
@@ -2932,8 +2943,63 @@ class _SetupScreenState extends State<SetupScreen> {
   double _acumuladoDe(String a, String b) =>
       _pairSliding[BetEngine.pairKey(a, b)] ?? 0;
 
-  double _slidingDe(String a, String b) =>
+  /// El duelo que pactó su PROPIA ventaja para este cruce, si lo hay.
+  ///
+  /// ── La única cosa que se configuraba en DOS sitios ──────────────────────
+  ///
+  /// El paso de Ventaja lista TODOS los cruces, también en una ronda por
+  /// equipos. Y la hoja del duelo —«¿alguien pactó algo aparte?»— tiene su
+  /// propia ventaja. Las dos acababan en `slidingDeRonda`, donde
+  /// `duelosConVentajaPropia` va la última y por tanto GANA: se podía escribir
+  /// un número en el paso 8 y jugar otro, sin aviso.
+  ///
+  /// Lo demás que ofrece esa hoja —qué apuestas y con qué importe entre dos
+  /// personas de lados contrarios— no está duplicado: con equipos, Montos habla
+  /// de enfrentamientos y no de parejas, y lo dice en su propio texto. Así que
+  /// no es un segundo modelo; era un segundo modelo SOLO en la ventaja.
+  _DueloPactado? _dueloConVentaja(String a, String b) {
+    for (final d in _duelos) {
+      if (!d.ventajaPropia) continue;
+      if ((d.a == a && d.b == b) || (d.a == b && d.b == a)) return d;
+    }
+    return null;
+  }
+
+  /// Lo TECLEADO para este cruce en el paso de Ventaja, sin precedencias.
+  ///
+  /// Es lo que `slidingDeRonda` recibe como `editadoEnElPaso`, así que no puede
+  /// consultar el resultado de esa función: sería circular.
+  double _slidingCrudo(String a, String b) =>
       _slidingRonda[BetEngine.pairKey(a, b)] ?? _acumuladoDe(a, b);
+
+  /// El mapa que la ronda se va a llevar. La misma llamada que al construirla.
+  Map<String, double> _slidingEfectivo() => slidingDeRonda(
+        ventaja: _ventaja,
+        acumuladoDelGrupo: _pairSliding,
+        participantIds: _players.map((p) => p.id).toList(),
+        editadoEnElPaso: _slidingCrudo,
+        duelosConVentajaPropia: _duelos
+            .where((d) => d.ventajaPropia)
+            .map((d) => (a: d.a, b: d.b, delta: d.delta)),
+      );
+
+  /// La ventaja que va a jugar este cruce: golpes que recibe [a] de [b].
+  ///
+  /// Sale del mapa efectivo, no de una precedencia escrita aquí: la que decide
+  /// vive en `slidingDeRonda`, y reproducirla sería la segunda cuenta del mismo
+  /// número — el patrón que llevamos toda la sesión desmontando.
+  double _slidingDe(String a, String b) =>
+      ventajaDelCruce(a, b, _slidingEfectivo()) ?? _acumuladoDe(a, b);
+
+  /// Escribe la ventaja de este cruce DONDE se lee. Ver [_slidingDe].
+  void _escribirSliding(String a, String b, double valor) {
+    final d = _dueloConVentaja(a, b);
+    if (d != null) {
+      d.delta = d.a == a ? valor : -valor;
+      return;
+    }
+    _slidingRonda[BetEngine.pairKey(a, b)] = valor;
+  }
 
   String _etiquetaAcumulado(String a, String b) {
     final acum = _acumuladoDe(a, b);
@@ -3287,18 +3353,69 @@ class _SetupScreenState extends State<SetupScreen> {
   // contra J5. Sacarlos como jugadores los quita del Nassau con los demás;
   // dejar fuera el cruce los deja jugando contra todos menos entre ellos.
   Widget _stepParticipantes(GolfTheme t) {
+    // Los cruces solo existen sin equipos: con lados, el enfrentamiento es lado
+    // contra lado y «CAM vs KAWA» no es una apuesta.
+    final hayDuelos = !_porEquipos && _players.length > 1;
     return ListView(padding: const EdgeInsets.all(20), children: [
-      Text('¿Quiénes juegan cada apuesta?', style: GolfType.title(t.text)),
+      Text(_porDuelo && hayDuelos
+          ? '¿Qué juega cada duelo?'
+          : '¿Quiénes juegan cada apuesta?', style: GolfType.title(t.text)),
       const SizedBox(height: 4),
       // SEÑALIZACIÓN: anuncia el punto de escape del paso siguiente, para que
       // nadie intente resolver aquí una diferencia de monto.
       Text('No todos tienen que entrar a todo. Si alguien juega pero con otro '
           'monto, eso se ajusta en el paso siguiente.',
           style: GolfType.body(t.sub)),
+      if (hayDuelos) ...[
+        const SizedBox(height: 12),
+        _selectorDeVista(t),
+      ],
       const SizedBox(height: 16),
-      for (final cuenta in _conteos) _fichaParticipantes(t, cuenta),
+      if (_porDuelo && hayDuelos)
+        PanelPorDuelo(
+          players: _players,
+          conteos: _conteos,
+          bola: _bola,
+          participantesDe: _participantesDe,
+          crucesFuera: (c) => _crucesFuera[c] ?? const {},
+          onAlternar: _alternarCruce,
+          t: t,
+        )
+      else
+        for (final cuenta in _conteos) _fichaParticipantes(t, cuenta),
     ]);
   }
+
+  /// Las dos lecturas del mismo paso. No cambia nada: cambia por dónde se lee.
+  Widget _selectorDeVista(GolfTheme t) => Row(children: [
+        for (final (porDuelo, etiqueta) in [
+          (false, 'Por apuesta'),
+          (true, 'Por duelo'),
+        ])
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _porDuelo = porDuelo),
+              child: Container(
+                margin: EdgeInsets.only(right: porDuelo ? 0 : 6),
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: _porDuelo == porDuelo
+                      ? t.primary.withValues(alpha: 0.10)
+                      : t.surface,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                      color: _porDuelo == porDuelo ? t.primary : t.divider),
+                ),
+                child: Center(
+                  child: Text(etiqueta,
+                      style: GolfType.label(
+                          _porDuelo == porDuelo ? t.text : t.sub)),
+                ),
+              ),
+            ),
+          ),
+      ]);
 
   Widget _fichaParticipantes(GolfTheme t, BetCount cuenta) {
     final dentro = _participantesDe(cuenta);
@@ -3398,35 +3515,27 @@ class _SetupScreenState extends State<SetupScreen> {
         // quitar la apuesta, y ya hay una forma de hacerlo.
         if (dentro.length > 2) ...[
           const SizedBox(height: 10),
-          Text('¿ALGÚN CRUCE NO LA JUEGA?', style: GolfType.label(t.primary)),
-          for (final (a, b) in cruces)
-            _filaCruce(t, cuenta, a, b,
-                apagado: fuera.contains(BetRecipe.cruceKey(a, b))),
+          CrucesDeLaApuesta(
+            cuenta: cuenta,
+            cruces: cruces,
+            nombreDe: _playerName,
+            participantesDe: _participantesDe,
+            crucesFuera: (c) => _crucesFuera[c] ?? const {},
+            onAlternar: _alternarCruce,
+            t: t,
+          ),
         ],
       ]),
     );
   }
 
-  Widget _filaCruce(GolfTheme t, BetCount cuenta, String a, String b,
-      {required bool apagado}) {
-    return Row(children: [
-      Expanded(
-        child: Text('${_playerName(a)} vs ${_playerName(b)}',
-            style: GolfType.label(apagado ? t.sub : t.text).copyWith(
-                decoration: apagado ? TextDecoration.lineThrough : null)),
-      ),
-      Switch(
-        value: !apagado,
-        activeThumbColor: t.primary,
-        onChanged: (_) => setState(() {
-          final set = Set<String>.of(_crucesFuera[cuenta] ?? const {});
-          final k = BetRecipe.cruceKey(a, b);
-          if (!set.remove(k)) set.add(k);
-          _crucesFuera[cuenta] = set;
-        }),
-      ),
-    ]);
-  }
+  /// Enciende o apaga [cuenta] entre [a] y [b]. UN camino para las dos vistas.
+  void _alternarCruce(BetCount cuenta, String a, String b) => setState(() {
+        final set = Set<String>.of(_crucesFuera[cuenta] ?? const {});
+        final k = BetRecipe.cruceKey(a, b);
+        if (!set.remove(k)) set.add(k);
+        _crucesFuera[cuenta] = set;
+      });
 
   // ── PASO · ¿Quiénes compiten? ─────────────────────────────────────────────
   //
@@ -6982,7 +7091,7 @@ class _SetupScreenState extends State<SetupScreen> {
           HandicapMatrix(
             ventaja: _ventaja,
             acumuladoDelGrupo: _pairSliding,
-            editadoEnElPaso: _slidingDe,
+            editadoEnElPaso: _slidingCrudo,
             duelosConVentajaPropia: _duelos
                 .where((d) => d.ventajaPropia)
                 .map((d) => (a: d.a, b: d.b, delta: d.delta)),
@@ -7006,11 +7115,13 @@ class _SetupScreenState extends State<SetupScreen> {
 
               if (_ventaja == SistemaDeVentaja.sliding) {
                 // Lo mismo que edita el paso 8, para que los dos pasos hablen
-                // del mismo número.
+                // del mismo número — y por el mismo camino, así que un cruce
+                // con ventaja pactada en su duelo se escribe ahí.
                 if (desdeElMenor == null) {
                   _slidingRonda.remove(key);
                 } else {
-                  _slidingRonda[key] = desdeElMenor;
+                  final lowB = p1 == lowId ? p2 : p1;
+                  _escribirSliding(lowId, lowB, desdeElMenor);
                 }
                 _cfgCtrls.remove('monto_sli_$key');
                 return;
@@ -7825,7 +7936,7 @@ class _SetupScreenState extends State<SetupScreen> {
       ventaja: _ventaja,
       acumuladoDelGrupo: _pairSliding,
       participantIds: allPlayersForRound.map((p) => p.id).toList(),
-      editadoEnElPaso: _slidingDe,
+      editadoEnElPaso: _slidingCrudo,
       duelosConVentajaPropia: _duelos
           .where((d) => d.ventajaPropia)
           .map((d) => (a: d.a, b: d.b, delta: d.delta)),
@@ -9163,4 +9274,204 @@ class _DueloPactado {
   _DueloPactado(this.a, this.b);
 
   bool get vacio => conteos.isEmpty;
+}
+
+/// El paso de participantes leído desde el DUELO.
+///
+///     CAM vs KAWA    Nassau · Skins
+///     CAM vs Jose    Nassau
+///     KAWA vs Jose   Nassau · Skins
+///     Oyes           de la partida — no se pacta por duelo
+///
+/// Es la transposición de los dos mapas que ya existían —quién entra en cada
+/// apuesta y qué cruces quedan fuera—, no un modelo nuevo. Escribe el MISMO
+/// `_crucesFuera` que la vista por apuesta, y el estado de cada chip sale de
+/// `apuestasDelCruce`, que es también lo que pinta los interruptores de la
+/// otra: dos vistas del mismo dato que lo calculan por su cuenta acaban
+/// discrepando.
+///
+/// Público para poder montarlo: es donde se ve si «cada duelo juega lo suyo» se
+/// lee de un vistazo.
+class PanelPorDuelo extends StatelessWidget {
+  final List<Player> players;
+  final Iterable<BetCount> conteos;
+  final TeamBall? bola;
+  final List<String> Function(BetCount) participantesDe;
+  final Set<String> Function(BetCount) crucesFuera;
+
+  /// Enciende o apaga [cuenta] entre [a] y [b].
+  final void Function(BetCount cuenta, String a, String b) onAlternar;
+  final GolfTheme t;
+
+  const PanelPorDuelo({
+    super.key,
+    required this.players,
+    required this.conteos,
+    required this.bola,
+    required this.participantesDe,
+    required this.crucesFuera,
+    required this.onAlternar,
+    required this.t,
+  });
+
+  String _nombre(String id) =>
+      players.where((p) => p.id == id).firstOrNull?.name ?? id;
+
+  @override
+  Widget build(BuildContext context) {
+    final ids = players.map((p) => p.id).toList();
+    final dePartida = apuestasDeLaPartida(conteos);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      for (final (a, b) in BetRecipe.crucesDe(ids)) _ficha(a, b),
+      // Las de la partida no se pactan por duelo, y callarlas aquí las haría
+      // parecer olvidadas. Salen de la marca del catálogo, no de una lista.
+      if (dePartida.isNotEmpty)
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: t.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: t.divider),
+          ),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(dePartida.map((c) => c.labelCon(bola)).join(' · '),
+                style: GolfType.body(t.sub)),
+            const SizedBox(height: 2),
+            Text(
+                'De la partida — no se pacta por duelo. Quien no juegue sale '
+                'en la vista por apuesta.',
+                style: GolfType.label(t.sub)),
+          ]),
+        ),
+    ]);
+  }
+
+  Widget _ficha(String a, String b) {
+    final estados = apuestasDelCruce(a, b,
+        conteos: conteos,
+        participantesDe: participantesDe,
+        crucesFuera: crucesFuera);
+    final juegan = estados.where((e) => e.juega).length;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.divider),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('${_nombre(a)} vs ${_nombre(b)}',
+            style: GolfType.body(t.text).copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        if (estados.isEmpty)
+          Text('Nada que pactar entre dos: todo lo elegido es de la partida.',
+              style: GolfType.label(t.sub))
+        else
+          Wrap(spacing: 5, runSpacing: 5, children: [
+            for (final e in estados)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: e.editable ? () => onAlternar(e.cuenta, a, b) : null,
+                child: Opacity(
+                  opacity: e.editable ? 1 : 0.45,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: e.juega
+                          ? t.primary.withValues(alpha: 0.10)
+                          : t.surface,
+                      borderRadius: BorderRadius.circular(999),
+                      border:
+                          Border.all(color: e.juega ? t.primary : t.divider),
+                    ),
+                    child: Text(e.cuenta.labelCon(bola),
+                        style: GolfType.label(e.juega ? t.text : t.sub)
+                            .copyWith(
+                                decoration: e.juega
+                                    ? null
+                                    : TextDecoration.lineThrough)),
+                  ),
+                ),
+              ),
+          ]),
+        const SizedBox(height: 6),
+        Text(
+            juegan == 0
+                ? 'No juegan nada entre ellos.'
+                : '$juegan apuesta${juegan == 1 ? '' : 's'} entre ellos',
+            style: GolfType.label(t.sub)),
+        // Por qué un chip no se puede tocar. Un control muerto sin explicación
+        // es lo que obligó a escribir media docena de avisos en esta app.
+        for (final e in estados.where((e) => !e.editable))
+          Text(
+              '${e.cuenta.labelCon(bola)}: '
+              '${e.fueraDeLaApuesta.map(_nombre).join(' y ')} '
+              'no ${e.fueraDeLaApuesta.length == 1 ? 'está' : 'están'} en esa '
+              'apuesta. Se añade desde «Por apuesta».',
+              style: GolfType.label(t.sub)),
+      ]),
+    );
+  }
+}
+
+/// Los cruces de UNA apuesta, con su interruptor. La vista «por apuesta».
+///
+/// El estado de cada interruptor sale de `apuestasDelCruce`, que es también lo
+/// que pinta los chips de [PanelPorDuelo]. Son las dos lecturas del mismo dato
+/// y no pueden discrepar: ni el estado ni la escritura tienen dos caminos.
+///
+/// Público para poder montarlo AL LADO del otro en una prueba y compararlos.
+/// Sin eso, «las dos vistas coinciden» es una afirmación sin forma de
+/// contradecirla, y un contrapeso ya pasó por ahí.
+class CrucesDeLaApuesta extends StatelessWidget {
+  final BetCount cuenta;
+  final List<(String, String)> cruces;
+  final String Function(String id) nombreDe;
+  final List<String> Function(BetCount) participantesDe;
+  final Set<String> Function(BetCount) crucesFuera;
+  final void Function(BetCount cuenta, String a, String b) onAlternar;
+  final GolfTheme t;
+
+  const CrucesDeLaApuesta({
+    super.key,
+    required this.cuenta,
+    required this.cruces,
+    required this.nombreDe,
+    required this.participantesDe,
+    required this.crucesFuera,
+    required this.onAlternar,
+    required this.t,
+  });
+
+  @override
+  Widget build(BuildContext context) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('¿ALGÚN CRUCE NO LA JUEGA?', style: GolfType.label(t.primary)),
+        for (final (a, b) in cruces)
+          Builder(builder: (_) {
+            final e = apuestasDelCruce(a, b,
+                conteos: [cuenta],
+                participantesDe: participantesDe,
+                crucesFuera: crucesFuera).single;
+            return Row(children: [
+              Expanded(
+                child: Text('${nombreDe(a)} vs ${nombreDe(b)}',
+                    style: GolfType.label(e.juega ? t.text : t.sub).copyWith(
+                        decoration:
+                            e.juega ? null : TextDecoration.lineThrough)),
+              ),
+              Switch(
+                value: e.juega,
+                activeThumbColor: t.primary,
+                onChanged:
+                    e.editable ? (_) => onAlternar(cuenta, a, b) : null,
+              ),
+            ]);
+          }),
+      ]);
 }

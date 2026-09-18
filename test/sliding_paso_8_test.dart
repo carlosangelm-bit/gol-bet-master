@@ -103,6 +103,7 @@ void main() {
   });
 
   _paso9();
+  group('3 · la ventaja, que era lo único en dos sitios', _dosSitios);
 }
 
 /// Tres jugadores con handicaps DISTINTOS a propósito: si el acuerdo no
@@ -168,5 +169,73 @@ void _paso9() {
         ventaja: SistemaDeVentaja.handicap, editado: _editadoEnElPaso8);
     expect(texto, contains('Calculado por HCP automático'));
     expect(texto, contains('4 golpes'), reason: 'HCP 6 vs 10');
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3 · LA VENTAJA ERA LO ÚNICO CONFIGURADO EN DOS SITIOS
+//
+// El paso de Ventaja lista TODOS los cruces, también con equipos. Y la hoja
+// del duelo —«¿alguien pactó algo aparte?»— tiene su propia ventaja. Las dos
+// acaban en `slidingDeRonda`, donde `duelosConVentajaPropia` va la última y
+// por tanto GANA: se podía teclear un número en el paso 8 y jugar otro.
+//
+// La precedencia vive en UN sitio y la pantalla la LEE con `ventajaDelCruce`,
+// en vez de reproducirla.
+// ─────────────────────────────────────────────────────────────────────────────
+void _dosSitios() {
+  Map<String, double> mapa({required double tecleado, double? delDuelo}) =>
+      slidingDeRonda(
+        ventaja: SistemaDeVentaja.sliding,
+        acumuladoDelGrupo: const {},
+        participantIds: _tres,
+        editadoEnElPaso: (_, __) => tecleado,
+        duelosConVentajaPropia: [
+          if (delDuelo != null) (a: _cam, b: _jose, delta: delDuelo),
+        ],
+      );
+
+  test('CLAVE (criterio 4): lo pactado en el duelo es lo que se lee', () {
+    // Tecleado −1 en el paso 8, pactado −3 en el duelo de CAM y Jose.
+    final m = mapa(tecleado: -1, delDuelo: -3);
+    expect(ventajaDelCruce(_cam, _jose, m), -3,
+        reason: 'el duelo manda al construir la ronda, así que también al leer');
+    // Y los otros cruces siguen con lo tecleado.
+    expect(ventajaDelCruce(_cam, _kawa, m), -1);
+  });
+
+  test('CLAVE: y se lee igual desde los dos lados del cruce', () {
+    final m = mapa(tecleado: 0, delDuelo: -3);
+    expect(ventajaDelCruce(_cam, _jose, m), -3);
+    expect(ventajaDelCruce(_jose, _cam, m), 3,
+        reason: 'golpes que recibe el primero del segundo');
+  });
+
+  test('CONTRAPESO: sin duelo pactado manda lo tecleado', () {
+    // Sin esto, «devuelve siempre lo del duelo» pasaría la prueba de arriba.
+    expect(ventajaDelCruce(_cam, _jose, mapa(tecleado: -1)), -1);
+  });
+
+  test('CONTRAPESO: el duelo pactado AL REVÉS guarda el signo correcto', () {
+    // Los ids de este fichero van en orden —cam < jose— así que un duelo
+    // (cam, jose) no ejercita la inversión de signo, y un contrapeso que la
+    // quitaba pasó en verde. Declarado al revés sí: «Jose recibe −3 de CAM» es
+    // «CAM recibe +3 de Jose», y el mapa guarda lo que recibe el id menor.
+    final m = slidingDeRonda(
+      ventaja: SistemaDeVentaja.sliding,
+      acumuladoDelGrupo: const {},
+      participantIds: _tres,
+      editadoEnElPaso: (_, __) => 0,
+      duelosConVentajaPropia: const [(a: _jose, b: _cam, delta: -3.0)],
+    );
+    expect(ventajaDelCruce(_cam, _jose, m), 3);
+    expect(ventajaDelCruce(_jose, _cam, m), -3);
+  });
+
+  test('CONTRAPESO: un cruce sin acuerdo devuelve null, no cero', () {
+    // Cero es un acuerdo —jugar a la par—; la ausencia es otra cosa, y es lo
+    // que deja mandar a la diferencia de handicaps.
+    expect(ventajaDelCruce(_cam, _jose, const {}), isNull);
+    expect(ventajaDelCruce(_cam, _jose, mapa(tecleado: 0)), 0);
   });
 }
