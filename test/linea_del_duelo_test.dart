@@ -208,15 +208,22 @@ void main() {
           reason: 'el B9 va empatado y sin ninguna presión suya');
     });
 
-    test('CLAVE: y al cerrarse el nueve, cada presión enseña lo que se liquidó',
-        () {
-      // En vivo la línea va «5 3 1»; con el nueve terminado dice «5 1 1»,
-      // porque una presión CIERRA donde nace la siguiente. No son dos cuentas:
-      // son dos momentos, y el bloque de presiones dice exactamente lo mismo.
+    // ── ESTA PRUEBA FIJABA EL FALLO COMO SI FUERA LA REGLA ────────────────
+    //
+    // Decía que en vivo la línea va «5 3 1» y al cerrar el nueve «5 1 1»,
+    // «porque una presión CIERRA donde nace la siguiente». Eso no era una
+    // regla: era que la rama en vivo corría hasta el último hoyo jugado y la
+    // cerrada troceaba. Escribirlo como «dos momentos de la misma apuesta» le
+    // dio nombre de propiedad del juego a una inconsistencia, y así aguantó.
+    //
+    // Nadie configuró nunca que las presiones se murieran. Una presión es una
+    // apuesta sobre los hoyos que QUEDAN del segmento.
+    test('CLAVE: la línea dice lo mismo a mitad del nueve que al cerrarlo', () {
       final enVivo = _lineas(_r(ganaA: const [1, 2, 3, 4, 5], hasta: 5)).first;
       final cerrado = _lineas(_r(ganaA: const [1, 2, 3, 4, 5])).first;
       expect(enVivo.numeros, [5, 3, 1]);
-      expect(cerrado.numeros, [5, 1, 1]);
+      expect(cerrado.numeros, [5, 3, 1],
+          reason: 'los cuatro últimos hoyos se empatan: nada cambia');
     });
 
     test('CLAVE: con presiones en LAS DOS vueltas, cada una lleva las suyas', () {

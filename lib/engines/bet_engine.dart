@@ -1533,20 +1533,31 @@ class BetEngine {
 
       addEntry(segScore, segValue, segLabel);
 
-      // Liquidar cada presión.
-      // Cada press cierra cuando empieza la SIGUIENTE press,
-      // no al final del segmento. El label refleja el tramo real liquidado.
-      for (int k = 0; k < pressStarts.length; k++) {
-        final ps = pressStarts[k];
-        // Endpoint: inicio de la siguiente press (exclusive) o fin del segmento.
-        final endIdx = (k + 1 < pressStarts.length)
-            ? pressStarts[k + 1].startIdx - 1
-            : history.length - 1;
-        final pressScore = history[endIdx] - history[ps.startIdx - 1];
-        // endHole real: history[i] corresponde a holes[i]
-        final endHole = holes[endIdx];
+      // ── UNA PRESIÓN CORRE HASTA EL FINAL DE SU SEGMENTO ──────────────────
+      //
+      // Cerraba donde nacía la siguiente. Nadie lo pidió y no hay ajuste que lo
+      // encienda: es una diferencia de implementación que quedó al retirar
+      // Match + Press. Allí cada presión corría hasta el 18 y todas convivían
+      // —`endPos: holeOrder.length`—; este motor las troceaba.
+      //
+      // Se veía así en una ronda con tres presiones en el B9:
+      //
+      //     Press H12–H13   +\$50
+      //     Press H14–H15   −\$50
+      //     Press H16–H18   −\$50
+      //
+      // Una presión es una apuesta sobre los hoyos que QUEDAN, y que nazca otra
+      // no la termina: son dos apuestas sobre los mismos hoyos, con distinto
+      // punto de partida. Es también lo que hace comparables los números de la
+      // línea «5 3 1» —ver [LineaDelDuelo]—, cuyo propio ejemplo solo se
+      // sostiene si conviven.
+      //
+      // Y las presiones MANUALES de aquí abajo ya corrían hasta el final del
+      // segmento. Las dos clases hacían cosas distintas con la misma palabra.
+      for (final ps in pressStarts) {
+        final pressScore = history.last - history[ps.startIdx - 1];
         addEntry(pressScore, pressValue,
-            'Press H${ps.startHole}–H$endHole ($segLabel)');
+            'Press H${ps.startHole}–H$holeTo ($segLabel)');
       }
 
       // Presiones manuales del módulo (no son match principal, en rango del segmento)
@@ -3269,22 +3280,20 @@ class BetEngine {
     }
 
     final segmentHoles = holes.length;
-    for (int k = 0; k < triggers.length; k++) {
-      final t = triggers[k];
-      // La press cierra justo antes de que empiece la siguiente; si es la última,
-      // cierra al final del segmento (history.last).
-      final endIdx = (k + 1 < triggers.length)
-          ? triggers[k + 1].trigIdx - 1
-          : history.length - 1;
-      // pressScore: cambio desde el punto de disparo hasta el cierre de la press.
-      // Positivo → p1 arriba → p1 ganó la press.
-      // Para presses ABIERTAS: se muestra el marcador en tiempo real (último hoyo jugado).
-      // Para presses CERRADAS: se usa el índice donde empieza la siguiente press (o el final).
-      final isOpen = played < segmentHoles;
-      final scoreEndIdx = isOpen ? history.length - 1 : endIdx;
-      final pressScore = scoreEndIdx < history.length
-          ? history[scoreEndIdx] - history[t.trigIdx]
-          : 0;
+    for (final t in triggers) {
+      // Hasta el final del segmento, igual que la liquidación —ver
+      // `liquidateSegment`—. Aquí había DOS cortes distintos además del de
+      // allá: la rama abierta ya llegaba al último hoyo jugado y la cerrada
+      // paraba en `trigIdx - 1`, el hoyo del disparo, mientras la liquidación
+      // paraba en `startIdx - 1`, el hoyo anterior al inicio. Un hoyo de
+      // diferencia, y por eso la línea enseñaba «+1» sobre una presión que el
+      // desglose etiquetaba «H12–H13» y pagaba sobre dos hoyos ganados.
+      //
+      // Con el mismo final para las dos, la pantalla y el dinero dejan de poder
+      // discrepar — y de paso desaparece el «matiz» que había que explicar:
+      // «+5 +3 +1 a mitad puede quedar en +5 +1 +1 al cerrar» no era una
+      // propiedad del juego, era esta inconsistencia.
+      final pressScore = history.last - history[t.trigIdx];
       out.add(NassauPress(
         loser: t.loser, startHole: t.startHole, endHole: holeEnd,
         score: pressScore,
@@ -3763,10 +3772,19 @@ class ApuestaVivaDelNassau {
 /// campo. Esto no cambia ningún cálculo: cada número es EL MISMO que enseña su
 /// tarjeta en el bloque de presiones, leído del mismo sitio.
 ///
-/// Y por eso hereda su matiz: mientras el nueve se juega, cada presión enseña su
-/// marcador EN VIVO; cuando el nueve termina, el que se liquidó —una presión
-/// cierra donde nace la siguiente—. Son dos momentos de la misma apuesta, no dos
-/// cuentas distintas.
+/// ── El «matiz» que había aquí era un fallo ─────────────────────────────────
+///
+/// Decía que en vivo cada presión enseña un marcador y al cerrar otro, porque
+/// «una presión cierra donde nace la siguiente». No era una propiedad del
+/// juego: la rama en vivo corría hasta el último hoyo jugado y la cerrada
+/// troceaba, así que «+5 +3 +1» podía quedar en «+5 +1 +1» al terminar el
+/// nueve. Ahora las presiones corren hasta el final de su segmento —ver
+/// `liquidateSegment`— y la línea dice lo mismo antes y después.
+///
+/// Y es la condición que hace que esta notación signifique algo: con presiones
+/// que se cortan, los números no son comparables entre sí, porque cada uno
+/// cubre un tramo distinto. El ejemplo de arriba solo se sostiene si conviven.
+/// Era la misma regla vista desde otro lado.
 class LineaDelDuelo {
   /// 'F9' / 'B9', o vacío en una ronda de nueve, donde no hay con qué
   /// confundirla.

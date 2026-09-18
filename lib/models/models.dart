@@ -1752,13 +1752,18 @@ class NassauConfig {
   /// decir lo mismo acaban discrepando, y la que manda al liquidar es siempre el
   /// importe.
   ///
-  /// ── Y no es idéntico, conviene saberlo ────────────────────────────────────
+  /// ── Y la diferencia que quedó escrita aquí era un FALLO ───────────────────
   ///
-  /// En Match + Press cada presión corría hasta el hoyo 18 y todas convivían.
-  /// Aquí una presión vive dentro de SU nueve y cierra donde nace la siguiente.
-  /// La configuración era la misma; el reloj de las presiones no. Nadie lo tenía
-  /// configurado, así que el cambio no le quita nada a nadie — pero está escrito
-  /// porque no es un cambio de nombre.
+  /// Decía: «en Match + Press cada presión corría hasta el hoyo 18 y todas
+  /// convivían; aquí una presión vive dentro de SU nueve y cierra donde nace la
+  /// siguiente». La primera mitad —el nueve en vez de los dieciocho— es la
+  /// diferencia real y se queda: una presión del F9 se liquida al cerrar el F9.
+  ///
+  /// La segunda no era una diferencia, era un defecto. Nadie pidió que una
+  /// presión terminara porque naciera otra, y no hay ajuste que lo encienda.
+  /// Anotarlo como «no es idéntico» fue describir un fallo como una decisión, y
+  /// eso lo dejó vivo tres semanas. Corregido: cada presión corre hasta el final
+  /// de SU segmento y todas conviven —ver `liquidateSegment`—.
   bool get soloElMatch => frontValue == 0 && backValue == 0;
 
   /// Quién pidió el carry en esta pareja, o null si nadie.
