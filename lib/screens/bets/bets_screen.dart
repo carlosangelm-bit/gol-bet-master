@@ -453,7 +453,32 @@ class _BetsBody extends StatefulWidget {
 enum _BetsView { reglas, duelos }
 
 class _BetsBodyState extends State<_BetsBody> {
-  _BetsView _view = _BetsView.reglas;
+  // ── DÓNDE ATERRIZA APUESTAS ──────────────────────────────────────────────
+  //
+  //     «¿Cuál es el punto de la pestaña de reglas una vez dentro de la ronda?»
+  //
+  // El punto es real: Reglas es el único sitio con la configuración pactada Y
+  // editable durante la ronda —Duelos enseña marcador y dinero, Resultados el
+  // balance, la Tarjeta el juego—. Lo que sobraba no era la pestaña: era que
+  // Apuestas abría SIEMPRE en ella.
+  //
+  // A mitad de ronda uno entra a ver quién va ganando, y la configuración ya
+  // está pactada. Así que se aterriza donde toca según el momento: Reglas antes
+  // de empezar —es cuando se revisa y se corrige— y Duelos en cuanto hay un
+  // hoyo anotado.
+  //
+  // Se resuelve UNA vez, al montar, y no en cada build: si se recalculara,
+  // anotar el primer hoyo movería la vista bajo el dedo de quien estuviera
+  // leyendo las reglas. Después manda lo que elija el usuario.
+  late _BetsView _view;
+
+  @override
+  void initState() {
+    super.initState();
+    _view = (widget.prov.round?.haEmpezado ?? false)
+        ? _BetsView.duelos
+        : _BetsView.reglas;
+  }
 
   RoundProvider get prov => widget.prov;
   GolfTheme get t => widget.t;

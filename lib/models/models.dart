@@ -4574,6 +4574,18 @@ class Round {
     return side.playerIds;
   }
 
+  /// La ronda ya empezó: hay al menos un score anotado.
+  ///
+  /// No es lo contrario de [isFinished] ni tiene que ver con [totalHoles]: es
+  /// si alguien ha escrito algo. Lo usa Apuestas para decidir dónde aterriza —
+  /// la configuración antes de empezar, quién va ganando durante—.
+  ///
+  /// Vive aquí y no en la pantalla porque «cuántos hoyos van» ya se ha contado
+  /// mal en seis superficies distintas de este proyecto, y ésta es la séptima
+  /// pregunta de la familia.
+  bool get haEmpezado => scores.values
+      .any((porHoyo) => porHoyo.values.any((s) => s.hasScore));
+
   /// Quién debe tener score para que esta apuesta pueda liquidar.
   ///
   /// Única respuesta a esa pregunta: la usan el motor y la validación de
