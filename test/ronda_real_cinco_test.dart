@@ -20,6 +20,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:golf_bet_master/models/models.dart';
+import 'package:golf_bet_master/screens/setup/setup_screen.dart';
 import 'package:golf_bet_master/screens/home/home_screen.dart';
 
 const _cuatro = ['ana', 'beto', 'caro', 'dani'];
@@ -194,13 +195,31 @@ void main() {
           reason: 'teclado > módulo > default, y en ese orden');
     });
 
-    test('CLAVE: y el campo se refresca cuando su fuente cambia', () {
-      // La otra mitad: el controlador se creaba con `putIfAbsent` y no volvía a
-      // mirar. Visitar Montos antes de Detalle dejaba el default cacheado.
-      final codigo =
-          File('lib/screens/setup/setup_screen.dart').readAsStringSync();
-      expect(codigo, contains('if (!tecleado && c.text != texto) c.text = texto;'),
-          reason: 'el campo sigue a su fuente mientras nadie escriba');
+    // ── Esto leía el TEXTO FUENTE, y por eso hubo que rehacerlo ───────────
+    //
+    // Comprobaba que existiera la línea `if (!tecleado && c.text != texto)
+    // c.text = texto;`. Esa línea era también el motivo de que no se pudieran
+    // escribir negativos —pisaba el «−» antes de la cifra— así que al
+    // arreglarlo la prueba se puso roja sin que nada se hubiera roto: una
+    // prueba que lee el código no distingue un arreglo de una regresión.
+    //
+    // Lo que decía sigue valiendo, así que se dice ejecutando la decisión.
+    test('CLAVE: el campo sigue a su fuente mientras nadie escriba', () {
+      // Visitar Montos antes de Detalle dejaba el default cacheado.
+      expect(textoDelCampo('50', 100), '100');
+      expect(textoDelCampo('', 50), '50');
+      // Y si ya coincide, no se toca: reescribirlo mueve el cursor al final.
+      expect(textoDelCampo('100', 100), isNull);
+      expect(textoDelCampo('-1', -1), isNull);
+    });
+
+    test('CLAVE (criterio 2): un negativo a medio escribir no se pisa', () {
+      // «En el paso 8 no permite introducir negativos el cuadro de texto.»
+      // Se teclea «−», el valor pasa a 0, y el campo se repintaba como «0».
+      expect(textoDelCampo('-', 0), isNull);
+      expect(textoDelCampo('-.', 0), isNull);
+      // Ya completo, se respeta tal cual.
+      expect(textoDelCampo('-1', -1), isNull);
     });
   });
 }

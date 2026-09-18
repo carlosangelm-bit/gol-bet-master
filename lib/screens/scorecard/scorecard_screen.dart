@@ -3168,14 +3168,11 @@ class NassauLivePanel extends StatelessWidget {
         ? BetEngine.nassauLiveStatus(round, p1.id, p2.id, mod)
         : null;
 
-    final int frontScore  = pressStatus?.front      ?? baseStatus!.front;
-    final int backScore   = pressStatus?.back       ?? baseStatus!.back;
-    final int totalScore  = pressStatus?.total      ?? baseStatus!.total;
+    // El marcador y los importes de cada segmento salen del inventario —ver
+    // `segmentos` más abajo—, así que aquí solo queda lo que no es de un
+    // segmento: cuántos hoyos lleva el duelo.
     final int frontPlayed = pressStatus?.frontPlayed ?? baseStatus!.frontPlayed;
     final int backPlayed  = pressStatus?.backPlayed  ?? baseStatus!.backPlayed;
-    final double frontVal = pressStatus?.frontVal   ?? baseStatus!.frontVal;
-    final double backVal  = pressStatus?.backVal    ?? baseStatus!.backVal;
-    final double totalVal = pressStatus?.totalVal   ?? baseStatus!.totalVal;
     final int totalPlayed = frontPlayed + backPlayed;
 
     final List<NassauPress> frontPresses = pressStatus?.frontPresses ?? [];
@@ -3187,9 +3184,11 @@ class NassauLivePanel extends StatelessWidget {
     // Las apuestas PEDIDAS salen del inventario del motor, no de una lista
     // escrita aquí: eso es lo que hizo que faltaran dos recuadros mientras el
     // desglose listaba cinco apuestas.
-    final pedidas = BetEngine.apuestasVivasDelNassau(round, p1.id, p2.id, mod)
-        .where((a) => a.clase == ClaseDeApuesta.pedida)
-        .toList();
+    final vivas = BetEngine.apuestasVivasDelNassau(round, p1.id, p2.id, mod);
+    final pedidas =
+        vivas.where((a) => a.clase == ClaseDeApuesta.pedida).toList();
+    final segmentos =
+        vivas.where((a) => a.clase == ClaseDeApuesta.segmento).toList();
 
     final openCount      = frontPresses.where((p) => p.isOpen).length
                          + backPresses.where((p) => p.isOpen).length;
@@ -3406,8 +3405,11 @@ class NassauLivePanel extends StatelessWidget {
                 ),
               ],
               const Spacer(),
+              // Los hoyos que la ronda JUEGA, no dieciocho siempre. En la de
+              // nueve ponía «9/18», que se lee como media ronda pendiente
+              // cuando estaba entera.
               if (totalPlayed > 0)
-                Text('$totalPlayed/18 hoyos',
+                Text('$totalPlayed/${BetEngine.segmentsOf(round).hoyosEnJuego.length} hoyos',
                     style: TextStyle(color: t.sub, fontSize: 10)),
               if (mod.pressEnabled) ...[
                 const SizedBox(width: 8),
@@ -3431,29 +3433,43 @@ class NassauLivePanel extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          // ── Tres bloques F9 / B9 / Total ──────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-            child: Row(children: [
-              Expanded(child: NassauSegment(
-                label: 'F9', played: frontPlayed, total: 9,
-                score: frontScore, value: frontVal,
-                p1Name: n1, p2Name: n2, t: t,
-              )),
-              const SizedBox(width: 6),
-              Expanded(child: NassauSegment(
-                label: 'B9', played: backPlayed, total: 9,
-                score: backScore, value: backVal,
-                p1Name: n1, p2Name: n2, t: t,
-              )),
-              const SizedBox(width: 6),
-              Expanded(child: NassauSegment(
-                label: '18', played: totalPlayed, total: 18,
-                score: totalScore, value: totalVal,
-                p1Name: n1, p2Name: n2, t: t,
-              )),
-            ]),
-          ),
+          // ── LOS SEGMENTOS QUE ESTA APUESTA TIENE DE VERDAD ────────────────
+          //
+          // Eran tres recuadros fijos —F9, B9, 18— y en una ronda de NUEVE eso
+          // son dos apuestas que no existen. Se veía así:
+          //
+          //     F9 +1 CAM \$50   ·   B9 — 0/9 \$50   ·   18 +1 CAM 9/18 \$100
+          //
+          // mientras el desglose liquidaba «Nassau 9H» y nada más. El recuadro
+          // de 18 anunciaba ganador e importe de una apuesta que nadie iba a
+          // cobrar. No era que faltara cerrar el 18: en una ronda de nueve el
+          // Nassau es UNA apuesta, y el motor ya lo sabía.
+          //
+          // `apuestasVivasDelNassau` es el inventario, y ya resolvía esto —«9H»
+          // cuando la ronda es de nueve, y nada de \$0 cuando se juega solo el
+          // match—. La tarjeta lo usaba para contar las pedidas y seguía
+          // pintando los segmentos a mano. Es la segunda vez que el inventario
+          // escrito a mano de esta tarjeta miente.
+          if (segmentos.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+              child: Row(children: [
+                for (final (i, a) in segmentos.indexed) ...[
+                  if (i > 0) const SizedBox(width: 6),
+                  Expanded(
+                      child: NassauSegment(
+                    label: a.etiqueta,
+                    played: a.jugados,
+                    total: a.deCuantos,
+                    score: a.margen,
+                    value: a.valor,
+                    p1Name: n1,
+                    p2Name: n2,
+                    t: t,
+                  )),
+                ],
+              ]),
+            ),
 
           // Qué vuelta es cada chip. Solo con salida por el 10, que es donde
           // "F9" y los hoyos 1-9 dejan de ser lo mismo.

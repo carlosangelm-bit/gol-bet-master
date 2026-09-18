@@ -595,7 +595,7 @@ class _SetupScreenState extends State<SetupScreen> {
   /// Aplica el defaultSlidingAdjustment de un PlayerLink al mapa de
   /// manualHandicaps. Se llama al agregar un jugador desde el directorio.
   ///
-  /// Convención unificada con _HandicapMatrix, home_screen y scorecard_screen:
+  /// Convención unificada con HandicapMatrix, home_screen y scorecard_screen:
   ///   _manualHandicaps[pid][otherId]  =  strokes que pid RECIBE de other  (>0 ventaja para pid)
   ///   _manualHandicaps[otherId][pid]  = -valor  (simétrico)
   ///
@@ -607,7 +607,7 @@ class _SetupScreenState extends State<SetupScreen> {
     // Aplicar contra todos los jugadores ya en la ronda (excepto el nuevo)
     for (final other in _players) {
       if (other.id == newPlayerId) continue;
-      // ── Mantener manualHandicaps para visualización en _HandicapMatrix ──
+      // ── Mantener manualHandicaps para visualización en HandicapMatrix ──
       _manualHandicaps.putIfAbsent(newPlayerId, () => {});
       _manualHandicaps.putIfAbsent(other.id,    () => {});
       // slidingAdj > 0: newPlayer RECIBE strokes de other
@@ -1258,8 +1258,14 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              _HandicapMatrix(
-                acumulado: _pairSliding,
+              HandicapMatrix(
+                ventaja: _ventaja,
+                acumuladoDelGrupo: _pairSliding,
+                editadoEnElPaso: _slidingDe,
+                duelosConVentajaPropia: _duelos
+                    .where((d) => d.ventajaPropia)
+                    .map((d) => (a: d.a, b: d.b, delta: d.delta)),
+
                 players: _players,
                 playerTees: _playerTees,
                 manualHandicaps: _manualHandicaps,
@@ -2838,6 +2844,32 @@ class _SetupScreenState extends State<SetupScreen> {
                   Text(_etiquetaAcumulado(a, b),
                       style: GolfType.label(t.sub)),
                 ])),
+            // El teclado numérico de iOS no trae tecla de menos ni con
+            // `signed: true`, así que el signo necesita un botón. En web se
+            // teclea, y aquí se toca: las dos formas escriben lo mismo.
+            GestureDetector(
+              onTap: () => setState(() {
+                final k = BetEngine.pairKey(a, b);
+                _slidingRonda[k] = -_slidingDe(a, b);
+                _cfgCtrls.remove('monto_sli_$k');
+              }),
+              child: Container(
+                width: 34,
+                height: 34,
+                margin: const EdgeInsets.only(right: 6),
+                decoration: BoxDecoration(
+                  color: t.sub.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Text('±',
+                      style: TextStyle(
+                          color: t.text,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ),
             SizedBox(
               width: 76,
               child: TextField(
@@ -3225,7 +3257,23 @@ class _SetupScreenState extends State<SetupScreen> {
     final texto = valor == null ? '' : valor.toStringAsFixed(0);
     final c = _cfgCtrls.putIfAbsent(
         'monto_$clave', () => TextEditingController(text: texto));
-    if (!tecleado && c.text != texto) c.text = texto;
+    if (tecleado) return c;
+
+    // ── POR QUÉ NO SE PODÍAN ESCRIBIR NEGATIVOS ────────────────────────────
+    //
+    //     «En el paso 8 no permite introducir negativos el cuadro de texto.»
+    //
+    // Se escribía «−», el `onChanged` hacía `double.tryParse('-') ?? 0` —o sea
+    // cero—, eso disparaba un `setState`, y al repintar esta línea veía que el
+    // texto «−» no era «0» y lo pisaba. El signo desaparecía antes de poder
+    // teclear la cifra. Los valores se ENSEÑABAN en negativo y no había forma
+    // de escribir uno.
+    //
+    // Un número a medio escribir no se pisa. Y comparando el VALOR y no el
+    // texto, «−1» ya no se reescribe como «-1» moviendo el cursor a la derecha
+    // en cada pulsación.
+    final nuevo = textoDelCampo(c.text, valor);
+    if (nuevo != null) c.text = nuevo;
     return c;
   }
 
@@ -6931,25 +6979,53 @@ class _SetupScreenState extends State<SetupScreen> {
             ),
           ]),
           const SizedBox(height: 6),
-          _HandicapMatrix(
-            acumulado: _pairSliding,
+          HandicapMatrix(
+            ventaja: _ventaja,
+            acumuladoDelGrupo: _pairSliding,
+            editadoEnElPaso: _slidingDe,
+            duelosConVentajaPropia: _duelos
+                .where((d) => d.ventajaPropia)
+                .map((d) => (a: d.a, b: d.b, delta: d.delta)),
+
             players: _players,
             playerTees: _playerTees,
             manualHandicaps: _manualHandicaps,
             playingHcp: _playingHcp,
+            // ── SE ESCRIBE DONDE SE LEE ────────────────────────────────
+            //
+            // Escribía `_manualHandicaps` y `_pairSliding` —el acumulado del
+            // grupo—, y con sliding elegido lo editado en el paso 8 pisa el
+            // acumulado al construir la ronda. O sea: tocar los botones de esta
+            // pantalla no cambiaba nada de lo que se iba a jugar.
             onEdit: (p1, p2, val) => setState(() {
+              final key = BetEngine.pairKey(p1, p2);
+              final lowId = p1.compareTo(p2) <= 0 ? p1 : p2;
+              final desdeElMenor = val == null
+                  ? null
+                  : ((p1 == lowId) ? val : -val);
+
+              if (_ventaja == SistemaDeVentaja.sliding) {
+                // Lo mismo que edita el paso 8, para que los dos pasos hablen
+                // del mismo número.
+                if (desdeElMenor == null) {
+                  _slidingRonda.remove(key);
+                } else {
+                  _slidingRonda[key] = desdeElMenor;
+                }
+                _cfgCtrls.remove('monto_sli_$key');
+                return;
+              }
+
               _manualHandicaps.putIfAbsent(p1, () => {});
               _manualHandicaps.putIfAbsent(p2, () => {});
               if (val == null) {
                 _manualHandicaps[p1]!.remove(p2);
                 _manualHandicaps[p2]!.remove(p1);
-                _pairSliding.remove(BetEngine.pairKey(p1, p2));
+                _pairSliding.remove(key);
               } else {
                 _manualHandicaps[p1]![p2] = val;
                 _manualHandicaps[p2]![p1] = -val;
-                final lowId = p1.compareTo(p2) <= 0 ? p1 : p2;
-                final key = BetEngine.pairKey(p1, p2);
-                _pairSliding[key] = (p1 == lowId) ? val : -val;
+                _pairSliding[key] = desdeElMenor!;
               }
             }),
             t: t,
@@ -7882,30 +7958,85 @@ class _StepBar extends StatelessWidget {
   }
 }
 
+/// Qué texto debe mostrar un campo de importe, o null para no tocarlo.
+///
+/// Dos reglas que tiran en direcciones contrarias, y por eso vive suelta y con
+/// pruebas propias:
+///
+///   · El campo SIGUE a su fuente mientras nadie escriba. El controlador se
+///     creaba con `putIfAbsent` y no volvía a mirar, así que visitar Montos
+///     antes de Detalle dejaba el default cacheado.
+///
+///   · Pero un número A MEDIO ESCRIBIR no se pisa. Se tecleaba «−», el
+///     `onChanged` hacía `double.tryParse('-') ?? 0` —cero—, eso disparaba un
+///     `setState`, y al repintar el campo veía que «−» no era «0» y lo pisaba.
+///     El signo desaparecía antes de poder teclear la cifra: «en el paso 8 no
+///     permite introducir negativos el cuadro de texto».
+///
+/// Y se compara el VALOR, no el texto: así «−1» no se reescribe como «-1»
+/// moviendo el cursor al final en cada pulsación.
+@visibleForTesting
+String? textoDelCampo(String actual, double? valor) {
+  if (_aMedioEscribir(actual)) return null;
+  if (double.tryParse(actual) == valor) return null;
+  final texto = valor == null ? '' : valor.toStringAsFixed(0);
+  return actual == texto ? null : texto;
+}
+
+/// Texto que aún no es un número pero va camino de serlo.
+bool _aMedioEscribir(String s) =>
+    s == '-' || s == '.' || s == '-.' || s == '+';
+
 // ── Matriz de ventajas ───────────────────────────────────────────────────────
 /// Muestra un par (A vs B) por fila con selector +/- claro.
 /// La ventaja se expresa siempre como "A da X golpes a B" (positivo = A da, negativo = A recibe).
-class _HandicapMatrix extends StatelessWidget {
+/// La matriz de ventajas del paso 9 · Revisar.
+///
+/// Pública para poder montarla en una prueba: es la pantalla donde se confirma
+/// lo que se va a jugar, y enseñaba una ventaja distinta de la que la ronda
+/// aplica.
+class HandicapMatrix extends StatelessWidget {
   final List<Player> players;
   final Map<String, TeeInfo> playerTees;
   final Map<String, Map<String, double>> manualHandicaps;
 
+  // ── LO QUE LA RONDA VA A JUGAR SE DERIVA AQUÍ, NO SE RECIBE HECHO ────────
+  //
+  // Antes esta matriz recibía un mapa ya calculado, y el paso 9 le pasaba el
+  // acumulado del GRUPO. El paso 8 escribe en otro sitio —lo editado para esta
+  // ronda— así que lo que Carlos ponía ahí no llegaba: de tres cruces solo
+  // sobrevivía el que además tenía un manual, y los dos ceros caían a la
+  // diferencia de handicaps. Un cero es un acuerdo —jugar a la par— no una
+  // ausencia, y la pantalla de revisar acababa anunciando cuatro golpes que
+  // nadie pactó.
+  //
+  // Se reciben los INGREDIENTES y se llama a `slidingDeRonda`, que es la misma
+  // función con la que se construye la ronda. Así no hay un mapa derivado que
+  // alguien pueda pasar mal: el paso 9 enseña lo que se va a jugar porque lo
+  // calcula igual, no porque alguien se acuerde de pasárselo.
+  final SistemaDeVentaja ventaja;
+
   /// El acuerdo ACUMULADO del grupo, por clave de par.
-  ///
-  /// Faltaba, y esa era la otra mitad de «al crear la ronda aparece uno y en
-  /// Inicio otro»: esta matriz enseñaba la diferencia de handicaps mientras la
-  /// ronda aplicaba el acuerdo acumulado, que entra en `pairSliding` aunque el
-  /// sistema elegido sea handicap —ver `slidingDeRonda`—.
-  final Map<String, double> acumulado;
+  final Map<String, double> acumuladoDelGrupo;
+
+  /// Lo puesto en el paso 8 para ESTA ronda. Ver `slidingDeRonda`.
+  final double Function(String a, String b)? editadoEnElPaso;
+
+  /// Los duelos que pactaron su propia ventaja. Ver `slidingDeRonda`.
+  final Iterable<({String a, String b, double delta})> duelosConVentajaPropia;
   final double Function(Player) playingHcp;
   final void Function(String p1, String p2, double? val) onEdit;
   final GolfTheme t;
 
-  const _HandicapMatrix({
+  const HandicapMatrix({
+    super.key,
     required this.players,
     required this.playerTees,
     required this.manualHandicaps,
-    required this.acumulado,
+    required this.ventaja,
+    required this.acumuladoDelGrupo,
+    this.editadoEnElPaso,
+    this.duelosConVentajaPropia = const [],
     required this.playingHcp,
     required this.onEdit,
     required this.t,
@@ -7914,6 +8045,15 @@ class _HandicapMatrix extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (players.length < 2) return const SizedBox.shrink();
+
+    // El mapa que la ronda se va a llevar, de la misma función que lo construye.
+    final efectivo = slidingDeRonda(
+      ventaja: ventaja,
+      acumuladoDelGrupo: acumuladoDelGrupo,
+      participantIds: players.map((p) => p.id).toList(),
+      editadoEnElPaso: editadoEnElPaso,
+      duelosConVentajaPropia: duelosConVentajaPropia,
+    );
 
     // Generar todos los pares únicos (i < j)
     final pairs = <(int, int)>[];
@@ -7934,7 +8074,7 @@ class _HandicapMatrix extends StatelessWidget {
         // Aquí no se puede llamar a `Round.ventajaDe` porque la ronda todavía no
         // existe; lo que sí se puede es no inventar otro orden.
         final clave = BetEngine.pairKey(pA.id, pB.id);
-        final acum = acumulado[clave];
+        final acum = efectivo[clave];
         final acumDesdeA =
             acum == null ? null : (pA.id.compareTo(pB.id) <= 0 ? acum : -acum);
         // Ventaja auto (convención unificada con manualHandicaps):
@@ -7989,6 +8129,10 @@ class _HandicapMatrix extends StatelessWidget {
                   Text('vs', style: TextStyle(color: t.divider, fontSize: 11)),
                   const SizedBox(width: 4),
                   GAvatar(name: pB.name, colorIndex: pB.colorIndex, size: 20),
+                  // «Acuerdo» y no «Manual»: lo que distingue esta fila no es
+                  // que alguien la escribiera a mano, es que hay un pacto en
+                  // vez de una resta de handicaps. Con sliding lo tienen los
+                  // tres cruces, el de cero incluido.
                   if (isManual) ...[
                     const SizedBox(width: 6),
                     Container(
@@ -7997,7 +8141,7 @@ class _HandicapMatrix extends StatelessWidget {
                         color: t.accent.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: Text('Manual', style: TextStyle(color: t.accent, fontSize: 9, fontWeight: FontWeight.w700)),
+                      child: Text('Acuerdo', style: TextStyle(color: t.accent, fontSize: 9, fontWeight: FontWeight.w700)),
                     ),
                   ],
                 ]),
