@@ -46,11 +46,29 @@ class NotaDeLiquidacion {
 
   final TonoNota tono;
 
+  /// La misma nota en una línea, para el Resumen.
+  ///
+  /// ── Por qué hay dos formas, y no una ───────────────────────────────────
+  ///
+  ///     «No tiene por qué mostrarse todo eso en la pantalla de resumen.»
+  ///
+  /// El Resumen es para el resultado, y diez párrafos provisionales lo tapaban.
+  /// Pero borrarlas de ahí pierde justo lo que estas notas existen para decir:
+  /// un cero sin explicación se lee como un fallo, y el Resumen es donde se lee
+  /// el cero. Así que van, en una línea: «Snake: la tiene RAFA (H17),
+  /// provisional».
+  ///
+  /// Se guarda aparte y no se recorta el texto largo: cortar por caracteres
+  /// parte la frase donde toque y deja «RAFA la agarró en el hoyo 17 con 3 pu…»,
+  /// que ocupa lo mismo y dice menos.
+  final String corto;
+
   const NotaDeLiquidacion({
     required this.moduleId,
     required this.tipo,
     required this.texto,
     required this.tono,
+    required this.corto,
   });
 }
 
@@ -62,16 +80,44 @@ List<NotaDeLiquidacion> notasDeLiquidacion(Round round) {
   final notas = <NotaDeLiquidacion>[];
 
   for (final grupo in round.betGroups) {
+    // ── UNA APUESTA DE PARTIDA HABLA UNA VEZ ────────────────────────────────
+    //
+    // Snake salía DIEZ veces en una ronda de cinco: cuatro «la tiene RAFA»,
+    // tres «la tiene CAV» y tres «nadie ha llegado a tres putts» —los duelos
+    // donde no jugaba ninguno de los dos—. Todo a la vez, sobre la misma ronda.
+    //
+    // No era la pantalla repitiendo: eran diez MÓDULOS. El selector de
+    // estructura parte cualquier tipo en C(n,2) duelos, y el catálogo dice
+    // desde hace tiempo que estos seis no se pactan por duelo. Eso se corrige
+    // en `expandBetModules`, pero solo para las rondas que se creen a partir de
+    // ahora — y la ronda del 15 Sep ya existe, con sus diez módulos dentro.
+    //
+    // Por eso la unión se hace AQUÍ además de allí: agrupando por tipo, los
+    // diez módulos de Snake son una apuesta y dicen una cosa. Y la dicen sobre
+    // TODOS los participantes, que es lo que la vuelve cierta: un módulo de dos
+    // solo ve a dos, y por eso podía afirmar que nadie la tenía mientras dos
+    // jugadores ya la habían tenido.
+    final porTipo = <BetModuleType, List<BetModuleInstance>>{};
     for (final mod in grupo.modules) {
-      switch (mod.type) {
-        case BetModuleType.snake:
-          notas.addAll(_snake(round, grupo, mod));
-        case BetModuleType.rabbit:
-          notas.addAll(_rabbit(round, grupo, mod));
-        case BetModuleType.wolf:
-          notas.addAll(_wolf(round, grupo, mod));
-        default:
-          break;
+      (porTipo[mod.type] ??= []).add(mod);
+    }
+
+    for (final e in porTipo.entries) {
+      final deLaPartida = e.key.rules.deLaPartida;
+      // De partida: un solo módulo, con los participantes de todos. Del duelo:
+      // cada uno el suyo, que ahí sí cada cruce es su propia apuesta.
+      final aRecorrer = deLaPartida ? [_unidos(e.value, grupo)] : e.value;
+      for (final mod in aRecorrer) {
+        switch (mod.type) {
+          case BetModuleType.snake:
+            notas.addAll(_snake(round, grupo, mod));
+          case BetModuleType.rabbit:
+            notas.addAll(_rabbit(round, grupo, mod));
+          case BetModuleType.wolf:
+            notas.addAll(_wolf(round, grupo, mod));
+          default:
+            break;
+        }
       }
     }
   }
@@ -121,8 +167,29 @@ NotaDeLiquidacion? _residuoDeRedondeo(Round round) {
         'el importe no se divide exacto entre los cruces. El reparto es '
         'correcto —los asientos suman cero— así que al pagar, cuadradlo entre '
         'vosotros.',
+    corto: 'Redondeo: faltan \$$falta al cuadrar entre vosotros',
     tono: TonoNota.informativa,
   );
+}
+
+/// Los módulos de un tipo de partida, vistos como la UNA apuesta que son.
+///
+/// Devuelve el primero con los participantes de todos. La configuración sale
+/// también del primero: los módulos de una expansión nacen del mismo tipo y la
+/// misma plantilla, así que comparten config — y si alguna vez dejaran de
+/// compartirla, una apuesta de partida con dos umbrales distintos no tiene
+/// respuesta correcta, y quedarse con la primera es al menos una sola.
+///
+/// El id es el del primero a propósito: la nota lo lleva para que la pantalla
+/// pueda ligarla a una apuesta, y cualquiera de los diez sirve porque son la
+/// misma.
+BetModuleInstance _unidos(List<BetModuleInstance> mods, BetGroup grupo) {
+  if (mods.length == 1) return mods.first;
+  final pids = <String>{};
+  for (final m in mods) {
+    pids.addAll(m.effectivePids(grupo.playerIds));
+  }
+  return mods.first.copyWith(participantIds: pids.toList());
 }
 
 List<NotaDeLiquidacion> _snake(
@@ -135,8 +202,13 @@ List<NotaDeLiquidacion> _snake(
   final r = SnakeEngine.buscar(round, pids, cfg,
       ordenDeJuego: BetEngine.segmentsOf(round).playOrder);
 
-  NotaDeLiquidacion nota(String texto, TonoNota tono) => NotaDeLiquidacion(
-      moduleId: mod.id, tipo: BetModuleType.snake, texto: texto, tono: tono);
+  NotaDeLiquidacion nota(String texto, String corto, TonoNota tono) =>
+      NotaDeLiquidacion(
+          moduleId: mod.id,
+          tipo: BetModuleType.snake,
+          texto: texto,
+          corto: corto,
+          tono: tono);
 
   if (!r.hayDueno) {
     // El caso del encargo. Con hoyos sin capturar la frase cambia: "todavía" no
@@ -147,10 +219,12 @@ List<NotaDeLiquidacion> _snake(
           ? nota(
               'Nadie ha llegado a ${cfg.umbral} putts todavía. '
               'Quedan ${r.hoyosSinCapturar} hoyos por capturar.',
+              'nadie la tiene todavía',
               TonoNota.provisional)
           : nota(
               'Nadie hizo ${cfg.umbral} putts en toda la ronda: '
               'la serpiente no se cobra.',
+              'no se cobra: nadie hizo ${cfg.umbral} putts',
               TonoNota.informativa),
     ];
   }
@@ -166,15 +240,22 @@ List<NotaDeLiquidacion> _snake(
           : ' · se reparten el monto')
       : '';
 
+  // La línea corta del Resumen, que es la que Carlos propuso: quién y dónde.
+  // El cómo paga y cuántos hoyos quedan son del detalle.
+  final cortoQuien = r.empatada
+      ? 'empatada entre $nombres (H${r.hoyo})'
+      : 'la tiene $nombres (H${r.hoyo})';
+
   if (r.provisional) {
     return [
       nota(
           '$quien$comoPaga. Provisional: quedan ${r.hoyosSinCapturar} hoyos '
           'por capturar y un 3-putt posterior se la lleva.',
+          '$cortoQuien, provisional',
           TonoNota.provisional),
     ];
   }
-  return [nota('$quien$comoPaga.', TonoNota.informativa)];
+  return [nota('$quien$comoPaga.', cortoQuien, TonoNota.informativa)];
 }
 
 String _nombre(Round round, String pid) {
@@ -203,6 +284,7 @@ List<NotaDeLiquidacion> _rabbit(
     if (seg.pasos.every((p) => p.evento == RabbitEvento.sinScore)) continue;
 
     final String texto;
+    final String corto;
     final TonoNota tono;
 
     if (seg.dueno == null) {
@@ -210,12 +292,14 @@ List<NotaDeLiquidacion> _rabbit(
       if (seg.completo) {
         texto = 'El conejo quedó suelto al cerrar los ${seg.etiqueta}: '
             '${arrastra ? 'el importe pasa al siguiente tramo' : 'nadie cobra ese tramo'}.';
+        corto = 'suelto al cerrar los ${seg.etiqueta}';
         tono = TonoNota.informativa;
       } else {
         // En curso "quedó suelto" sería un veredicto. Está suelto, que es otra
         // cosa: cualquiera lo agarra ganando un hoyo.
         texto = 'El conejo está suelto: lo agarra quien gane un hoyo solo. '
             'Quedan ${seg.hoyosSinCapturar} hoyos de los ${seg.etiqueta}.';
+        corto = 'suelto en los ${seg.etiqueta}, provisional';
         tono = TonoNota.provisional;
       }
     } else {
@@ -237,6 +321,7 @@ List<NotaDeLiquidacion> _rabbit(
       if (seg.completo) {
         // Cerrado: el resultado ya es un hecho y se puede afirmar.
         texto = '$quien tiene el conejo al cerrar los ${seg.etiqueta}.$historia';
+        corto = 'lo tiene $quien al cerrar los ${seg.etiqueta}';
         tono = TonoNota.informativa;
       } else {
         // EN CURSO. La frase cambia de tiempo verbal a propósito: decir que
@@ -248,6 +333,7 @@ List<NotaDeLiquidacion> _rabbit(
             seg.desdeHoyo != null ? ' desde el hoyo ${seg.desdeHoyo}' : '';
         texto = 'Lo tiene $quien$desde. Se cobra al cerrar los '
             '${seg.etiqueta}, y quedan ${seg.hoyosSinCapturar} hoyos.$historia';
+        corto = 'lo tiene $quien en los ${seg.etiqueta}, provisional';
         tono = TonoNota.provisional;
       }
     }
@@ -256,6 +342,7 @@ List<NotaDeLiquidacion> _rabbit(
         moduleId: mod.id,
         tipo: BetModuleType.rabbit,
         texto: texto,
+        corto: corto,
         tono: tono));
   }
 
@@ -270,6 +357,7 @@ List<NotaDeLiquidacion> _rabbit(
         tipo: BetModuleType.rabbit,
         texto: 'Con Squirrel encendido hace falta birdie neto para capturar, '
             'y los hoyos ganados se ganaron sin birdie.',
+        corto: 'con Squirrel, ningún hoyo se ganó con birdie',
         tono: TonoNota.informativa));
   }
 
@@ -290,15 +378,23 @@ List<NotaDeLiquidacion> _wolf(
   final pids = round.participantesDe(mod, grupo.playerIds);
   final notas = <NotaDeLiquidacion>[];
 
-  NotaDeLiquidacion nota(String texto, TonoNota tono) => NotaDeLiquidacion(
-      moduleId: mod.id, tipo: BetModuleType.wolf, texto: texto, tono: tono);
+  NotaDeLiquidacion nota(String texto, String corto, TonoNota tono) =>
+      NotaDeLiquidacion(
+          moduleId: mod.id,
+          tipo: BetModuleType.wolf,
+          texto: texto,
+          corto: corto,
+          tono: tono);
 
   final motivoTamano = BetModuleType.wolf.motivoNoDisponible(pids.length);
   if (motivoTamano != null) {
     // No debería poder crearse —el selector lo atenúa— pero una ronda guardada
     // a la que se le saca un jugador acaba aquí, y quedarse mudo sería lo peor.
     // El motivo sale de la tabla para que diga lo mismo que el selector.
-    return [nota('$motivoTamano No liquida.', TonoNota.faltaDato)];
+    return [
+      nota('$motivoTamano No liquida.', 'no liquida: ${pids.length} jugadores',
+          TonoNota.faltaDato)
+    ];
   }
 
   final hoyos = WolfEngine.recorrido(round, pids, mod.wolf);
@@ -323,6 +419,7 @@ List<NotaDeLiquidacion> _wolf(
         '${sinEleccion.length == 1 ? 'ese hoyo' : 'esos hoyos'} no liquida'
         '${sinEleccion.length == 1 ? '' : 'n'}. '
         'Se elige al anotar el score.',
+        'falta compañero en $lista',
         TonoNota.faltaDato));
   }
 
@@ -330,6 +427,8 @@ List<NotaDeLiquidacion> _wolf(
     notas.add(nota(
         'Faltan scores en ${sinScore.length} '
         '${sinScore.length == 1 ? 'hoyo' : 'hoyos'}.',
+        'faltan scores en ${sinScore.length} '
+            '${sinScore.length == 1 ? 'hoyo' : 'hoyos'}',
         TonoNota.provisional));
   }
 
@@ -340,6 +439,8 @@ List<NotaDeLiquidacion> _wolf(
     notas.add(nota(
         '${solos.length} ${solos.length == 1 ? 'hoyo' : 'hoyos'} en solitario: '
         '$ganados ganado${ganados == 1 ? '' : 's'}.',
+        '${solos.length} en solitario, $ganados ganado'
+            '${ganados == 1 ? '' : 's'}',
         TonoNota.informativa));
   }
 

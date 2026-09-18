@@ -22,7 +22,21 @@ class NotasLiquidacionCard extends StatelessWidget {
   final List<NotaDeLiquidacion> notas;
   final GolfTheme t;
 
-  const NotasLiquidacionCard({super.key, required this.notas, required this.t});
+  /// En una línea por nota, para el Resumen.
+  ///
+  ///     «No tiene por qué mostrarse todo eso en la pantalla de resumen.»
+  ///
+  /// El Resumen es para el resultado y estos párrafos lo tapaban. No se quitan
+  /// de ahí: un cero sin explicación se lee como un fallo, y el Resumen es
+  /// justo donde se lee el cero. Se dicen cortas — «Snake · la tiene RAFA
+  /// (H17), provisional».
+  final bool breve;
+
+  const NotasLiquidacionCard(
+      {super.key,
+      required this.notas,
+      required this.t,
+      this.breve = false});
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +53,7 @@ class NotasLiquidacionCard extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         for (var i = 0; i < notas.length; i++) ...[
           if (i > 0) const SizedBox(height: 10),
-          _Fila(nota: notas[i], t: t),
+          _Fila(nota: notas[i], t: t, breve: breve),
         ],
       ]),
     );
@@ -49,7 +63,8 @@ class NotasLiquidacionCard extends StatelessWidget {
 class _Fila extends StatelessWidget {
   final NotaDeLiquidacion nota;
   final GolfTheme t;
-  const _Fila({required this.nota, required this.t});
+  final bool breve;
+  const _Fila({required this.nota, required this.t, this.breve = false});
 
   @override
   Widget build(BuildContext context) {
@@ -76,7 +91,7 @@ class _Fila extends StatelessWidget {
                   color: t.text, fontSize: 12, fontWeight: FontWeight.w800),
             ),
             TextSpan(
-              text: nota.texto,
+              text: breve ? nota.corto : nota.texto,
               style: TextStyle(color: t.sub, fontSize: 12, height: 1.35),
             ),
           ]),

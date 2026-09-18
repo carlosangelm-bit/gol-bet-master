@@ -274,7 +274,12 @@ class _ResultsScreenState extends State<ResultsScreen> {
                   // propósito —ver notas_liquidacion_card.dart—.
                   if (notasDeLiquidacion(round).isNotEmpty) ...[
                     NotasLiquidacionCard(
-                        notas: notasDeLiquidacion(round), t: t),
+                        notas: notasDeLiquidacion(round),
+                        t: t,
+                        // El Resumen es para el resultado: una línea por nota.
+                        // Diez párrafos provisionales de una apuesta empujaban
+                        // los resultados fuera de la pantalla.
+                        breve: true),
                     const SizedBox(height: 20),
                   ],
 

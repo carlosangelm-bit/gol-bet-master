@@ -3530,12 +3530,17 @@ class BetModuleInstance {
     }
 
     // ── Función interna: construye un módulo grupal ───────────────────────────
-    BetModuleInstance makeGroup(List<String> pids) {
-      final uid = '${type.name}_${structure.name}_$ts';
+    BetModuleInstance makeGroup(List<String> pids, {BetStructure? como}) {
+      final est = como ?? structure;
+      final uid = '${type.name}_${est.name}_$ts';
       return BetModuleInstance(
         id: uid, type: type, name: type.label,
         participantIds: pids,
-        structure:     structure,
+        // La estructura REAL del módulo, que puede no ser la que se pidió: una
+        // apuesta de partida siempre nace de grupo. Guardar `roundRobin` en un
+        // módulo con cinco participantes sería escribir en el documento una
+        // cosa que no pasó, y es lo que luego se lee para decidir.
+        structure:     est,
         betGroupId:    betGroupId,
         betGroupName:  betGroupName,
         skinsConfig:          skinsConfig          ?? (type == BetModuleType.skins         ? SkinsConfig.def          : null),
@@ -3551,6 +3556,33 @@ class BetModuleInstance {
         sixesConfig:          sixesConfig          ?? (type == BetModuleType.sixes         ? SixesConfig.def          : null),
         stablefordConfig:     stablefordConfig     ?? (type == BetModuleType.stableford    ? StablefordConfig.def     : null),
       );
+    }
+
+    // ── UNA APUESTA DE PARTIDA NO SE PARTE, SE PIDA LO QUE SE PIDA ──────────
+    //
+    // `roundRobin` con cinco jugadores devuelve C(5,2)=10 módulos, y eso
+    // aplicado a Snake dio diez serpientes: cuatro duelos decían que la tenía
+    // RAFA, tres que la tenía CAV y tres que no la tenía nadie. Cada módulo ve
+    // solo a sus dos, así que los diez decían la verdad de su pareja y ninguno
+    // la de la ronda.
+    //
+    // El catálogo ya lo decía —[BetTypeRules.deLaPartida], y su comentario
+    // dice literalmente «pactar Snake por duelo daría una serpiente por pareja,
+    // que no es el juego»—. Lo leían el asistente de duelos y el editor de
+    // grupos guardados. Este expansor, que es el que CREA los módulos, no.
+    //
+    // Y en Snake se vio porque es el único de los seis que además habla. En los
+    // otros cinco lo que se multiplicaba era el dinero: un Oyes en roundRobin
+    // son diez potes.
+    //
+    // Se resuelve aquí y no en el selector porque el selector es UN llamador.
+    if (type.rules.deLaPartida &&
+        (structure == BetStructure.roundRobin ||
+            structure == BetStructure.anchorVsMany)) {
+      if (participantIds.length < 2) {
+        throw ArgumentError('${type.label} requiere mínimo 2 jugadores.');
+      }
+      return [makeGroup(participantIds, como: BetStructure.group)];
     }
 
     switch (structure) {
