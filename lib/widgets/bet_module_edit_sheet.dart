@@ -111,6 +111,9 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   // En modo equipo el alcance es siempre `teams` y este flag se ignora.
   late bool _scopeIsOpen;
 
+  /// Quiénes juegan, cuando el alcance es fijo. Ver [_buildScopeSection].
+  late List<String> _participantes;
+
   // ── Handicap de equipo (allowance WHS) ────────────────────────────────────
   late TeamHandicapConfig _teamHcp;
   /// true si el usuario abrió los controles avanzados (reparto bajo/alto).
@@ -185,6 +188,13 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
 
     // Alcance actual: se lee del efectivo, que ya infiere los módulos legacy.
     _scopeIsOpen = m.effectiveScope.isEveryone;
+    // Los elegidos, editables. Antes esta lista era `_current.participantIds` y
+    // nada en la hoja la tocaba: la opción prometía «la lista es parte del
+    // acuerdo» y no había dónde hacerla.
+    _participantes = [
+      for (final p in widget.group.playerIds)
+        if (m.participantIds.isEmpty || m.participantIds.contains(p)) p,
+    ];
 
     // Handicap de equipo: si el módulo no lo declara, proponer el default del
     // formato en vez de arrastrar el legacy 100%. Solo se guarda si el usuario
@@ -251,7 +261,9 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     // Participantes = unión de todos los jugadores de ambos lados (retrocompat)
     final newParticipants = sides != null
         ? {for (final s in sides) ...s.playerIds}.toList()
-        : _current.participantIds;
+        // Con alcance fijo, LOS ELEGIDOS. Aquí ponía `_current.participantIds`,
+        // que es lo que entró: por eso «solo los seleccionados» no seleccionaba.
+        : (_scopeIsOpen ? _current.participantIds : _participantes);
 
     final saved = _current.copyWith(
       participantIds: newParticipants,
@@ -668,10 +680,19 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     }
 
     final groupCount = widget.group.playerIds.length;
-    final fixedIds   = _current.participantIds;
+    final fixedIds   = _participantes;
+    // ── LAS DOS OPCIONES SE DISTINGUÍAN POR EL FUTURO, Y NO LO DECÍAN ──────
+    //
+    //     «No tiene mucho sentido que muestre «todos los de la partida» /
+    //      «solo los 4 jugadores» cuando es lo mismo.»
+    //
+    // Con cuatro de cuatro describían el MISMO conjunto. Lo que las separa es
+    // qué pasa con quien se sume después, y eso estaba en una sola de las dos.
+    // Ahora lo dicen las dos, y la lista se puede tocar — así que además de
+    // leerse distinto, se ven distintas en cuanto se quita a alguien.
     final fixedLabel = fixedIds.length == 2
         ? '${_playerName(fixedIds[0])} y ${_playerName(fixedIds[1])}'
-        : '${fixedIds.length} jugadores seleccionados';
+        : 'estos (${fixedIds.length} de $groupCount)';
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
@@ -700,7 +721,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
         selected: !_scopeIsOpen,
         title: 'Solo $fixedLabel',
         subtitle: '${fixedIds.length == 2 ? BetScopeKind.pair.consecuencia : BetScopeKind.subset.consecuencia} '
-            'La lista es parte del acuerdo y no cambia.',
+            'Quien se sume después NO entra: la lista es parte del acuerdo.',
         onTap: fixedIds.length >= 2
             ? () => setState(() => _scopeIsOpen = false)
             : null,
@@ -708,6 +729,70 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
             ? 'Necesitas al menos 2 jugadores fijos'
             : null,
       ),
+
+      // ── Y LA LISTA, QUE AHORA SE PUEDE TOCAR ──────────────────────────────
+      //
+      // Va debajo de la opción y solo cuando está elegida: son los jugadores de
+      // la partida, y quitar a alguien lo deja fuera de ESTA apuesta.
+      if (!_scopeIsOpen) ...[
+        const SizedBox(height: 8),
+        Wrap(spacing: 5, runSpacing: 5, children: [
+          for (final pid in widget.group.playerIds)
+            Builder(builder: (_) {
+              final dentro = _participantes.contains(pid);
+              // Con dos, quitar a uno dejaría una apuesta de uno. El tope se
+              // dice tocando, no escondiendo el chip: un control que desaparece
+              // se lee como un fallo.
+              final puedeQuitar = !dentro || _participantes.length > 2;
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: !puedeQuitar
+                    ? null
+                    : () => setState(() {
+                          if (dentro) {
+                            _participantes.remove(pid);
+                          } else {
+                            // Se reordena como el grupo, para que el orden de
+                            // la lista no dependa de en qué orden se tocó.
+                            _participantes = [
+                              for (final p in widget.group.playerIds)
+                                if (p == pid || _participantes.contains(p)) p,
+                            ];
+                          }
+                        }),
+                child: Opacity(
+                  opacity: puedeQuitar ? 1 : 0.5,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: dentro
+                          ? t.accent.withValues(alpha: 0.12)
+                          : t.surface,
+                      borderRadius: BorderRadius.circular(999),
+                      border:
+                          Border.all(color: dentro ? t.accent : t.divider),
+                    ),
+                    child: Text(_playerName(pid),
+                        style: TextStyle(
+                            color: dentro ? t.text : t.sub,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            decoration: dentro
+                                ? null
+                                : TextDecoration.lineThrough)),
+                  ),
+                ),
+              );
+            }),
+        ]),
+        if (_participantes.length == 2)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text('Hacen falta dos como mínimo.',
+                style: TextStyle(color: t.sub, fontSize: 11)),
+          ),
+      ],
 
       // ── Ensanchar cuesta más que acotar, y no avisaba ────────────────────
       //

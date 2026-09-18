@@ -7147,6 +7147,28 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
+  /// Lleva el «quién juega» de un módulo del flujo a `_quienJuega`.
+  ///
+  /// Solo los del flujo: un módulo pactado aparte no representa una cuenta del
+  /// paso 6 y escribir su lista ahí cambiaría la apuesta de todos.
+  ///
+  /// Con alcance abierto se BORRA la entrada en vez de guardar la lista
+  /// completa: `_participantesDe` devuelve todos cuando no hay entrada, así que
+  /// «todos los de la partida» sigue significando «los que haya» —que es la
+  /// diferencia entre las dos opciones— en vez de congelar los de hoy.
+  void _guardarQuienJuega(BetModuleInstance m) {
+    if (!m.id.startsWith('flujo_')) return;
+    final nombre = m.id.substring('flujo_'.length);
+    final cuenta =
+        BetCount.values.where((c) => c.name == nombre).firstOrNull;
+    if (cuenta == null) return;
+    if (m.effectiveScope.isEveryone) {
+      _quienJuega.remove(cuenta);
+    } else {
+      _quienJuega[cuenta] = List.of(m.participantIds);
+    }
+  }
+
   void _openModuleEdit(BuildContext context, BetGroup group, BetModuleInstance mod, GolfTheme t) {
     showModalBottomSheet(
       context: context,
@@ -7162,12 +7184,26 @@ class _SetupScreenState extends State<SetupScreen> {
         players: _players,
         onSave: (updatedMod) {
           setState(() {
+            // ── QUIÉN JUEGA SE GUARDA DONDE EL PASO 6 LO LEE ───────────────
+            //
+            // Esta hoja y el paso 6 deciden lo mismo, y el paso 6 ganaba sin
+            // decirlo: `_sincronizarModulos` reconstruye el módulo desde
+            // `_participantesDe(cuenta)` y `conservandoAjustes` solo conserva
+            // las configs. Así que se podía dejar la apuesta «solo entre estos
+            // dos» y salir con los cuatro.
+            //
+            // Escribir aquí en `_quienJuega` es lo que hace que las TRES
+            // superficies —esta hoja, la vista por apuesta y la vista por
+            // duelo— digan lo mismo, porque las tres leen de ahí.
+            _guardarQuienJuega(updatedMod);
             final idx = _groups.indexWhere((g) => g.id == group.id);
             if (idx >= 0) {
-              _groups[idx] = BetGroup(
-                id: group.id, name: group.name, format: group.format,
-                playerIds: group.playerIds,
-                modules: group.modules.map((m) => m.id == updatedMod.id ? updatedMod : m).toList(),
+              // `copyWith` y no un BetGroup nuevo: reconstruirlo campo a campo
+              // pierde `savedGroupId` en silencio. Sexta vez en este proyecto.
+              _groups[idx] = group.copyWith(
+                modules: group.modules
+                    .map((m) => m.id == updatedMod.id ? updatedMod : m)
+                    .toList(),
               );
             }
           });
