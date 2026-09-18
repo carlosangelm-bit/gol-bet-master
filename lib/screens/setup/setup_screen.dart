@@ -9485,15 +9485,38 @@ class CrucesDeLaApuesta extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) =>
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+  Widget build(BuildContext context) {
+    // ── UNA APUESTA DE LA PARTIDA NO TIENE CRUCES QUE APAGAR ──────────────
+    //
+    // Oyes, Unidades, Snake, Rabbit, Wolf y Sixes se juegan entre todos: quien
+    // no la juegue sale de la lista de arriba, y «¿algún cruce no la juega?» no
+    // significa nada para ellas.
+    //
+    // Sin esto la pantalla REVENTABA. `apuestasDelCruce` filtra las de la
+    // partida, así que devolvía una lista vacía y el `.single` de abajo tiraba
+    // `Bad state: No element` — con el asistente a mitad y sin saber si lo
+    // configurado se había guardado.
+    //
+    // Lo metí al extraer este widget para poder montar las dos vistas a la vez.
+    // La guarda de entonces comprobaba que las dos coincidieran, y coincidían:
+    // la vista por duelo NO pinta las de la partida, así que nunca llamó a la
+    // función con una de ellas. Faltaba el caso, no la guarda.
+    //
+    // Va aquí, en el widget, y no en quien lo llama: un llamador nuevo se
+    // olvidaría.
+    if (cuenta.esDeGrupo) return const SizedBox.shrink();
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('¿ALGÚN CRUCE NO LA JUEGA?', style: GolfType.label(t.primary)),
         for (final (a, b) in cruces)
           Builder(builder: (_) {
+            // `firstOrNull` y no `.single`: si alguna vez vuelve a llegar una
+            // apuesta sin cruces, la fila no sale — no revienta la pantalla.
             final e = apuestasDelCruce(a, b,
                 conteos: [cuenta],
                 participantesDe: participantesDe,
-                crucesFuera: crucesFuera).single;
+                crucesFuera: crucesFuera).firstOrNull;
+            if (e == null) return const SizedBox.shrink();
             return Row(children: [
               Expanded(
                 child: Text('${nombreDe(a)} vs ${nombreDe(b)}',
@@ -9510,4 +9533,5 @@ class CrucesDeLaApuesta extends StatelessWidget {
             ]);
           }),
       ]);
+  }
 }

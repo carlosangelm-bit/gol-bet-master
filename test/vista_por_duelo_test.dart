@@ -92,6 +92,8 @@ void main() {
 
   _enPantalla();
   _lasDosALaVez();
+  _oyesNoTieneCruces();
+  _todasLasApuestas();
 
   // ═══════════════════════════════════════════════════════════════════════════
   group('2 · las dos lecturas no pueden discrepar', () {
@@ -332,5 +334,185 @@ void _lasDosALaVez() {
     expect('2 apuestas entre ellos'.allMatches(texto()).length, 3,
         reason: 'los chips de abajo lo reflejan');
     expect(fuera[BetCount.skins], isEmpty);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5 · `Bad state: No element` EN EL PASO 6
+//
+//     Oyes
+//       CAM   CAV   AAM
+//       3 de 3 jugadores · 3 enfrentamientos
+//       ¿ALGÚN CRUCE NO LA JUEGA?
+//       ⚠ Error de la aplicación · Bad state: No element
+//
+// Lo metí yo en `ac5255b`. Al extraer la lista de cruces a un widget público
+// —para poder montar las dos vistas a la vez— el interruptor pasó a leer
+// `apuestasDelCruce(...).single`. Y esa función FILTRA las apuestas de la
+// partida, así que para Oyes devuelve una lista vacía y `.single` revienta.
+//
+// La guarda del commit anterior comprobaba que las dos vistas coincidieran, y
+// coincidían: la vista por duelo no pinta Oyes, así que nunca llamó a la
+// función con una apuesta de grupo. Faltaba el caso, no la guarda.
+//
+// Y el fallo de fondo es el criterio 2: una apuesta de la partida no tiene
+// cruces que apagar, así que ese bloque no debería dibujarse para ella.
+// ─────────────────────────────────────────────────────────────────────────────
+void _oyesNoTieneCruces() {
+  test('CLAVE: preguntar por una apuesta de la partida no revienta', () {
+    // La llamada que hacía el interruptor. `.single` sobre esto era el error.
+    final r = apuestasDelCruce(_cam, _kawa,
+        conteos: const [BetCount.oyes],
+        participantesDe: (_) => const [_cam, _kawa, _jose],
+        crucesFuera: (_) => const {});
+    expect(r, isEmpty, reason: 'Oyes no se pacta por duelo: no tiene cruces');
+  });
+
+  testWidgets('CLAVE (criterios 1 y 2): la lista de cruces no se ofrece para '
+      'una apuesta de la partida', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final jugadores = [
+      Player(id: _cam, name: 'CAM'),
+      Player(id: _kawa, name: 'CAV'),
+      Player(id: _jose, name: 'AAM'),
+    ];
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: CrucesDeLaApuesta(
+          cuenta: BetCount.oyes,
+          cruces: BetRecipe.crucesDe(jugadores.map((p) => p.id).toList()),
+          nombreDe: (id) => jugadores.firstWhere((p) => p.id == id).name,
+          participantesDe: (_) => const [_cam, _kawa, _jose],
+          crucesFuera: (_) => const {},
+          onAlternar: (_, __, ___) {},
+          t: GolfTheme.dark,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Ni excepción ni bloque: no hay nada que preguntar.
+    expect(tester.takeException(), isNull);
+    final texto = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((w) => w.data ?? '')
+        .join('  ‖  ');
+    expect(texto, isNot(contains('¿ALGÚN CRUCE NO LA JUEGA?')));
+    expect(find.byType(Switch), findsNothing);
+  });
+
+  testWidgets('CONTRAPESO: una apuesta de duelo SÍ la ofrece', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final jugadores = [
+      Player(id: _cam, name: 'CAM'),
+      Player(id: _kawa, name: 'CAV'),
+      Player(id: _jose, name: 'AAM'),
+    ];
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: CrucesDeLaApuesta(
+          cuenta: BetCount.skins,
+          cruces: BetRecipe.crucesDe(jugadores.map((p) => p.id).toList()),
+          nombreDe: (id) => jugadores.firstWhere((p) => p.id == id).name,
+          participantesDe: (_) => const [_cam, _kawa, _jose],
+          crucesFuera: (_) => const {},
+          onAlternar: (_, __, ___) {},
+          t: GolfTheme.dark,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('¿ALGÚN CRUCE NO LA JUEGA?'), findsOneWidget);
+    expect(find.byType(Switch), findsNWidgets(3));
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6 · LA PRUEBA QUE LO HABRÍA CAZADO
+//
+// El fallo no fue de lógica: fue un caso que ninguna prueba visitaba. Oyes era
+// la única apuesta de la partida entre las que yo montaba, y no la montaba.
+//
+// Así que la guarda recorre el CATÁLOGO ENTERO. Un tipo nuevo entra solo, y si
+// resulta que revienta esta pantalla se sabe aquí y no en el campo.
+// ─────────────────────────────────────────────────────────────────────────────
+void _todasLasApuestas() {
+  final jugadores = [
+    Player(id: _cam, name: 'CAM'),
+    Player(id: _kawa, name: 'CAV'),
+    Player(id: _jose, name: 'AAM'),
+  ];
+
+  testWidgets('CLAVE (criterio 1): ninguna apuesta del catálogo revienta la '
+      'lista de cruces', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    for (final c in BetCount.values) {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: CrucesDeLaApuesta(
+            cuenta: c,
+            cruces: BetRecipe.crucesDe(jugadores.map((p) => p.id).toList()),
+            nombreDe: (id) => jugadores.firstWhere((p) => p.id == id).name,
+            participantesDe: (_) => const [_cam, _kawa, _jose],
+            crucesFuera: (_) => const {},
+            onAlternar: (_, __, ___) {},
+            t: GolfTheme.dark,
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: c.name);
+
+      // Y el criterio 2, del catálogo: las de la partida no ofrecen cruces.
+      expect(find.text('¿ALGÚN CRUCE NO LA JUEGA?'),
+          c.esDeGrupo ? findsNothing : findsOneWidget,
+          reason: c.name);
+    }
+  });
+
+  testWidgets('CLAVE: y la vista por duelo con TODAS a la vez tampoco',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 6000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: PanelPorDuelo(
+            players: jugadores,
+            conteos: BetCount.values,
+            bola: null,
+            participantesDe: (_) => const [_cam, _kawa, _jose],
+            crucesFuera: (_) => const {},
+            onAlternar: (_, __, ___) {},
+            t: GolfTheme.dark,
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    final texto = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((w) => w.data ?? '')
+        .join('  ‖  ');
+    // Las seis de la partida, juntas y fuera de los chips.
+    expect(texto, contains('De la partida — no se pacta por duelo'));
+    for (final c in BetCount.values.where((c) => c.esDeGrupo)) {
+      expect(texto, contains(c.label), reason: c.name);
+    }
   });
 }
