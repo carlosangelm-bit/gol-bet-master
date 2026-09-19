@@ -280,6 +280,39 @@ class _SetupScreenState extends State<SetupScreen> {
   // pasos normales.
   final List<_DueloPactado> _duelos = [];
 
+  /// Con quién se juegan las apuestas. Ver [ModoDeRonda].
+  ///
+  /// Arranca en grupal: es como se ha jugado hasta hoy y lo que falta es poder
+  /// NO usarlo, no cambiar lo que funciona.
+  ModoDeRonda _modo = ModoDeRonda.grupal;
+
+  /// Quién crea la ronda, entre los jugadores.
+  ///
+  /// El jugador ya enlazado a esta cuenta, y si no hay ninguno el primero — que
+  /// es exactamente a quien `_createAndStartRound` le pone el `linkedUserId`.
+  /// Se deriva aquí para que las dos respuestas no puedan separarse: si el modo
+  /// individual dejara fuera los duelos de un jugador y la ronda enlazara a
+  /// otro, quien la crea se quedaría sin ninguna apuesta.
+  String? get _yo {
+    if (_players.isEmpty) return null;
+    final uid = AuthService.uid;
+    if (uid != null) {
+      final enlazado =
+          _players.where((p) => !p.isVirtual && p.linkedUserId == uid);
+      if (enlazado.isNotEmpty) return enlazado.first.id;
+    }
+    return _players.first.id;
+  }
+
+  /// Los cruces que esta ronda no juega: los apagados a mano MÁS los que el
+  /// modo individual deja fuera. Ver `crucesFueraDeLaRonda`.
+  Set<String> _crucesFueraDe(BetCount cuenta) => crucesFueraDeLaRonda(
+        participantIds: _participantesDe(cuenta),
+        apagadosAMano: _crucesFuera[cuenta] ?? const {},
+        modo: _modo,
+        yo: _yo,
+      );
+
   /// El paso de participantes, leído desde el DUELO en vez de desde la apuesta.
   ///
   /// La misma información transpuesta —ver `apuestasDelCruce`—. No es una
@@ -861,6 +894,7 @@ class _SetupScreenState extends State<SetupScreen> {
         SetupStep.jugadores => _stepPlayers(t),
         SetupStep.compiten => _stepCompiten(t),
         SetupStep.bola => _stepBola(t),
+        SetupStep.modo => _stepModo(t),
         SetupStep.cuenta => _stepCuenta(t),
         SetupStep.apuestas => _stepGroups(t),
         SetupStep.revisar => _stepReview(t),
@@ -2265,7 +2299,10 @@ class _SetupScreenState extends State<SetupScreen> {
       if (lados == null) {
         delFlujo.addAll(BetRecipe.conCrucesFuera(m,
             participantIds: propios,
+            // A mano; el modo lo aplica `conCrucesFuera` por su cuenta.
             fuera: _crucesFuera[cuenta] ?? const {},
+            modo: _modo,
+            yo: _yo,
             importes: _montoCruce[cuenta] ?? const {}));
       } else {
         delFlujo.add(m);
@@ -3352,6 +3389,43 @@ class _SetupScreenState extends State<SetupScreen> {
   // El caso que lo motiva: cinco jugadores donde todos juegan Nassau salvo J4
   // contra J5. Sacarlos como jugadores los quita del Nassau con los demás;
   // dejar fuera el cruce los deja jugando contra todos menos entre ellos.
+  Widget _stepModo(GolfTheme t) {
+    final yo = _yo;
+    final nombre = yo == null ? 'ti' : _playerName(yo);
+    final cruces = BetRecipe.crucesDe(_players.map((p) => p.id).toList()).length;
+    final mios = _players.length - 1;
+    return ListView(padding: const EdgeInsets.all(20), children: [
+      Text('¿Con quién se juegan las apuestas?',
+          style: GolfType.title(t.text)),
+      const SizedBox(height: 4),
+      Text('Cambia cuántas apuestas hay que configurar en los pasos que vienen.',
+          style: GolfType.body(t.sub)),
+      const SizedBox(height: 16),
+      for (final m in ModoDeRonda.values)
+        _opcionCompiten(t,
+            icon: m == ModoDeRonda.individual
+                ? Icons.person_outline
+                : Icons.groups_outlined,
+            titulo: m.label,
+            detalle: m == ModoDeRonda.individual
+                ? '$mios duelo${mios == 1 ? '' : 's'}, los de $nombre.'
+                : '$cruces cruces, todos contra todos.',
+            activa: _modo == m,
+            onTap: () => setState(() => _modo = m)),
+      const SizedBox(height: 12),
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: t.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: t.divider),
+        ),
+        child: Text(_modo.explicacion,
+            style: GolfType.label(t.sub)),
+      ),
+    ]);
+  }
+
   Widget _stepParticipantes(GolfTheme t) {
     // Los cruces solo existen sin equipos: con lados, el enfrentamiento es lado
     // contra lado y «CAM vs KAWA» no es una apuesta.
@@ -3377,8 +3451,10 @@ class _SetupScreenState extends State<SetupScreen> {
           conteos: _conteos,
           bola: _bola,
           participantesDe: _participantesDe,
-          crucesFuera: (c) => _crucesFuera[c] ?? const {},
+          crucesFuera: _crucesFueraDe,
           onAlternar: _alternarCruce,
+          modo: _modo,
+          yo: _yo,
           t: t,
         )
       else
@@ -3520,8 +3596,10 @@ class _SetupScreenState extends State<SetupScreen> {
             cruces: cruces,
             nombreDe: _playerName,
             participantesDe: _participantesDe,
-            crucesFuera: (c) => _crucesFuera[c] ?? const {},
+            crucesFuera: _crucesFueraDe,
             onAlternar: _alternarCruce,
+            modo: _modo,
+            yo: _yo,
             t: t,
           ),
         ],
@@ -7286,6 +7364,7 @@ class _SetupScreenState extends State<SetupScreen> {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (sheetCtx) => _LaunchSheet(
+        modo: _modo,
         t: t,
         isAuth: auth.isAuth,
         players: _players,
@@ -8478,9 +8557,18 @@ class _LaunchSheet extends StatefulWidget {
   final void Function(StartingNine, {bool startLive, String scoringMode}) onStart;
   final void Function(StartingNine, String name, String emoji, String desc, {bool startLive, String scoringMode}) onStartWithTemplate;
 
+  /// Con quién se juegan las apuestas.
+  ///
+  /// En [ModoDeRonda.individual] el enlace en vivo no se ofrece: la ronda solo
+  /// tiene los duelos de quien la crea, así que no hay nada que nadie venga a
+  /// corregir. Es la mitad de la promesa —«ese modo sería no conectable»— y va
+  /// aquí, en el único sitio desde el que una ronda se publica.
+  final ModoDeRonda modo;
+
   const _LaunchSheet({
     required this.t,
     required this.isAuth,
+    required this.modo,
     required this.players,
     required this.groups,
     required this.onStart,
@@ -8554,7 +8642,7 @@ class _LaunchSheetState extends State<_LaunchSheet> {
           // ── Opciones scrollables (Live + ScoringMode) ───────────────────
           // Mostrar opciones de ronda EN VIVO si el usuario está autenticado.
           // No requiere que haya jugadores vinculados: puede ser ronda solo invitados.
-          if (widget.isAuth)
+          if (widget.isAuth && widget.modo != ModoDeRonda.individual)
             Flexible(
               child: SingleChildScrollView(
                 child: Column(
@@ -9337,6 +9425,13 @@ class PanelPorDuelo extends StatelessWidget {
 
   /// Enciende o apaga [cuenta] entre [a] y [b].
   final void Function(BetCount cuenta, String a, String b) onAlternar;
+
+  /// Con quién se juegan las apuestas. Un cruce ajeno en una ronda individual
+  /// no existe, y el chip lo dice en vez de quedarse muerto.
+  final ModoDeRonda modo;
+
+  /// Quién crea la ronda. Ver [modo].
+  final String? yo;
   final GolfTheme t;
 
   const PanelPorDuelo({
@@ -9347,6 +9442,8 @@ class PanelPorDuelo extends StatelessWidget {
     required this.participantesDe,
     required this.crucesFuera,
     required this.onAlternar,
+    this.modo = ModoDeRonda.grupal,
+    this.yo,
     required this.t,
   });
 
@@ -9388,7 +9485,9 @@ class PanelPorDuelo extends StatelessWidget {
     final estados = apuestasDelCruce(a, b,
         conteos: conteos,
         participantesDe: participantesDe,
-        crucesFuera: crucesFuera);
+        crucesFuera: crucesFuera,
+        modo: modo,
+        yo: yo);
     final juegan = estados.where((e) => e.juega).length;
 
     return Container(
@@ -9443,13 +9542,22 @@ class PanelPorDuelo extends StatelessWidget {
             style: GolfType.label(t.sub)),
         // Por qué un chip no se puede tocar. Un control muerto sin explicación
         // es lo que obligó a escribir media docena de avisos en esta app.
-        for (final e in estados.where((e) => !e.editable))
+        // Un cruce ENTERO fuera por el modo: se dice una vez, no una por
+        // apuesta. Y se dice: un chip que no se puede tocar sin explicación es
+        // lo que obligó a escribir media docena de avisos en esta app.
+        if (estados.isNotEmpty && estados.every((e) => e.fueraPorModo))
           Text(
-              '${e.cuenta.labelCon(bola)}: '
-              '${e.fueraDeLaApuesta.map(_nombre).join(' y ')} '
-              'no ${e.fueraDeLaApuesta.length == 1 ? 'está' : 'están'} en esa '
-              'apuesta. Se añade desde «Por apuesta».',
-              style: GolfType.label(t.sub)),
+              'Esta ronda es individual: solo se crean tus duelos. Estos dos '
+              'juegan y se anotan sus scores, pero no apuestan entre ellos.',
+              style: GolfType.label(t.sub))
+        else
+          for (final e in estados.where((e) => !e.editable))
+            Text(
+                '${e.cuenta.labelCon(bola)}: '
+                '${e.fueraDeLaApuesta.map(_nombre).join(' y ')} '
+                'no ${e.fueraDeLaApuesta.length == 1 ? 'está' : 'están'} en esa '
+                'apuesta. Se añade desde «Por apuesta».',
+                style: GolfType.label(t.sub)),
       ]),
     );
   }
@@ -9471,6 +9579,13 @@ class CrucesDeLaApuesta extends StatelessWidget {
   final List<String> Function(BetCount) participantesDe;
   final Set<String> Function(BetCount) crucesFuera;
   final void Function(BetCount cuenta, String a, String b) onAlternar;
+
+  /// Con quién se juegan las apuestas. Un cruce ajeno en una ronda individual
+  /// no existe, y el chip lo dice en vez de quedarse muerto.
+  final ModoDeRonda modo;
+
+  /// Quién crea la ronda. Ver [modo].
+  final String? yo;
   final GolfTheme t;
 
   const CrucesDeLaApuesta({
@@ -9481,6 +9596,8 @@ class CrucesDeLaApuesta extends StatelessWidget {
     required this.participantesDe,
     required this.crucesFuera,
     required this.onAlternar,
+    this.modo = ModoDeRonda.grupal,
+    this.yo,
     required this.t,
   });
 
@@ -9515,7 +9632,9 @@ class CrucesDeLaApuesta extends StatelessWidget {
             final e = apuestasDelCruce(a, b,
                 conteos: [cuenta],
                 participantesDe: participantesDe,
-                crucesFuera: crucesFuera).firstOrNull;
+                crucesFuera: crucesFuera,
+                modo: modo,
+                yo: yo).firstOrNull;
             if (e == null) return const SizedBox.shrink();
             return Row(children: [
               Expanded(

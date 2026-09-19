@@ -18,6 +18,12 @@ enum SetupStep {
   compiten,
   /// Solo con equipos: sin dos lados no hay "bola del equipo" que elegir.
   bola,
+  /// Con quién se juegan las apuestas. Solo en individual y con 3+.
+  ///
+  /// Va aquí —después de saber si hay equipos y antes de elegir qué se
+  /// juega— porque cambia CUÁNTAS apuestas hay que configurar: con cinco
+  /// jugadores, cuatro duelos en vez de diez.
+  modo,
   /// Multi-select de qué se cuenta, con la configuración de cada apuesta
   /// desplegada debajo en el mismo paso.
   cuenta,
@@ -48,6 +54,10 @@ List<SetupStep> setupSteps({
       SetupStep.jugadores,
       SetupStep.compiten,
       if (porEquipos) SetupStep.bola,
+      // Con dos jugadores el único cruce es el tuyo: los dos modos dan la
+      // misma ronda y preguntar sobra. Con equipos, la apuesta es lado contra
+      // lado y «solo mis duelos» no significa nada.
+      if (!porEquipos && jugadores > 2) SetupStep.modo,
       if (conCuenta) SetupStep.cuenta,
       SetupStep.apuestas,
       if (conParticipantes && (apuestasElegidas > 1 || jugadores > 2))
@@ -79,6 +89,7 @@ String setupStepLabel(SetupStep s) => switch (s) {
       SetupStep.jugadores => 'Jugadores',
       SetupStep.compiten => 'Compiten',
       SetupStep.bola => 'Bola',
+      SetupStep.modo => 'Con quién',
       SetupStep.cuenta => 'Qué se juega',
       SetupStep.apuestas => 'Detalle',
       SetupStep.participantes => 'Quién juega',
@@ -122,6 +133,12 @@ Set<SetupStep> resueltosPorGrupo() => const {
       // pone. Olvidarlo hacía aterrizar ahí en vez de en Ventaja.
       SetupStep.apuestas,
       SetupStep.participantes,
+      // Con quién → el grupo YA dice qué duelos existen: `pairRules` es una
+      // lista de parejas con sus apuestas. Preguntar «solo los míos o los de
+      // todos» encima de eso son dos respuestas a la misma pregunta, y la del
+      // grupo es la que se guardó a propósito. Quien quiera solo los suyos los
+      // apaga en el paso de participantes, que es donde se ve cuáles hay.
+      SetupStep.modo,
       SetupStep.montos,
     };
 

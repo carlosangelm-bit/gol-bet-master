@@ -176,7 +176,12 @@ Future<List<BetModuleInstance>> _hastaModulos(
     await tester.tap(fila.first);
     await tester.pump();
   }
-  // Jugadores → Compiten → Qué se cuenta
+  // Jugadores → Compiten → Con quién → Qué se cuenta
+  //
+  // «Con quién» —individual o grupal— se pregunta con tres o más jugadores, y
+  // aquí son cuatro. Sin responderlo se queda en grupal, que es lo de siempre y
+  // lo que estas pruebas miran.
+  await siguiente();
   await siguiente();
   await siguiente();
 

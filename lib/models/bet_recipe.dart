@@ -260,6 +260,27 @@ extension BetCountLabel on BetCount {
   String? get soloDeGrupo => tipoCon(null).motivoSinDuelo;
 }
 
+/// Los cruces que esta ronda NO juega, por las dos razones que hay.
+///
+/// Se apagan a mano en el paso de participantes, y se apagan SOLOS cuando la
+/// ronda es [ModoDeRonda.individual] y el cruce no incluye a quien la crea.
+///
+/// Las dos salen por aquí para que el paso 6, la creación de los módulos y los
+/// chips de la vista por duelo lean lo mismo. Con la del modo calculada aparte
+/// en cada sitio, un cruce podría enseñarse vivo y no existir.
+Set<String> crucesFueraDeLaRonda({
+  required Iterable<String> participantIds,
+  required Set<String> apagadosAMano,
+  required ModoDeRonda modo,
+  required String? yo,
+}) =>
+    {
+      ...apagadosAMano,
+      if (modo == ModoDeRonda.individual && yo != null)
+        for (final (a, b) in BetRecipe.crucesDe(participantIds.toList()))
+          if (a != yo && b != yo) BetRecipe.cruceKey(a, b),
+    };
+
 /// Qué apuestas juega un cruce entre ellos, y por qué no las demás.
 ///
 /// ── LA MISMA INFORMACIÓN, LEÍDA DESDE EL DUELO ────────────────────────────
@@ -282,6 +303,8 @@ List<EstadoDelCruce> apuestasDelCruce(
   required Iterable<BetCount> conteos,
   required List<String> Function(BetCount) participantesDe,
   required Set<String> Function(BetCount) crucesFuera,
+  ModoDeRonda modo = ModoDeRonda.grupal,
+  String? yo,
 }) =>
     [
       for (final c in conteos)
@@ -299,10 +322,19 @@ List<EstadoDelCruce> apuestasDelCruce(
               return EstadoDelCruce(
                   cuenta: c, juega: false, fueraDeLaApuesta: falta);
             }
+            // En una ronda individual, un cruce ajeno no existe y tampoco se
+            // puede encender desde aquí: lo que lo decide es el modo, elegido
+            // al crear la ronda.
+            final ajeno = modo == ModoDeRonda.individual &&
+                yo != null &&
+                a != yo &&
+                b != yo;
             return EstadoDelCruce(
                 cuenta: c,
-                juega: !crucesFuera(c).contains(BetRecipe.cruceKey(a, b)),
-                fueraDeLaApuesta: const []);
+                juega: !ajeno &&
+                    !crucesFuera(c).contains(BetRecipe.cruceKey(a, b)),
+                fueraDeLaApuesta: const [],
+                fueraPorModo: ajeno);
           }(),
     ];
 
@@ -320,13 +352,17 @@ class EstadoDelCruce {
   /// control muerto.
   final List<String> fueraDeLaApuesta;
 
+  /// El cruce no existe porque la ronda es individual y no juegas tú.
+  final bool fueraPorModo;
+
   const EstadoDelCruce({
     required this.cuenta,
     required this.juega,
     required this.fueraDeLaApuesta,
+    this.fueraPorModo = false,
   });
 
-  bool get editable => fueraDeLaApuesta.isEmpty;
+  bool get editable => fueraDeLaApuesta.isEmpty && !fueraPorModo;
 }
 
 /// Las apuestas que son de la partida entera, de las elegidas.
@@ -711,16 +747,29 @@ class BetRecipe {
   /// Sin exclusiones se devuelve UN módulo con todos los participantes, no la
   /// expansión: liquida igual y es más barato de guardar y de leer. Hay test de
   /// que las dos formas pagan lo mismo.
+  /// [fuera] son los cruces apagados A MANO. El modo individual añade los
+  /// suyos AQUÍ, y no en el llamador: quien construye los módulos no puede
+  /// olvidarse de aplicarlo, que es justo lo que haría que la pantalla
+  /// enseñara cuatro duelos y la ronda cobrara diez.
   static List<BetModuleInstance> conCrucesFuera(
     BetModuleInstance base, {
     required List<String> participantIds,
     Set<String> fuera = const {},
     Map<String, MontoPorCruce> importes = const {},
+    ModoDeRonda modo = ModoDeRonda.grupal,
+    String? yo,
   }) {
     if (participantIds.length < 2) return const [];
 
+    final apagados = crucesFueraDeLaRonda(
+      participantIds: participantIds,
+      apagadosAMano: fuera,
+      modo: modo,
+      yo: yo,
+    );
+
     final vivos = crucesDe(participantIds)
-        .where((c) => !fuera.contains(cruceKey(c.$1, c.$2)))
+        .where((c) => !apagados.contains(cruceKey(c.$1, c.$2)))
         .toList();
     if (vivos.isEmpty) return const [];
 
@@ -932,6 +981,50 @@ class BetRecipe {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Cómo se reparte la ventaja en la ronda.
+/// Con quién se juegan las apuestas de esta ronda.
+///
+/// ── El caso que lo pide ───────────────────────────────────────────────────
+///
+///     «Juego con personas mayores, que probablemente no tengan la pericia para
+///      administrar la app. Con ellos es de mucha utilidad que puedan acceder a
+///      su cuenta a ver los resultados mientras alguien más configura las
+///      apuestas e introduce los scores. El error es que a veces no tengo la
+///      información de algún duelo individual.»
+///
+/// Con cinco jugadores hay diez cruces y de varios no se sabe qué pactaron.
+/// La app calculaba con datos que quien administra no controla.
+///
+/// ── Y NO es el enlace en vivo ─────────────────────────────────────────────
+///
+/// El enlace decide si los demás pueden ENTRAR y anotar; esto decide qué
+/// apuestas EXISTEN. Apagar el enlace dejaría a los demás fuera y seguiría
+/// creando los diez duelos. Van juntos en una dirección y solo en una: en
+/// [individual] no se ofrece el enlace, porque no hay nada que nadie venga a
+/// corregir.
+enum ModoDeRonda {
+  /// Solo los duelos donde está quien crea la ronda. Nadie entra.
+  individual,
+
+  /// Todos contra todos, y los invitados pueden corregir lo suyo.
+  grupal;
+
+  String get label => switch (this) {
+        individual => 'Solo mis apuestas',
+        grupal => 'Las apuestas de todos',
+      };
+
+  String get explicacion => switch (this) {
+        individual =>
+          'Se crean solo los duelos en los que juegas tú. Los demás siguen en '
+              'la ronda —se anotan sus scores y salen en la tarjeta, en el '
+              'bruto y en el neto— pero no hay apuestas entre ellos. Nadie '
+              'entra: esta ronda no se comparte.',
+        grupal =>
+          'Se crean todos los cruces. Puedes compartir la ronda para que cada '
+              'quien corrija lo suyo.',
+      };
+}
+
 enum SistemaDeVentaja { handicap, sliding, ninguna }
 
 /// El mapa `pairSliding` que le toca a la ronda, por prioridad creciente.
