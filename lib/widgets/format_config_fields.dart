@@ -100,6 +100,69 @@ Widget _opciones(List<String> etiquetas, int seleccionada, GolfTheme t,
 ///
 /// No hay selector de bruto/neto —los putts no se ajustan por handicap— ni de
 /// segmentos: es UNA serpiente por ronda, la última.
+/// Los campos de una apuesta MANUAL: su nombre, cómo se gana y el importe.
+///
+/// Vive aquí con los demás porque los tres editores de la app los necesitan, y
+/// triplicarlos es cómo el catálogo de tipos acabó repartido por cinco
+/// pantallas.
+///
+/// El NOMBRE es el campo que no tiene ningún otro tipo, y es el que la convierte
+/// en «Fairways» o «Green en regulación» sin añadir tipos al catálogo.
+List<Widget> manualFields({
+  required GolfTheme t,
+  required ManualConfig cfg,
+  required TextEditingController montoCtrl,
+  required TextEditingController nombreCtrl,
+  required ValueChanged<ManualConfig> onChanged,
+}) =>
+    [
+      _etiqueta('CÓMO SE LLAMA', t),
+      const SizedBox(height: 8),
+      TextField(
+        controller: nombreCtrl,
+        style: TextStyle(color: t.text, fontSize: 14),
+        decoration: InputDecoration(
+          hintText: 'Fairways, green en regulación, up-and-down…',
+          hintStyle: TextStyle(color: t.sub, fontSize: 13),
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(9)),
+        ),
+        onChanged: (v) =>
+            onChanged(cfg.copyWith(nombre: v.trim().isEmpty ? 'Apuesta manual' : v.trim())),
+      ),
+      const SizedBox(height: 6),
+      _nota(
+          'Es el nombre que verás en la tarjeta y en el desglose. La app no '
+          'sabe qué es: lo marcas tú hoyo a hoyo.',
+          t),
+      const SizedBox(height: 18),
+
+      _etiqueta('CÓMO SE GANA', t),
+      const SizedBox(height: 8),
+      _opciones(
+          ModoManual.values.map((m) => m.label).toList(),
+          ModoManual.values.indexOf(cfg.modo),
+          t,
+          (i) => onChanged(cfg.copyWith(modo: ModoManual.values[i]))),
+      const SizedBox(height: 6),
+      _nota(cfg.comoSeMarcaConEjemplo, t),
+      const SizedBox(height: 18),
+
+      _etiqueta('MONTO', t),
+      const SizedBox(height: 8),
+      _monto('Monto', montoCtrl, t,
+          onChanged: (v) => onChanged(cfg.copyWith(value: v))),
+      const SizedBox(height: 6),
+      _nota(
+          cfg.modo == ModoManual.ranking
+              ? 'Por cada posición de diferencia en cada hoyo, igual que Oyes.'
+              : 'Lo paga quien pierde la cuenta al final de la ronda, por '
+                  'rival.',
+          t),
+    ];
+
 List<Widget> snakeFields({
   required GolfTheme t,
   required SnakeConfig cfg,

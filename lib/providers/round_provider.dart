@@ -46,6 +46,11 @@ Map<String, dynamic> roundToJson(Round r) {
   'scores': r.scores.map((pid, hmap) => MapEntry(pid, hmap.map((h, s) => MapEntry(h.toString(), s.toJson())))),
   'events': r.events.map((pid, hmap) => MapEntry(pid, hmap.map((h, list) => MapEntry(h.toString(), list.map((e) => e.toJson()).toList())))),
   'oyeseRankings': r.oyeseRankings.map((h, or_) => MapEntry(h.toString(), or_.toJson())),
+  // Lo marcado a mano en las apuestas manuales. Vacío no se escribe: una ronda
+  // sin ninguna no engorda su documento.
+  if (r.manuales.isNotEmpty)
+    'manuales': r.manuales.map((modId, porHoyo) => MapEntry(
+        modId, porHoyo.map((h, pids) => MapEntry(h.toString(), pids)))),
   // Solo si hay alguno: las rondas sin Wolf no ganan una clave vacía.
   if (r.wolfCalls.isNotEmpty)
     'wolfCalls': r.wolfCalls.map((h, w) => MapEntry(h.toString(), w.toJson())),
@@ -143,6 +148,16 @@ Round roundFromJson(Map<String, dynamic> j) {
     }
   });
 
+  final manuales = <String, Map<int, List<String>>>{};
+  asMap(j['manuales']).forEach((modId, porHoyo) {
+    final m = <int, List<String>>{};
+    asMap(porHoyo).forEach((hStr, pids) {
+      final h = int.tryParse(hStr);
+      if (h != null) m[h] = List<String>.from(asList(pids));
+    });
+    if (m.isNotEmpty) manuales[modId] = m;
+  });
+
   final sliding = asList(j["sliding"])
       .map((s) {
         try { return SlidingRelation.fromJson(asMap(s)); }
@@ -182,6 +197,7 @@ Round roundFromJson(Map<String, dynamic> j) {
         ? CourseInfo.fromJson(asMap(j['course']))   // asMap() normaliza Map<Object?,Object?>
         : CourseInfo.standard,
     scores: scores, events: events, oyeseRankings: oyeses, sliding: sliding,
+    manuales: manuales,
     wolfCalls: wolfCalls,
     torneoIds:
         ((j['torneoIds'] as List?) ?? const []).map((e) => '$e').toList(),
@@ -809,6 +825,27 @@ class RoundProvider extends ChangeNotifier {
     _persist();
   }
 
+  /// Marca o desmarca a [pid] en [hoyo] para la apuesta manual [moduleId].
+  ///
+  /// Un solo gesto para los tres modos: tocar un nombre. En sí/no entra o sale
+  /// de la lista; en ranking entra AL FINAL —1º, 2º, 3º— o sale y los de detrás
+  /// suben. Sin teclear números y sin abrir nada.
+  void alternarManual(String moduleId, int hoyo, String pid) {
+    if (_round == null) return;
+    final todo = {
+      for (final e in _round!.manuales.entries)
+        e.key: {for (final h in e.value.entries) h.key: List<String>.of(h.value)}
+    };
+    final delModulo = todo.putIfAbsent(moduleId, () => {});
+    final lista = delModulo.putIfAbsent(hoyo, () => []);
+    if (!lista.remove(pid)) lista.add(pid);
+    if (lista.isEmpty) delModulo.remove(hoyo);
+    if (delModulo.isEmpty) todo.remove(moduleId);
+    _round = _round!.copyWith(manuales: todo);
+    notifyListeners();
+    _persist();
+  }
+
   // ── Wolf: con quién jugó el Wolf en este hoyo ──────────────────────────────
   //
   // La ÚNICA cosa que Wolf pide al usuario. El Wolf no se pregunta: se deriva
@@ -1293,6 +1330,14 @@ class RoundProvider extends ChangeNotifier {
       );
     }
 
+    // Configuración de la apuesta manual
+    ManualConfig? manualCfg = mod.manualConfig;
+    if (manualCfg != null) {
+      manualCfg = manualCfg.copyWith(
+        value: (payload['manualValue'] as num?)?.toDouble(),
+      );
+    }
+
     // Configuración de Snake
     SnakeConfig? snakeCfg = mod.snakeConfig;
     if (snakeCfg != null) {
@@ -1341,35 +1386,27 @@ class RoundProvider extends ChangeNotifier {
       );
     }
 
-    return BetModuleInstance(
-      id:                    mod.id,
-      type:                  mod.type,
-      name:                  mod.name,
-      participantIds:        mod.participantIds,
-      sides:                 mod.sides,
-      status:                mod.status,
-      formatMode:            mod.formatMode,
-      nassauConfig:          nassauCfg,
-      skinsConfig:           skinsCfg,
-      medalConfig:           medalCfg,
-      puttsConfig:           puttsCfg,
-      oyesesConfig:          mod.oyesesConfig,
-      unitsConfig:           mod.unitsConfig,
-      // Se reconstruye campo a campo, no con copyWith, así que una config que
-      // falte aquí se BORRA en silencio al editar cualquier otra cosa del
-      // módulo. El compilador no lo caza: son parámetros con nombre opcionales.
-      snakeConfig:           snakeCfg,
-      rabbitConfig:          rabbitCfg,
-      wolfConfig:            wolfCfg,
-      sixesConfig:           sixesCfg,
-      stablefordConfig:      stablefordCfg,
-      presses:               mod.presses,
-      structure:             mod.structure,
-      betGroupId:            mod.betGroupId,
-      betGroupName:          mod.betGroupName,
-      anchorPlayerId:        mod.anchorPlayerId,
-      playerConfigOverrides: mod.playerConfigOverrides,
-      pairConfigOverrides:   mod.pairConfigOverrides,
+    // ── `copyWith`, y no un módulo nuevo campo a campo ──────────────────────
+    //
+    // Aquí había un `BetModuleInstance(...)` con veinte parámetros, y su propio
+    // comentario avisaba: «una config que falte aquí se BORRA en silencio al
+    // editar cualquier otra cosa del módulo. El compilador no lo caza». Es la
+    // séptima vez en este proyecto que reconstruir un objeto campo a campo
+    // pierde uno —`savedGroupId` se perdió seis—, y el aviso no evitó ninguna.
+    //
+    // Con `copyWith` solo se nombra lo que cambia, así que un campo nuevo del
+    // modelo no se puede olvidar: no hay dónde olvidarlo.
+    return mod.copyWith(
+      nassauConfig:     nassauCfg,
+      skinsConfig:      skinsCfg,
+      medalConfig:      medalCfg,
+      puttsConfig:      puttsCfg,
+      manualConfig:     manualCfg,
+      snakeConfig:      snakeCfg,
+      rabbitConfig:     rabbitCfg,
+      wolfConfig:       wolfCfg,
+      sixesConfig:      sixesCfg,
+      stablefordConfig: stablefordCfg,
     );
   }
 

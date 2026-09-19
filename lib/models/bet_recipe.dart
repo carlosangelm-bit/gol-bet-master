@@ -32,7 +32,7 @@ import 'models.dart';
 /// Los nombres son los que usa el grupo, no los del modelo: Oyes y Unidades,
 /// no "oyeses" y "units". Un nombre que hay que traducir mentalmente ya cuesta
 /// un paso.
-enum BetCount { puntos, skins, scoreTotal, putts, oyes, unidades, snake, rabbit, wolf, stableford, sixes }
+enum BetCount { puntos, skins, scoreTotal, putts, oyes, unidades, snake, rabbit, wolf, stableford, sixes, manual }
 
 /// Si la apuesta se parte en sub-apuestas.
 ///
@@ -113,6 +113,10 @@ extension BetCountLabel on BetCount {
       BetCount.wolf => 'Wolf',
       BetCount.sixes => 'Sixes',
       BetCount.stableford => 'Stableford',
+      // El nombre GENÉRICO. El que pone el grupo vive en `ManualConfig.nombre`,
+      // porque «Fairways» y «Green en regulación» son dos apuestas del mismo
+      // tipo, no dos tipos.
+      BetCount.manual => 'La mía',
       BetCount.puntos => 'Match', // inalcanzable
     };
   }
@@ -140,6 +144,7 @@ extension BetCountLabel on BetCount {
       BetCount.wolf => BetModuleType.wolf,
       BetCount.sixes => BetModuleType.sixes,
       BetCount.stableford => BetModuleType.stableford,
+      BetCount.manual => BetModuleType.manual,
     };
   }
 
@@ -188,6 +193,10 @@ extension BetCountLabel on BetCount {
   /// motores _skins, _medal, _putts y _oyeses — cuatro. _units NO lo lee ni
   /// una vez, así que ofrecerlo en Unidades sería un control que no hace nada.
   bool get admiteBote => switch (this) {
+        // La manual NO, y es verificable: `ManualEngine` no lee `formatMode`
+        // ni una vez. Ofrecer el bote sería un control que no hace nada — el
+        // mismo criterio que dejó a Unidades fuera de esta lista.
+        BetCount.manual => false,
         BetCount.skins ||
         BetCount.scoreTotal ||
         BetCount.putts ||
@@ -229,6 +238,9 @@ extension BetCountLabel on BetCount {
       };
 
   String? get sinBote => switch (this) {
+        BetCount.manual =>
+          'Se cuenta contra cada rival por separado, como Unidades: no hay una '
+              'bolsa que repartir.',
         BetCount.snake =>
           'La serpiente es una sola y su dueño paga a todos: ya es un bote.',
         BetCount.rabbit =>

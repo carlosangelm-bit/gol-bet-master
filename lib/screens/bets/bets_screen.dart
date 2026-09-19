@@ -2055,6 +2055,9 @@ class _BetRow extends StatelessWidget {
   String _buildLabel() {
     final label = mod.type.label;
     switch (mod.type) {
+      // El nombre del grupo, no el del tipo: en el chip se lee «Fairways».
+      case BetModuleType.manual:
+        return '${mod.manual.nombre} · \$${mod.manual.value.toStringAsFixed(0)}';
       case BetModuleType.stableford:
         return '$label · \$${mod.baseValue.toStringAsFixed(0)}';
       case BetModuleType.wolf:
@@ -2093,6 +2096,10 @@ class _BetRow extends StatelessWidget {
 
   String? _modeLabel() {
     switch (mod.type) {
+      // Gross o net no significan nada aquí: no se cuenta un score, se cuenta
+      // lo que alguien marcó.
+      case BetModuleType.manual:
+        return mod.manual.modo.label;
       case BetModuleType.skins:
         return mod.skins.mode == GrossNetMode.gross ? 'Gross' : 'Net';
       case BetModuleType.nassau:
@@ -2258,6 +2265,7 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
 
   double _currentValue() {
     switch (mod.type) {
+      case BetModuleType.manual:       return mod.manual.value;
       case BetModuleType.snake:        return mod.snake.value;
       case BetModuleType.rabbit:       return mod.rabbit.value;
       case BetModuleType.wolf:         return mod.wolf.value;
@@ -2276,6 +2284,7 @@ class _ProposeBetChangeSheetState extends State<_ProposeBetChangeSheet> {
   Map<String, dynamic> _buildPayload() {
     final newVal = double.tryParse(_amountCtrl.text) ?? _currentValue();
     switch (mod.type) {
+      case BetModuleType.manual:       return {'manualValue': newVal};
       case BetModuleType.snake:        return {'snakeValue': newVal};
       case BetModuleType.rabbit:       return {'rabbitValue': newVal};
       case BetModuleType.wolf:         return {'wolfValue': newVal};

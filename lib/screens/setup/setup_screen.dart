@@ -5723,6 +5723,15 @@ class _SetupScreenState extends State<SetupScreen> {
               _cfgCtrl('rabbit.value', cfg.rabbit.value.toStringAsFixed(0)),
           onChanged: (c) => update(cfg.copyWith(rabbitConfig: c)),
         );
+      case BetModuleType.manual:
+        return manualFields(
+          t: t,
+          cfg: cfg.manual,
+          montoCtrl:
+              _cfgCtrl('manual.value', cfg.manual.value.toStringAsFixed(0)),
+          nombreCtrl: _cfgCtrl('manual.nombre', cfg.manual.nombre),
+          onChanged: (c) => update(cfg.copyWith(manualConfig: c)),
+        );
       case BetModuleType.snake:
         return snakeFields(
           t: t,

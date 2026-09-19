@@ -1639,6 +1639,38 @@ class _BetInfo {
           'H9 empatado → Carlos lo conserva\n'
           'Cierre de los 9: Carlos cobra \$100 a cada uno (+\$300)',
     ),
+    // ── La mía (apuesta manual) ───────────────────────────────────────────────
+    _BetInfo(
+      type: BetModuleType.manual,
+      icon: Icons.checklist_rtl,
+      color: Color(0xFF455A64),
+      tagline: 'La que tu grupo juegue y la app no conozca',
+      howItWorks:
+          'Le pones nombre —fairways, green en regulación, up-and-down, '
+          'penalizaciones— y la marcas hoyo a hoyo con un toque. La app no '
+          'sabe qué es: cuenta lo que marques y liquida como cualquier otra.\n\n'
+          'Tres formas de ganarla: quien más tenga, quien MENOS tenga —para '
+          'penaltis y bunkers— o por posición, tocando los nombres en el orden '
+          'en que quedaron. Esa última sirve para el drive más largo o la bola '
+          'más cerca.',
+      rules: [
+        'El nombre lo pones tú, y es el que sale en el desglose',
+        'Se marca en la pantalla de anotar, un toque por jugador y hoyo',
+        'Gana quien más tenga, o quien menos: es el mismo cálculo al revés',
+        'En modo posición se paga por diferencia de puesto, como Oyes',
+        'Se cuenta la ronda entera: no se parte en Front y Back',
+        'Contra cada rival por separado, como Unidades: no hay bote',
+        'Puedes llevar varias a la vez, cada una con su nombre y su monto',
+      ],
+      example:
+          'Fairways \$50 · gana quien más tenga · 4 jugadores\n'
+          '───────────────────────────────\n'
+          'Se marca en cada hoyo a quien pegó al fairway\n'
+          'Al cerrar: Carlos 11 · Rafa 8 · Rich 8 · Alan 5\n'
+          'Carlos gana sus tres duelos: +\$150\n'
+          'Rafa y Rich empatan entre ellos: no se cobran\n'
+          'Alan pierde los tres: -\$150',
+    ),
     // ── Snake ─────────────────────────────────────────────────────────────────
     _BetInfo(
       type: BetModuleType.snake,
@@ -2627,6 +2659,9 @@ class ActiveRoundView extends StatelessWidget {
   // ── Etiqueta de valor corta para el chip ──────────────────────────────────
   String _shortChipLabel(BetModuleInstance m) {
     switch (m.type) {
+      // El nombre que le puso el grupo: «Fairways», no «Apuesta manual».
+      case BetModuleType.manual:
+        return m.manual.nombre;
       case BetModuleType.snake:
       case BetModuleType.rabbit:
       case BetModuleType.wolf:

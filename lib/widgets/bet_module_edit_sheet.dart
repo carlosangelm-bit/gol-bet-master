@@ -90,6 +90,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   late final TextEditingController _puttsCtrl;
   late final TextEditingController _oyesCtrl, _zapatoCtrl;
   late final TextEditingController _snakeCtrl, _rabbitCtrl, _wolfCtrl, _sixesCtrl;
+  late final TextEditingController _manualCtrl, _manualNombreCtrl;
   late final TextEditingController _stablefordCtrl;
   late final TextEditingController _lhSegCtrl, _lhPointCtrl;
   late final Map<UnitEventType, TextEditingController> _unitCtrls;
@@ -138,6 +139,8 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _puttsCtrl  = TextEditingController(text: m.putts.value.toStringAsFixed(0));
     _oyesCtrl   = TextEditingController(text: m.oyeses.value.toStringAsFixed(0));
     _snakeCtrl  = TextEditingController(text: m.snake.value.toStringAsFixed(0));
+    _manualCtrl = TextEditingController(text: m.manual.value.toStringAsFixed(0));
+    _manualNombreCtrl = TextEditingController(text: m.manual.nombre);
     _rabbitCtrl = TextEditingController(text: m.rabbit.value.toStringAsFixed(0));
     _wolfCtrl   = TextEditingController(text: m.wolf.value.toStringAsFixed(0));
     _sixesCtrl  = TextEditingController(text: m.sixes.value.toStringAsFixed(0));
@@ -212,6 +215,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
     _medalCtrl.dispose();
     _puttsCtrl.dispose();
     _oyesCtrl.dispose(); _zapatoCtrl.dispose();
+    _manualCtrl.dispose(); _manualNombreCtrl.dispose();
     _snakeCtrl.dispose(); _rabbitCtrl.dispose(); _wolfCtrl.dispose();
     _sixesCtrl.dispose();
     _stablefordCtrl.dispose();
@@ -434,6 +438,7 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
 
   List<Widget> _buildFields(GolfTheme t) {
     switch (_current.type) {
+      case BetModuleType.manual:        return _manualFields(t);
       case BetModuleType.skins:         return _skinsFields(t);
       case BetModuleType.nassau:        return _nassauFields(t);
       case BetModuleType.medal:         return _medalFields(t);
@@ -452,6 +457,14 @@ class _BetModuleEditSheetState extends State<BetModuleEditSheet> {
   // Los campos de Snake viven en format_config_fields.dart: los mismos tres
   // editores de la app los necesitan y triplicarlos es cómo el catálogo de
   // tipos acabó repartido por cinco pantallas.
+  List<Widget> _manualFields(GolfTheme t) => manualFields(
+        t: t,
+        cfg: _current.manual,
+        montoCtrl: _manualCtrl,
+        nombreCtrl: _manualNombreCtrl,
+        onChanged: (c) => _update(_current.copyWith(manualConfig: c)),
+      );
+
   List<Widget> _snakeFields(GolfTheme t) => snakeFields(
         t: t,
         cfg: _current.snake,

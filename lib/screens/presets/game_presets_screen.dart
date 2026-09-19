@@ -908,6 +908,16 @@ class _PresetConfigWidgets {
               TextEditingController(text: cfg.rabbit.value.toStringAsFixed(0)),
           onChanged: (c) => update(cfg.copyWith(rabbitConfig: c)),
         );
+      case BetModuleType.manual:
+        return manualFields(
+          t: t,
+          cfg: cfg.manual,
+          // Controller en línea, igual que los hermanos de este archivo.
+          montoCtrl: TextEditingController(
+              text: cfg.manual.value.toStringAsFixed(0)),
+          nombreCtrl: TextEditingController(text: cfg.manual.nombre),
+          onChanged: (c) => update(cfg.copyWith(manualConfig: c)),
+        );
       case BetModuleType.snake:
         return snakeFields(
           t: t,

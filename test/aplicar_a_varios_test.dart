@@ -25,11 +25,15 @@ import 'package:golf_bet_master/models/bet_recipe.dart';
 
 void main() {
   group('1 · qué se pacta por duelo, y qué no', () {
-    test('Skins, Nassau, Medal, Putts y Stableford', () {
-      // La lista es EXPLÍCITA a propósito, y ya hizo su trabajo: al añadir
-      // Stableford cayó, y la respuesta había cambiado de verdad —comparar
-      // puntos entre dos personas es un duelo perfectamente válido—. Una lista
-      // derivada de la propia implementación no habría dicho nada.
+    test('Skins, Nassau, Medal, Putts, Stableford y la manual', () {
+      // La lista es EXPLÍCITA a propósito, y ya ha hecho su trabajo DOS veces:
+      // con Stableford —comparar puntos entre dos personas es un duelo válido—
+      // y ahora con la apuesta manual. Las dos veces la respuesta había
+      // cambiado de verdad, que es justo lo que una lista derivada de la propia
+      // implementación no habría dicho.
+      //
+      // Una manual se pacta por duelo: «fairways entre tú y yo» es un duelo
+      // como cualquier otro, y es el caso que pidió Carlos.
       final porDuelo =
           creatableBetTypes.where((t) => t.sePactaPorDuelo).toSet();
       expect(porDuelo, {
@@ -38,6 +42,7 @@ void main() {
         BetModuleType.medal,
         BetModuleType.putts,
         BetModuleType.stableford,
+        BetModuleType.manual,
       });
     });
 

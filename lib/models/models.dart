@@ -27,7 +27,7 @@ DateTime _parseDate(dynamic value) {
 }
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
-enum BetModuleType { skins, nassau, medal, putts, oyeses, units, nassauLowHigh, snake, rabbit, wolf, stableford, sixes }
+enum BetModuleType { skins, nassau, medal, putts, oyeses, units, nassauLowHigh, snake, rabbit, wolf, stableford, sixes, manual }
 
 /// Qué hacer cuando una categoría (bola baja o alta) queda empatada en un hoyo.
 enum LowHighTieRule {
@@ -193,6 +193,27 @@ class BetTypeRules {
 
 extension BetModuleTypeRules on BetModuleType {
   BetTypeRules get rules => switch (this) {
+        // ── LA APUESTA MANUAL ────────────────────────────────────────────
+        //
+        // Hereda todo lo que ya tienen las demás: importe por duelo, alcance,
+        // guardas, desglose. Lo único que la distingue es que la app no sabe
+        // QUÉ se está apostando — lo marca una persona hoyo a hoyo.
+        //
+        //   · teams: false. Un fairway lo pega una persona; agregarlo por lado
+        //     pide una regla —¿el mejor?, ¿los dos?— que nadie ha pactado.
+        //   · perPairAmount: true. Es la misma clase de apuesta que Putts.
+        //   · soloPersonas: true. Un equipo virtual no clava una bola.
+        //   · deLaPartida: false. Se pacta cruce a cruce como cualquier duelo.
+        BetModuleType.manual => const BetTypeRules(
+            teams: false,
+            sinEquipos: 'Se marca por persona en cada hoyo, no por lado.',
+            perPairAmount: true,
+            soloPersonas: true,
+            sinSegmentos:
+                'Se cuenta la ronda entera: partirla en dos exigiría decidir '
+                    'qué pasa con lo marcado en cada mitad, y eso es un pacto '
+                    'que nadie ha hecho.',
+          ),
         BetModuleType.skins => const BetTypeRules(
             teams: true,
             perPairAmount: true,
@@ -391,6 +412,8 @@ extension BetModuleFamilyOf on BetModuleType {
   /// Switch exhaustivo A PROPÓSITO: es lo que obliga al siguiente formato a
   /// declararse y lo que impide que quede inalcanzable en las tres hojas.
   BetFamily get family => switch (this) {
+        // Se cuenta hoyo a hoyo y se paga por diferencia, como Putts y Oyes.
+        BetModuleType.manual => BetFamily.otras,
         BetModuleType.nassau ||
         BetModuleType.nassauLowHigh =>
           BetFamily.matchPlay,
@@ -800,6 +823,10 @@ extension BetModuleLabel on BetModuleType {
   // al pintar la etiqueta. Un switch sobre un enum sí es exhaustivo, así que el
   // siguiente formato no se puede añadir a medias.
   String get label => switch (this) {
+        // El nombre GENÉRICO del tipo. El que puso el usuario vive en la
+        // instancia —`ManualConfig.nombre`— porque «Fairways» y «Green en
+        // regulación» son dos apuestas del mismo tipo, no dos tipos.
+        BetModuleType.manual => 'Apuesta manual',
         BetModuleType.skins => 'Skins',
         BetModuleType.nassau => 'Nassau', // con o sin press (pressEnabled)
         BetModuleType.medal => 'Medal',
@@ -832,6 +859,7 @@ extension BetModuleLabel on BetModuleType {
   /// necesita reconocer: el Snake arrastra un castigo, el Rabbit se caza y se
   /// pierde, el Wolf es uno contra el resto.
   IconData get icono => switch (this) {
+        BetModuleType.manual => Icons.checklist_rtl,
         BetModuleType.skins => GolfIcons.diana,
         BetModuleType.nassau => GolfIcons.golpe,
         BetModuleType.medal => GolfIcons.medalla,
@@ -873,6 +901,9 @@ extension BetModuleLabel on BetModuleType {
       };
 
   String get description => switch (this) {
+        BetModuleType.manual =>
+          'La que quieras: fairways, green en regulación, up-and-down. Le '
+              'pones nombre y la marcas hoyo a hoyo.',
         BetModuleType.skins => 'Cada hoyo vale una skin. Empates acumulan.',
         BetModuleType.nassau =>
           'Front 9, Back 9 y Total 18. En una ronda de 9 hoyos es UNA sola '
@@ -1198,6 +1229,121 @@ class OyeseRanking {
 // Cada tipo de apuesta tiene su propia clase de configuración.
 // BetModuleInstance las une bajo un paraguas común.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Cómo se decide quién gana una apuesta manual.
+enum ModoManual {
+  /// Se marca quién lo consiguió en cada hoyo. Gana quien más tenga.
+  siNo,
+
+  /// Lo mismo con el signo cambiado: gana quien MENOS tenga.
+  ///
+  /// Es el mismo motor, y con él se cubren las penalizaciones y los bunkers sin
+  /// escribir nada nuevo: contar penaltis y contar «hoyos con penalti» dan casi
+  /// lo mismo en una ronda normal.
+  siNoInvertido,
+
+  /// Se ordena a los jugadores en cada hoyo y se paga por diferencia de
+  /// posición, igual que Oyes.
+  ///
+  /// La diferencia con Oyes es QUIÉN ordena: allí la posición se deduce del
+  /// score, aquí la marca el usuario tocando los nombres en orden.
+  ranking;
+
+  String get label => switch (this) {
+        siNo => 'Gana quien más tenga',
+        siNoInvertido => 'Gana quien menos tenga',
+        ranking => 'Por posición en cada hoyo',
+      };
+
+  String get comoSeMarca => switch (this) {
+        siNo || siNoInvertido =>
+          'Toca a quien lo consiguió en cada hoyo.',
+        ranking =>
+          'Toca los nombres en el orden en que quedaron: 1º, 2º, 3º…',
+      };
+}
+
+/// Una apuesta que la app no entiende, con el nombre que le ponga el usuario.
+///
+/// ── Por qué es un tipo del catálogo y no un motor aparte ──────────────────
+///
+///     «Crear una apuesta con el mecanismo que ya tienes —bote o todos vs
+///      todos, monto, quiénes juegan—. Estoy pensando en grupos que apuestan
+///      cosas raras que no vamos a meter a la app, como fairways, green en
+///      regulation, y ese tipo de cosas.»
+///
+/// Todo lo que pide ya existe: estructura, importe por duelo, quién juega, el
+/// desglose, el balance, las guardas. Lo único nuevo es la captura. Así que el
+/// TIPO es uno solo y el nombre es un DATO suyo — «Fairways» y «Green en
+/// regulación» son dos instancias del mismo tipo, no dos tipos.
+///
+/// Y ser del catálogo es lo barato, no lo caro: los `switch` exhaustivos
+/// obligan a visitar cada sitio que tiene algo que decir de una apuesta. Un
+/// motor paralelo no obliga a nada, y por eso se olvida la mitad.
+///
+/// El precedente exacto es Putts: se captura por hoyo, se suma y se liquida por
+/// diferencia. Una manual de [ModoManual.siNo] es Putts con otro nombre; una de
+/// [ModoManual.ranking] es Oyes con el orden puesto a mano.
+class ManualConfig {
+  /// Cómo la llama el grupo. Es lo que se lee en el desglose y en la tarjeta.
+  final String nombre;
+  final ModoManual modo;
+  final double value;
+  final GrossNetMode mode;
+
+  const ManualConfig({
+    this.nombre = 'Apuesta manual',
+    this.modo = ModoManual.siNo,
+    this.value = 50,
+    this.mode = GrossNetMode.gross,
+  });
+
+  static const def = ManualConfig();
+
+  /// Cómo se marca, con un ejemplo de lo que sirve.
+  String get comoSeMarcaConEjemplo => switch (modo) {
+        ModoManual.siNo =>
+          'Toca a quien lo consiguió en cada hoyo. Gana quien más tenga: '
+              'fairways, green en regulación, up-and-down.',
+        ModoManual.siNoInvertido =>
+          'Toca a quien lo hizo en cada hoyo. Gana quien MENOS tenga: '
+              'penalizaciones, bunkers, tres putts.',
+        ModoManual.ranking =>
+          'Toca los nombres en el orden en que quedaron —1º, 2º, 3º—. Se paga '
+              'por diferencia de posición: drive más largo, bola más cerca.',
+      };
+
+  ManualConfig copyWith({
+    String? nombre,
+    ModoManual? modo,
+    double? value,
+    GrossNetMode? mode,
+  }) =>
+      ManualConfig(
+        nombre: nombre ?? this.nombre,
+        modo: modo ?? this.modo,
+        value: value ?? this.value,
+        mode: mode ?? this.mode,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'nombre': nombre,
+        'modo': modo.name,
+        'value': value,
+        'mode': mode.name,
+      };
+
+  factory ManualConfig.fromJson(Map<String, dynamic> j) => ManualConfig(
+        nombre: (j['nombre'] as String?) ?? 'Apuesta manual',
+        modo: ModoManual.values.firstWhere(
+            (m) => m.name == (j['modo'] as String?),
+            orElse: () => ModoManual.siNo),
+        value: (j['value'] as num?)?.toDouble() ?? 50,
+        mode: GrossNetMode.values.firstWhere(
+            (m) => m.name == (j['mode'] as String?),
+            orElse: () => GrossNetMode.gross),
+      );
+}
 
 class SkinsConfig {
   final double valuePerSkin;   // valor por skin
@@ -2734,6 +2880,7 @@ class BetModuleInstance {
   final OyesesConfig?         oyesesConfig;
   final UnitsConfig?          unitsConfig;
   final SnakeConfig?          snakeConfig;
+  final ManualConfig?         manualConfig;
   final RabbitConfig?         rabbitConfig;
   final WolfConfig?           wolfConfig;
   final SixesConfig?          sixesConfig;
@@ -2808,6 +2955,7 @@ class BetModuleInstance {
     this.oyesesConfig,
     this.unitsConfig,
     this.snakeConfig,
+    this.manualConfig,
     this.rabbitConfig,
     this.wolfConfig,
     this.sixesConfig,
@@ -2854,6 +3002,7 @@ class BetModuleInstance {
   OyesesConfig         get oyeses         => oyesesConfig         ?? OyesesConfig.def;
   UnitsConfig          get units          => unitsConfig          ?? UnitsConfig.def;
   SnakeConfig          get snake          => snakeConfig          ?? SnakeConfig.def;
+  ManualConfig         get manual         => manualConfig         ?? ManualConfig.def;
   RabbitConfig         get rabbit         => rabbitConfig         ?? RabbitConfig.def;
   WolfConfig           get wolf           => wolfConfig           ?? WolfConfig.def;
   SixesConfig          get sixes          => sixesConfig          ?? SixesConfig.def;
@@ -2861,6 +3010,7 @@ class BetModuleInstance {
 
   // ── Compatibilidad con BetEngine (valor base y flags) ──────────────────────
   double get value => switch (type) {
+    BetModuleType.manual        => manual.value,
     BetModuleType.snake         => snake.value,
     BetModuleType.rabbit        => rabbit.value,
     BetModuleType.wolf          => wolf.value,
@@ -2900,6 +3050,11 @@ class BetModuleInstance {
 
   // ── Summary para mostrar en el tile ──────────────────────────────────────
   String get summaryLabel => switch (type) {
+    // El NOMBRE que le puso el usuario, que es lo único que distingue dos
+    // manuales entre sí. Sin él, «Fairways» y «Green en regulación» se leen
+    // igual en la tarjeta y en el desglose.
+    BetModuleType.manual => '\$${manual.value.toStringAsFixed(0)} · '
+                            '${manual.modo.label}',
     BetModuleType.snake  => '\$${snake.value.toStringAsFixed(0)} · '
                             '${snake.umbral}+ putts',
     BetModuleType.stableford => '\$${stableford.value.toStringAsFixed(0)} · '
@@ -2961,6 +3116,7 @@ class BetModuleInstance {
     OyesesConfig?         oyesesConfig,
     UnitsConfig?          unitsConfig,
     SnakeConfig?          snakeConfig,
+    ManualConfig?         manualConfig,
     RabbitConfig?         rabbitConfig,
     WolfConfig?           wolfConfig,
     SixesConfig?          sixesConfig,
@@ -2994,6 +3150,7 @@ class BetModuleInstance {
     oyesesConfig:         oyesesConfig         ?? this.oyesesConfig,
     unitsConfig:          unitsConfig          ?? this.unitsConfig,
     snakeConfig:          snakeConfig          ?? this.snakeConfig,
+    manualConfig:         manualConfig         ?? this.manualConfig,
     rabbitConfig:         rabbitConfig         ?? this.rabbitConfig,
     wolfConfig:           wolfConfig           ?? this.wolfConfig,
     sixesConfig:          sixesConfig          ?? this.sixesConfig,
@@ -3050,6 +3207,7 @@ class BetModuleInstance {
     if (oyesesConfig         != null) 'oyesesConfig':         oyesesConfig!.toJson(),
     if (unitsConfig          != null) 'unitsConfig':          unitsConfig!.toJson(),
     if (snakeConfig          != null) 'snakeConfig':          snakeConfig!.toJson(),
+    if (manualConfig         != null) 'manualConfig':         manualConfig!.toJson(),
     if (rabbitConfig         != null) 'rabbitConfig':         rabbitConfig!.toJson(),
     if (wolfConfig           != null) 'wolfConfig':           wolfConfig!.toJson(),
     if (sixesConfig          != null) 'sixesConfig':          sixesConfig!.toJson(),
@@ -3120,6 +3278,7 @@ class BetModuleInstance {
       oyesesConfig:         j['oyesesConfig']         != null ? OyesesConfig.fromJson(asMap(j['oyesesConfig']))        : null,
       unitsConfig:          j['unitsConfig']          != null ? UnitsConfig.fromJson(asMap(j['unitsConfig']))          : null,
       snakeConfig:          j['snakeConfig']          != null ? SnakeConfig.fromJson(asMap(j['snakeConfig']))          : null,
+      manualConfig:         j['manualConfig']         != null ? ManualConfig.fromJson(asMap(j['manualConfig']))        : null,
       rabbitConfig:         j['rabbitConfig']         != null ? RabbitConfig.fromJson(asMap(j['rabbitConfig']))        : null,
       wolfConfig:           j['wolfConfig']           != null ? WolfConfig.fromJson(asMap(j['wolfConfig']))            : null,
       sixesConfig:          j['sixesConfig']          != null ? SixesConfig.fromJson(asMap(j['sixesConfig']))           : null,
@@ -3195,6 +3354,7 @@ class BetModuleInstance {
         oyesesConfig:          oyesesConfig,
         unitsConfig:           unitsConfig,
         snakeConfig:           snakeConfig,
+        manualConfig:          manualConfig,
         rabbitConfig:          rabbitConfig,
         wolfConfig:            wolfConfig,
         sixesConfig:           sixesConfig,
@@ -3219,6 +3379,7 @@ class BetModuleInstance {
   /// QUÉ se juega.
   String get configSignature {
     final Map<String, dynamic> cfg = switch (type) {
+      BetModuleType.manual         => manual.toJson(),
       BetModuleType.snake          => snake.toJson(),
       BetModuleType.rabbit         => rabbit.toJson(),
       BetModuleType.wolf           => wolf.toJson(),
@@ -3350,6 +3511,12 @@ class BetModuleInstance {
     BetModuleInstance Function(BetModuleInstance, double)? escribir,
     String? clavePorDuelo,
   }) importeDelTipo(BetModuleType t) => switch (t) {
+        BetModuleType.manual => (
+            leer: (m) => m.manual.value,
+            escribir: (m, v) =>
+                m.copyWith(manualConfig: m.manual.copyWith(value: v)),
+            clavePorDuelo: 'manual',
+          ),
         BetModuleType.skins => (
             leer: (m) => m.skins.valuePerSkin,
             escribir: (m, v) =>
@@ -3460,6 +3627,7 @@ class BetModuleInstance {
       oyesesConfig:         type == BetModuleType.oyeses        ? OyesesConfig.def         : null,
       unitsConfig:          type == BetModuleType.units         ? UnitsConfig.def          : null,
       snakeConfig:          type == BetModuleType.snake         ? SnakeConfig.def          : null,
+      manualConfig:         type == BetModuleType.manual        ? ManualConfig.def         : null,
       rabbitConfig:         type == BetModuleType.rabbit        ? RabbitConfig.def         : null,
       wolfConfig:           type == BetModuleType.wolf          ? WolfConfig.def           : null,
       sixesConfig:          type == BetModuleType.sixes         ? SixesConfig.def          : null,
@@ -3500,6 +3668,7 @@ class BetModuleInstance {
     OyesesConfig?         oyesesConfig,
     UnitsConfig?          unitsConfig,
     SnakeConfig?          snakeConfig,
+    ManualConfig?         manualConfig,
     RabbitConfig?         rabbitConfig,
     WolfConfig?           wolfConfig,
     SixesConfig?          sixesConfig,
@@ -3527,6 +3696,7 @@ class BetModuleInstance {
         oyesesConfig:         oyesesConfig         ?? (type == BetModuleType.oyeses        ? OyesesConfig.def         : null),
         unitsConfig:          unitsConfig          ?? (type == BetModuleType.units         ? UnitsConfig.def          : null),
         snakeConfig:          snakeConfig          ?? (type == BetModuleType.snake         ? SnakeConfig.def          : null),
+        manualConfig:         manualConfig         ?? (type == BetModuleType.manual        ? ManualConfig.def         : null),
         rabbitConfig:         rabbitConfig         ?? (type == BetModuleType.rabbit        ? RabbitConfig.def         : null),
         wolfConfig:           wolfConfig           ?? (type == BetModuleType.wolf          ? WolfConfig.def           : null),
         sixesConfig:          sixesConfig          ?? (type == BetModuleType.sixes         ? SixesConfig.def          : null),
@@ -3556,6 +3726,7 @@ class BetModuleInstance {
         oyesesConfig:         oyesesConfig         ?? (type == BetModuleType.oyeses        ? OyesesConfig.def         : null),
         unitsConfig:          unitsConfig          ?? (type == BetModuleType.units         ? UnitsConfig.def          : null),
         snakeConfig:          snakeConfig          ?? (type == BetModuleType.snake         ? SnakeConfig.def          : null),
+        manualConfig:         manualConfig         ?? (type == BetModuleType.manual        ? ManualConfig.def         : null),
         rabbitConfig:         rabbitConfig         ?? (type == BetModuleType.rabbit        ? RabbitConfig.def         : null),
         wolfConfig:           wolfConfig           ?? (type == BetModuleType.wolf          ? WolfConfig.def           : null),
         sixesConfig:          sixesConfig          ?? (type == BetModuleType.sixes         ? SixesConfig.def          : null),
@@ -3809,6 +3980,7 @@ class BetGroup {
       oyesesConfig: type == BetModuleType.oyeses ? OyesesConfig(value: value) : null,
       unitsConfig: type == BetModuleType.units ? UnitsConfig.def : null,
       snakeConfig: type == BetModuleType.snake ? SnakeConfig.def : null,
+      manualConfig: type == BetModuleType.manual ? ManualConfig.def : null,
       rabbitConfig: type == BetModuleType.rabbit ? RabbitConfig.def : null,
       wolfConfig: type == BetModuleType.wolf ? WolfConfig.def : null,
       sixesConfig: type == BetModuleType.sixes ? SixesConfig.def : null,
@@ -4255,6 +4427,25 @@ class Round {
   final Map<String, Map<int, List<HoleEvent>>> events;
   final Map<int, OyeseRanking> oyeseRankings;
 
+  /// Lo marcado a mano en cada apuesta manual: módulo → hoyo → jugadores.
+  ///
+  /// ── UNA SOLA FORMA PARA LAS TRES ──────────────────────────────────────
+  ///
+  /// La lista es ORDENADA, y eso basta para los tres modos:
+  ///
+  ///   · sí/no            → quiénes lo consiguieron. El orden no se mira.
+  ///   · sí/no invertido  → lo mismo; lo que cambia es quién cobra.
+  ///   · ranking          → el orden en que quedaron, 1º primero.
+  ///
+  /// Así la captura es UN gesto —tocar nombres— y no hay dos estructuras que
+  /// puedan discrepar. Es la misma idea que `oyeseRankings`, con la diferencia
+  /// de que allí el orden lo deduce el score y aquí lo pone una persona.
+  ///
+  /// La clave es el id del MÓDULO, no el tipo: una ronda puede llevar fairways
+  /// y green en regulación a la vez, y son dos apuestas distintas del mismo
+  /// tipo.
+  final Map<String, Map<int, List<String>>> manuales;
+
   /// Para qué torneos cuenta esta ronda.
   ///
   /// La marca se pone AL CONFIGURAR la ronda, no después. Es lo que sustituye a
@@ -4375,6 +4566,7 @@ class Round {
     required this.players, required this.roundPlayers,
     required this.betGroups, required this.scores,
     required this.events, required this.oyeseRankings,
+    this.manuales = const {},
     this.wolfCalls = const {},
     this.torneoIds = const [],
     required this.sliding, required this.createdAt,
@@ -4401,6 +4593,10 @@ class Round {
       events[playerId]?[hole] ?? [];
 
   OyeseRanking? getOyese(int hole) => oyeseRankings[hole];
+
+  /// Quiénes están marcados en [hoyo] para la apuesta [moduleId], en orden.
+  List<String> marcadosEn(String moduleId, int hoyo) =>
+      manuales[moduleId]?[hoyo] ?? const [];
 
   /// Con quién jugó el Wolf en [hole]. Null = nadie lo eligió todavía.
   WolfCall? getWolfCall(int hole) => wolfCalls[hole];
@@ -4840,6 +5036,7 @@ class Round {
     Map<String, Map<int, HoleScore>>? scores,
     Map<String, Map<int, List<HoleEvent>>>? events,
     Map<int, OyeseRanking>? oyeseRankings,
+    Map<String, Map<int, List<String>>>? manuales,
     Map<int, WolfCall>? wolfCalls,
     List<String>? torneoIds,
     List<BetGroup>? betGroups,
@@ -4865,6 +5062,7 @@ class Round {
     scores: scores ?? this.scores,
     events: events ?? this.events,
     oyeseRankings: oyeseRankings ?? this.oyeseRankings,
+    manuales: manuales ?? this.manuales,
     wolfCalls: wolfCalls ?? this.wolfCalls,
     torneoIds: torneoIds ?? this.torneoIds,
     sliding: sliding, createdAt: createdAt,
@@ -4903,6 +5101,7 @@ class BetModuleTemplate {
   final OyesesConfig?            oyesesConfig;
   final UnitsConfig?             unitsConfig;
   final SnakeConfig?             snakeConfig;
+  final ManualConfig?            manualConfig;
   final RabbitConfig?            rabbitConfig;
   final WolfConfig?              wolfConfig;
   final SixesConfig?             sixesConfig;
@@ -4919,6 +5118,7 @@ class BetModuleTemplate {
     this.oyesesConfig,
     this.unitsConfig,
     this.snakeConfig,
+    this.manualConfig,
     this.rabbitConfig,
     this.wolfConfig,
     this.sixesConfig,
@@ -4935,6 +5135,7 @@ class BetModuleTemplate {
   OyesesConfig         get oyeses => oyesesConfig         ?? OyesesConfig.def;
   UnitsConfig          get units  => unitsConfig          ?? UnitsConfig.def;
   SnakeConfig          get snake  => snakeConfig          ?? SnakeConfig.def;
+  ManualConfig         get manual => manualConfig         ?? ManualConfig.def;
   RabbitConfig         get rabbit => rabbitConfig         ?? RabbitConfig.def;
   WolfConfig           get wolf   => wolfConfig           ?? WolfConfig.def;
   SixesConfig          get sixes  => sixesConfig          ?? SixesConfig.def;
@@ -4943,6 +5144,8 @@ class BetModuleTemplate {
   /// Etiqueta corta del valor principal.
   String get summaryLabel {
     switch (type) {
+      case BetModuleType.manual:
+        return '\$${manual.value.toStringAsFixed(0)} · ${manual.modo.label}';
       case BetModuleType.snake:
         return '\$${snake.value.toStringAsFixed(0)} · ${snake.umbral}+ putts';
       case BetModuleType.rabbit:
@@ -4983,6 +5186,7 @@ class BetModuleTemplate {
     oyesesConfig:         t == BetModuleType.oyeses        ? OyesesConfig.def         : null,
     unitsConfig:          t == BetModuleType.units         ? UnitsConfig.def          : null,
     snakeConfig:          t == BetModuleType.snake         ? SnakeConfig.def          : null,
+    manualConfig:         t == BetModuleType.manual        ? ManualConfig.def         : null,
     rabbitConfig:         t == BetModuleType.rabbit        ? RabbitConfig.def         : null,
     wolfConfig:           t == BetModuleType.wolf          ? WolfConfig.def           : null,
     stablefordConfig:     t == BetModuleType.stableford    ? StablefordConfig.def     : null,
@@ -5009,6 +5213,7 @@ class BetModuleTemplate {
     oyesesConfig:         oyesesConfig,
     unitsConfig:          unitsConfig,
     snakeConfig:          snakeConfig,
+    manualConfig:         manualConfig,
     rabbitConfig:         rabbitConfig,
     wolfConfig:           wolfConfig,
     stablefordConfig:     stablefordConfig,
@@ -5027,6 +5232,7 @@ class BetModuleTemplate {
     OyesesConfig?          oyesesConfig,
     UnitsConfig?           unitsConfig,
     SnakeConfig?           snakeConfig,
+    ManualConfig?          manualConfig,
     RabbitConfig?          rabbitConfig,
     WolfConfig?            wolfConfig,
     SixesConfig?           sixesConfig,
@@ -5057,6 +5263,7 @@ class BetModuleTemplate {
     if (oyesesConfig         != null) 'oyesesConfig':         oyesesConfig!.toJson(),
     if (unitsConfig          != null) 'unitsConfig':          unitsConfig!.toJson(),
     if (snakeConfig          != null) 'snakeConfig':          snakeConfig!.toJson(),
+    if (manualConfig         != null) 'manualConfig':         manualConfig!.toJson(),
     if (rabbitConfig         != null) 'rabbitConfig':         rabbitConfig!.toJson(),
     if (wolfConfig           != null) 'wolfConfig':           wolfConfig!.toJson(),
     if (sixesConfig          != null) 'sixesConfig':          sixesConfig!.toJson(),

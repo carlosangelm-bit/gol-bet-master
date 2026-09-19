@@ -1442,8 +1442,124 @@ class _ActivePlayerZoneState extends State<_ActivePlayerZone> {
             activeCount: activeUnits,
           )),
         ]),
+
+        // ── Fila de apuestas MANUALES ───────────────────────────────────
+        //
+        // EN LÍNEA, no en una hoja. Marcar un fairway son dieciocho toques por
+        // jugador; si cada uno cuesta abrir algo, nadie lo usa y vuelven a
+        // apuntarlo en una servilleta. Units sí tiene su hoja porque son doce
+        // eventos distintos y se marcan de vez en cuando; una manual es UNA
+        // pregunta por hoyo, así que es un chip.
+        if (ManualCapture.apuestasDe(widget.round, widget.activePlayerId)
+            case final manuales when manuales.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          ManualCapture(
+            manuales: manuales,
+            round: widget.round,
+            playerId: widget.activePlayerId,
+            hole: widget.hole,
+            t: t,
+          ),
+        ],
       ]),
     );
+  }
+}
+
+/// Los chips de las apuestas manuales de un jugador en un hoyo.
+///
+/// Un toque = marcado. En modo ranking el chip enseña la POSICIÓN —1, 2, 3— que
+/// sale del orden en que se tocó, así que ordenar a cinco jugadores son cinco
+/// toques y ningún número tecleado.
+///
+/// Público para poder montarlo en una prueba: es el criterio que decide si esto
+/// sirve, y no se puede comprobar leyendo el código.
+class ManualCapture extends StatelessWidget {
+  final List<BetModuleInstance> manuales;
+  final Round round;
+  final String playerId;
+  final int hole;
+  final GolfTheme t;
+
+  const ManualCapture({
+    super.key,
+    required this.manuales,
+    required this.round,
+    required this.playerId,
+    required this.hole,
+    required this.t,
+  });
+
+  /// Las apuestas manuales que [pid] juega en esta ronda.
+  static List<BetModuleInstance> apuestasDe(Round round, String pid) => [
+        for (final g in round.betGroups)
+          for (final m in g.modules)
+            if (m.type == BetModuleType.manual &&
+                round.participantesDe(m, g.playerIds).contains(pid))
+              m,
+      ];
+
+  @override
+  Widget build(BuildContext context) {
+    final prov = context.watch<RoundProvider>();
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('MARCAR',
+          style: TextStyle(
+              color: t.sub,
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8)),
+      const SizedBox(width: 8),
+      Expanded(
+        child: Wrap(spacing: 5, runSpacing: 5, children: [
+          for (final m in manuales)
+            Builder(builder: (_) {
+              final marcados = prov.round!.marcadosEn(m.id, hole);
+              final pos = marcados.indexOf(playerId);
+              final activo = pos >= 0;
+              final esRanking = m.manual.modo == ModoManual.ranking;
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => context
+                    .read<RoundProvider>()
+                    .alternarManual(m.id, hole, playerId),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: activo
+                        ? t.accent.withValues(alpha: 0.15)
+                        : t.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: activo
+                            ? t.accent.withValues(alpha: 0.5)
+                            : t.divider),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (esRanking && activo) ...[
+                      Text('${pos + 1}º',
+                          style: TextStyle(
+                              color: t.accent,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800)),
+                      const SizedBox(width: 4),
+                    ] else if (activo) ...[
+                      Icon(Icons.check, size: 12, color: t.accent),
+                      const SizedBox(width: 3),
+                    ],
+                    Text(m.manual.nombre,
+                        style: TextStyle(
+                            color: activo ? t.accent : t.sub,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700)),
+                  ]),
+                ),
+              );
+            }),
+        ]),
+      ),
+    ]);
   }
 }
 

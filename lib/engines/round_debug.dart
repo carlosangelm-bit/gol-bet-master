@@ -498,6 +498,7 @@ class RoundDebug {
 
   static String _moduleCfgSummary(BetModuleInstance m) {
     return switch (m.type) {
+      BetModuleType.manual  => '"${m.manual.nombre}" \$${m.manual.value.toStringAsFixed(0)} ${m.manual.modo.name}',
       BetModuleType.stableford => '\$${m.stableford.value.toStringAsFixed(0)} ${m.stableford.mode.name} tabla=${m.stableford.puntosDelPar}/${m.stableford.piso}/${m.stableford.techo}',
       BetModuleType.wolf    => '\$${m.wolf.value.toStringAsFixed(0)}/hoyo lone×${m.wolf.loneMultiplier}',
       BetModuleType.sixes   => '\$${m.sixes.value.toStringAsFixed(0)}/bloque de ${m.sixes.hoyosPorBloque} empate=${m.sixes.tieRule.name}',

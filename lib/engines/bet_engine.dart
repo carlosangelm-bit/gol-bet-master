@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import '../models/models.dart';
 import 'snake_engine.dart';
+import 'manual_engine.dart';
 import 'rabbit_engine.dart';
 import 'stableford_engine.dart';
 import 'wolf_engine.dart';
@@ -367,6 +368,11 @@ class BetEngine {
         break;
       case BetModuleType.putts:
         entries.addAll(_putts(round, pids, mod));
+        break;
+      case BetModuleType.manual:
+        // Motor aparte y pequeño: lo único nuevo de una apuesta manual es de
+        // dónde sale el número. Ver manual_engine.dart.
+        entries.addAll(ManualEngine.liquidar(round, pids, mod));
         break;
       case BetModuleType.oyeses:
         entries.addAll(_oyeses(round, pids, mod));
